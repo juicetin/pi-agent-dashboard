@@ -1,0 +1,87 @@
+/** Source environment where a pi session is running */
+export type SessionSource = "tui" | "zed" | "tmux" | "dashboard" | "unknown";
+
+/** Current status of a session */
+export type SessionStatus = "active" | "idle" | "streaming" | "ended";
+
+/** A workspace (project folder) */
+export interface Workspace {
+  id: string;
+  name: string;
+  path: string;
+  sortOrder: number;
+  createdAt: number;
+}
+
+/** A dashboard session representing a connected pi instance */
+export interface DashboardSession {
+  id: string;
+  cwd: string;
+  source: SessionSource;
+  status: SessionStatus;
+  model?: string;
+  thinkingLevel?: string;
+  workspaceId?: string;
+  startedAt: number;
+  endedAt?: number;
+  tokensIn?: number;
+  tokensOut?: number;
+  cacheRead?: number;
+  cacheWrite?: number;
+  cost?: number;
+  currentTool?: string;
+  gitBranch?: string;
+  gitBranchUrl?: string;
+  gitPrNumber?: number;
+  gitPrUrl?: string;
+}
+
+/** An event forwarded from a pi session */
+export interface DashboardEvent {
+  eventType: string;
+  timestamp: number;
+  data: Record<string, unknown>;
+}
+
+/** Info about an available command */
+export interface CommandInfo {
+  name: string;
+  description?: string;
+  source: "extension" | "prompt" | "skill";
+  location?: string;
+  path?: string;
+}
+
+/** Image content for message attachments (compatible with pi SDK ImageContent) */
+export interface ImageContent {
+  type: "image";
+  data: string;
+  mimeType: string;
+}
+
+/** File entry from directory listing */
+export interface FileEntry {
+  path: string;
+  isDirectory: boolean;
+}
+
+/** Per-turn token usage breakdown */
+export interface TurnUsage {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+}
+
+/** Context window usage */
+export interface ContextUsage {
+  tokens: number | null;
+  contextWindow: number;
+}
+
+/** REST API response envelope */
+export interface ApiResponse<T = unknown> {
+  success: boolean;
+  data?: T;
+  error?: string;
+}

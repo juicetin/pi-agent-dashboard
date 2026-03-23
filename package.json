@@ -1,0 +1,81 @@
+{
+  "name": "@user/pi-dashboard",
+  "version": "0.1.0",
+  "description": "Web dashboard for monitoring and interacting with pi agent sessions",
+  "keywords": [
+    "pi-package"
+  ],
+  "type": "module",
+  "main": "src/server/cli.ts",
+  "bin": {
+    "pi-dashboard": "src/server/cli.ts"
+  },
+  "pi": {
+    "extensions": [
+      "src/extension/bridge.ts"
+    ]
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@fastify/static": "^8.0.0",
+    "@fastify/websocket": "^11.0.0",
+    "@types/react-syntax-highlighter": "^15.5.13",
+    "fastify": "^5.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-markdown": "^10.1.0",
+    "react-syntax-highlighter": "^16.1.1",
+    "remark-gfm": "^4.0.1",
+    "sql.js": "^1.11.0",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.0.0",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@types/ws": "^8.5.0",
+    "@vitejs/plugin-react": "^4.0.0",
+    "jsdom": "^29.0.1",
+    "tailwindcss": "^4.0.0",
+    "typescript": "^5.7.0",
+    "vite": "^6.0.0",
+    "vitest": "^3.0.0"
+  },
+  "peerDependencies": {
+    "@mariozechner/pi-ai": "*",
+    "@mariozechner/pi-coding-agent": "*",
+    "@mariozechner/pi-tui": "*",
+    "@oh-my-pi/pi-ai": "*",
+    "@oh-my-pi/pi-coding-agent": "*",
+    "@oh-my-pi/pi-tui": "*",
+    "@sinclair/typebox": "*"
+  },
+  "peerDependenciesMeta": {
+    "@mariozechner/pi-coding-agent": {
+      "optional": true
+    },
+    "@mariozechner/pi-ai": {
+      "optional": true
+    },
+    "@mariozechner/pi-tui": {
+      "optional": true
+    },
+    "@oh-my-pi/pi-coding-agent": {
+      "optional": true
+    },
+    "@oh-my-pi/pi-ai": {
+      "optional": true
+    },
+    "@oh-my-pi/pi-tui": {
+      "optional": true
+    }
+  }
+}

@@ -1,0 +1,231 @@
+import { describe, it, expect } from "vitest";
+import type {
+  ExtensionToServerMessage,
+  ServerToExtensionMessage,
+} from "../protocol.js";
+import type {
+  ServerToBrowserMessage,
+  BrowserToServerMessage,
+} from "../browser-protocol.js";
+import type {
+  Workspace,
+  DashboardSession,
+  DashboardEvent,
+  SessionSource,
+  SessionStatus,
+  CommandInfo,
+  ApiResponse,
+} from "../types.js";
+
+describe("Protocol message serialization round-trip", () => {
+  it("should serialize/deserialize extension→server messages", () => {
+    const messages: ExtensionToServerMessage[] = [
+      {
+        type: "session_register",
+        sessionId: "s1",
+        cwd: "/home/user/project",
+        source: "tui",
+        model: "claude-sonnet-4-20250514",
+        thinkingLevel: "medium",
+      },
+      {
+        type: "session_unregister",
+        sessionId: "s1",
+      },
+      {
+        type: "session_heartbeat",
+        sessionId: "s1",
+      },
+      {
+        type: "event_forward",
+        sessionId: "s1",
+        event: {
+          eventType: "message_update",
+          timestamp: Date.now(),
+          data: { text: "Hello" },
+        },
+      },
+      {
+        type: "commands_list",
+        sessionId: "s1",
+        commands: [
+          { name: "test", description: "Run tests", source: "extension" },
+        ],
+      },
+      {
+        type: "extension_ui_event",
+        sessionId: "s1",
+        uiEvent: { method: "confirm", title: "Allow?", result: true },
+      },
+      {
+        type: "stats_update",
+        sessionId: "s1",
+        stats: { tokensIn: 100, tokensOut: 50, cost: 0.01 },
+      },
+    ];
+
+    for (const msg of messages) {
+      const json = JSON.stringify(msg);
+      const parsed = JSON.parse(json) as ExtensionToServerMessage;
+      expect(parsed).toEqual(msg);
+      expect(parsed.type).toBe(msg.type);
+    }
+  });
+
+  it("should serialize/deserialize server→extension messages", () => {
+    const messages: ServerToExtensionMessage[] = [
+      {
+        type: "send_prompt",
+        sessionId: "s1",
+        text: "Hello agent",
+      },
+      {
+        type: "abort",
+        sessionId: "s1",
+      },
+      {
+        type: "request_commands",
+        sessionId: "s1",
+      },
+      {
+        type: "request_state_sync",
+        sessionId: "s1",
+      },
+    ];
+
+    for (const msg of messages) {
+      const json = JSON.stringify(msg);
+      const parsed = JSON.parse(json) as ServerToExtensionMessage;
+      expect(parsed).toEqual(msg);
+      expect(parsed.type).toBe(msg.type);
+    }
+  });
+
+  it("should serialize/deserialize server→browser messages", () => {
+    const messages: ServerToBrowserMessage[] = [
+      {
+        type: "session_added",
+        session: {
+          id: "s1",
+          cwd: "/project",
+          source: "tui",
+          status: "active",
+          model: "claude-sonnet-4-20250514",
+          thinkingLevel: "medium",
+          workspaceId: "w1",
+          startedAt: Date.now(),
+        },
+      },
+      {
+        type: "session_updated",
+        sessionId: "s1",
+        updates: { status: "streaming" },
+      },
+      {
+        type: "session_removed",
+        sessionId: "s1",
+      },
+      {
+        type: "event",
+        sessionId: "s1",
+        seq: 42,
+        event: {
+          eventType: "message_update",
+          timestamp: Date.now(),
+          data: { text: "hi" },
+        },
+      },
+      {
+        type: "event_replay",
+        sessionId: "s1",
+        events: [],
+        isLast: true,
+      },
+      {
+        type: "commands_list",
+        sessionId: "s1",
+        commands: [],
+      },
+      {
+        type: "extension_ui_event",
+        sessionId: "s1",
+        uiEvent: { method: "notify", message: "done", level: "info" },
+      },
+      {
+        type: "workspace_updated",
+        workspaces: [],
+      },
+    ];
+
+    for (const msg of messages) {
+      const json = JSON.stringify(msg);
+      const parsed = JSON.parse(json) as ServerToBrowserMessage;
+      expect(parsed).toEqual(msg);
+      expect(parsed.type).toBe(msg.type);
+    }
+  });
+
+  it("should serialize/deserialize browser→server messages", () => {
+    const messages: BrowserToServerMessage[] = [
+      {
+        type: "subscribe",
+        sessionId: "s1",
+        lastSeq: 0,
+      },
+      {
+        type: "unsubscribe",
+        sessionId: "s1",
+      },
+      {
+        type: "send_prompt",
+        sessionId: "s1",
+        text: "Hello",
+      },
+      {
+        type: "abort",
+        sessionId: "s1",
+      },
+      {
+        type: "request_commands",
+        sessionId: "s1",
+      },
+      {
+        type: "fetch_content",
+        sessionId: "s1",
+        seq: 42,
+      },
+    ];
+
+    for (const msg of messages) {
+      const json = JSON.stringify(msg);
+      const parsed = JSON.parse(json) as BrowserToServerMessage;
+      expect(parsed).toEqual(msg);
+      expect(parsed.type).toBe(msg.type);
+    }
+  });
+});
+
+describe("Shared data model types", () => {
+  it("should have correct SessionSource values", () => {
+    const sources: SessionSource[] = ["tui", "zed", "tmux", "dashboard", "unknown"];
+    expect(sources).toHaveLength(5);
+  });
+
+  it("should have correct SessionStatus values", () => {
+    const statuses: SessionStatus[] = ["active", "streaming", "ended"];
+    expect(statuses).toHaveLength(3);
+  });
+
+  it("should construct valid ApiResponse", () => {
+    const success: ApiResponse<{ id: string }> = {
+      success: true,
+      data: { id: "123" },
+    };
+    const error: ApiResponse = {
+      success: false,
+      error: "Not found",
+    };
+    expect(success.success).toBe(true);
+    expect(error.success).toBe(false);
+  });
+});

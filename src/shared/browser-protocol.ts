@@ -1,0 +1,129 @@
+/**
+ * Server ↔ Browser WebSocket protocol messages.
+ */
+import type {
+  DashboardSession,
+  DashboardEvent,
+  CommandInfo,
+  ImageContent,
+  FileEntry,
+  Workspace,
+} from "./types.js";
+
+// ── Server → Browser ────────────────────────────────────────────────
+
+export interface SessionAddedMessage {
+  type: "session_added";
+  session: DashboardSession;
+}
+
+export interface SessionUpdatedMessage {
+  type: "session_updated";
+  sessionId: string;
+  updates: Partial<DashboardSession>;
+}
+
+export interface SessionRemovedMessage {
+  type: "session_removed";
+  sessionId: string;
+}
+
+export interface EventMessage {
+  type: "event";
+  sessionId: string;
+  seq: number;
+  event: DashboardEvent;
+}
+
+export interface EventReplayMessage {
+  type: "event_replay";
+  sessionId: string;
+  events: Array<{ seq: number; event: DashboardEvent }>;
+  isLast: boolean;
+}
+
+export interface BrowserCommandsListMessage {
+  type: "commands_list";
+  sessionId: string;
+  commands: CommandInfo[];
+}
+
+export interface BrowserExtensionUiEventMessage {
+  type: "extension_ui_event";
+  sessionId: string;
+  uiEvent: Record<string, unknown>;
+}
+
+export interface WorkspaceUpdatedMessage {
+  type: "workspace_updated";
+  workspaces: Workspace[];
+}
+
+export interface BrowserFilesListMessage {
+  type: "files_list";
+  sessionId: string;
+  query: string;
+  files: FileEntry[];
+}
+
+export type ServerToBrowserMessage =
+  | SessionAddedMessage
+  | SessionUpdatedMessage
+  | SessionRemovedMessage
+  | EventMessage
+  | EventReplayMessage
+  | BrowserCommandsListMessage
+  | BrowserExtensionUiEventMessage
+  | WorkspaceUpdatedMessage
+  | BrowserFilesListMessage;
+
+// ── Browser → Server ────────────────────────────────────────────────
+
+export interface SubscribeMessage {
+  type: "subscribe";
+  sessionId: string;
+  lastSeq?: number;
+}
+
+export interface UnsubscribeMessage {
+  type: "unsubscribe";
+  sessionId: string;
+}
+
+export interface SendPromptToBrowserMessage {
+  type: "send_prompt";
+  sessionId: string;
+  text: string;
+  images?: ImageContent[];
+}
+
+export interface AbortToBrowserMessage {
+  type: "abort";
+  sessionId: string;
+}
+
+export interface RequestCommandsToBrowserMessage {
+  type: "request_commands";
+  sessionId: string;
+}
+
+export interface FetchContentMessage {
+  type: "fetch_content";
+  sessionId: string;
+  seq: number;
+}
+
+export interface ListFilesToBrowserMessage {
+  type: "list_files";
+  sessionId: string;
+  query: string;
+}
+
+export type BrowserToServerMessage =
+  | SubscribeMessage
+  | UnsubscribeMessage
+  | SendPromptToBrowserMessage
+  | AbortToBrowserMessage
+  | RequestCommandsToBrowserMessage
+  | FetchContentMessage
+  | ListFilesToBrowserMessage;

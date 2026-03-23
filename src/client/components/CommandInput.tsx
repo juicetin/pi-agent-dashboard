@@ -1,0 +1,322 @@
+import React, { useState, useCallback, useRef, useEffect } from "react";
+import type { CommandInfo, ImageContent, FileEntry } from "../../shared/types.js";
+
+interface Props {
+  commands: CommandInfo[];
+  onSend: (text: string, images?: ImageContent[]) => void;
+  onListFiles?: (query: string) => void;
+  fileResults?: { query: string; files: FileEntry[] } | null;
+  disabled?: boolean;
+}
+
+const sourceIcons: Record<string, string> = {
+  extension: "⚡",
+  prompt: "📋",
+  skill: "🔧",
+};
+
+const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10MB base64
+
+type DropdownMode = "command" | "file" | null;
+
+/**
+ * Extract @ prefix from text before cursor.
+ * Returns the query after @ if @ is at a token boundary, null otherwise.
+ */
+function extractAtQuery(text: string): string | null {
+  const delimiters = new Set([" ", "\t", '"', "'"]);
+  // Find last @ that's at a token boundary
+  for (let i = text.length - 1; i >= 0; i--) {
+    if (text[i] === "@") {
+      if (i === 0 || delimiters.has(text[i - 1]!)) {
+        return text.slice(i + 1);
+      }
+      return null;
+    }
+    // Stop if we hit a delimiter without finding @
+    if (delimiters.has(text[i]!)) {
+      return null;
+    }
+  }
+  return null;
+}
+
+export function CommandInput({ commands, onSend, onListFiles, fileResults, disabled }: Props) {
+  const [text, setText] = useState("");
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const [pendingImages, setPendingImages] = useState<ImageContent[]>([]);
+  const [imageError, setImageError] = useState<string | null>(null);
+  const [dropdownMode, setDropdownMode] = useState<DropdownMode>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastFileQueryRef = useRef<string | null>(null);
+
+  // --- Command autocomplete ---
+  const isCommand = text.startsWith("/") && !text.includes("\n");
+  const commandFilter = isCommand ? text.slice(1).toLowerCase() : "";
+
+  const filteredCommands = isCommand
+    ? commands.filter(
+        (cmd) =>
+          cmd.name.toLowerCase().includes(commandFilter) ||
+          (cmd.description?.toLowerCase().includes(commandFilter) ?? false)
+      )
+    : [];
+
+  // --- @ file autocomplete ---
+  const cursorPos = inputRef.current?.selectionStart ?? text.length;
+  const textBeforeCursor = text.slice(0, cursorPos);
+  const atQuery = extractAtQuery(textBeforeCursor);
+  const isAtMode = atQuery !== null;
+
+  // Debounced file search
+  useEffect(() => {
+    if (!isAtMode || !onListFiles) {
+      lastFileQueryRef.current = null;
+      return;
+    }
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      lastFileQueryRef.current = atQuery;
+      onListFiles(atQuery);
+    }, 150);
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [atQuery, isAtMode, onListFiles]);
+
+  // Determine dropdown items
+  const fileItems = (isAtMode && fileResults && fileResults.query === lastFileQueryRef.current)
+    ? fileResults.files
+    : [];
+
+  // Resolve dropdown mode
+  useEffect(() => {
+    if (isCommand && filteredCommands.length > 0) {
+      setDropdownMode("command");
+      setSelectedIndex(0);
+    } else if (isAtMode && fileItems.length > 0) {
+      setDropdownMode("file");
+      setSelectedIndex(0);
+    } else {
+      setDropdownMode(null);
+    }
+  }, [isCommand, filteredCommands.length, isAtMode, fileItems.length]);
+
+  const dropdownLength = dropdownMode === "command" ? filteredCommands.length
+    : dropdownMode === "file" ? fileItems.length
+    : 0;
+
+  // --- Handlers ---
+
+  const selectCommand = useCallback((cmd: CommandInfo) => {
+    setText(`/${cmd.name} `);
+    setDropdownMode(null);
+    inputRef.current?.focus();
+  }, []);
+
+  const selectFile = useCallback((file: FileEntry) => {
+    const query = atQuery ?? "";
+    const beforeAt = textBeforeCursor.slice(0, textBeforeCursor.length - query.length - 1); // remove @query
+    const afterCursor = text.slice(cursorPos);
+    const filePath = file.path;
+    const suffix = file.isDirectory ? "" : " ";
+    const newText = `${beforeAt}@${filePath}${suffix}${afterCursor}`;
+    setText(newText);
+    setDropdownMode(null);
+    // Set cursor after the inserted path
+    const newCursorPos = beforeAt.length + 1 + filePath.length + suffix.length;
+    requestAnimationFrame(() => {
+      inputRef.current?.setSelectionRange(newCursorPos, newCursorPos);
+      inputRef.current?.focus();
+    });
+  }, [atQuery, textBeforeCursor, text, cursorPos]);
+
+  const handleSend = useCallback(() => {
+    if (text.trim()) {
+      onSend(text.trim(), pendingImages.length > 0 ? pendingImages : undefined);
+      setText("");
+      setPendingImages([]);
+      // Reset textarea height
+      if (inputRef.current) {
+        inputRef.current.style.height = "38px";
+      }
+    }
+  }, [text, pendingImages, onSend]);
+
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (dropdownMode) {
+        if (e.key === "ArrowDown") {
+          e.preventDefault();
+          setSelectedIndex((i) => Math.min(i + 1, dropdownLength - 1));
+          return;
+        }
+        if (e.key === "ArrowUp") {
+          e.preventDefault();
+          setSelectedIndex((i) => Math.max(i - 1, 0));
+          return;
+        }
+        if (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey)) {
+          e.preventDefault();
+          if (dropdownMode === "command") {
+            const cmd = filteredCommands[selectedIndex];
+            if (cmd) selectCommand(cmd);
+          } else if (dropdownMode === "file") {
+            const file = fileItems[selectedIndex];
+            if (file) selectFile(file);
+          }
+          return;
+        }
+        if (e.key === "Escape") {
+          e.preventDefault();
+          setDropdownMode(null);
+          return;
+        }
+      }
+
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        handleSend();
+      }
+    },
+    [dropdownMode, dropdownLength, filteredCommands, fileItems, selectedIndex, selectCommand, selectFile, handleSend]
+  );
+
+  const handlePaste = useCallback(async (e: React.ClipboardEvent) => {
+    const items = e.clipboardData.items;
+    for (const item of items) {
+      if (item.type.startsWith("image/")) {
+        e.preventDefault();
+        const blob = item.getAsFile();
+        if (!blob) continue;
+
+        const reader = new FileReader();
+        reader.onload = () => {
+          const dataUrl = reader.result as string;
+          const base64 = dataUrl.split(",")[1];
+          if (!base64) return;
+
+          if (base64.length > MAX_IMAGE_SIZE) {
+            setImageError("Image too large (max 10MB)");
+            setTimeout(() => setImageError(null), 3000);
+            return;
+          }
+
+          setPendingImages((prev) => [
+            ...prev,
+            { type: "image", data: base64, mimeType: item.type },
+          ]);
+        };
+        reader.readAsDataURL(blob);
+      }
+    }
+  }, []);
+
+  const removeImage = useCallback((index: number) => {
+    setPendingImages((prev) => prev.filter((_, i) => i !== index));
+  }, []);
+
+  return (
+    <div className="border-t border-gray-800 p-3 relative">
+      {/* Autocomplete dropdown */}
+      {dropdownMode === "command" && (
+        <div className="absolute bottom-full left-3 right-3 mb-1 bg-gray-900 border border-gray-700 rounded-lg max-h-64 overflow-y-auto shadow-lg z-10">
+          {filteredCommands.map((cmd, i) => (
+            <button
+              key={cmd.name}
+              onClick={() => selectCommand(cmd)}
+              className={`w-full px-3 py-2 text-left text-sm flex items-center gap-2 ${
+                i === selectedIndex ? "bg-gray-800" : "hover:bg-gray-800/50"
+              }`}
+            >
+              <span>{sourceIcons[cmd.source] ?? "⚡"}</span>
+              <span className="font-mono text-blue-400">/{cmd.name}</span>
+              {cmd.description && (
+                <span className="text-gray-500 truncate">{cmd.description}</span>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {dropdownMode === "file" && (
+        <div className="absolute bottom-full left-3 right-3 mb-1 bg-gray-900 border border-gray-700 rounded-lg max-h-64 overflow-y-auto shadow-lg z-10">
+          {fileItems.map((file, i) => {
+            const name = file.path.split("/").pop() ?? file.path;
+            return (
+              <button
+                key={file.path}
+                onClick={() => selectFile(file)}
+                className={`w-full px-3 py-2 text-left text-sm flex items-center gap-2 ${
+                  i === selectedIndex ? "bg-gray-800" : "hover:bg-gray-800/50"
+                }`}
+              >
+                <span>{file.isDirectory ? "📁" : "📄"}</span>
+                <span className="font-mono text-green-400">
+                  {name}{file.isDirectory ? "/" : ""}
+                </span>
+                <span className="text-gray-500 truncate">{file.path}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Image error */}
+      {imageError && (
+        <div className="mb-2 text-xs text-red-400 bg-red-900/20 px-3 py-1 rounded">
+          {imageError}
+        </div>
+      )}
+
+      {/* Image previews */}
+      {pendingImages.length > 0 && (
+        <div className="mb-2 flex gap-2 flex-wrap">
+          {pendingImages.map((img, i) => (
+            <div key={i} className="relative group">
+              <img
+                src={`data:${img.mimeType};base64,${img.data}`}
+                alt={`Attachment ${i + 1}`}
+                className="h-16 w-16 object-cover rounded border border-gray-700"
+              />
+              <button
+                onClick={() => removeImage(i)}
+                className="absolute -top-1 -right-1 w-5 h-5 bg-red-600 rounded-full text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+              >
+                ×
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="flex gap-2">
+        <textarea
+          ref={inputRef}
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={handleKeyDown}
+          onPaste={handlePaste}
+          placeholder="Send a message, /command, or @file..."
+          disabled={disabled}
+          rows={1}
+          className="flex-1 bg-gray-800 rounded-lg px-4 py-2 text-sm text-white placeholder-gray-500 border border-gray-700 focus:border-blue-500 focus:outline-none disabled:opacity-50 resize-none"
+          style={{ minHeight: "38px", maxHeight: "120px" }}
+          onInput={(e) => {
+            const target = e.target as HTMLTextAreaElement;
+            target.style.height = "38px";
+            target.style.height = Math.min(target.scrollHeight, 120) + "px";
+          }}
+        />
+        <button
+          onClick={handleSend}
+          disabled={disabled || !text.trim()}
+          className="px-4 py-2 bg-blue-600 rounded-lg text-sm font-medium hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed self-end"
+        >
+          Send
+        </button>
+      </div>
+    </div>
+  );
+}

@@ -1,4 +1,6 @@
-import React from "react";
+import React, { type ReactNode } from "react";
+import Icon from "@mdi/react";
+import { mdiMonitor, mdiFlash, mdiTelevision, mdiWeb, mdiHelpCircle, mdiCog } from "@mdi/js";
 import type { DashboardSession } from "../../shared/types.js";
 
 interface Props {
@@ -7,12 +9,12 @@ interface Props {
   onSelect: (sessionId: string) => void;
 }
 
-const sourceIcons: Record<string, string> = {
-  tui: "🖥",
-  zed: "⚡",
-  tmux: "📺",
-  dashboard: "🌐",
-  unknown: "❓",
+const sourceIcons: Record<string, ReactNode> = {
+  tui: <Icon path={mdiMonitor} size={0.55} />,
+  zed: <Icon path={mdiFlash} size={0.55} />,
+  tmux: <Icon path={mdiTelevision} size={0.55} />,
+  dashboard: <Icon path={mdiWeb} size={0.55} />,
+  unknown: <Icon path={mdiHelpCircle} size={0.55} />,
 };
 
 const statusColors: Record<string, string> = {
@@ -64,8 +66,8 @@ export function SessionSidebar({ sessions, selectedId, onSelect }: Props) {
                 <span className="text-sm font-medium truncate flex-1">
                   {session.cwd.split("/").pop() ?? session.id.slice(0, 8)}
                 </span>
-                <span className="text-xs" title={session.source}>
-                  {sourceIcons[session.source] ?? "❓"}
+                <span className="text-xs inline-flex" title={session.source}>
+                  {sourceIcons[session.source] ?? <Icon path={mdiHelpCircle} size={0.55} />}
                 </span>
               </div>
               <div className="ml-4 mt-0.5 flex items-center gap-2 text-xs text-gray-500">
@@ -76,7 +78,7 @@ export function SessionSidebar({ sessions, selectedId, onSelect }: Props) {
                 <span title="Tokens out">↑{formatTokens(session.tokensOut)}</span>
                 <span>{formatCost(session.cost)}</span>
                 {session.currentTool && (
-                  <span className="text-yellow-500">⚙ {session.currentTool}</span>
+                  <span className="text-yellow-500 inline-flex items-center gap-0.5"><Icon path={mdiCog} size={0.5} /> {session.currentTool}</span>
                 )}
               </div>
             </li>

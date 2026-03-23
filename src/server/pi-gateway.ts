@@ -4,7 +4,6 @@
 import { WebSocketServer, WebSocket } from "ws";
 import type { ExtensionToServerMessage, ServerToExtensionMessage } from "../shared/protocol.js";
 import type { SessionManager } from "./session-manager.js";
-import type { EventStore } from "./event-store.js";
 
 const HEARTBEAT_TIMEOUT = 45_000;
 
@@ -19,7 +18,6 @@ export interface PiGateway {
 
 export function createPiGateway(
   sessionManager: SessionManager,
-  eventStore: EventStore,
 ): PiGateway {
   let wss: WebSocketServer | null = null;
 
@@ -105,10 +103,6 @@ export function createPiGateway(
                 heartbeatTimers.delete(msg.sessionId);
               }
               checkEmpty();
-            }
-
-            if (msg.type === "event_forward") {
-              eventStore.insertEvent(msg.sessionId, msg.event);
             }
 
             if (msg.type === "stats_update") {

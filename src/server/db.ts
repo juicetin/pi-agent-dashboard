@@ -1,19 +1,17 @@
 /**
- * SQLite database layer using sql.js (pure JS SQLite).
+ * SQLite database layer using better-sqlite3 (native file-based SQLite).
  */
-import initSqlJs, { type Database as SqlJsDatabase } from "sql.js";
+import BetterSqlite3 from "better-sqlite3";
 import fs from "node:fs";
 import path from "node:path";
 
 export interface Database {
-  /** Get the underlying sql.js database */
-  raw: SqlJsDatabase;
+  /** Get the underlying better-sqlite3 database */
+  raw: BetterSqlite3.Database;
   /** List all table names */
   listTables(): string[];
   /** List all index names */
   listIndexes(): string[];
-  /** Save database to disk */
-  save(): void;
   /** Close the database */
   close(): void;
 }
@@ -69,77 +67,56 @@ const ALTER_MIGRATIONS = [
   "ALTER TABLE sessions ADD COLUMN git_pr_url TEXT",
 ];
 
-export async function createDatabaseAsync(dbPath: string): Promise<Database> {
-  const SQL = await initSqlJs();
-
+export function createDatabase(dbPath: string): Database {
   // Ensure directory exists
   const dir = path.dirname(dbPath);
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
 
-  // Load existing database or create new
-  let db: SqlJsDatabase;
-  if (fs.existsSync(dbPath)) {
-    const buffer = fs.readFileSync(dbPath);
-    db = new SQL.Database(buffer);
-  } else {
-    db = new SQL.Database();
-  }
+  const db = new BetterSqlite3(dbPath);
+
+  // Enable WAL mode for better concurrent read/write performance
+  db.pragma("journal_mode = WAL");
 
   // Run migrations
   for (const sql of MIGRATIONS) {
-    db.run(sql);
+    db.exec(sql);
   }
 
   // Run ALTER TABLE migrations (ignore errors for already-existing columns)
   for (const sql of ALTER_MIGRATIONS) {
     try {
-      db.run(sql);
+      db.exec(sql);
     } catch {
       // Column already exists — safe to ignore
     }
   }
 
-  // Save after migrations
-  const data = db.export();
-  fs.writeFileSync(dbPath, Buffer.from(data));
-
   return {
     raw: db,
 
     listTables(): string[] {
-      const result = db.exec(
+      const rows = db.prepare(
         "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
-      );
-      if (result.length === 0) return [];
-      return result[0].values.map((row) => row[0] as string);
+      ).all() as Array<{ name: string }>;
+      return rows.map((row) => row.name);
     },
 
     listIndexes(): string[] {
-      const result = db.exec(
+      const rows = db.prepare(
         "SELECT name FROM sqlite_master WHERE type='index' AND name NOT LIKE 'sqlite_%' ORDER BY name"
-      );
-      if (result.length === 0) return [];
-      return result[0].values.map((row) => row[0] as string);
-    },
-
-    save(): void {
-      const data = db.export();
-      fs.writeFileSync(dbPath, Buffer.from(data));
+      ).all() as Array<{ name: string }>;
+      return rows.map((row) => row.name);
     },
 
     close(): void {
-      const data = db.export();
-      fs.writeFileSync(dbPath, Buffer.from(data));
       db.close();
     },
   };
 }
 
-/** Synchronous wrapper for testing convenience */
-export function createDatabase(dbPath: string): Database {
-  // For synchronous usage, we need a blocking approach
-  // sql.js can be initialized synchronously if the wasm is bundled
-  throw new Error("Use createDatabaseAsync instead");
+/** Async wrapper for backward compatibility */
+export async function createDatabaseAsync(dbPath: string): Promise<Database> {
+  return createDatabase(dbPath);
 }

@@ -14,7 +14,21 @@
     "rootDir": "src",
     "declaration": true,
     "sourceMap": true,
-    "lib": ["ES2022", "DOM", "DOM.Iterable"]
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "paths": {
+      "@mariozechner/pi-coding-agent": [
+        "./node_modules/@mariozechner/pi-coding-agent",
+        "./node_modules/@oh-my-pi/pi-coding-agent"
+      ],
+      "@mariozechner/pi-ai": [
+        "./node_modules/@mariozechner/pi-ai",
+        "./node_modules/@oh-my-pi/pi-ai"
+      ],
+      "@mariozechner/pi-tui": [
+        "./node_modules/@mariozechner/pi-tui",
+        "./node_modules/@oh-my-pi/pi-tui"
+      ]
+    }
   },
   "include": ["src"],
   "exclude": ["node_modules", "dist"]

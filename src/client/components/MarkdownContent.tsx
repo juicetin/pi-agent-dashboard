@@ -1,9 +1,12 @@
-import React, { useRef, useCallback } from "react";
+import React, { useRef, useCallback, useMemo, useEffect } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
+import Icon from "@mdi/react";
+import { mdiContentCopy, mdiTable } from "@mdi/js";
 import { CopyButton } from "./CopyButton.js";
+import { wrapAsciiTables } from "../lib/wrap-ascii-tables.js";
 
 interface Props {
   content: string;
@@ -45,7 +48,7 @@ function CodeBlockWrapper({ codeString, children }: { codeString: string; childr
     <div>
       {children}
       <div className="flex justify-end gap-0.5 -mt-1 mb-1 opacity-50 hover:opacity-100 transition-opacity">
-        <CopyButton text={codeString} icon="📋" title="Copy code" />
+        <CopyButton text={codeString} icon={<Icon path={mdiContentCopy} size={0.6} />} title="Copy code" />
       </div>
     </div>
   );
@@ -72,16 +75,96 @@ function TableWrapper({ children }: { children: React.ReactNode }) {
     <div ref={ref}>
       {children}
       <div className="flex justify-end gap-0.5 -mt-1 mb-1 opacity-50 hover:opacity-100 transition-opacity">
-        <CopyButton text={copyMarkdown()} icon="📋" title="Copy as Markdown" />
-        <CopyButton text={copyTsv()} icon="📊" title="Copy as TSV" />
+        <CopyButton text={copyMarkdown()} icon={<Icon path={mdiContentCopy} size={0.6} />} title="Copy as Markdown" />
+        <CopyButton text={copyTsv()} icon={<Icon path={mdiTable} size={0.6} />} title="Copy as TSV" />
       </div>
     </div>
   );
 }
 
+/**
+ * Regex matching characters that may render wider than 1ch in monospace fonts.
+ * Includes:
+ * - Emoji (1F300-1F9FF, 2600-26FF, 2700-27BF)
+ * - Arrows (2190-21FF) e.g. → ← ↑ ↓
+ * - Em/en dashes (2014, 2013)
+ * - General punctuation wide chars (2012-2015)
+ * - Math operators (some wide ones)
+ * - CJK would be here too but less common in LLM ASCII art
+ */
+const WIDE_CHARS = /[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u2190-\u21FF\u2012-\u2015][\uFE0E\uFE0F]?/gu;
+
+/** Check if a codepoint is an emoji (renders double-width in terminals) */
+function isEmoji(cp: number): boolean {
+  return (cp >= 0x1F300 && cp <= 0x1F9FF) ||
+         (cp >= 0x2600 && cp <= 0x26FF) ||
+         (cp >= 0x2700 && cp <= 0x27BF);
+}
+
+/**
+ * Walk text nodes inside <pre> elements and wrap wide Unicode characters
+ * in fixed-width spans. Emoji get 2ch (terminal double-width), other
+ * wide chars (arrows, em-dashes) get 1ch to prevent them rendering wider.
+ */
+function fixWideCharsInCodeBlocks(container: HTMLElement) {
+  const pres = container.querySelectorAll("pre");
+  for (const pre of pres) {
+    const walker = document.createTreeWalker(pre, NodeFilter.SHOW_TEXT);
+    const textNodes: Text[] = [];
+    let node: Text | null;
+    while ((node = walker.nextNode() as Text | null)) {
+      if (WIDE_CHARS.test(node.data)) {
+        textNodes.push(node);
+      }
+      WIDE_CHARS.lastIndex = 0;
+    }
+
+    for (const textNode of textNodes) {
+      const frag = document.createDocumentFragment();
+      let lastIndex = 0;
+      let match: RegExpExecArray | null;
+      WIDE_CHARS.lastIndex = 0;
+
+      while ((match = WIDE_CHARS.exec(textNode.data)) !== null) {
+        if (match.index > lastIndex) {
+          frag.appendChild(document.createTextNode(textNode.data.slice(lastIndex, match.index)));
+        }
+        const cp = match[0].codePointAt(0)!;
+        const span = document.createElement("span");
+        span.style.display = "inline-block";
+        // Emoji = 2ch (terminal double-width), other wide chars = 1ch
+        span.style.width = isEmoji(cp) ? "2ch" : "1ch";
+        span.style.textAlign = "center";
+        span.style.overflow = "hidden";
+        span.textContent = match[0];
+        frag.appendChild(span);
+        lastIndex = match.index + match[0].length;
+      }
+
+      if (lastIndex < textNode.data.length) {
+        frag.appendChild(document.createTextNode(textNode.data.slice(lastIndex)));
+      }
+
+      textNode.parentNode?.replaceChild(frag, textNode);
+    }
+  }
+}
+
 export function MarkdownContent({ content }: Props) {
+  // ASCII table monospace fixer — disabled pending further refinement
+  // const processedContent = useMemo(() => wrapAsciiTables(content), [content]);
+  const processedContent = content;
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Wide char width fixer — disabled pending further refinement
+  // useEffect(() => {
+  //   if (containerRef.current) {
+  //     fixWideCharsInCodeBlocks(containerRef.current);
+  //   }
+  // });
+
   return (
-    <div className="markdown-content text-sm">
+    <div ref={containerRef} className="markdown-content text-sm">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
@@ -120,9 +203,9 @@ export function MarkdownContent({ content }: Props) {
 
             return (
               <CodeBlockWrapper codeString={codeString}>
-                <SyntaxHighlighter style={oneDark} PreTag="div">
-                  {codeString}
-                </SyntaxHighlighter>
+                <pre className="bg-[#282c34] rounded-md p-4 overflow-x-auto" style={{ whiteSpace: "pre", margin: 0 }}>
+                  <code style={{ whiteSpace: "pre" }}>{codeString}</code>
+                </pre>
               </CodeBlockWrapper>
             );
           },
@@ -135,7 +218,7 @@ export function MarkdownContent({ content }: Props) {
           },
         }}
       >
-        {content}
+        {processedContent}
       </ReactMarkdown>
     </div>
   );

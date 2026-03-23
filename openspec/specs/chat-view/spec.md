@@ -8,7 +8,7 @@ The chat view SHALL display a header showing the selected session's metadata: wo
 - **THEN** the header SHALL reflect current values in real-time
 
 ### Requirement: User message rendering
-The chat view SHALL render user messages with a distinct visual style (e.g., right-aligned or highlighted background). Messages SHALL be rendered using the MarkdownContent component for full markdown support. The message wrapper SHALL use a `<div>` element (not `<p>`) to avoid invalid nested HTML.
+The chat view SHALL render user messages with a subtle tinted background (`bg-blue-500/10`) and a left accent border (`border-l-2 border-l-blue-400`) to distinguish them from assistant messages without using a heavy solid color. Messages SHALL be rendered using the MarkdownContent component for full markdown support. The message wrapper SHALL use a `<div>` element (not `<p>`) to avoid invalid nested HTML. The bubble SHALL have `rounded-xl`, `shadow-md`, and `border border-blue-500/20` for a 3D elevated appearance.
 
 #### Scenario: User message from TUI
 - **WHEN** a user message originates from the TUI (forwarded via events)
@@ -22,8 +22,12 @@ The chat view SHALL render user messages with a distinct visual style (e.g., rig
 - **WHEN** a user message contains markdown formatting (e.g., code blocks)
 - **THEN** the chat view SHALL render it with full markdown formatting
 
+#### Scenario: User message visual style
+- **WHEN** a user message is rendered
+- **THEN** the bubble SHALL have a subtle blue tint background (not solid blue), a blue left accent border, rounded-xl corners, and a shadow for depth
+
 ### Requirement: Assistant message rendering with streaming
-The chat view SHALL render assistant messages with streaming text using the MarkdownContent component. During streaming, a cursor indicator (e.g., blinking block █) SHALL appear at the end of the text. The message wrapper SHALL use a `<div>` element (not `<p>`) to avoid invalid nested HTML.
+The chat view SHALL render assistant messages with streaming text using the MarkdownContent component. During streaming, a cursor indicator (e.g., blinking block █) SHALL appear at the end of the text. The message wrapper SHALL use a `<div>` element (not `<p>`) to avoid invalid nested HTML. The bubble SHALL have `rounded-xl`, `shadow-md`, and `border border-white/5` for a 3D elevated appearance.
 
 #### Scenario: Streaming text
 - **WHEN** `message_update` events with `text_delta` arrive
@@ -36,6 +40,10 @@ The chat view SHALL render assistant messages with streaming text using the Mark
 #### Scenario: Streaming with partial code block
 - **WHEN** the streaming text contains an unclosed fenced code block
 - **THEN** the component SHALL render gracefully without errors
+
+#### Scenario: Assistant message visual style
+- **WHEN** an assistant message is rendered
+- **THEN** the bubble SHALL have rounded-xl corners, a shadow for depth, and a subtle border highlight
 
 ### Requirement: Thinking block rendering
 The chat view SHALL render assistant thinking blocks (from reasoning models) in a collapsible section, collapsed by default, with a visual indicator showing thinking occurred.

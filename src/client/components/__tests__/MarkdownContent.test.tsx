@@ -77,7 +77,7 @@ describe("MarkdownContent", () => {
     const { container } = render(<MarkdownContent content={content} />);
     const copyBtn = container.querySelector('button[title="Copy code"]');
     expect(copyBtn).not.toBeNull();
-    expect(copyBtn?.textContent).toBe("📋");
+    expect(copyBtn?.querySelector("svg")).not.toBeNull();
   });
 
   it("does not render copy button on inline code", () => {
@@ -114,9 +114,9 @@ describe("MarkdownContent", () => {
     const mdBtn = container.querySelector('button[title="Copy as Markdown"]');
     const tsvBtn = container.querySelector('button[title="Copy as TSV"]');
     expect(mdBtn).not.toBeNull();
-    expect(mdBtn?.textContent).toBe("📋");
+    expect(mdBtn?.querySelector("svg")).not.toBeNull();
     expect(tsvBtn).not.toBeNull();
-    expect(tsvBtn?.textContent).toBe("📊");
+    expect(tsvBtn?.querySelector("svg")).not.toBeNull();
   });
 
   it("tableToMarkdown produces correct output", () => {
@@ -153,5 +153,43 @@ describe("MarkdownContent", () => {
     expect(container.querySelector("strong")).not.toBeNull();
     expect(container.querySelector("code")).not.toBeNull();
     expect(container.querySelector("li")).not.toBeNull();
+  });
+
+  // ASCII table fixer disabled pending refinement
+  it.skip("renders ASCII box-drawing table in monospace code block", () => {
+    const content = [
+      "Here is a table:",
+      "┌──────┬──────┐",
+      "│ Name │ Type │",
+      "├──────┼──────┤",
+      "│ foo  │ str  │",
+      "└──────┴──────┘",
+    ].join("\n");
+
+    const { container } = render(<MarkdownContent content={content} />);
+    // The table should be rendered inside a code/pre block (monospace)
+    const codeBlock = container.querySelector("code");
+    expect(codeBlock).not.toBeNull();
+    expect(codeBlock!.textContent).toContain("┌──────┬──────┐");
+    expect(codeBlock!.textContent).toContain("│ Name │ Type │");
+  });
+
+  // ASCII table fixer disabled pending refinement
+  it.skip("renders mixed ASCII table and normal markdown correctly", () => {
+    const content = [
+      "Some **bold** text.",
+      "",
+      "┌───┬───┐",
+      "│ A │ B │",
+      "└───┴───┘",
+      "",
+      "More text.",
+    ].join("\n");
+
+    const { container } = render(<MarkdownContent content={content} />);
+    expect(container.querySelector("strong")).not.toBeNull();
+    const codeBlock = container.querySelector("code");
+    expect(codeBlock).not.toBeNull();
+    expect(codeBlock!.textContent).toContain("│ A │ B │");
   });
 });

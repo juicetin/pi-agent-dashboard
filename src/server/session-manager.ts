@@ -52,10 +52,9 @@ function persistUpdates(db: Database, sessionId: string, updates: Partial<Dashbo
   if (setClauses.length === 0) return;
 
   values.push(sessionId);
-  db.raw.run(
-    `UPDATE sessions SET ${setClauses.join(", ")} WHERE id = ?`,
-    values
-  );
+  db.raw.prepare(
+    `UPDATE sessions SET ${setClauses.join(", ")} WHERE id = ?`
+  ).run(...values);
 }
 
 export function createSessionManager(db: Database): SessionManager {
@@ -63,54 +62,69 @@ export function createSessionManager(db: Database): SessionManager {
 
   // Hydrate sessions from SQLite
   const now = Date.now();
-  const rows = db.raw.exec(
+  const rows = db.raw.prepare(
     `SELECT id, cwd, source, status, model, thinking_level, workspace_id, started_at, ended_at,
             tokens_in, tokens_out, cost, cache_read, cache_write,
             git_branch, git_branch_url, git_pr_number, git_pr_url
      FROM sessions`
-  );
-  if (rows.length > 0) {
-    for (const row of rows[0].values) {
-      const status = row[3] as string;
-      const isStale = status === "active" || status === "streaming";
-      const session: DashboardSession = {
-        id: row[0] as string,
-        cwd: row[1] as string,
-        source: row[2] as SessionSource,
-        status: isStale ? "ended" : (status as SessionStatus),
-        model: (row[4] as string) ?? undefined,
-        thinkingLevel: (row[5] as string) ?? undefined,
-        workspaceId: (row[6] as string) ?? undefined,
-        startedAt: row[7] as number,
-        endedAt: isStale ? now : ((row[8] as number) ?? undefined),
-        tokensIn: (row[9] as number) ?? 0,
-        tokensOut: (row[10] as number) ?? 0,
-        cost: (row[11] as number) ?? 0,
-        cacheRead: (row[12] as number) ?? 0,
-        cacheWrite: (row[13] as number) ?? 0,
-        gitBranch: (row[14] as string) ?? undefined,
-        gitBranchUrl: (row[15] as string) ?? undefined,
-        gitPrNumber: (row[16] as number) ?? undefined,
-        gitPrUrl: (row[17] as string) ?? undefined,
-      };
-      sessions.set(session.id, session);
-    }
+  ).all() as Array<{
+    id: string;
+    cwd: string;
+    source: string;
+    status: string;
+    model: string | null;
+    thinking_level: string | null;
+    workspace_id: string | null;
+    started_at: number;
+    ended_at: number | null;
+    tokens_in: number | null;
+    tokens_out: number | null;
+    cost: number | null;
+    cache_read: number | null;
+    cache_write: number | null;
+    git_branch: string | null;
+    git_branch_url: string | null;
+    git_pr_number: number | null;
+    git_pr_url: string | null;
+  }>;
 
-    // Mark stale sessions as ended in SQLite
-    db.raw.run(
-      "UPDATE sessions SET status = 'ended', ended_at = ? WHERE status IN ('active', 'streaming')",
-      [now]
-    );
+  for (const row of rows) {
+    const isStale = row.status === "active" || row.status === "streaming";
+    const session: DashboardSession = {
+      id: row.id,
+      cwd: row.cwd,
+      source: row.source as SessionSource,
+      status: isStale ? "ended" : (row.status as SessionStatus),
+      model: row.model ?? undefined,
+      thinkingLevel: row.thinking_level ?? undefined,
+      workspaceId: row.workspace_id ?? undefined,
+      startedAt: row.started_at,
+      endedAt: isStale ? now : (row.ended_at ?? undefined),
+      tokensIn: row.tokens_in ?? 0,
+      tokensOut: row.tokens_out ?? 0,
+      cost: row.cost ?? 0,
+      cacheRead: row.cache_read ?? 0,
+      cacheWrite: row.cache_write ?? 0,
+      gitBranch: row.git_branch ?? undefined,
+      gitBranchUrl: row.git_branch_url ?? undefined,
+      gitPrNumber: row.git_pr_number ?? undefined,
+      gitPrUrl: row.git_pr_url ?? undefined,
+    };
+    sessions.set(session.id, session);
+  }
+
+  // Mark stale sessions as ended in SQLite
+  if (rows.some((r) => r.status === "active" || r.status === "streaming")) {
+    db.raw.prepare(
+      "UPDATE sessions SET status = 'ended', ended_at = ? WHERE status IN ('active', 'streaming')"
+    ).run(now);
   }
 
   // Load workspaces for prefix matching
   function getWorkspaces(): Array<{ id: string; path: string }> {
-    const result = db.raw.exec("SELECT id, path FROM workspaces ORDER BY LENGTH(path) DESC");
-    if (result.length === 0) return [];
-    return result[0].values.map((row) => ({
-      id: row[0] as string,
-      path: row[1] as string,
-    }));
+    return db.raw.prepare(
+      "SELECT id, path FROM workspaces ORDER BY LENGTH(path) DESC"
+    ).all() as Array<{ id: string; path: string }>;
   }
 
   function matchWorkspace(cwd: string): string | undefined {
@@ -144,22 +158,21 @@ export function createSessionManager(db: Database): SessionManager {
       sessions.set(params.id, session);
 
       // Persist to SQLite
-      db.raw.run(
+      db.raw.prepare(
         `INSERT OR REPLACE INTO sessions (id, cwd, source, status, model, thinking_level, workspace_id, started_at, tokens_in, tokens_out, cost)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          session.id,
-          session.cwd,
-          session.source,
-          session.status,
-          session.model ?? null,
-          session.thinkingLevel ?? null,
-          session.workspaceId ?? null,
-          session.startedAt,
-          0,
-          0,
-          0,
-        ]
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).run(
+        session.id,
+        session.cwd,
+        session.source,
+        session.status,
+        session.model ?? null,
+        session.thinkingLevel ?? null,
+        session.workspaceId ?? null,
+        session.startedAt,
+        0,
+        0,
+        0,
       );
 
       return session;
@@ -170,10 +183,9 @@ export function createSessionManager(db: Database): SessionManager {
       if (session) {
         session.status = "ended";
         session.endedAt = Date.now();
-        db.raw.run(
-          "UPDATE sessions SET status = 'ended', ended_at = ? WHERE id = ?",
-          [session.endedAt, sessionId]
-        );
+        db.raw.prepare(
+          "UPDATE sessions SET status = 'ended', ended_at = ? WHERE id = ?"
+        ).run(session.endedAt, sessionId);
       }
     },
 

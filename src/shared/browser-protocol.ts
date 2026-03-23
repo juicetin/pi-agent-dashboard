@@ -8,6 +8,7 @@ import type {
   ImageContent,
   FileEntry,
   Workspace,
+  OpenSpecData,
 } from "./types.js";
 
 // ── Server → Browser ────────────────────────────────────────────────
@@ -66,6 +67,12 @@ export interface BrowserFilesListMessage {
   files: FileEntry[];
 }
 
+export interface BrowserOpenSpecUpdateMessage {
+  type: "openspec_update";
+  sessionId: string;
+  data: OpenSpecData;
+}
+
 export type ServerToBrowserMessage =
   | SessionAddedMessage
   | SessionUpdatedMessage
@@ -75,7 +82,8 @@ export type ServerToBrowserMessage =
   | BrowserCommandsListMessage
   | BrowserExtensionUiEventMessage
   | WorkspaceUpdatedMessage
-  | BrowserFilesListMessage;
+  | BrowserFilesListMessage
+  | BrowserOpenSpecUpdateMessage;
 
 // ── Browser → Server ────────────────────────────────────────────────
 
@@ -119,6 +127,11 @@ export interface ListFilesToBrowserMessage {
   query: string;
 }
 
+export interface OpenSpecRefreshBrowserMessage {
+  type: "openspec_refresh";
+  sessionId: string;
+}
+
 export type BrowserToServerMessage =
   | SubscribeMessage
   | UnsubscribeMessage
@@ -126,4 +139,5 @@ export type BrowserToServerMessage =
   | AbortToBrowserMessage
   | RequestCommandsToBrowserMessage
   | FetchContentMessage
-  | ListFilesToBrowserMessage;
+  | ListFilesToBrowserMessage
+  | OpenSpecRefreshBrowserMessage;

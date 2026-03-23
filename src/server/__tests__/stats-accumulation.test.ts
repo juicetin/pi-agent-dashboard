@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { createSessionManager, type SessionManager } from "../session-manager.js";
-import { createEventStore, type EventStore } from "../event-store.js";
 import { createDatabaseAsync, type Database } from "../db.js";
 import { createPiGateway, type PiGateway } from "../pi-gateway.js";
 import { WebSocket } from "ws";
@@ -11,7 +10,6 @@ import os from "node:os";
 describe("Stats accumulation", () => {
   let db: Database;
   let sessionManager: SessionManager;
-  let eventStore: EventStore;
   let gateway: PiGateway;
   let dbPath: string;
   const port = 19877;
@@ -20,8 +18,7 @@ describe("Stats accumulation", () => {
     dbPath = path.join(os.tmpdir(), `test-stats-${Date.now()}.db`);
     db = await createDatabaseAsync(dbPath);
     sessionManager = createSessionManager(db);
-    eventStore = createEventStore(db);
-    gateway = createPiGateway(sessionManager, eventStore);
+    gateway = createPiGateway(sessionManager);
     gateway.start(port);
   });
 

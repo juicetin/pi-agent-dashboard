@@ -1,7 +1,7 @@
 /**
  * Extension ↔ Server WebSocket protocol messages.
  */
-import type { DashboardEvent, CommandInfo, SessionSource, ImageContent, FileEntry, TurnUsage, ContextUsage } from "./types.js";
+import type { DashboardEvent, CommandInfo, SessionSource, ImageContent, FileEntry, TurnUsage, ContextUsage, OpenSpecData } from "./types.js";
 
 // ── Extension → Server ──────────────────────────────────────────────
 
@@ -70,6 +70,12 @@ export interface GitInfoUpdateMessage {
   gitPrUrl?: string;
 }
 
+export interface OpenSpecUpdateMessage {
+  type: "openspec_update";
+  sessionId: string;
+  data: OpenSpecData;
+}
+
 export type ExtensionToServerMessage =
   | SessionRegisterMessage
   | SessionUnregisterMessage
@@ -79,7 +85,8 @@ export type ExtensionToServerMessage =
   | ExtensionUiEventMessage
   | StatsUpdateMessage
   | FilesListMessage
-  | GitInfoUpdateMessage;
+  | GitInfoUpdateMessage
+  | OpenSpecUpdateMessage;
 
 // ── Server → Extension ──────────────────────────────────────────────
 
@@ -111,9 +118,15 @@ export interface ListFilesMessage {
   query: string;
 }
 
+export interface OpenSpecRefreshMessage {
+  type: "openspec_refresh";
+  sessionId: string;
+}
+
 export type ServerToExtensionMessage =
   | SendPromptToExtensionMessage
   | AbortToExtensionMessage
   | RequestCommandsMessage
   | RequestStateSyncMessage
-  | ListFilesMessage;
+  | ListFilesMessage
+  | OpenSpecRefreshMessage;

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { createInitialState, reduceEvent, type SessionState } from "../event-reducer.js";
+import { createInitialState, reduceEvent, toDisplayString, type SessionState } from "../event-reducer.js";
 import type { DashboardEvent } from "../../../shared/types.js";
 
 function applyEvents(events: DashboardEvent[]): SessionState {
@@ -31,6 +31,71 @@ describe("eventReducer", () => {
     expect(state.messages).toHaveLength(1);
     expect(state.messages[0].role).toBe("user");
     expect(state.messages[0].content).toBe("Hello");
+    expect(state.messages[0].images).toBeUndefined();
+  });
+
+  it("should extract images from user message content", () => {
+    const state = applyEvents([
+      {
+        eventType: "message_start",
+        timestamp: Date.now(),
+        data: {
+          message: {
+            role: "user",
+            content: [
+              { type: "text", text: "Check this image" },
+              { type: "image", data: "abc123", mimeType: "image/png" },
+            ],
+          },
+        },
+      },
+    ]);
+
+    expect(state.messages).toHaveLength(1);
+    expect(state.messages[0].content).toBe("Check this image");
+    expect(state.messages[0].images).toHaveLength(1);
+    expect(state.messages[0].images![0]).toEqual({ data: "abc123", mimeType: "image/png" });
+  });
+
+  it("should skip image blocks with missing data or mimeType", () => {
+    const state = applyEvents([
+      {
+        eventType: "message_start",
+        timestamp: Date.now(),
+        data: {
+          message: {
+            role: "user",
+            content: [
+              { type: "text", text: "test" },
+              { type: "image", data: "", mimeType: "image/png" },
+              { type: "image", data: "valid", mimeType: undefined },
+              { type: "image", data: "good", mimeType: "image/jpeg" },
+            ],
+          },
+        },
+      },
+    ]);
+
+    expect(state.messages[0].images).toHaveLength(1);
+    expect(state.messages[0].images![0]).toEqual({ data: "good", mimeType: "image/jpeg" });
+  });
+
+  it("should handle user message with string content (no array)", () => {
+    const state = applyEvents([
+      {
+        eventType: "message_start",
+        timestamp: Date.now(),
+        data: {
+          message: {
+            role: "user",
+            content: "plain string message",
+          },
+        },
+      },
+    ]);
+
+    expect(state.messages[0].content).toBe("plain string message");
+    expect(state.messages[0].images).toBeUndefined();
   });
 
   it("should track streaming text from message_update", () => {
@@ -350,5 +415,106 @@ describe("eventReducer", () => {
     expect(state.turnStats).toHaveLength(0);
     expect(state.tokensIn).toBe(500);
     expect(state.tokensOut).toBe(200);
+  });
+
+  it("should convert object results to string in tool_execution_end", () => {
+    const state = applyEvents([
+      {
+        eventType: "tool_execution_start",
+        timestamp: Date.now(),
+        data: { toolCallId: "tc-obj", toolName: "bash", args: { command: "ls" } },
+      },
+      {
+        eventType: "tool_execution_end",
+        timestamp: Date.now(),
+        data: {
+          toolCallId: "tc-obj",
+          result: { stdout: "file.txt", stderr: "" },
+          isError: false,
+        },
+      },
+    ]);
+
+    const toolMsg = state.messages.find((m) => m.toolCallId === "tc-obj");
+    expect(toolMsg?.result).not.toContain("[object Object]");
+    expect(toolMsg?.result).toContain("file.txt");
+  });
+
+  it("should convert content-block array results to text", () => {
+    const state = applyEvents([
+      {
+        eventType: "tool_execution_start",
+        timestamp: Date.now(),
+        data: { toolCallId: "tc-blocks", toolName: "read", args: { path: "f.txt" } },
+      },
+      {
+        eventType: "tool_execution_end",
+        timestamp: Date.now(),
+        data: {
+          toolCallId: "tc-blocks",
+          result: [{ type: "text", text: "hello world" }],
+          isError: false,
+        },
+      },
+    ]);
+
+    const toolMsg = state.messages.find((m) => m.toolCallId === "tc-blocks");
+    expect(toolMsg?.result).toBe("hello world");
+  });
+
+  it("should convert { content: [...] } wrapper results to text", () => {
+    const state = applyEvents([
+      {
+        eventType: "tool_execution_start",
+        timestamp: Date.now(),
+        data: { toolCallId: "tc-wrap", toolName: "bash", args: { command: "echo hi" } },
+      },
+      {
+        eventType: "tool_execution_end",
+        timestamp: Date.now(),
+        data: {
+          toolCallId: "tc-wrap",
+          result: { content: [{ type: "text", text: "hi\n" }] },
+          isError: false,
+        },
+      },
+    ]);
+
+    const toolMsg = state.messages.find((m) => m.toolCallId === "tc-wrap");
+    expect(toolMsg?.result).toBe("hi\n");
+  });
+});
+
+describe("toDisplayString", () => {
+  it("returns empty string for null/undefined", () => {
+    expect(toDisplayString(null)).toBe("");
+    expect(toDisplayString(undefined)).toBe("");
+  });
+
+  it("returns string as-is", () => {
+    expect(toDisplayString("hello")).toBe("hello");
+  });
+
+  it("extracts text from content block arrays", () => {
+    const blocks = [
+      { type: "text", text: "line 1" },
+      { type: "text", text: "line 2" },
+    ];
+    expect(toDisplayString(blocks)).toBe("line 1\nline 2");
+  });
+
+  it("extracts text from { content: [...] } wrapper object", () => {
+    const wrapped = {
+      content: [{ type: "text", text: "hello from wrapper" }],
+    };
+    expect(toDisplayString(wrapped)).toBe("hello from wrapper");
+  });
+
+  it("JSON-stringifies plain objects", () => {
+    expect(toDisplayString({ a: 1 })).toBe('{\n  "a": 1\n}');
+  });
+
+  it("converts numbers to string", () => {
+    expect(toDisplayString(42)).toBe("42");
   });
 });

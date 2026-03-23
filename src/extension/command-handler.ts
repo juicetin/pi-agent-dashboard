@@ -8,6 +8,7 @@ import type {
   ExtensionToServerMessage,
 } from "../shared/protocol.js";
 import type { FileEntry } from "../shared/types.js";
+import { pollOpenSpec } from "./openspec-poller.js";
 
 /** Escape regex special characters for fd pattern */
 function escapeRegex(value: string): string {
@@ -67,10 +68,36 @@ export function createCommandHandler(
       switch (msg.type) {
         case "send_prompt":
           if (msg.images && msg.images.length > 0) {
-            pi.sendUserMessage([
-              { type: "text", text: msg.text },
-              ...msg.images,
-            ]);
+            const validMimeTypes = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
+            const validImages = msg.images.filter((img) => {
+              if (!img || typeof img !== "object") {
+                console.error("[dashboard] Dropping non-object image entry");
+                return false;
+              }
+              if (!img.mimeType || typeof img.mimeType !== "string" || !validMimeTypes.has(img.mimeType)) {
+                console.error(`[dashboard] Dropping image with invalid mimeType: "${img.mimeType}" (type: ${typeof img.mimeType})`);
+                return false;
+              }
+              if (!img.data || typeof img.data !== "string") {
+                console.error(`[dashboard] Dropping image with invalid data (type: ${typeof img.data}, length: ${img.data?.length ?? 0})`);
+                return false;
+              }
+              return true;
+            });
+            if (validImages.length > 0) {
+              const content = [
+                { type: "text" as const, text: msg.text },
+                ...validImages.map((img) => ({
+                  type: "image" as const,
+                  data: img.data,
+                  mimeType: img.mimeType,
+                })),
+              ];
+              console.error(`[dashboard] Sending message with ${validImages.length} image(s), mimeTypes: ${validImages.map(i => i.mimeType).join(", ")}`);
+              pi.sendUserMessage(content);
+            } else {
+              pi.sendUserMessage(msg.text);
+            }
           } else {
             pi.sendUserMessage(msg.text);
           }
@@ -97,6 +124,15 @@ export function createCommandHandler(
             sessionId,
             query: msg.query,
             files,
+          };
+        }
+
+        case "openspec_refresh": {
+          const data = pollOpenSpec(process.cwd());
+          return {
+            type: "openspec_update",
+            sessionId,
+            data,
           };
         }
 

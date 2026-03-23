@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { createPiGateway, type PiGateway } from "../pi-gateway.js";
 import { createSessionManager, type SessionManager } from "../session-manager.js";
-import { createEventStore, type EventStore } from "../event-store.js";
 import { createDatabaseAsync, type Database } from "../db.js";
 import { WebSocket } from "ws";
 import fs from "node:fs";
@@ -11,7 +10,6 @@ import os from "node:os";
 describe("PiGateway connection callbacks", () => {
   let db: Database;
   let sessionManager: SessionManager;
-  let eventStore: EventStore;
   let gateway: PiGateway;
   let dbPath: string;
   const port = 19876;
@@ -20,8 +18,7 @@ describe("PiGateway connection callbacks", () => {
     dbPath = path.join(os.tmpdir(), `test-gateway-${Date.now()}.db`);
     db = await createDatabaseAsync(dbPath);
     sessionManager = createSessionManager(db);
-    eventStore = createEventStore(db);
-    gateway = createPiGateway(sessionManager, eventStore);
+    gateway = createPiGateway(sessionManager);
     gateway.start(port);
   });
 

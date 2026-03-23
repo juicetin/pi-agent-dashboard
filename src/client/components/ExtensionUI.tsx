@@ -1,4 +1,6 @@
 import React from "react";
+import Icon from "@mdi/react";
+import { mdiCheckCircle, mdiCloseCircle, mdiLoading } from "@mdi/js";
 
 interface Props {
   uiEvent: Record<string, unknown>;
@@ -13,9 +15,9 @@ export function ExtensionUI({ uiEvent }: Props) {
       <div className="mx-4 my-1 p-2 bg-gray-800/50 rounded text-xs">
         <span className="text-gray-400">{uiEvent.title as string}</span>
         {result !== undefined && (
-          <span className="ml-2">{result ? "✅ Allowed" : "❌ Denied"}</span>
+          <span className="ml-2 inline-flex items-center gap-0.5">{result ? <><Icon path={mdiCheckCircle} size={0.55} className="text-green-400" /> Allowed</> : <><Icon path={mdiCloseCircle} size={0.55} className="text-red-400" /> Denied</>}</span>
         )}
-        {result === undefined && <span className="ml-2">⏳ Pending</span>}
+        {result === undefined && <span className="ml-2 inline-flex items-center gap-0.5"><Icon path={mdiLoading} size={0.55} spin /> Pending</span>}
       </div>
     );
   }
@@ -24,7 +26,7 @@ export function ExtensionUI({ uiEvent }: Props) {
     return (
       <div className="mx-4 my-1 p-2 bg-gray-800/50 rounded text-xs">
         <span className="text-gray-400">{uiEvent.title as string}: </span>
-        <span>{uiEvent.selected as string ?? "⏳"}</span>
+        <span className="inline-flex items-center">{uiEvent.selected as string ?? <Icon path={mdiLoading} size={0.55} spin />}</span>
       </div>
     );
   }
@@ -48,7 +50,7 @@ export function ExtensionUI({ uiEvent }: Props) {
     return (
       <div className="mx-4 my-1 p-2 bg-gray-800/50 rounded text-xs">
         <span className="text-gray-400">{uiEvent.title as string}: </span>
-        <span>{(uiEvent.value as string) ?? "⏳"}</span>
+        <span className="inline-flex items-center">{(uiEvent.value as string) ?? <Icon path={mdiLoading} size={0.55} spin />}</span>
       </div>
     );
   }

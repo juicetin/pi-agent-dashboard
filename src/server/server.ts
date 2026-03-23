@@ -41,7 +41,7 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
   const eventStore = createEventStore(db);
   const sessionManager = createSessionManager(db);
   const workspaceManager = createWorkspaceManager(db);
-  const piGateway = createPiGateway(sessionManager, eventStore);
+  const piGateway = createPiGateway(sessionManager);
   const browserGateway = createBrowserGateway(sessionManager, eventStore, piGateway);
 
   // Wire up event forwarding from pi gateway to browser gateway
@@ -91,6 +91,13 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
         files: msg.files,
       });
     }
+    if (msg.type === "openspec_update") {
+      browserGateway.sendToSubscribers(sessionId, {
+        type: "openspec_update",
+        sessionId,
+        data: msg.data,
+      });
+    }
     if (msg.type === "stats_update") {
       // Broadcast accumulated totals (pi-gateway already accumulated into session manager)
       const session = sessionManager.get(sessionId);
@@ -120,10 +127,6 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
       browserGateway.broadcastEvent(sessionId, seq, statsEvent);
     }
   };
-
-  // Periodic database flush (sql.js is in-memory, needs explicit save to disk)
-  const DB_SAVE_INTERVAL_MS = 30_000;
-  let saveTimer: ReturnType<typeof setInterval> | null = null;
 
   // Auto-shutdown idle timer
   let idleTimer: ReturnType<typeof setTimeout> | null = null;
@@ -219,11 +222,11 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
   );
 
   // Open editor endpoint (localhost-only)
-  fastify.post<{ Body: { path?: string; editor?: string } }>(
+  fastify.post<{ Body: { path?: string; editor?: string; file?: string; line?: number } }>(
     "/api/open-editor",
     { preHandler: localhostGuard },
     async (request) => {
-      const { path: cwd, editor: editorId } = request.body ?? {};
+      const { path: cwd, editor: editorId, file, line } = request.body ?? {};
       if (!cwd || !editorId) {
         return { success: false, error: "path and editor required" } satisfies ApiResponse;
       }
@@ -240,9 +243,13 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
         return { success: false, error: "unknown editor" } satisfies ApiResponse;
       }
 
+      // Build args: open specific file or workspace root
+      const target = file ? path.resolve(cwd, file) : cwd;
+      const args = line && file ? [`${target}:${line}`] : [target];
+
       // Spawn editor as detached process
       try {
-        const child = spawn(editorEntry.cli, [cwd], {
+        const child = spawn(editorEntry.cli, args, {
           detached: true,
           stdio: "ignore",
         });
@@ -296,20 +303,11 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
         }
       }
 
-      // Start periodic database flush
-      saveTimer = setInterval(() => {
-        db.save();
-      }, DB_SAVE_INTERVAL_MS);
-
       // Start idle timer immediately (handles case where no sessions ever connect)
       startIdleTimer();
     },
 
     async stop() {
-      if (saveTimer) {
-        clearInterval(saveTimer);
-        saveTimer = null;
-      }
       cancelIdleTimer();
       await deleteTunnel();
       piGateway.stop();

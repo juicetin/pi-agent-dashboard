@@ -15,20 +15,22 @@ describe("EventStore", () => {
     db = await createDatabaseAsync(dbPath);
     store = createEventStore(db);
 
-    // Create a test session
-    db.raw.run(
-      "INSERT INTO sessions (id, cwd, source, status, started_at) VALUES (?, ?, ?, ?, ?)",
-      ["s1", "/project", "tui", "active", Date.now()]
-    );
-    db.raw.run(
-      "INSERT INTO sessions (id, cwd, source, status, started_at) VALUES (?, ?, ?, ?, ?)",
-      ["s2", "/other", "zed", "active", Date.now()]
-    );
+    // Create test sessions
+    db.raw.prepare(
+      "INSERT INTO sessions (id, cwd, source, status, started_at) VALUES (?, ?, ?, ?, ?)"
+    ).run("s1", "/project", "tui", "active", Date.now());
+    db.raw.prepare(
+      "INSERT INTO sessions (id, cwd, source, status, started_at) VALUES (?, ?, ?, ?, ?)"
+    ).run("s2", "/other", "zed", "active", Date.now());
   });
 
   afterEach(() => {
     db.close();
     if (fs.existsSync(dbPath)) fs.unlinkSync(dbPath);
+    for (const suffix of ["-wal", "-shm"]) {
+      const f = dbPath + suffix;
+      if (fs.existsSync(f)) fs.unlinkSync(f);
+    }
   });
 
   it("should insert events with auto-assigned sequence numbers", () => {
@@ -116,5 +118,26 @@ describe("EventStore", () => {
 
     const events = store.getEvents("s1", 0);
     expect(events).toHaveLength(2);
+  });
+
+  it("should return number of deleted events from deleteEventsBefore", () => {
+    const oldTimestamp = Date.now() - 100_000;
+    store.insertEvent("s1", {
+      eventType: "old_event",
+      timestamp: oldTimestamp,
+      data: {},
+    });
+    store.insertEvent("s1", {
+      eventType: "new_event",
+      timestamp: Date.now(),
+      data: {},
+    });
+
+    const deleted = store.deleteEventsBefore(oldTimestamp + 1);
+    expect(deleted).toBe(1);
+
+    const remaining = store.getEvents("s1", 0);
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0].event.eventType).toBe("new_event");
   });
 });

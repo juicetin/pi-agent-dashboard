@@ -79,6 +79,27 @@ export interface ContextUsage {
   contextWindow: number;
 }
 
+/** OpenSpec artifact status */
+export interface OpenSpecArtifact {
+  id: string;
+  status: "done" | "ready" | "blocked";
+}
+
+/** A single OpenSpec change */
+export interface OpenSpecChange {
+  name: string;
+  status: "no-tasks" | "in-progress" | "complete";
+  completedTasks: number;
+  totalTasks: number;
+  artifacts: OpenSpecArtifact[];
+}
+
+/** OpenSpec data for a session's project */
+export interface OpenSpecData {
+  initialized: boolean;
+  changes: OpenSpecChange[];
+}
+
 /** REST API response envelope */
 export interface ApiResponse<T = unknown> {
   success: boolean;

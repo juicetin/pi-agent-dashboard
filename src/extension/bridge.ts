@@ -15,16 +15,20 @@ import { launchServer } from "./server-launcher.js";
 import type { ServerToExtensionMessage } from "../shared/protocol.js";
 import { gatherGitInfo, type GitInfo } from "./git-info.js";
 import { extractTurnStats } from "./stats-extractor.js";
+import { pollOpenSpec } from "./openspec-poller.js";
 
 const HEARTBEAT_INTERVAL = 15_000;
 const GIT_POLL_INTERVAL = 30_000;
+const OPENSPEC_POLL_INTERVAL = 30_000;
 
 export default function (pi: ExtensionAPI) {
   const sessionId = crypto.randomUUID();
   let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   let gitPollTimer: ReturnType<typeof setInterval> | null = null;
+  let openspecPollTimer: ReturnType<typeof setInterval> | null = null;
   let lastGitBranch: string | undefined;
   let lastGitPrNumber: number | undefined;
+  let lastOpenSpecJson: string | undefined;
   let cachedHasUI: boolean | undefined;
 
   // Load config to determine WebSocket URL
@@ -45,6 +49,28 @@ export default function (pi: ExtensionAPI) {
   });
 
   const commandHandler = createCommandHandler(pi, sessionId);
+
+  function sendOpenSpecIfChanged(cwd: string) {
+    const data = pollOpenSpec(cwd);
+    const json = JSON.stringify(data);
+    if (json === lastOpenSpecJson) return;
+    lastOpenSpecJson = json;
+    connection.send({
+      type: "openspec_update",
+      sessionId,
+      data,
+    });
+  }
+
+  function sendOpenSpecNow(cwd: string) {
+    const data = pollOpenSpec(cwd);
+    lastOpenSpecJson = JSON.stringify(data);
+    connection.send({
+      type: "openspec_update",
+      sessionId,
+      data,
+    });
+  }
 
   function sendGitInfoIfChanged(cwd: string) {
     const info = gatherGitInfo(cwd);
@@ -148,6 +174,12 @@ export default function (pi: ExtensionAPI) {
     gitPollTimer = setInterval(() => {
       sendGitInfoIfChanged(ctx.cwd);
     }, GIT_POLL_INTERVAL);
+
+    // Send initial openspec data and start polling
+    sendOpenSpecIfChanged(ctx.cwd);
+    openspecPollTimer = setInterval(() => {
+      sendOpenSpecIfChanged(ctx.cwd);
+    }, OPENSPEC_POLL_INTERVAL);
   });
 
   pi.on("turn_end", async (event, ctx) => {
@@ -173,6 +205,10 @@ export default function (pi: ExtensionAPI) {
     if (gitPollTimer) {
       clearInterval(gitPollTimer);
       gitPollTimer = null;
+    }
+    if (openspecPollTimer) {
+      clearInterval(openspecPollTimer);
+      openspecPollTimer = null;
     }
 
     connection.send({

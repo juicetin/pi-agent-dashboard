@@ -4,10 +4,16 @@
  */
 import type { DashboardEvent } from "../../shared/types.js";
 
+export interface ChatImage {
+  data: string;
+  mimeType: string;
+}
+
 export interface ChatMessage {
   id: string;
   role: "user" | "assistant" | "toolResult";
   content: string;
+  images?: ChatImage[];
   toolName?: string;
   toolCallId?: string;
   isStreaming?: boolean;
@@ -43,6 +49,8 @@ export interface SessionState {
   thinkingLevel?: string;
   tokensIn: number;
   tokensOut: number;
+  cacheRead: number;
+  cacheWrite: number;
   cost: number;
   currentTool?: string;
   status: "idle" | "streaming" | "ended";
@@ -58,16 +66,45 @@ export function createInitialState(): SessionState {
     isStreaming: false,
     tokensIn: 0,
     tokensOut: 0,
+    cacheRead: 0,
+    cacheWrite: 0,
     cost: 0,
     status: "idle",
     turnStats: [],
   };
 }
 
+/** Extract text from content blocks: [{ type: "text", text: "..." }, ...] */
+function extractContentBlockText(blocks: unknown[]): string | null {
+  const texts = blocks
+    .filter((b: any) => b?.type === "text" && typeof b.text === "string")
+    .map((b: any) => b.text);
+  return texts.length > 0 ? texts.join("\n") : null;
+}
+
+/** Convert an unknown value to a display string (handles objects/arrays). */
+export function toDisplayString(value: unknown): string {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "string") return value;
+  if (typeof value === "object") {
+    // Handle content-block arrays: [{ type: "text", text: "..." }, ...]
+    if (Array.isArray(value)) {
+      return extractContentBlockText(value) ?? JSON.stringify(value, null, 2);
+    }
+    // Handle wrapper object: { content: [{ type: "text", text: "..." }] }
+    const obj = value as Record<string, unknown>;
+    if (Array.isArray(obj.content)) {
+      return extractContentBlockText(obj.content) ?? JSON.stringify(value, null, 2);
+    }
+    return JSON.stringify(value, null, 2);
+  }
+  return String(value);
+}
+
 export function truncateLines(text: string | unknown, maxLines: number): string {
-  if (typeof text !== "string") return String(text ?? "");
-  const lines = text.split("\n");
-  if (lines.length <= maxLines) return text;
+  const str = toDisplayString(text);
+  const lines = str.split("\n");
+  if (lines.length <= maxLines) return str;
   return lines.slice(0, maxLines).join("\n");
 }
 
@@ -92,18 +129,32 @@ export function reduceEvent(state: SessionState, event: DashboardEvent): Session
     case "message_start": {
       const msg = data.message as any;
       if (msg?.role === "user") {
-        const text = Array.isArray(msg.content)
-          ? msg.content
-              .filter((c: any) => c.type === "text")
-              .map((c: any) => c.text)
-              .join("")
-          : String(msg.content ?? "");
+        let text = "";
+        let images: ChatImage[] | undefined;
+        if (Array.isArray(msg.content)) {
+          text = msg.content
+            .filter((c: any) => c.type === "text")
+            .map((c: any) => c.text)
+            .join("");
+          const imgBlocks = msg.content.filter(
+            (c: any) => c.type === "image" && c.data && c.mimeType,
+          );
+          if (imgBlocks.length > 0) {
+            images = imgBlocks.map((c: any) => ({
+              data: c.data,
+              mimeType: c.mimeType,
+            }));
+          }
+        } else {
+          text = String(msg.content ?? "");
+        }
         next.messages = [
           ...next.messages,
           {
             id: `msg-${next.messages.length}`,
             role: "user",
             content: text,
+            images,
             timestamp: event.timestamp,
           },
         ];
@@ -221,7 +272,7 @@ export function reduceEvent(state: SessionState, event: DashboardEvent): Session
       if (data.tokensOut) next.tokensOut += data.tokensOut as number;
       if (data.cost) next.cost += data.cost as number;
 
-      // Extract per-turn usage
+      // Extract per-turn usage and accumulate cache stats
       const turnUsage = data.turnUsage as Record<string, number> | undefined;
       if (turnUsage) {
         const turnStat: TurnStat = {
@@ -231,6 +282,8 @@ export function reduceEvent(state: SessionState, event: DashboardEvent): Session
           cacheWrite: turnUsage.cacheWrite ?? 0,
         };
         next.turnStats = [...next.turnStats, turnStat].slice(-MAX_TURN_STATS);
+        next.cacheRead += turnStat.cacheRead;
+        next.cacheWrite += turnStat.cacheWrite;
       }
 
       // Extract context usage

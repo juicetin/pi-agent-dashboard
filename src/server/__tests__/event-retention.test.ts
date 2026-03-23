@@ -15,15 +15,18 @@ describe("Event Retention", () => {
     db = await createDatabaseAsync(dbPath);
     store = createEventStore(db);
 
-    db.raw.run(
-      "INSERT INTO sessions (id, cwd, source, status, started_at) VALUES (?, ?, ?, ?, ?)",
-      ["s1", "/project", "tui", "active", Date.now()]
-    );
+    db.raw.prepare(
+      "INSERT INTO sessions (id, cwd, source, status, started_at) VALUES (?, ?, ?, ?, ?)"
+    ).run("s1", "/project", "tui", "active", Date.now());
   });
 
   afterEach(() => {
     db.close();
     if (fs.existsSync(dbPath)) fs.unlinkSync(dbPath);
+    for (const suffix of ["-wal", "-shm"]) {
+      const f = dbPath + suffix;
+      if (fs.existsSync(f)) fs.unlinkSync(f);
+    }
   });
 
   it("should delete events older than retention period", () => {

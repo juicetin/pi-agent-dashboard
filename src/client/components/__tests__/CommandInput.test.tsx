@@ -1,0 +1,133 @@
+import { describe, it, expect, vi } from "vitest";
+import { render, fireEvent } from "@testing-library/react";
+import React from "react";
+import { CommandInput } from "../CommandInput.js";
+import type { CommandInfo } from "../../../shared/types.js";
+
+const commands: CommandInfo[] = [
+  { name: "deploy", description: "Deploy to production", source: "extension" },
+  { name: "test", description: "Run test suite", source: "skill" },
+  { name: "review", description: "Code review", source: "prompt" },
+];
+
+function renderInput(props: Partial<React.ComponentProps<typeof CommandInput>> = {}) {
+  const onSend = vi.fn();
+  const result = render(
+    <CommandInput commands={commands} onSend={onSend} {...props} />
+  );
+  const textarea = result.container.querySelector("textarea")!;
+  return { ...result, textarea, onSend };
+}
+
+function getDropdownItems(container: HTMLElement): string[] {
+  // Command items have font-mono text-blue-400 class and start with /
+  const buttons = container.querySelectorAll("button");
+  const items: string[] = [];
+  for (const btn of buttons) {
+    const cmdSpan = btn.querySelector(".font-mono");
+    if (cmdSpan?.textContent?.startsWith("/")) {
+      items.push(cmdSpan.textContent);
+    }
+  }
+  return items;
+}
+
+describe("CommandInput autocomplete", () => {
+  it("should show command dropdown when typing /", () => {
+    const { container, textarea } = renderInput();
+    fireEvent.change(textarea, { target: { value: "/" } });
+    const items = getDropdownItems(container);
+    expect(items).toContain("/deploy");
+    expect(items).toContain("/test");
+    expect(items).toContain("/review");
+  });
+
+  it("should filter commands as user types", () => {
+    const { container, textarea } = renderInput();
+    fireEvent.change(textarea, { target: { value: "/dep" } });
+    const items = getDropdownItems(container);
+    expect(items).toContain("/deploy");
+    expect(items).not.toContain("/test");
+    expect(items).not.toContain("/review");
+  });
+
+  it("should hide dropdown when no commands match", () => {
+    const { container, textarea } = renderInput();
+    fireEvent.change(textarea, { target: { value: "/zzz" } });
+    const items = getDropdownItems(container);
+    expect(items).toHaveLength(0);
+  });
+
+  it("should reopen dropdown after Escape when user types more", () => {
+    const { container, textarea } = renderInput();
+
+    // Type / to open dropdown
+    fireEvent.change(textarea, { target: { value: "/" } });
+    expect(getDropdownItems(container).length).toBeGreaterThan(0);
+
+    // Press Escape to dismiss
+    fireEvent.keyDown(textarea, { key: "Escape" });
+    expect(getDropdownItems(container)).toHaveLength(0);
+
+    // Type more - dropdown should reopen
+    fireEvent.change(textarea, { target: { value: "/d" } });
+    expect(getDropdownItems(container)).toContain("/deploy");
+  });
+
+  it("should hide dropdown when commands prop is empty", () => {
+    const { container, textarea } = renderInput({ commands: [] });
+    fireEvent.change(textarea, { target: { value: "/" } });
+    expect(getDropdownItems(container)).toHaveLength(0);
+  });
+
+  it("should select command with Tab", () => {
+    const { container, textarea } = renderInput();
+    fireEvent.change(textarea, { target: { value: "/dep" } });
+    expect(getDropdownItems(container)).toContain("/deploy");
+
+    fireEvent.keyDown(textarea, { key: "Tab" });
+    expect(textarea.value).toBe("/deploy ");
+    // Dropdown should close after selection
+    expect(getDropdownItems(container)).toHaveLength(0);
+  });
+
+  it("should reopen dropdown after Escape even when filtered count stays the same", () => {
+    const { container, textarea } = renderInput();
+
+    // Type /dep to get exactly 1 match (deploy)
+    fireEvent.change(textarea, { target: { value: "/dep" } });
+    let items = getDropdownItems(container);
+    expect(items).toHaveLength(1);
+    expect(items).toContain("/deploy");
+
+    // Press Escape
+    fireEvent.keyDown(textarea, { key: "Escape" });
+    expect(getDropdownItems(container)).toHaveLength(0);
+
+    // Type more but same number of matches: /depl still matches only deploy
+    fireEvent.change(textarea, { target: { value: "/depl" } });
+    items = getDropdownItems(container);
+    expect(items).toHaveLength(1);
+    expect(items).toContain("/deploy");
+  });
+
+  it("should navigate with arrow keys", () => {
+    const { container, textarea } = renderInput();
+    fireEvent.change(textarea, { target: { value: "/" } });
+
+    // Get command buttons (excluding the Send button)
+    const getCommandButtons = () => {
+      const buttons = Array.from(container.querySelectorAll("button"));
+      return buttons.filter(b => b.querySelector(".font-mono"));
+    };
+
+    // First item should be highlighted
+    let cmdButtons = getCommandButtons();
+    expect(cmdButtons[0]?.className).toContain("bg-gray-800");
+
+    // Arrow down - second item highlighted
+    fireEvent.keyDown(textarea, { key: "ArrowDown" });
+    cmdButtons = getCommandButtons();
+    expect(cmdButtons[1]?.className).toContain("bg-gray-800");
+  });
+});

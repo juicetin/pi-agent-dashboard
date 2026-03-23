@@ -26,12 +26,14 @@ export async function fetchEditors(cwd: string): Promise<DetectedEditor[]> {
 export async function openEditor(
   cwd: string,
   editorId: string,
+  file?: string,
+  line?: number,
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const res = await fetch("/api/open-editor", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ path: cwd, editor: editorId }),
+      body: JSON.stringify({ path: cwd, editor: editorId, file, line }),
     });
     return await res.json();
   } catch (err: any) {

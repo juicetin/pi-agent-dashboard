@@ -3,6 +3,9 @@ import { render, fireEvent } from "@testing-library/react";
 import React from "react";
 import { ChatView } from "../ChatView.js";
 import { createInitialState, type ChatMessage } from "../../lib/event-reducer.js";
+import type { ToolContext } from "../tool-renderers/index.js";
+
+const defaultToolContext: ToolContext = { editors: [] };
 
 beforeAll(() => {
   // jsdom doesn't implement scrollTo
@@ -39,7 +42,7 @@ describe("ChatView", () => {
     const state = stateWithMessages([
       { id: "1", role: "user", content: "Hello **world**" },
     ]);
-    const { container } = render(<ChatView state={state} />);
+    const { container } = render(<ChatView state={state} toolContext={defaultToolContext} />);
     const mdBtn = container.querySelector('button[title="Copy as Markdown"]');
     const plainBtn = container.querySelector('button[title="Copy as plain text"]');
     expect(mdBtn).not.toBeNull();
@@ -50,7 +53,7 @@ describe("ChatView", () => {
     const state = stateWithMessages([
       { id: "1", role: "assistant", content: "Here is the answer" },
     ]);
-    const { container } = render(<ChatView state={state} />);
+    const { container } = render(<ChatView state={state} toolContext={defaultToolContext} />);
     const mdBtn = container.querySelector('button[title="Copy as Markdown"]');
     const plainBtn = container.querySelector('button[title="Copy as plain text"]');
     expect(mdBtn).not.toBeNull();
@@ -59,20 +62,20 @@ describe("ChatView", () => {
 
   it("renders toolResult messages using ToolCallStep", () => {
     const state = stateWithToolMessage();
-    const { container } = render(<ChatView state={state} />);
+    const { container } = render(<ChatView state={state} toolContext={defaultToolContext} />);
 
     // Should show the tool summary (ToolCallStep renders a button with summary text)
     const button = container.querySelector("button");
     expect(button).not.toBeNull();
     expect(button!.textContent).toContain("$ ls -la");
 
-    // Should show status icon (✓ for complete)
-    expect(button!.textContent).toContain("✓");
+    // Should show status icon (SVG check for complete)
+    expect(button!.querySelector("svg")).not.toBeNull();
   });
 
   it("renders expandable tool call with args and result", () => {
     const state = stateWithToolMessage();
-    const { container } = render(<ChatView state={state} />);
+    const { container } = render(<ChatView state={state} toolContext={defaultToolContext} />);
 
     // Click to expand
     const button = container.querySelector("button")!;
@@ -88,24 +91,64 @@ describe("ChatView", () => {
 
   it("renders running tool call with spinner icon", () => {
     const state = stateWithToolMessage({ toolStatus: "running" });
-    const { container } = render(<ChatView state={state} />);
+    const { container } = render(<ChatView state={state} toolContext={defaultToolContext} />);
 
     const button = container.querySelector("button");
-    expect(button!.textContent).toContain("⏳");
+    expect(button!.querySelector("svg")).not.toBeNull();
   });
 
   it("renders error tool call with error icon", () => {
     const state = stateWithToolMessage({ toolStatus: "error" });
-    const { container } = render(<ChatView state={state} />);
+    const { container } = render(<ChatView state={state} toolContext={defaultToolContext} />);
 
     const button = container.querySelector("button");
-    expect(button!.textContent).toContain("✗");
+    expect(button!.querySelector("svg")).not.toBeNull();
+  });
+
+  it("renders user message bubble with subtle blue tint and accent border", () => {
+    const state = stateWithMessages([
+      { id: "1", role: "user", content: "Hello" },
+    ]);
+    const { container } = render(<ChatView state={state} toolContext={defaultToolContext} />);
+    const userBubble = container.querySelector(".bg-blue-500\\/10");
+    expect(userBubble).not.toBeNull();
+    expect(userBubble?.className).toContain("border-l-blue-400");
+    expect(userBubble?.className).toContain("rounded-xl");
+    expect(userBubble?.className).toContain("shadow-md");
+  });
+
+  it("renders assistant message bubble with 3D styling", () => {
+    const state = stateWithMessages([
+      { id: "1", role: "assistant", content: "Hi there" },
+    ]);
+    const { container } = render(<ChatView state={state} toolContext={defaultToolContext} />);
+    const assistantBubble = container.querySelector(".bg-gray-800");
+    expect(assistantBubble?.className).toContain("border-white/5");
+    expect(assistantBubble?.className).toContain("rounded-xl");
+    expect(assistantBubble?.className).toContain("shadow-md");
+  });
+
+  it("renders copy button divider in message bubbles", () => {
+    const state = stateWithMessages([
+      { id: "1", role: "assistant", content: "Test message" },
+    ]);
+    const { container } = render(<ChatView state={state} toolContext={defaultToolContext} />);
+    // The divider between content and copy buttons
+    const divider = container.querySelector(".border-t.border-gray-700\\/30");
+    expect(divider).not.toBeNull();
+  });
+
+  it("renders tool call step with left accent border", () => {
+    const state = stateWithToolMessage();
+    const { container } = render(<ChatView state={state} toolContext={defaultToolContext} />);
+    const toolStep = container.querySelector(".border-l-2.border-gray-700\\/50");
+    expect(toolStep).not.toBeNull();
   });
 
   it("does not show copy buttons on streaming text", () => {
     const state = createInitialState();
     state.streamingText = "Partial response...";
-    const { container } = render(<ChatView state={state} />);
+    const { container } = render(<ChatView state={state} toolContext={defaultToolContext} />);
     // Streaming bubble doesn't have message-level copy buttons
     const mdBtns = container.querySelectorAll('button[title="Copy as Markdown"]');
     expect(mdBtns.length).toBe(0);

@@ -1,4 +1,6 @@
-import React, { useState, useCallback, useRef, useEffect } from "react";
+import React, { useState, useCallback, useRef, useEffect, type ReactNode } from "react";
+import Icon from "@mdi/react";
+import { mdiFlash, mdiClipboardText, mdiWrench, mdiFolder, mdiFile } from "@mdi/js";
 import type { CommandInfo, ImageContent, FileEntry } from "../../shared/types.js";
 
 interface Props {
@@ -9,13 +11,14 @@ interface Props {
   disabled?: boolean;
 }
 
-const sourceIcons: Record<string, string> = {
-  extension: "⚡",
-  prompt: "📋",
-  skill: "🔧",
+const sourceIcons: Record<string, ReactNode> = {
+  extension: <Icon path={mdiFlash} size={0.6} />,
+  prompt: <Icon path={mdiClipboardText} size={0.6} />,
+  skill: <Icon path={mdiWrench} size={0.6} />,
 };
 
 const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10MB base64
+const SUPPORTED_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
 
 type DropdownMode = "command" | "file" | null;
 
@@ -46,7 +49,8 @@ export function CommandInput({ commands, onSend, onListFiles, fileResults, disab
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [pendingImages, setPendingImages] = useState<ImageContent[]>([]);
   const [imageError, setImageError] = useState<string | null>(null);
-  const [dropdownMode, setDropdownMode] = useState<DropdownMode>(null);
+  const [dismissed, setDismissed] = useState<string | null>(null); // text value when Escape was pressed
+  const prevDropdownKeyRef = useRef<string>(""); // tracks mode+filter to reset selectedIndex
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastFileQueryRef = useRef<string | null>(null);
@@ -90,28 +94,34 @@ export function CommandInput({ commands, onSend, onListFiles, fileResults, disab
     ? fileResults.files
     : [];
 
-  // Resolve dropdown mode
-  useEffect(() => {
-    if (isCommand && filteredCommands.length > 0) {
-      setDropdownMode("command");
-      setSelectedIndex(0);
-    } else if (isAtMode && fileItems.length > 0) {
-      setDropdownMode("file");
-      setSelectedIndex(0);
-    } else {
-      setDropdownMode(null);
-    }
-  }, [isCommand, filteredCommands.length, isAtMode, fileItems.length]);
+  // Derive dropdown mode directly (no useEffect needed)
+  // If user pressed Escape at the current text value, stay dismissed
+  const isDismissed = dismissed === text;
+  const dropdownMode: DropdownMode =
+    isDismissed ? null
+    : isCommand && filteredCommands.length > 0 ? "command"
+    : isAtMode && fileItems.length > 0 ? "file"
+    : null;
 
   const dropdownLength = dropdownMode === "command" ? filteredCommands.length
     : dropdownMode === "file" ? fileItems.length
     : 0;
 
+  // Reset selectedIndex when dropdown mode or filter changes
+  const dropdownKey = dropdownMode ? `${dropdownMode}:${commandFilter}` : "";
+  if (dropdownKey !== prevDropdownKeyRef.current) {
+    prevDropdownKeyRef.current = dropdownKey;
+    if (selectedIndex !== 0) {
+      setSelectedIndex(0);
+    }
+  }
+
   // --- Handlers ---
 
   const selectCommand = useCallback((cmd: CommandInfo) => {
-    setText(`/${cmd.name} `);
-    setDropdownMode(null);
+    const newText = `/${cmd.name} `;
+    setText(newText);
+    setDismissed(newText); // prevent dropdown from reopening for selected text
     inputRef.current?.focus();
   }, []);
 
@@ -123,7 +133,7 @@ export function CommandInput({ commands, onSend, onListFiles, fileResults, disab
     const suffix = file.isDirectory ? "" : " ";
     const newText = `${beforeAt}@${filePath}${suffix}${afterCursor}`;
     setText(newText);
-    setDropdownMode(null);
+    setDismissed(newText); // prevent dropdown from reopening for selected text
     // Set cursor after the inserted path
     const newCursorPos = beforeAt.length + 1 + filePath.length + suffix.length;
     requestAnimationFrame(() => {
@@ -170,7 +180,7 @@ export function CommandInput({ commands, onSend, onListFiles, fileResults, disab
         }
         if (e.key === "Escape") {
           e.preventDefault();
-          setDropdownMode(null);
+          setDismissed(text);
           return;
         }
       }
@@ -180,7 +190,7 @@ export function CommandInput({ commands, onSend, onListFiles, fileResults, disab
         handleSend();
       }
     },
-    [dropdownMode, dropdownLength, filteredCommands, fileItems, selectedIndex, selectCommand, selectFile, handleSend]
+    [dropdownMode, dropdownLength, filteredCommands, fileItems, selectedIndex, selectCommand, selectFile, handleSend, text]
   );
 
   const handlePaste = useCallback(async (e: React.ClipboardEvent) => {
@@ -188,6 +198,13 @@ export function CommandInput({ commands, onSend, onListFiles, fileResults, disab
     for (const item of items) {
       if (item.type.startsWith("image/")) {
         e.preventDefault();
+        // Capture mimeType eagerly - DataTransferItem may become invalid after event
+        const mimeType = item.type;
+        if (!SUPPORTED_IMAGE_TYPES.has(mimeType)) {
+          setImageError(`Unsupported image type: ${mimeType}. Use JPEG, PNG, GIF, or WebP.`);
+          setTimeout(() => setImageError(null), 3000);
+          continue;
+        }
         const blob = item.getAsFile();
         if (!blob) continue;
 
@@ -205,7 +222,7 @@ export function CommandInput({ commands, onSend, onListFiles, fileResults, disab
 
           setPendingImages((prev) => [
             ...prev,
-            { type: "image", data: base64, mimeType: item.type },
+            { type: "image", data: base64, mimeType },
           ]);
         };
         reader.readAsDataURL(blob);
@@ -221,7 +238,7 @@ export function CommandInput({ commands, onSend, onListFiles, fileResults, disab
     <div className="border-t border-gray-800 p-3 relative">
       {/* Autocomplete dropdown */}
       {dropdownMode === "command" && (
-        <div className="absolute bottom-full left-3 right-3 mb-1 bg-gray-900 border border-gray-700 rounded-lg max-h-64 overflow-y-auto shadow-lg z-10">
+        <div className="absolute bottom-full left-3 right-3 mb-1 bg-gray-900 border border-white/5 rounded-xl max-h-64 overflow-y-auto shadow-lg z-10">
           {filteredCommands.map((cmd, i) => (
             <button
               key={cmd.name}
@@ -230,7 +247,7 @@ export function CommandInput({ commands, onSend, onListFiles, fileResults, disab
                 i === selectedIndex ? "bg-gray-800" : "hover:bg-gray-800/50"
               }`}
             >
-              <span>{sourceIcons[cmd.source] ?? "⚡"}</span>
+              <span className="inline-flex">{sourceIcons[cmd.source] ?? <Icon path={mdiFlash} size={0.6} />}</span>
               <span className="font-mono text-blue-400">/{cmd.name}</span>
               {cmd.description && (
                 <span className="text-gray-500 truncate">{cmd.description}</span>
@@ -241,7 +258,7 @@ export function CommandInput({ commands, onSend, onListFiles, fileResults, disab
       )}
 
       {dropdownMode === "file" && (
-        <div className="absolute bottom-full left-3 right-3 mb-1 bg-gray-900 border border-gray-700 rounded-lg max-h-64 overflow-y-auto shadow-lg z-10">
+        <div className="absolute bottom-full left-3 right-3 mb-1 bg-gray-900 border border-white/5 rounded-xl max-h-64 overflow-y-auto shadow-lg z-10">
           {fileItems.map((file, i) => {
             const name = file.path.split("/").pop() ?? file.path;
             return (
@@ -252,7 +269,7 @@ export function CommandInput({ commands, onSend, onListFiles, fileResults, disab
                   i === selectedIndex ? "bg-gray-800" : "hover:bg-gray-800/50"
                 }`}
               >
-                <span>{file.isDirectory ? "📁" : "📄"}</span>
+                <span className="inline-flex"><Icon path={file.isDirectory ? mdiFolder : mdiFile} size={0.6} /></span>
                 <span className="font-mono text-green-400">
                   {name}{file.isDirectory ? "/" : ""}
                 </span>

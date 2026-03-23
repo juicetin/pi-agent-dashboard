@@ -11,6 +11,8 @@ The session sidebar SHALL display all active and idle sessions for the selected 
 - Relative time since session started (e.g., "3m", "1h")
 - Session display name or auto-generated label
 
+Session cards SHALL have a 3D elevated appearance with `rounded-xl`, `shadow-md shadow-black/40`, `border border-white/5`, and a hover effect (`hover:shadow-lg hover:-translate-y-0.5`) with `transition-all duration-200`.
+
 #### Scenario: Session starts streaming
 - **WHEN** an `agent_start` event arrives for a session
 - **THEN** the sidebar SHALL update the status indicator to yellow pulsing and show "● streaming"
@@ -38,6 +40,11 @@ The session sidebar SHALL display all active and idle sessions for the selected 
 #### Scenario: Session card layout
 - **WHEN** a session card is rendered
 - **THEN** it SHALL display: first line with status dot, project name, source badge, and relative time; second line with model name and thinking level in parentheses; third line with activity indicator (current tool or state label) and token/cost stats; fourth line with editor buttons for each detected editor (only when accessed on localhost)
+
+#### Scenario: Session card 3D styling
+- **WHEN** a session card is rendered
+- **THEN** it SHALL have rounded-xl corners, a shadow for depth, and a subtle border highlight
+- **AND** on hover, it SHALL elevate slightly with increased shadow
 
 #### Scenario: Thinking level displayed
 - **WHEN** a session has both `model` and `thinkingLevel` set

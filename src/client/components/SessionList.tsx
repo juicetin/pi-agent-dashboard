@@ -1,21 +1,35 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
-import type { DashboardSession } from "../../shared/types.js";
+import Icon from "@mdi/react";
+import { mdiChevronRight, mdiChevronDown } from "@mdi/js";
+import type { DashboardSession, OpenSpecData } from "../../shared/types.js";
 import {
   getHiddenSessionIds,
   setHiddenSessionIds,
   getActiveOnly,
   setActiveOnly as persistActiveOnly,
   pruneStaleHiddenIds,
+  getCollapsedGroups,
+  setCollapsedGroups,
+  pruneStaleCollapsedGroups,
 } from "../lib/session-filter-storage.js";
 import { SessionCard, GroupGitInfo, EditorButtons } from "./SessionCard.js";
 import { useEditors } from "../lib/use-editors.js";
 import { openEditor } from "../lib/editor-api.js";
 import { Toast, useToast } from "./Toast.js";
 
+export interface ContextUsageInfo {
+  tokens: number | null;
+  contextWindow: number;
+}
+
 interface Props {
   sessions: DashboardSession[];
   selectedId?: string;
   onSelect: (sessionId: string) => void;
+  contextUsageMap?: Map<string, ContextUsageInfo>;
+  openspecMap?: Map<string, OpenSpecData>;
+  onSendPrompt?: (sessionId: string, text: string) => void;
+  onOpenSpecRefresh?: (sessionId: string) => void;
 }
 
 /** Group sessions by cwd, ordered by most recent activity. */
@@ -77,7 +91,7 @@ function ToggleButton({
   );
 }
 
-export function SessionList({ sessions, selectedId, onSelect }: Props) {
+export function SessionList({ sessions, selectedId, onSelect, contextUsageMap, openspecMap, onSendPrompt, onOpenSpecRefresh }: Props) {
   const now = Date.now();
   const { messages, showToast, dismissToast } = useToast();
 
@@ -97,12 +111,18 @@ export function SessionList({ sessions, selectedId, onSelect }: Props) {
   const [hiddenSet, setHiddenSet] = useState(() => getHiddenSessionIds());
   const [showHidden, setShowHidden] = useState(false);
 
-  // Prune stale hidden IDs when sessions change
+  // Collapsed groups state
+  const [collapsedGroups, setCollapsedGroupsState] = useState(() => getCollapsedGroups());
+
+  // Prune stale hidden IDs and collapsed groups when sessions change
   useEffect(() => {
     if (sessions.length === 0) return;
     const knownIds = new Set(sessions.map((s) => s.id));
     const pruned = pruneStaleHiddenIds(knownIds);
     setHiddenSet(pruned);
+    const knownCwds = new Set(sessions.map((s) => s.cwd));
+    const prunedGroups = pruneStaleCollapsedGroups(knownCwds);
+    setCollapsedGroupsState(prunedGroups);
   }, [sessions.length]);
 
   const handleActiveOnlyToggle = useCallback(() => {
@@ -118,6 +138,19 @@ export function SessionList({ sessions, selectedId, onSelect }: Props) {
       const next = new Set(prev);
       next.add(id);
       setHiddenSessionIds(next);
+      return next;
+    });
+  }, []);
+
+  const handleToggleCollapse = useCallback((cwd: string) => {
+    setCollapsedGroupsState((prev) => {
+      const next = new Set(prev);
+      if (next.has(cwd)) {
+        next.delete(cwd);
+      } else {
+        next.add(cwd);
+      }
+      setCollapsedGroups(next);
       return next;
     });
   }, []);
@@ -146,7 +179,7 @@ export function SessionList({ sessions, selectedId, onSelect }: Props) {
   const groups = groupSessionsByDirectory(filteredSessions);
 
   return (
-    <div className="w-64 border-r border-gray-800 overflow-y-auto">
+    <div className="w-full border-r border-gray-800 overflow-y-auto">
       <div className="p-3 border-b border-gray-800">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold text-gray-400 uppercase">Sessions</h2>
@@ -166,27 +199,37 @@ export function SessionList({ sessions, selectedId, onSelect }: Props) {
         <ul>
           {groups.map((group) => {
             const dirName = group.cwd.split("/").pop() ?? group.cwd;
-            const isMulti = group.sessions.length > 1;
+            const isCollapsed = collapsedGroups.has(group.cwd);
 
-            if (isMulti) {
-              return (
-                <React.Fragment key={group.cwd}>
-                  {/* Group header */}
-                  <li className="px-3 py-1.5 bg-gray-900/50 border-b border-gray-800/50">
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-xs font-medium text-gray-400 truncate">📁 {dirName}</span>
-                      <span className="text-[10px] text-gray-600">({group.sessions.length})</span>
+            return (
+              <React.Fragment key={group.cwd}>
+                {/* Group header — always shown */}
+                <li
+                  className="px-3 py-1.5 bg-gray-900/50 border-b border-gray-800/50 cursor-pointer hover:bg-gray-800/30"
+                  onClick={() => handleToggleCollapse(group.cwd)}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span className="inline-flex text-gray-500">
+                      <Icon path={isCollapsed ? mdiChevronRight : mdiChevronDown} size={0.6} />
+                    </span>
+                    <span className="text-xs font-medium text-gray-400 truncate">📁 {dirName}</span>
+                    <span className="text-[10px] text-gray-600">({group.sessions.length})</span>
+                  </div>
+                  <GroupGitInfo sessions={group.sessions} />
+                  {editorMap.get(group.cwd)?.length ? (
+                    <div className="mt-1 ml-5">
+                      <EditorButtons
+                        editors={editorMap.get(group.cwd)!}
+                        onOpen={(editorId) => {
+                          // Prevent collapse toggle when clicking editor button
+                          handleOpenEditor(group.cwd, editorId);
+                        }}
+                      />
                     </div>
-                    <GroupGitInfo sessions={group.sessions} />
-                    {editorMap.get(group.cwd)?.length ? (
-                      <div className="mt-1">
-                        <EditorButtons
-                          editors={editorMap.get(group.cwd)!}
-                          onOpen={(editorId) => handleOpenEditor(group.cwd, editorId)}
-                        />
-                      </div>
-                    ) : null}
-                  </li>
+                  ) : null}
+                </li>
+                {/* Session cards — animated collapse */}
+                <div className={`group-collapse ${isCollapsed ? "collapsed" : "expanded"} space-y-1 p-1`}>
                   {group.sessions.map((session) => (
                     <SessionCard
                       key={session.id}
@@ -194,30 +237,20 @@ export function SessionList({ sessions, selectedId, onSelect }: Props) {
                       selectedId={selectedId}
                       onSelect={onSelect}
                       now={now}
-                      showGitInfo={false}
+                      showGitInfo={group.sessions.length === 1}
                       isHidden={hiddenSet.has(session.id)}
                       onHide={handleHide}
                       onUnhide={handleUnhide}
+                      editors={group.sessions.length === 1 ? editorMap.get(group.cwd) : undefined}
+                      onOpenEditor={group.sessions.length === 1 ? (editorId) => handleOpenEditor(group.cwd, editorId) : undefined}
+                      contextUsage={contextUsageMap?.get(session.id)}
+                      openspecData={openspecMap?.get(session.id)}
+                      onSendPrompt={onSendPrompt ? (text) => onSendPrompt(session.id, text) : undefined}
+                      onOpenSpecRefresh={onOpenSpecRefresh ? () => onOpenSpecRefresh(session.id) : undefined}
                     />
                   ))}
-                </React.Fragment>
-              );
-            }
-
-            return (
-              <SessionCard
-                key={group.sessions[0].id}
-                session={group.sessions[0]}
-                selectedId={selectedId}
-                onSelect={onSelect}
-                now={now}
-                showGitInfo={true}
-                isHidden={hiddenSet.has(group.sessions[0].id)}
-                onHide={handleHide}
-                onUnhide={handleUnhide}
-                editors={editorMap.get(group.cwd)}
-                onOpenEditor={(editorId) => handleOpenEditor(group.cwd, editorId)}
-              />
+                </div>
+              </React.Fragment>
             );
           })}
         </ul>

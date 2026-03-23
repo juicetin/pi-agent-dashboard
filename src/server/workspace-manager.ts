@@ -33,18 +33,23 @@ export interface WorkspaceManager {
 
 export function createWorkspaceManager(db: Database): WorkspaceManager {
   function getExistingPaths(): Set<string> {
-    const result = db.raw.exec("SELECT path FROM workspaces");
-    if (result.length === 0) return new Set();
-    return new Set(result[0].values.map((row) => row[0] as string));
+    const rows = db.raw.prepare("SELECT path FROM workspaces").all() as Array<{ path: string }>;
+    return new Set(rows.map((row) => row.path));
   }
 
-  function rowToWorkspace(row: any[]): Workspace {
+  function rowToWorkspace(row: {
+    id: string;
+    name: string;
+    path: string;
+    sort_order: number;
+    created_at: number;
+  }): Workspace {
     return {
-      id: row[0] as string,
-      name: row[1] as string,
-      path: row[2] as string,
-      sortOrder: row[3] as number,
-      createdAt: row[4] as number,
+      id: row.id,
+      name: row.name,
+      path: row.path,
+      sortOrder: row.sort_order,
+      createdAt: row.created_at,
     };
   }
 
@@ -69,52 +74,48 @@ export function createWorkspaceManager(db: Database): WorkspaceManager {
         createdAt: Date.now(),
       };
 
-      db.raw.run(
-        "INSERT INTO workspaces (id, name, path, sort_order, created_at) VALUES (?, ?, ?, ?, ?)",
-        [workspace.id, workspace.name, workspace.path, workspace.sortOrder, workspace.createdAt]
-      );
+      db.raw.prepare(
+        "INSERT INTO workspaces (id, name, path, sort_order, created_at) VALUES (?, ?, ?, ?, ?)"
+      ).run(workspace.id, workspace.name, workspace.path, workspace.sortOrder, workspace.createdAt);
 
       return workspace;
     },
 
     get(id: string): Workspace | undefined {
-      const result = db.raw.exec(
-        "SELECT id, name, path, sort_order, created_at FROM workspaces WHERE id = ?",
-        [id]
-      );
-      if (result.length === 0 || result[0].values.length === 0) return undefined;
-      return rowToWorkspace(result[0].values[0]);
+      const row = db.raw.prepare(
+        "SELECT id, name, path, sort_order, created_at FROM workspaces WHERE id = ?"
+      ).get(id) as { id: string; name: string; path: string; sort_order: number; created_at: number } | undefined;
+      if (!row) return undefined;
+      return rowToWorkspace(row);
     },
 
     update(id: string, params: UpdateWorkspaceParams): Workspace {
       if (params.name !== undefined) {
-        db.raw.run("UPDATE workspaces SET name = ? WHERE id = ?", [params.name, id]);
+        db.raw.prepare("UPDATE workspaces SET name = ? WHERE id = ?").run(params.name, id);
       }
       if (params.sortOrder !== undefined) {
-        db.raw.run("UPDATE workspaces SET sort_order = ? WHERE id = ?", [params.sortOrder, id]);
+        db.raw.prepare("UPDATE workspaces SET sort_order = ? WHERE id = ?").run(params.sortOrder, id);
       }
 
-      const result = db.raw.exec(
-        "SELECT id, name, path, sort_order, created_at FROM workspaces WHERE id = ?",
-        [id]
-      );
-      if (result.length === 0 || result[0].values.length === 0) {
+      const row = db.raw.prepare(
+        "SELECT id, name, path, sort_order, created_at FROM workspaces WHERE id = ?"
+      ).get(id) as { id: string; name: string; path: string; sort_order: number; created_at: number } | undefined;
+      if (!row) {
         throw new Error(`Workspace not found: ${id}`);
       }
-      return rowToWorkspace(result[0].values[0]);
+      return rowToWorkspace(row);
     },
 
     delete(id: string): void {
-      db.raw.run("DELETE FROM workspaces WHERE id = ?", [id]);
+      db.raw.prepare("DELETE FROM workspaces WHERE id = ?").run(id);
       // Sessions become unassigned (workspace_id references are in-memory only)
     },
 
     list(): Workspace[] {
-      const result = db.raw.exec(
+      const rows = db.raw.prepare(
         "SELECT id, name, path, sort_order, created_at FROM workspaces ORDER BY sort_order, name"
-      );
-      if (result.length === 0) return [];
-      return result[0].values.map(rowToWorkspace);
+      ).all() as Array<{ id: string; name: string; path: string; sort_order: number; created_at: number }>;
+      return rows.map(rowToWorkspace);
     },
 
     discover(baseDirs: string[]): DiscoveredWorkspace[] {

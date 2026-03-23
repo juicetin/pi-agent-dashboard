@@ -120,6 +120,13 @@ export function createBrowserGateway(
             });
             break;
 
+          case "openspec_refresh":
+            piGateway.sendToSession(msg.sessionId, {
+              type: "openspec_refresh",
+              sessionId: msg.sessionId,
+            });
+            break;
+
           case "fetch_content": {
             const event = eventStore.getEvent(msg.sessionId, msg.seq);
             if (event) {

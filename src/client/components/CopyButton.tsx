@@ -1,8 +1,10 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, type ReactNode } from "react";
+import Icon from "@mdi/react";
+import { mdiCheck } from "@mdi/js";
 
 interface Props {
   text: string;
-  icon: string;
+  icon: ReactNode;
   title: string;
 }
 
@@ -23,9 +25,9 @@ export function CopyButton({ text, icon, title }: Props) {
     <button
       onClick={handleClick}
       title={title}
-      className="px-1.5 py-0.5 text-xs text-gray-400 hover:text-white rounded hover:bg-gray-700 transition-colors"
+      className="px-1.5 py-0.5 text-xs text-gray-400 hover:text-white rounded hover:bg-gray-700 transition-colors inline-flex items-center"
     >
-      {copied ? "✓" : icon}
+      {copied ? <Icon path={mdiCheck} size={0.6} /> : icon}
     </button>
   );
 }

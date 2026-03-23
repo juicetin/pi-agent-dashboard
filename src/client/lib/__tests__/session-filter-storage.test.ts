@@ -5,6 +5,9 @@ import {
   getActiveOnly,
   setActiveOnly,
   pruneStaleHiddenIds,
+  getCollapsedGroups,
+  setCollapsedGroups,
+  pruneStaleCollapsedGroups,
 } from "../session-filter-storage.js";
 
 // Node 25's built-in localStorage overrides jsdom's and lacks standard methods.
@@ -83,6 +86,48 @@ describe("session-filter-storage", () => {
 
     it("should handle empty hidden set", () => {
       const result = pruneStaleHiddenIds(new Set(["a"]));
+      expect(result).toEqual(new Set());
+    });
+  });
+
+  describe("getCollapsedGroups / setCollapsedGroups", () => {
+    it("should return empty set when nothing stored", () => {
+      expect(getCollapsedGroups()).toEqual(new Set());
+    });
+
+    it("should round-trip a set of cwds", () => {
+      const cwds = new Set(["/home/user/a", "/home/user/b"]);
+      setCollapsedGroups(cwds);
+      expect(getCollapsedGroups()).toEqual(cwds);
+    });
+
+    it("should return empty set for invalid JSON", () => {
+      store.set("dashboard:collapsedGroups", "not-json");
+      expect(getCollapsedGroups()).toEqual(new Set());
+    });
+
+    it("should filter out non-string values", () => {
+      store.set("dashboard:collapsedGroups", '["/a", 123, null, "/b"]');
+      expect(getCollapsedGroups()).toEqual(new Set(["/a", "/b"]));
+    });
+  });
+
+  describe("pruneStaleCollapsedGroups", () => {
+    it("should remove cwds not in known set", () => {
+      setCollapsedGroups(new Set(["/a", "/b", "/c"]));
+      const result = pruneStaleCollapsedGroups(new Set(["/a", "/c", "/d"]));
+      expect(result).toEqual(new Set(["/a", "/c"]));
+      expect(getCollapsedGroups()).toEqual(new Set(["/a", "/c"]));
+    });
+
+    it("should return empty set when no overlap", () => {
+      setCollapsedGroups(new Set(["/x", "/y"]));
+      const result = pruneStaleCollapsedGroups(new Set(["/a"]));
+      expect(result).toEqual(new Set());
+    });
+
+    it("should handle empty collapsed set", () => {
+      const result = pruneStaleCollapsedGroups(new Set(["/a"]));
       expect(result).toEqual(new Set());
     });
   });

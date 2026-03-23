@@ -1,0 +1,19 @@
+import type { DetectedEditor } from "../../lib/editor-api.js";
+
+/** Context passed to every tool renderer */
+export interface ToolContext {
+  cwd?: string;
+  editors: DetectedEditor[];
+}
+
+/** Props every tool renderer receives */
+export interface ToolRendererProps {
+  toolName: string;
+  args?: Record<string, unknown>;
+  status: "running" | "complete" | "error";
+  result?: string;
+  context: ToolContext;
+}
+
+/** A tool renderer is a React component matching this signature */
+export type ToolRenderer = React.ComponentType<ToolRendererProps>;

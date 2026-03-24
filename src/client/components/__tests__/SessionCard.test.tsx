@@ -1,5 +1,5 @@
-import { describe, it, expect, afterEach } from "vitest";
-import { render, screen, cleanup } from "@testing-library/react";
+import { describe, it, expect, vi, afterEach } from "vitest";
+import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import React from "react";
 import { SessionCard } from "../SessionCard.js";
 import type { DashboardSession, OpenSpecData } from "../../../shared/types.js";
@@ -44,7 +44,7 @@ describe("SessionCard", () => {
     const { container } = render(
       <SessionCard session={session} {...defaultProps} />
     );
-    const modelLine = container.querySelector(".text-xs.text-gray-500");
+    const modelLine = container.querySelector(".text-xs.text-\\[var\\(--text-tertiary\\)\\]");
     expect(modelLine?.textContent).toBe("claude-4-sonnet");
   });
 
@@ -54,7 +54,7 @@ describe("SessionCard", () => {
       <SessionCard session={session} {...defaultProps} />
     );
     // Action row has the border-t divider class
-    const actionRow = container.querySelector(".border-t.border-gray-700\\/30");
+    const actionRow = container.querySelector(".border-t.border-\\[var\\(--border-secondary\\)\\]");
     expect(actionRow).not.toBeNull();
     // Source badge should be inside the action row
     expect(actionRow!.textContent).toContain("tui");
@@ -85,22 +85,39 @@ describe("SessionCard", () => {
 
   it("should show hide button in action row", () => {
     const session = makeSession();
-    const { container } = render(
-      <SessionCard session={session} {...defaultProps} />
-    );
-    const actionRow = container.querySelector(".border-t.border-gray-700\\/30");
-    const hideBtn = actionRow?.querySelector('button[title="Hide session"]');
-    expect(hideBtn).not.toBeNull();
+    render(<SessionCard session={session} {...defaultProps} />);
+    expect(screen.getByTestId("session-hide-btn")).toBeTruthy();
   });
 
   it("should show unhide button when hidden", () => {
     const session = makeSession();
-    const { container } = render(
-      <SessionCard session={session} {...defaultProps} isHidden={true} />
-    );
-    const actionRow = container.querySelector(".border-t.border-gray-700\\/30");
-    const unhideBtn = actionRow?.querySelector('button[title="Unhide session"]');
-    expect(unhideBtn).not.toBeNull();
+    render(<SessionCard session={session} {...defaultProps} isHidden={true} />);
+    expect(screen.getByTestId("session-unhide-btn")).toBeTruthy();
+  });
+
+  it("should show close button for active sessions when onShutdown provided", () => {
+    const session = makeSession({ status: "idle" });
+    const onShutdown = vi.fn();
+    render(<SessionCard session={session} {...defaultProps} onShutdown={onShutdown} />);
+    const btn = screen.getByTestId("session-close-btn");
+    fireEvent.click(btn);
+    expect(onShutdown).toHaveBeenCalledWith("test-session");
+  });
+
+  it("should not show close button for ended sessions", () => {
+    const session = makeSession({ status: "ended" });
+    render(<SessionCard session={session} {...defaultProps} onShutdown={() => {}} />);
+    expect(screen.queryByTestId("session-close-btn")).toBeNull();
+  });
+
+  it("should confirm before closing streaming session", () => {
+    const session = makeSession({ status: "streaming" });
+    const onShutdown = vi.fn();
+    window.confirm = vi.fn(() => false);
+    render(<SessionCard session={session} {...defaultProps} onShutdown={onShutdown} />);
+    fireEvent.click(screen.getByTestId("session-close-btn"));
+    expect(window.confirm).toHaveBeenCalled();
+    expect(onShutdown).not.toHaveBeenCalled();
   });
 
   it("should show OpenSpec section when selected and data initialized", () => {

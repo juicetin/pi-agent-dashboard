@@ -25,7 +25,7 @@ export function CopyButton({ text, icon, title }: Props) {
     <button
       onClick={handleClick}
       title={title}
-      className="px-1.5 py-0.5 text-xs text-gray-400 hover:text-white rounded hover:bg-gray-700 transition-colors inline-flex items-center"
+      className="px-1.5 py-0.5 text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)] rounded hover:bg-[var(--bg-surface)] transition-colors inline-flex items-center"
     >
       {copied ? <Icon path={mdiCheck} size={0.6} /> : icon}
     </button>

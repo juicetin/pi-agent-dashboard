@@ -1,12 +1,15 @@
-import React, { type ReactNode } from "react";
+import React, { useState, type ReactNode } from "react";
 import Icon from "@mdi/react";
 import { mdiMonitor, mdiFlash, mdiTelevision, mdiWeb, mdiHelpCircle, mdiCog } from "@mdi/js";
 import type { DashboardSession } from "../../shared/types.js";
+import { getSessionDisplayName } from "../lib/session-display-name.js";
+import { InlineRenameInput } from "./InlineRenameInput.js";
 
 interface Props {
   sessions: DashboardSession[];
   selectedId?: string;
   onSelect: (sessionId: string) => void;
+  onRename?: (sessionId: string, name: string) => void;
 }
 
 const sourceIcons: Record<string, ReactNode> = {
@@ -21,7 +24,7 @@ const statusColors: Record<string, string> = {
   active: "bg-green-500",
   streaming: "bg-yellow-500 animate-pulse",
   idle: "bg-green-500",
-  ended: "bg-gray-600",
+  ended: "bg-[var(--bg-surface)]",
 };
 
 function formatTokens(n?: number): string {
@@ -36,44 +39,65 @@ function formatCost(n?: number): string {
   return `$${n.toFixed(4)}`;
 }
 
-export function SessionSidebar({ sessions, selectedId, onSelect }: Props) {
+export function SessionSidebar({ sessions, selectedId, onSelect, onRename }: Props) {
   const active = sessions.filter((s) => s.status !== "ended");
   const ended = sessions.filter((s) => s.status === "ended");
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+
+  function handleConfirmRename(sessionId: string, name: string) {
+    setRenamingId(null);
+    onRename?.(sessionId, name);
+  }
 
   return (
-    <div className="w-72 border-r border-gray-800 overflow-y-auto flex flex-col">
-      <div className="p-3 border-b border-gray-800">
-        <h2 className="text-sm font-semibold text-gray-400 uppercase">Sessions</h2>
+    <div className="w-72 border-r border-[var(--border-primary)] overflow-y-auto flex flex-col">
+      <div className="p-3 border-b border-[var(--border-primary)]">
+        <h2 className="text-sm font-semibold text-[var(--text-secondary)] uppercase">Sessions</h2>
       </div>
 
       {/* Active sessions */}
       {active.length === 0 ? (
-        <div className="p-4 text-sm text-gray-500">No active sessions</div>
+        <div className="p-4 text-sm text-[var(--text-tertiary)]">No active sessions</div>
       ) : (
         <ul>
           {active.map((session) => (
             <li
               key={session.id}
               onClick={() => onSelect(session.id)}
-              className={`px-3 py-2 cursor-pointer border-b border-gray-800/50 hover:bg-gray-800/50 ${
-                selectedId === session.id ? "bg-gray-800" : ""
+              className={`px-3 py-2 cursor-pointer border-b border-[var(--border-primary)] hover:bg-[var(--bg-hover)] ${
+                selectedId === session.id ? "bg-[var(--bg-tertiary)]" : ""
               }`}
             >
               <div className="flex items-center gap-2">
                 <span
-                  className={`w-2 h-2 rounded-full flex-shrink-0 ${statusColors[session.status] ?? "bg-gray-500"}`}
+                  className={`w-2 h-2 rounded-full flex-shrink-0 ${statusColors[session.status] ?? "bg-[var(--bg-surface)]"}`}
                 />
-                <span className="text-sm font-medium truncate flex-1">
-                  {session.cwd.split("/").pop() ?? session.id.slice(0, 8)}
-                </span>
+                {renamingId === session.id ? (
+                  <InlineRenameInput
+                    currentName={getSessionDisplayName(session)}
+                    onConfirm={(name) => handleConfirmRename(session.id, name)}
+                    onCancel={() => setRenamingId(null)}
+                    className="flex-1"
+                  />
+                ) : (
+                  <span
+                    className="text-sm font-medium truncate flex-1"
+                    onDoubleClick={(e) => {
+                      e.stopPropagation();
+                      if (onRename) setRenamingId(session.id);
+                    }}
+                  >
+                    {getSessionDisplayName(session)}
+                  </span>
+                )}
                 <span className="text-xs inline-flex" title={session.source}>
                   {sourceIcons[session.source] ?? <Icon path={mdiHelpCircle} size={0.55} />}
                 </span>
               </div>
-              <div className="ml-4 mt-0.5 flex items-center gap-2 text-xs text-gray-500">
+              <div className="ml-4 mt-0.5 flex items-center gap-2 text-xs text-[var(--text-tertiary)]">
                 {session.model && <span className="truncate">{session.model}</span>}
               </div>
-              <div className="ml-4 mt-0.5 flex items-center gap-3 text-xs text-gray-600">
+              <div className="ml-4 mt-0.5 flex items-center gap-3 text-xs text-[var(--text-muted)]">
                 <span title="Tokens in">↓{formatTokens(session.tokensIn)}</span>
                 <span title="Tokens out">↑{formatTokens(session.tokensOut)}</span>
                 <span>{formatCost(session.cost)}</span>
@@ -88,8 +112,8 @@ export function SessionSidebar({ sessions, selectedId, onSelect }: Props) {
 
       {/* Ended sessions */}
       {ended.length > 0 && (
-        <details className="border-t border-gray-800">
-          <summary className="px-3 py-2 text-xs text-gray-500 cursor-pointer hover:bg-gray-800/50">
+        <details className="border-t border-[var(--border-primary)]">
+          <summary className="px-3 py-2 text-xs text-[var(--text-tertiary)] cursor-pointer hover:bg-[var(--bg-hover)]">
             Ended ({ended.length})
           </summary>
           <ul>
@@ -97,14 +121,14 @@ export function SessionSidebar({ sessions, selectedId, onSelect }: Props) {
               <li
                 key={session.id}
                 onClick={() => onSelect(session.id)}
-                className={`px-3 py-2 cursor-pointer border-b border-gray-800/50 hover:bg-gray-800/50 opacity-60 ${
-                  selectedId === session.id ? "bg-gray-800" : ""
+                className={`px-3 py-2 cursor-pointer border-b border-[var(--border-primary)] hover:bg-[var(--bg-hover)] opacity-60 ${
+                  selectedId === session.id ? "bg-[var(--bg-tertiary)]" : ""
                 }`}
               >
                 <div className="flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-gray-500 flex-shrink-0" />
+                  <span className="w-2 h-2 rounded-full bg-[var(--bg-surface)] flex-shrink-0" />
                   <span className="text-sm truncate">
-                    {session.cwd.split("/").pop() ?? session.id.slice(0, 8)}
+                    {getSessionDisplayName(session)}
                   </span>
                 </div>
               </li>

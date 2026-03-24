@@ -17,6 +17,7 @@ export interface Workspace {
 export interface DashboardSession {
   id: string;
   cwd: string;
+  name?: string;
   source: SessionSource;
   status: SessionStatus;
   model?: string;
@@ -34,6 +35,7 @@ export interface DashboardSession {
   gitBranchUrl?: string;
   gitPrNumber?: number;
   gitPrUrl?: string;
+  openspecData?: string;
 }
 
 /** An event forwarded from a pi session */
@@ -77,6 +79,12 @@ export interface TurnUsage {
 export interface ContextUsage {
   tokens: number | null;
   contextWindow: number;
+}
+
+/** Available model info */
+export interface ModelInfo {
+  provider: string;
+  id: string;
 }
 
 /** OpenSpec artifact status */

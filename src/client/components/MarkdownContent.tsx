@@ -2,7 +2,8 @@ import React, { useRef, useCallback, useMemo, useEffect } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
-import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
+import { useThemeContext } from "./ThemeProvider.js";
+import { getSyntaxTheme } from "../lib/syntax-theme.js";
 import Icon from "@mdi/react";
 import { mdiContentCopy, mdiTable } from "@mdi/js";
 import { CopyButton } from "./CopyButton.js";
@@ -155,6 +156,8 @@ export function MarkdownContent({ content }: Props) {
   // const processedContent = useMemo(() => wrapAsciiTables(content), [content]);
   const processedContent = content;
   const containerRef = useRef<HTMLDivElement>(null);
+  const { resolved: theme, themeName } = useThemeContext();
+  const syntaxStyle = getSyntaxTheme(theme, themeName);
 
   // Wide char width fixer — disabled pending further refinement
   // useEffect(() => {
@@ -176,7 +179,7 @@ export function MarkdownContent({ content }: Props) {
               return (
                 <CodeBlockWrapper codeString={codeString}>
                   <SyntaxHighlighter
-                    style={oneDark}
+                    style={syntaxStyle}
                     language={match[1]}
                     PreTag="div"
                   >
@@ -193,7 +196,7 @@ export function MarkdownContent({ content }: Props) {
             if (isInline) {
               return (
                 <code
-                  className="bg-gray-700 px-1.5 py-0.5 rounded text-sm font-mono"
+                  className="bg-[var(--bg-surface)] px-1.5 py-0.5 rounded text-sm font-mono"
                   {...props}
                 >
                   {children}
@@ -203,7 +206,7 @@ export function MarkdownContent({ content }: Props) {
 
             return (
               <CodeBlockWrapper codeString={codeString}>
-                <pre className="bg-[#282c34] rounded-md p-4 overflow-x-auto" style={{ whiteSpace: "pre", margin: 0 }}>
+                <pre className="bg-[var(--bg-code)] rounded-md p-4 overflow-x-auto" style={{ whiteSpace: "pre", margin: 0 }}>
                   <code style={{ whiteSpace: "pre" }}>{codeString}</code>
                 </pre>
               </CodeBlockWrapper>

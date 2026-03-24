@@ -39,21 +39,21 @@ export function ToolCallStep({ toolName, toolCallId, args, status, result, conte
   const Renderer = getToolRenderer(toolName);
 
   return (
-    <div className="mx-4 my-1 border-l-2 border-gray-700/50 pl-3">
+    <div className="mx-4 border-l-2 border-[var(--border-secondary)] pl-3">
       <button
         onClick={() => setExpanded(!expanded)}
-        className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-300 w-full text-left"
+        className="flex items-center gap-1.5 text-xs text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] w-full text-left"
       >
         <span className={`inline-flex ${status === "error" ? "text-red-400" : status === "complete" ? "text-green-400" : "text-yellow-400"}`}>
           {statusIcons[status]}
         </span>
         <span className="truncate">{getSummary(toolName, args)}</span>
-        <span className="ml-auto text-gray-600 inline-flex">
+        <span className="ml-auto text-[var(--text-muted)] inline-flex">
           <Icon path={expanded ? mdiChevronDown : mdiChevronRight} size={0.6} />
         </span>
       </button>
       {expanded && (
-        <div className="mt-1 ml-4 p-2 bg-gray-900 rounded-xl shadow-md border border-white/5 text-xs text-gray-400 overflow-x-auto">
+        <div className="mt-1 ml-4 p-2 bg-[var(--bg-secondary)] rounded-xl shadow-md border border-[var(--border-subtle)] text-xs text-[var(--text-secondary)] overflow-x-auto">
           <Renderer
             toolName={toolName}
             args={args}

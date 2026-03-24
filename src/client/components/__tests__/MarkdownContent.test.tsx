@@ -1,17 +1,34 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeAll } from "vitest";
 import { render, screen } from "@testing-library/react";
 import React from "react";
 import { MarkdownContent, tableToMarkdown, tableToTsv } from "../MarkdownContent.js";
+import { ThemeProvider } from "../ThemeProvider.js";
+
+beforeAll(() => {
+  Object.defineProperty(window, "matchMedia", {
+    writable: true,
+    value: vi.fn().mockImplementation((query: string) => ({
+      matches: query === "(prefers-color-scheme: dark)",
+      media: query,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    })),
+  });
+});
+
+function renderMd(content: string) {
+  return render(<ThemeProvider><MarkdownContent content={content} /></ThemeProvider>);
+}
 
 describe("MarkdownContent", () => {
   it("renders plain text as a paragraph", () => {
-    const { container } = render(<MarkdownContent content="Hello world" />);
+    const { container } = renderMd("Hello world");
     expect(container.querySelector("p")?.textContent).toBe("Hello world");
   });
 
   it("renders inline code with monospace styling", () => {
     const { container } = render(
-      <MarkdownContent content="Use `npm install` here" />
+      <ThemeProvider><MarkdownContent content="Use `npm install` here" /></ThemeProvider>
     );
     const code = container.querySelector("code");
     expect(code).not.toBeNull();
@@ -21,7 +38,7 @@ describe("MarkdownContent", () => {
 
   it("renders fenced code block with syntax highlighter", () => {
     const content = "```javascript\nconst x = 42;\n```";
-    const { container } = render(<MarkdownContent content={content} />);
+    const { container } = render(<ThemeProvider><MarkdownContent content={content} /></ThemeProvider>);
     // SyntaxHighlighter renders with language class
     const highlighted = container.querySelector('[class*="language-"]');
     expect(highlighted).not.toBeNull();
@@ -30,19 +47,19 @@ describe("MarkdownContent", () => {
 
   it("renders fenced code block without language", () => {
     const content = "```\nsome code\n```";
-    const { container } = render(<MarkdownContent content={content} />);
+    const { container } = render(<ThemeProvider><MarkdownContent content={content} /></ThemeProvider>);
     expect(container.textContent).toContain("some code");
   });
 
   it("renders headings", () => {
-    const { container } = render(<MarkdownContent content="## My Heading" />);
+    const { container } = renderMd("## My Heading");
     const h2 = container.querySelector("h2");
     expect(h2?.textContent).toBe("My Heading");
   });
 
   it("renders bold and italic", () => {
     const { container } = render(
-      <MarkdownContent content="**bold** and *italic*" />
+      <ThemeProvider><MarkdownContent content="**bold** and *italic*" /></ThemeProvider>
     );
     expect(container.querySelector("strong")?.textContent).toBe("bold");
     expect(container.querySelector("em")?.textContent).toBe("italic");
@@ -50,7 +67,7 @@ describe("MarkdownContent", () => {
 
   it("renders unordered lists", () => {
     const content = "- item one\n- item two";
-    const { container } = render(<MarkdownContent content={content} />);
+    const { container } = render(<ThemeProvider><MarkdownContent content={content} /></ThemeProvider>);
     const items = container.querySelectorAll("li");
     expect(items.length).toBe(2);
     expect(items[0].textContent).toBe("item one");
@@ -58,7 +75,7 @@ describe("MarkdownContent", () => {
 
   it("renders links", () => {
     const { container } = render(
-      <MarkdownContent content="[click here](https://example.com)" />
+      <ThemeProvider><MarkdownContent content="[click here](https://example.com)" /></ThemeProvider>
     );
     const link = container.querySelector("a");
     expect(link?.textContent).toBe("click here");
@@ -66,7 +83,7 @@ describe("MarkdownContent", () => {
   });
 
   it("uses div as root element to avoid nested p tags", () => {
-    const { container } = render(<MarkdownContent content="Hello world" />);
+    const { container } = renderMd("Hello world");
     const root = container.firstElementChild;
     expect(root?.tagName).toBe("DIV");
     expect(root?.className).toContain("markdown-content");
@@ -74,7 +91,7 @@ describe("MarkdownContent", () => {
 
   it("renders fenced code block with copy button", () => {
     const content = "```javascript\nconst x = 42;\n```";
-    const { container } = render(<MarkdownContent content={content} />);
+    const { container } = render(<ThemeProvider><MarkdownContent content={content} /></ThemeProvider>);
     const copyBtn = container.querySelector('button[title="Copy code"]');
     expect(copyBtn).not.toBeNull();
     expect(copyBtn?.querySelector("svg")).not.toBeNull();
@@ -82,7 +99,7 @@ describe("MarkdownContent", () => {
 
   it("does not render copy button on inline code", () => {
     const { container } = render(
-      <MarkdownContent content="Use `npm install` here" />
+      <ThemeProvider><MarkdownContent content="Use `npm install` here" /></ThemeProvider>
     );
     const copyBtn = container.querySelector('button[title="Copy code"]');
     expect(copyBtn).toBeNull();
@@ -96,7 +113,7 @@ describe("MarkdownContent", () => {
       "| Bob | 25 |",
     ].join("\n");
 
-    const { container } = render(<MarkdownContent content={content} />);
+    const { container } = render(<ThemeProvider><MarkdownContent content={content} /></ThemeProvider>);
     const table = container.querySelector("table");
     expect(table).not.toBeNull();
     const headers = container.querySelectorAll("th");
@@ -110,7 +127,7 @@ describe("MarkdownContent", () => {
 
   it("renders table with copy buttons", () => {
     const content = "| Name | Age |\n| --- | --- |\n| Alice | 30 |";
-    const { container } = render(<MarkdownContent content={content} />);
+    const { container } = render(<ThemeProvider><MarkdownContent content={content} /></ThemeProvider>);
     const mdBtn = container.querySelector('button[title="Copy as Markdown"]');
     const tsvBtn = container.querySelector('button[title="Copy as TSV"]');
     expect(mdBtn).not.toBeNull();
@@ -148,7 +165,7 @@ describe("MarkdownContent", () => {
       "- list item",
     ].join("\n");
 
-    const { container } = render(<MarkdownContent content={content} />);
+    const { container } = render(<ThemeProvider><MarkdownContent content={content} /></ThemeProvider>);
     expect(container.querySelector("h1")).not.toBeNull();
     expect(container.querySelector("strong")).not.toBeNull();
     expect(container.querySelector("code")).not.toBeNull();
@@ -166,7 +183,7 @@ describe("MarkdownContent", () => {
       "└──────┴──────┘",
     ].join("\n");
 
-    const { container } = render(<MarkdownContent content={content} />);
+    const { container } = render(<ThemeProvider><MarkdownContent content={content} /></ThemeProvider>);
     // The table should be rendered inside a code/pre block (monospace)
     const codeBlock = container.querySelector("code");
     expect(codeBlock).not.toBeNull();
@@ -186,7 +203,7 @@ describe("MarkdownContent", () => {
       "More text.",
     ].join("\n");
 
-    const { container } = render(<MarkdownContent content={content} />);
+    const { container } = render(<ThemeProvider><MarkdownContent content={content} /></ThemeProvider>);
     expect(container.querySelector("strong")).not.toBeNull();
     const codeBlock = container.querySelector("code");
     expect(codeBlock).not.toBeNull();

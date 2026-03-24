@@ -27,6 +27,29 @@ describe("extractSessionUpdates", () => {
     expect(updates).toEqual({ currentTool: undefined });
   });
 
+  it("should extract model from model_select event", () => {
+    const updates = extractSessionUpdates(
+      makeEvent("model_select", {
+        model: { provider: "anthropic", id: "claude-opus-4-6" },
+      })
+    );
+    expect(updates).toEqual({ model: "anthropic/claude-opus-4-6" });
+  });
+
+  it("should extract model and thinkingLevel from model_select event", () => {
+    const updates = extractSessionUpdates(
+      makeEvent("model_select", {
+        model: { provider: "anthropic", id: "claude-opus-4-6" },
+        thinkingLevel: "high",
+      })
+    );
+    expect(updates).toEqual({ model: "anthropic/claude-opus-4-6", thinkingLevel: "high" });
+  });
+
+  it("should return null for model_select without model data", () => {
+    expect(extractSessionUpdates(makeEvent("model_select"))).toBeNull();
+  });
+
   it("should return null for unrelated events", () => {
     expect(extractSessionUpdates(makeEvent("message_update"))).toBeNull();
     expect(extractSessionUpdates(makeEvent("session_compact"))).toBeNull();

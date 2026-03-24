@@ -10,9 +10,9 @@ function DiffView({ oldText, newText, filePath }: { oldText: string; newText: st
   return (
     <div className="font-mono text-xs leading-relaxed overflow-auto max-h-80">
       {lines.map((line, i) => {
-        let className = "text-gray-500 px-2"; // default (header lines)
+        let className = "text-[var(--text-tertiary)] px-2"; // default (header lines)
         if (line.startsWith("+++") || line.startsWith("---")) {
-          className = "text-gray-500 px-2 font-bold";
+          className = "text-[var(--text-tertiary)] px-2 font-bold";
         } else if (line.startsWith("@@")) {
           className = "text-blue-400 px-2 bg-blue-900/20";
         } else if (line.startsWith("+")) {
@@ -38,20 +38,20 @@ export function EditToolRenderer({ args, status, result, context }: ToolRenderer
   return (
     <div className="space-y-1">
       <div className="flex items-center gap-2">
-        <span className="text-xs text-gray-300 font-mono">{filePath ?? "file"}</span>
+        <span className="text-xs text-[var(--text-secondary)] font-mono">{filePath ?? "file"}</span>
         <OpenFileButton filePath={filePath} context={context} />
       </div>
 
       {oldText != null && newText != null ? (
-        <div className="rounded bg-gray-950 overflow-hidden">
+        <div className="rounded bg-[var(--bg-code)] overflow-hidden">
           <DiffView oldText={oldText} newText={newText} filePath={filePath ?? "file"} />
         </div>
       ) : (
-        <pre className="text-xs text-gray-400">{JSON.stringify(args, null, 2)}</pre>
+        <pre className="text-xs text-[var(--text-secondary)]">{JSON.stringify(args, null, 2)}</pre>
       )}
 
       {result && status !== "running" && (
-        <div className="text-xs text-gray-500 italic">{result}</div>
+        <div className="text-xs text-[var(--text-tertiary)] italic">{result}</div>
       )}
     </div>
   );

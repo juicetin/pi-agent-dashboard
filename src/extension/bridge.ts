@@ -29,7 +29,12 @@ export default function (pi: ExtensionAPI) {
   let lastGitBranch: string | undefined;
   let lastGitPrNumber: number | undefined;
   let lastOpenSpecJson: string | undefined;
+  let lastSessionName: string | undefined;
   let cachedHasUI: boolean | undefined;
+  let cachedModelRegistry: any | undefined;
+  let cachedCtx: any | undefined;
+  let lastModel: string | undefined;
+  let lastThinkingLevel: string | undefined;
 
   // Load config to determine WebSocket URL
   ensureConfig();
@@ -42,13 +47,38 @@ export default function (pi: ExtensionAPI) {
       const msg = data as ServerToExtensionMessage;
       const response = commandHandler.handle(msg);
       if (response) connection.send(response);
+      // Force openspec refresh and update cache
+      if (msg.type === "openspec_refresh") {
+        sendOpenSpecNow(process.cwd());
+      }
+      // Immediately send model/thinking update after handling set_thinking_level
+      if (msg.type === "set_thinking_level") {
+        // Small delay to let pi process the level change
+        setTimeout(() => sendModelUpdateIfChanged(), 50);
+      }
     },
     onReconnect: () => {
       sendStateSync();
     },
   });
 
-  const commandHandler = createCommandHandler(pi, sessionId);
+  const commandHandler = createCommandHandler(pi, sessionId, {
+    getModelRegistry: () => cachedModelRegistry,
+    setThinkingLevel: (level: string) => (pi as any).setThinkingLevel?.(level),
+    getThinkingLevel: () => (pi as any).getThinkingLevel?.(),
+    shutdown: () => {
+      if (cachedCtx?.shutdown) {
+        cachedCtx.shutdown();
+      } else {
+        process.exit(0);
+      }
+    },
+    abort: () => {
+      if (cachedCtx?.abort) {
+        cachedCtx.abort();
+      }
+    },
+  });
 
   function sendOpenSpecIfChanged(cwd: string) {
     const data = pollOpenSpec(cwd);
@@ -72,6 +102,39 @@ export default function (pi: ExtensionAPI) {
     });
   }
 
+  function getCurrentModelString(): string | undefined {
+    const model = cachedCtx?.model;
+    if (!model) return undefined;
+    return `${model.provider}/${model.id}`;
+  }
+
+  function sendModelUpdateIfChanged() {
+    const model = getCurrentModelString();
+    const thinkingLevel = (pi as any).getThinkingLevel?.() ?? undefined;
+    if (model === lastModel && thinkingLevel === lastThinkingLevel) return;
+    lastModel = model;
+    lastThinkingLevel = thinkingLevel;
+    if (model) {
+      connection.send({
+        type: "model_update",
+        sessionId,
+        model,
+        thinkingLevel,
+      });
+    }
+  }
+
+  function sendSessionNameIfChanged() {
+    const name = pi.getSessionName() ?? "";
+    if (name === lastSessionName) return;
+    lastSessionName = name;
+    connection.send({
+      type: "session_name_update",
+      sessionId,
+      name,
+    });
+  }
+
   function sendGitInfoIfChanged(cwd: string) {
     const info = gatherGitInfo(cwd);
     if (!info) return;
@@ -87,12 +150,22 @@ export default function (pi: ExtensionAPI) {
 
   function sendStateSync() {
     // Re-register session on reconnect
+    const model = getCurrentModelString();
+    const thinkingLevel = (pi as any).getThinkingLevel?.() ?? undefined;
+    lastModel = model;
+    lastThinkingLevel = thinkingLevel;
     connection.send({
       type: "session_register",
       sessionId,
       cwd: process.cwd(),
+      name: pi.getSessionName() ?? undefined,
       source: detectSessionSource(cachedHasUI),
+      model,
+      thinkingLevel,
     });
+
+    // Send current openspec data
+    sendOpenSpecNow(process.cwd());
 
     // Send commands list
     const commands = pi.getCommands();
@@ -101,6 +174,17 @@ export default function (pi: ExtensionAPI) {
       sessionId,
       commands,
     });
+
+    // Send models list
+    if (cachedModelRegistry) {
+      try {
+        const models = cachedModelRegistry.getAvailable().map((m: any) => ({
+          provider: m.provider,
+          id: m.id,
+        }));
+        connection.send({ type: "models_list", sessionId, models });
+      } catch { /* ignore */ }
+    }
   }
 
   // Forward all relevant pi events
@@ -121,7 +205,18 @@ export default function (pi: ExtensionAPI) {
   ] as const;
 
   for (const eventType of eventTypes) {
-    pi.on(eventType as any, async (event: any) => {
+    pi.on(eventType as any, async (event: any, ctx: any) => {
+      // Always keep latest context for abort/shutdown
+      cachedCtx = ctx;
+      // For model_select, enrich the event data with thinkingLevel
+      if (eventType === "model_select") {
+        const enriched = { ...event, thinkingLevel: (pi as any).getThinkingLevel?.() };
+        const msg = mapEventToProtocol(sessionId, enriched);
+        connection.send(msg);
+        // Also send a model_update for session-level tracking
+        sendModelUpdateIfChanged();
+        return;
+      }
       const msg = mapEventToProtocol(sessionId, event);
       connection.send(msg);
     });
@@ -141,14 +236,23 @@ export default function (pi: ExtensionAPI) {
     }
 
     cachedHasUI = ctx.hasUI;
+    cachedCtx = ctx;
     connection.connect();
 
-    // Register session
+    // Register session with initial model/thinkingLevel
+    lastSessionName = pi.getSessionName() ?? "";
+    const initialModel = getCurrentModelString();
+    const initialThinkingLevel = (pi as any).getThinkingLevel?.() ?? undefined;
+    lastModel = initialModel;
+    lastThinkingLevel = initialThinkingLevel;
     connection.send({
       type: "session_register",
       sessionId,
       cwd: ctx.cwd,
+      name: lastSessionName || undefined,
       source: detectSessionSource(cachedHasUI),
+      model: initialModel,
+      thinkingLevel: initialThinkingLevel,
     });
 
     // Send initial commands list
@@ -158,6 +262,18 @@ export default function (pi: ExtensionAPI) {
       sessionId,
       commands,
     });
+
+    // Send available models
+    cachedModelRegistry = (ctx as any).modelRegistry;
+    if (cachedModelRegistry) {
+      try {
+        const models = cachedModelRegistry.getAvailable().map((m: any) => ({
+          provider: m.provider,
+          id: m.id,
+        }));
+        connection.send({ type: "models_list", sessionId, models });
+      } catch { /* modelRegistry not available */ }
+    }
 
     // Send initial git info
     sendGitInfoIfChanged(ctx.cwd);
@@ -179,10 +295,13 @@ export default function (pi: ExtensionAPI) {
     sendOpenSpecIfChanged(ctx.cwd);
     openspecPollTimer = setInterval(() => {
       sendOpenSpecIfChanged(ctx.cwd);
+      sendSessionNameIfChanged();
+      sendModelUpdateIfChanged();
     }, OPENSPEC_POLL_INTERVAL);
   });
 
   pi.on("turn_end", async (event, ctx) => {
+    cachedCtx = ctx;
     const stats = extractTurnStats(
       event as Record<string, unknown>,
       ctx.getContextUsage(),

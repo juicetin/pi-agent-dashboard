@@ -66,6 +66,34 @@ describe("Session persistence integration", () => {
     expect(restored!.endedAt).toBeDefined();
   });
 
+  it("should persist and restore openspecData across server restarts", async () => {
+    dbPath = path.join(os.tmpdir(), `test-openspec-${Date.now()}.db`);
+
+    const config1 = makeConfig();
+    server = await createServer(config1);
+    server.sessionManager.register({
+      id: "openspec-s1",
+      cwd: "/tmp/project",
+      source: "tui",
+    });
+    const openspecData = JSON.stringify({ initialized: true, changes: [{ name: "feat-1", status: "in-progress", completedTasks: 1, totalTasks: 3, artifacts: [] }] });
+    server.sessionManager.update("openspec-s1", { openspecData });
+
+    await server.stop();
+
+    const config2 = makeConfig();
+    config2.dbPath = dbPath;
+    server = await createServer(config2);
+
+    const restored = server.sessionManager.get("openspec-s1");
+    expect(restored).toBeDefined();
+    expect(restored!.openspecData).toBe(openspecData);
+    expect(JSON.parse(restored!.openspecData!)).toEqual({
+      initialized: true,
+      changes: [{ name: "feat-1", status: "in-progress", completedTasks: 1, totalTasks: 3, artifacts: [] }],
+    });
+  });
+
   it("should replace ended record when pi session reconnects with same id", async () => {
     dbPath = path.join(os.tmpdir(), `test-reconnect-${Date.now()}.db`);
 

@@ -122,3 +122,26 @@ On mobile viewports (width < 768px), the session sidebar SHALL be hidden by defa
 #### Scenario: Close drawer on session select
 - **WHEN** a user selects a session in the mobile drawer
 - **THEN** the drawer SHALL close and the chat view SHALL show the selected session
+
+### Requirement: Session card layout
+- **WHEN** a session card is rendered
+- **THEN** it SHALL display: first line with status dot, project name, and relative time; second line with model name and thinking level in parentheses; third line with activity indicator (current tool or state label) and token/cost stats; fourth line with git info (if applicable); then a thin horizontal divider; then an action row with editor buttons, source badge, and hide/unhide button. The source badge SHALL NOT appear on the first line.
+
+#### Scenario: Session card layout
+- **WHEN** a session card is rendered
+- **THEN** it SHALL display: first line with status dot, project name, and relative time; second line with model name and thinking level; third line with activity and token stats; thin divider; action row with editors, source badge, and hide button
+
+#### Scenario: Editor buttons shown on localhost
+- **WHEN** the dashboard is accessed via localhost and editors are detected for the session's cwd
+- **THEN** the session card SHALL display editor buttons in the action row below the thin divider
+
+#### Scenario: Editor button on grouped sessions
+- **WHEN** multiple sessions share the same cwd and are displayed under a group header
+- **THEN** editor buttons SHALL appear on the group header, not on each individual session card
+
+### Requirement: Session sidebar styling
+The session sidebar, session list, and session cards SHALL use theme-aware CSS variables for all background, text, and border colors instead of hardcoded Tailwind dark-mode classes.
+
+#### Scenario: Session sidebar adapts to theme
+- **WHEN** the theme changes between light and dark
+- **THEN** the sidebar backgrounds, text colors, and borders update to match the active theme

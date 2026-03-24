@@ -123,11 +123,43 @@ describe("CommandInput autocomplete", () => {
 
     // First item should be highlighted
     let cmdButtons = getCommandButtons();
-    expect(cmdButtons[0]?.className).toContain("bg-gray-800");
+    expect(cmdButtons[0]?.className).toContain("bg-[var(--bg-tertiary)]");
 
     // Arrow down - second item highlighted
     fireEvent.keyDown(textarea, { key: "ArrowDown" });
     cmdButtons = getCommandButtons();
-    expect(cmdButtons[1]?.className).toContain("bg-gray-800");
+    expect(cmdButtons[1]?.className).toContain("bg-[var(--bg-tertiary)]");
+  });
+});
+
+describe("Play/Stop buttons", () => {
+  it("shows Play icon button instead of text Send", () => {
+    const { container } = renderInput();
+    const sendBtn = container.querySelector('[data-testid="send-button"]');
+    expect(sendBtn).not.toBeNull();
+    expect(sendBtn!.querySelector("svg")).not.toBeNull();
+    expect(sendBtn!.textContent).not.toContain("Send");
+  });
+
+  it("shows Stop button during streaming", () => {
+    const onAbort = vi.fn();
+    const { container } = renderInput({ sessionStatus: "streaming", onAbort });
+    const stopBtn = container.querySelector('[data-testid="stop-button"]');
+    expect(stopBtn).not.toBeNull();
+  });
+
+  it("hides Stop button when idle", () => {
+    const onAbort = vi.fn();
+    const { container } = renderInput({ sessionStatus: "idle", onAbort });
+    const stopBtn = container.querySelector('[data-testid="stop-button"]');
+    expect(stopBtn).toBeNull();
+  });
+
+  it("calls onAbort when Stop clicked", () => {
+    const onAbort = vi.fn();
+    const { container } = renderInput({ sessionStatus: "streaming", onAbort });
+    const stopBtn = container.querySelector('[data-testid="stop-button"]')!;
+    fireEvent.click(stopBtn);
+    expect(onAbort).toHaveBeenCalledOnce();
   });
 });

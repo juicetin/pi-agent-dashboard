@@ -18,17 +18,23 @@ export function ContextUsageBar({ tokens, contextWindow }: Props) {
   const pct = hasData ? Math.min(100, (tokens / contextWindow) * 100) : 0;
 
   return (
-    <div
-      className="h-1 w-full rounded-full bg-gray-800 overflow-hidden"
-      title={hasData ? `${Math.round(pct)}% context used (${tokens.toLocaleString()} / ${contextWindow.toLocaleString()})` : "No context data"}
-      data-testid="context-usage-bar"
-    >
+    <div className="flex items-center gap-2" data-testid="context-usage-bar">
+      <div
+        className="h-1.5 flex-1 rounded-full bg-gray-300 dark:bg-gray-600 overflow-hidden"
+        title={hasData ? `${Math.round(pct)}% context used (${tokens.toLocaleString()} / ${contextWindow.toLocaleString()})` : "No context data"}
+      >
+        {hasData && (
+          <div
+            className={`h-full rounded-full ${getBarColor(pct)}`}
+            style={{ width: `${pct}%` }}
+            data-testid="context-usage-fill"
+          />
+        )}
+      </div>
       {hasData && (
-        <div
-          className={`h-full rounded-full ${getBarColor(pct)}`}
-          style={{ width: `${pct}%` }}
-          data-testid="context-usage-fill"
-        />
+        <span className="text-[10px] text-[var(--text-tertiary)] tabular-nums" data-testid="context-usage-pct">
+          {Math.round(pct)}%
+        </span>
       )}
     </div>
   );

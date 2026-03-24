@@ -299,6 +299,10 @@ export function reduceEvent(state: SessionState, event: DashboardEvent): Session
       if (model) {
         next.model = `${model.provider}/${model.id}`;
       }
+      const thinkingLevel = data.thinkingLevel as string | undefined;
+      if (thinkingLevel !== undefined) {
+        next.thinkingLevel = thinkingLevel;
+      }
       break;
     }
 

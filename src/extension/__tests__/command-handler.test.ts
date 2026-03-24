@@ -9,6 +9,8 @@ describe("CommandHandler", () => {
       getCommands: vi.fn().mockReturnValue([
         { name: "test", description: "Test cmd", source: "extension" as const },
       ]),
+      setSessionName: vi.fn(),
+      getSessionName: vi.fn(),
       on: vi.fn(),
     };
   }
@@ -145,6 +147,70 @@ describe("CommandHandler", () => {
       { type: "image", data: "good", mimeType: "image/jpeg" },
       { type: "image", data: "also-good", mimeType: "image/webp" },
     ]);
+  });
+
+  it("should handle rename_session by calling setSessionName and returning confirmation", () => {
+    const pi = createMockPi();
+    const handler = createCommandHandler(pi as any, "s1");
+
+    const result = handler.handle({
+      type: "rename_session",
+      sessionId: "s1",
+      name: "My New Name",
+    });
+
+    expect(pi.setSessionName).toHaveBeenCalledWith("My New Name");
+    expect(result).toEqual({
+      type: "session_name_update",
+      sessionId: "s1",
+      name: "My New Name",
+    });
+  });
+
+  it("should call shutdown option when shutdown message received", () => {
+    const pi = createMockPi();
+    const shutdown = vi.fn();
+    const handler = createCommandHandler(pi as any, "s1", { shutdown });
+
+    handler.handle({ type: "shutdown", sessionId: "s1" } as ServerToExtensionMessage);
+    expect(shutdown).toHaveBeenCalled();
+  });
+
+  it("should not crash when shutdown called without option", () => {
+    const pi = createMockPi();
+    const handler = createCommandHandler(pi as any, "s1");
+
+    // Should not throw
+    handler.handle({ type: "shutdown", sessionId: "s1" } as ServerToExtensionMessage);
+  });
+
+  it("should call abort option when abort message received", () => {
+    const pi = createMockPi();
+    const abort = vi.fn();
+    const handler = createCommandHandler(pi as any, "s1", { abort });
+
+    handler.handle({ type: "abort", sessionId: "s1" } as ServerToExtensionMessage);
+    expect(abort).toHaveBeenCalled();
+  });
+
+  it("should not crash when abort called without option", () => {
+    const pi = createMockPi();
+    const handler = createCommandHandler(pi as any, "s1");
+
+    // Should not throw
+    handler.handle({ type: "abort", sessionId: "s1" } as ServerToExtensionMessage);
+  });
+
+  it("should return undefined for openspec_refresh (handled by bridge)", () => {
+    const pi = createMockPi();
+    const handler = createCommandHandler(pi as any, "s1");
+
+    const result = handler.handle({
+      type: "openspec_refresh",
+      sessionId: "s1",
+    } as ServerToExtensionMessage);
+
+    expect(result).toBeUndefined();
   });
 
   it("should handle request_commands message", () => {

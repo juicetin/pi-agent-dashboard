@@ -7,6 +7,7 @@ import type { DashboardSession, SessionSource, SessionStatus } from "../shared/t
 export interface RegisterSessionParams {
   id: string;
   cwd: string;
+  name?: string;
   source: SessionSource;
   model?: string;
   thinkingLevel?: string;
@@ -36,6 +37,8 @@ const PERSISTABLE_FIELDS: Record<string, string> = {
   gitBranchUrl: "git_branch_url",
   gitPrNumber: "git_pr_number",
   gitPrUrl: "git_pr_url",
+  name: "name",
+  openspecData: "openspec_data",
 };
 
 function persistUpdates(db: Database, sessionId: string, updates: Partial<DashboardSession>): void {
@@ -63,13 +66,14 @@ export function createSessionManager(db: Database): SessionManager {
   // Hydrate sessions from SQLite
   const now = Date.now();
   const rows = db.raw.prepare(
-    `SELECT id, cwd, source, status, model, thinking_level, workspace_id, started_at, ended_at,
+    `SELECT id, cwd, name, source, status, model, thinking_level, workspace_id, started_at, ended_at,
             tokens_in, tokens_out, cost, cache_read, cache_write,
-            git_branch, git_branch_url, git_pr_number, git_pr_url
+            git_branch, git_branch_url, git_pr_number, git_pr_url, openspec_data
      FROM sessions`
   ).all() as Array<{
     id: string;
     cwd: string;
+    name: string | null;
     source: string;
     status: string;
     model: string | null;
@@ -86,6 +90,7 @@ export function createSessionManager(db: Database): SessionManager {
     git_branch_url: string | null;
     git_pr_number: number | null;
     git_pr_url: string | null;
+    openspec_data: string | null;
   }>;
 
   for (const row of rows) {
@@ -93,6 +98,7 @@ export function createSessionManager(db: Database): SessionManager {
     const session: DashboardSession = {
       id: row.id,
       cwd: row.cwd,
+      name: row.name ?? undefined,
       source: row.source as SessionSource,
       status: isStale ? "ended" : (row.status as SessionStatus),
       model: row.model ?? undefined,
@@ -109,6 +115,7 @@ export function createSessionManager(db: Database): SessionManager {
       gitBranchUrl: row.git_branch_url ?? undefined,
       gitPrNumber: row.git_pr_number ?? undefined,
       gitPrUrl: row.git_pr_url ?? undefined,
+      openspecData: row.openspec_data ?? undefined,
     };
     sessions.set(session.id, session);
   }
@@ -144,6 +151,7 @@ export function createSessionManager(db: Database): SessionManager {
       const session: DashboardSession = {
         id: params.id,
         cwd: params.cwd,
+        name: params.name,
         source: params.source,
         status: "active",
         model: params.model,
@@ -159,11 +167,12 @@ export function createSessionManager(db: Database): SessionManager {
 
       // Persist to SQLite
       db.raw.prepare(
-        `INSERT OR REPLACE INTO sessions (id, cwd, source, status, model, thinking_level, workspace_id, started_at, tokens_in, tokens_out, cost)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT OR REPLACE INTO sessions (id, cwd, name, source, status, model, thinking_level, workspace_id, started_at, tokens_in, tokens_out, cost)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       ).run(
         session.id,
         session.cwd,
+        session.name ?? null,
         session.source,
         session.status,
         session.model ?? null,

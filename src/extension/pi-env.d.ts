@@ -6,6 +6,11 @@ declare module "@mariozechner/pi-coding-agent" {
   export type ExtensionAPI = import("@oh-my-pi/pi-coding-agent").ExtensionAPI;
 }
 declare module "@oh-my-pi/pi-coding-agent" {
+  export interface ModelRegistry {
+    getAvailable(): Array<{ provider: string; id: string }>;
+    refresh(): void;
+  }
+
   export interface ExtensionAPI {
     on(event: string, handler: (...args: any[]) => any): void;
     getCommands(): any[];

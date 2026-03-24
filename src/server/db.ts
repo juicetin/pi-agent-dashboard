@@ -65,6 +65,8 @@ const ALTER_MIGRATIONS = [
   "ALTER TABLE sessions ADD COLUMN git_branch_url TEXT",
   "ALTER TABLE sessions ADD COLUMN git_pr_number INTEGER",
   "ALTER TABLE sessions ADD COLUMN git_pr_url TEXT",
+  "ALTER TABLE sessions ADD COLUMN name TEXT",
+  "ALTER TABLE sessions ADD COLUMN openspec_data TEXT",
 ];
 
 export function createDatabase(dbPath: string): Database {

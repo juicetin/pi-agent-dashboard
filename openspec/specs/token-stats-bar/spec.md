@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: Per-turn bar chart
-The token stats bar SHALL display a mini bar chart showing token usage for each turn. Each bar SHALL be a stacked vertical bar with segments for input tokens (blue), output tokens (gray), and cache read tokens (green). Bars SHALL be scaled relative to the maximum token count across all displayed turns.
+The token stats bar SHALL display a mini bar chart showing token usage for each turn. Each bar SHALL be a stacked vertical bar with segments for cache read tokens (orange, `bg-orange-400`), cache write tokens (yellow, `bg-yellow-400`), input tokens (blue, `bg-blue-500`), and output tokens (purple, `bg-purple-500`). Bars SHALL be scaled relative to the maximum token count across all displayed turns.
 
 #### Scenario: Multiple turns completed
 - **WHEN** the session has completed 5 turns with varying token counts
@@ -19,43 +19,39 @@ The token stats bar SHALL display a mini bar chart showing token usage for each 
 - **WHEN** the session has more than 50 turns
 - **THEN** the bar chart SHALL display only the most recent 50 turns
 
+#### Scenario: Color coding per segment
+- **WHEN** a turn bar is rendered with cacheRead=4100, cacheWrite=600, input=1100, output=800
+- **THEN** the bar SHALL show orange (4100), yellow (600), blue (1100), purple (800) segments stacked bottom to top
+
 ### Requirement: Context window progress bar
-The token stats bar SHALL display a progress bar showing current context window usage. The bar SHALL show the used tokens as a filled portion of the total context window, with labels showing used tokens (left) and total context window (right). The fill color SHALL use a smooth gradient from green (0%) through yellow (50%) to red (100%) based on the usage percentage, computed via HSL interpolation. The segmented sub-bars (cache read, cache write, input, output) SHALL all use the same computed gradient color for visual coherence.
+The token stats bar SHALL display a stacked horizontal progress bar showing current context window usage, segmented by token category. The segments SHALL use the same color scheme as vertical bars: orange (cache read), yellow (cache write), blue (input), purple (output). The remaining unused context SHALL be dark gray. Labels SHALL show used tokens (left) and total context window (right).
 
 #### Scenario: Context usage available
 - **WHEN** context usage data is available with tokens=19100 and contextWindow=256000
-- **THEN** the progress bar SHALL show approximately 7.5% filled with a green fill color, with labels "19.1k" and "256.0k"
+- **THEN** the progress bar SHALL show approximately 7.5% filled with color segments proportioned by the latest turn's token breakdown, with labels "19.1k" and "256.0k"
 
 #### Scenario: Context usage unavailable
-- **WHEN** context usage data is not available (e.g., no turns completed yet)
+- **WHEN** context usage data is not available
 - **THEN** the progress bar SHALL show as empty with no labels or a placeholder
 
-#### Scenario: Context at 50%
-- **WHEN** context usage is at 50% of the context window
-- **THEN** the progress bar fill color SHALL be yellow (HSL ~48°)
+#### Scenario: Context near capacity (>80%)
+- **WHEN** context usage exceeds 80% of the context window
+- **THEN** the progress bar fill color SHALL change to yellow warning
 
-#### Scenario: Context at 80%
-- **WHEN** context usage is at 80% of the context window
-- **THEN** the progress bar fill color SHALL be orange-red (interpolated between yellow and red)
-
-#### Scenario: Context at 100%
-- **WHEN** context usage is at or near 100% of the context window
-- **THEN** the progress bar fill color SHALL be red (HSL ~0°)
-
-#### Scenario: Context at low usage
-- **WHEN** context usage is below 20% of the context window
-- **THEN** the progress bar fill color SHALL be green (HSL ~142°)
+#### Scenario: Context critical (>90%)
+- **WHEN** context usage exceeds 90% of the context window
+- **THEN** the progress bar fill color SHALL change to red (`bg-red-500`) to indicate critical usage
 
 ### Requirement: Token counters and cost
-The token stats bar SHALL display accumulated input token count, output token count, and total cost.
+The token stats bar SHALL display accumulated input token count, output token count, and total cost. Below the counters, a color-coded legend SHALL show per-category token counts from the latest turn: orange label for cache read, yellow label for cache write, blue label for input, purple label for output.
 
-#### Scenario: Stats display
-- **WHEN** the session has accumulated 45200 input tokens, 12100 output tokens, and $0.23 cost
-- **THEN** the stats bar SHALL display "↓45.2k" "↑12.1k" "$0.23"
+#### Scenario: Stats display with legend
+- **WHEN** the session has accumulated 45200 input tokens, 12100 output tokens, $0.23 cost, and the latest turn has cacheRead=4100, cacheWrite=600, input=1100, output=800
+- **THEN** the stats bar SHALL display "↓45.2k ↑12.1k $0.23" and a legend row "🟠 4.1k read  🟡 0.6k write  🔵 1.1k in  🟣 0.8k out"
 
 #### Scenario: Zero stats
 - **WHEN** the session has no token usage yet
-- **THEN** the counters SHALL display "↓0" "↑0" and cost SHALL be hidden
+- **THEN** the counters SHALL display "↓0" "↑0", cost SHALL be hidden, and no legend SHALL be shown
 
 ### Requirement: Stats bar layout
 The token stats bar SHALL render between the `SessionHeader` and `ChatView` in the session panel. It SHALL be a compact horizontal strip.
@@ -67,3 +63,10 @@ The token stats bar SHALL render between the `SessionHeader` and `ChatView` in t
 #### Scenario: No session selected
 - **WHEN** no session is selected
 - **THEN** the stats bar SHALL not be rendered
+
+### Requirement: Token stats bar styling
+The token stats bar SHALL use theme-aware CSS variables for all background, text, and border colors instead of hardcoded Tailwind dark-mode classes.
+
+#### Scenario: Token stats bar adapts to theme
+- **WHEN** the theme changes between light and dark
+- **THEN** the token stats bar backgrounds, text colors, and borders update to match the active theme

@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useRef, useEffect, type ReactNode } from "react";
 import Icon from "@mdi/react";
-import { mdiFlash, mdiClipboardText, mdiWrench, mdiFolder, mdiFile } from "@mdi/js";
+import { mdiFlash, mdiClipboardText, mdiWrench, mdiFolder, mdiFile, mdiPlay, mdiStop } from "@mdi/js";
 import type { CommandInfo, ImageContent, FileEntry } from "../../shared/types.js";
 
 interface Props {
@@ -9,6 +9,8 @@ interface Props {
   onListFiles?: (query: string) => void;
   fileResults?: { query: string; files: FileEntry[] } | null;
   disabled?: boolean;
+  sessionStatus?: "idle" | "streaming" | "ended";
+  onAbort?: () => void;
 }
 
 const sourceIcons: Record<string, ReactNode> = {
@@ -44,7 +46,7 @@ function extractAtQuery(text: string): string | null {
   return null;
 }
 
-export function CommandInput({ commands, onSend, onListFiles, fileResults, disabled }: Props) {
+export function CommandInput({ commands, onSend, onListFiles, fileResults, disabled, sessionStatus, onAbort }: Props) {
   const [text, setText] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [pendingImages, setPendingImages] = useState<ImageContent[]>([]);
@@ -235,22 +237,22 @@ export function CommandInput({ commands, onSend, onListFiles, fileResults, disab
   }, []);
 
   return (
-    <div className="border-t border-gray-800 p-3 relative">
+    <div className="border-t border-[var(--border-primary)] p-3 relative">
       {/* Autocomplete dropdown */}
       {dropdownMode === "command" && (
-        <div className="absolute bottom-full left-3 right-3 mb-1 bg-gray-900 border border-white/5 rounded-xl max-h-64 overflow-y-auto shadow-lg z-10">
+        <div className="absolute bottom-full left-3 right-3 mb-1 bg-[var(--bg-secondary)] border border-[var(--border-subtle)] rounded-xl max-h-64 overflow-y-auto shadow-lg z-10">
           {filteredCommands.map((cmd, i) => (
             <button
               key={cmd.name}
               onClick={() => selectCommand(cmd)}
               className={`w-full px-3 py-2 text-left text-sm flex items-center gap-2 ${
-                i === selectedIndex ? "bg-gray-800" : "hover:bg-gray-800/50"
+                i === selectedIndex ? "bg-[var(--bg-tertiary)]" : "hover:bg-[var(--bg-hover)]"
               }`}
             >
               <span className="inline-flex">{sourceIcons[cmd.source] ?? <Icon path={mdiFlash} size={0.6} />}</span>
               <span className="font-mono text-blue-400">/{cmd.name}</span>
               {cmd.description && (
-                <span className="text-gray-500 truncate">{cmd.description}</span>
+                <span className="text-[var(--text-tertiary)] truncate">{cmd.description}</span>
               )}
             </button>
           ))}
@@ -258,7 +260,7 @@ export function CommandInput({ commands, onSend, onListFiles, fileResults, disab
       )}
 
       {dropdownMode === "file" && (
-        <div className="absolute bottom-full left-3 right-3 mb-1 bg-gray-900 border border-white/5 rounded-xl max-h-64 overflow-y-auto shadow-lg z-10">
+        <div className="absolute bottom-full left-3 right-3 mb-1 bg-[var(--bg-secondary)] border border-[var(--border-subtle)] rounded-xl max-h-64 overflow-y-auto shadow-lg z-10">
           {fileItems.map((file, i) => {
             const name = file.path.split("/").pop() ?? file.path;
             return (
@@ -266,14 +268,14 @@ export function CommandInput({ commands, onSend, onListFiles, fileResults, disab
                 key={file.path}
                 onClick={() => selectFile(file)}
                 className={`w-full px-3 py-2 text-left text-sm flex items-center gap-2 ${
-                  i === selectedIndex ? "bg-gray-800" : "hover:bg-gray-800/50"
+                  i === selectedIndex ? "bg-[var(--bg-tertiary)]" : "hover:bg-[var(--bg-hover)]"
                 }`}
               >
                 <span className="inline-flex"><Icon path={file.isDirectory ? mdiFolder : mdiFile} size={0.6} /></span>
                 <span className="font-mono text-green-400">
                   {name}{file.isDirectory ? "/" : ""}
                 </span>
-                <span className="text-gray-500 truncate">{file.path}</span>
+                <span className="text-[var(--text-tertiary)] truncate">{file.path}</span>
               </button>
             );
           })}
@@ -295,7 +297,7 @@ export function CommandInput({ commands, onSend, onListFiles, fileResults, disab
               <img
                 src={`data:${img.mimeType};base64,${img.data}`}
                 alt={`Attachment ${i + 1}`}
-                className="h-16 w-16 object-cover rounded border border-gray-700"
+                className="h-16 w-16 object-cover rounded border border-[var(--border-secondary)]"
               />
               <button
                 onClick={() => removeImage(i)}
@@ -318,7 +320,7 @@ export function CommandInput({ commands, onSend, onListFiles, fileResults, disab
           placeholder="Send a message, /command, or @file..."
           disabled={disabled}
           rows={1}
-          className="flex-1 bg-gray-800 rounded-lg px-4 py-2 text-sm text-white placeholder-gray-500 border border-gray-700 focus:border-blue-500 focus:outline-none disabled:opacity-50 resize-none"
+          className="flex-1 bg-[var(--bg-tertiary)] rounded-lg px-4 py-2 text-sm text-[var(--text-primary)] placeholder-gray-500 border border-[var(--border-secondary)] focus:border-blue-500 focus:outline-none disabled:opacity-50 resize-none"
           style={{ minHeight: "38px", maxHeight: "120px" }}
           onInput={(e) => {
             const target = e.target as HTMLTextAreaElement;
@@ -329,10 +331,22 @@ export function CommandInput({ commands, onSend, onListFiles, fileResults, disab
         <button
           onClick={handleSend}
           disabled={disabled || !text.trim()}
-          className="px-4 py-2 bg-blue-600 rounded-lg text-sm font-medium hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed self-end"
+          className="p-2 bg-blue-600 rounded-lg hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed self-end"
+          title="Send"
+          data-testid="send-button"
         >
-          Send
+          <Icon path={mdiPlay} size={0.7} />
         </button>
+        {sessionStatus === "streaming" && onAbort && (
+          <button
+            onClick={onAbort}
+            className="p-2 bg-red-600 rounded-lg hover:bg-red-500 self-end"
+            title="Stop"
+            data-testid="stop-button"
+          >
+            <Icon path={mdiStop} size={0.7} />
+          </button>
+        )}
       </div>
     </div>
   );

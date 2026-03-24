@@ -12,6 +12,15 @@ The following message types SHALL be defined for extension → server:
 - `extension_ui_event`: extension UI interaction (method, title, status, result)
 - `stats_update`: accumulated token/cost stats, per-turn usage breakdown, and context window usage
 - `files_list`: response to a file listing request (sessionId, query, files)
+- `openspec_update`: openspec change data for the session's project (sessionId, data: OpenSpecData)
+- `session_name_update`: session display name change (sessionId, name)
+- `models_list`: available models for the session (sessionId, models: Array<{provider, id}>)
+
+The `openspec_update` message SHALL include:
+- `data.initialized`: boolean indicating whether openspec is initialized
+- `data.changes`: array of `OpenSpecChange` objects with name, status, task counts, and artifact status
+
+The `session_register` message SHALL include an optional `name` field for the initial session display name.
 
 The `stats_update` message SHALL include:
 - `stats.tokensIn`: accumulated input tokens (number)
@@ -26,6 +35,9 @@ The following message types SHALL be defined for server → extension:
 - `request_commands`: ask extension to send updated commands list
 - `request_state_sync`: ask extension to resend full state
 - `list_files`: request file listing for autocomplete (sessionId, query)
+- `openspec_refresh`: request immediate openspec data refresh
+- `rename_session`: rename session display name (sessionId, name)
+- `request_models`: ask extension to re-send available models list
 
 #### Scenario: Message serialization round-trip
 - **WHEN** any protocol message is created and serialized to JSON
@@ -39,24 +51,37 @@ The following message types SHALL be defined for server → extension:
 The system SHALL define TypeScript types for all messages sent between the dashboard server and browser clients over WebSocket. Messages SHALL include a `type` discriminator field.
 
 The following message types SHALL be defined for server → browser:
-- `session_added`: new session registered (full session metadata)
-- `session_updated`: session metadata changed (status, model, stats)
-- `session_removed`: session disconnected
-- `event`: forwarded pi event with session context and sequence number
-- `event_replay`: batch of events for catch-up (array of sequenced events)
+- `session_added`: new session connected (full DashboardSession object including optional name)
+- `session_updated`: session metadata changed (partial update including name changes)
+- `session_removed`: session disconnected/ended
+- `event`: single forwarded event with sequence number
+- `event_replay`: batch of events for replay on subscribe
 - `commands_list`: available commands for a session
-- `extension_ui_event`: extension UI interaction for display
-- `workspace_updated`: workspace added/removed/modified
-- `files_list`: file listing response forwarded from bridge (sessionId, query, files)
+- `extension_ui_event`: forwarded extension UI interaction
+- `workspace_updated`: workspace list changed
+- `files_list`: file listing response
+- `openspec_update`: openspec data for a session
+- `models_list`: forwarded available models for a session
 
 The following message types SHALL be defined for browser → server:
-- `subscribe`: subscribe to session events (sessionId, lastSeq)
-- `unsubscribe`: stop receiving events for a session
-- `send_prompt`: user prompt (sessionId, text, images?)
-- `abort`: abort session operation (sessionId)
-- `request_commands`: request command list for a session
-- `fetch_content`: request full event payload for lazy loading (sessionId, seq)
-- `list_files`: request file listing for autocomplete (sessionId, query)
+- `subscribe`: subscribe to events for a session (with optional lastSeq)
+- `unsubscribe`: unsubscribe from session events
+- `send_prompt`: send prompt to a session
+- `abort`: abort operation in a session
+- `request_commands`: request commands list refresh
+- `fetch_content`: request full content for a specific event
+- `list_files`: request file listing
+- `openspec_refresh`: request openspec data refresh
+- `rename_session`: rename a session (sessionId, name)
+- `request_models`: request models refresh for a session
+
+#### Scenario: Session name included in session_added
+- **WHEN** a new session is broadcast to browsers
+- **THEN** the `session_added` message SHALL include the `name` field if set
+
+#### Scenario: Rename from browser forwarded to extension
+- **WHEN** a browser sends a `rename_session` message
+- **THEN** the server SHALL forward a `rename_session` message to the target extension
 
 #### Scenario: Browser subscribes to session with sequence
 - **WHEN** browser sends `subscribe` with `lastSeq: 100`

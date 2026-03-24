@@ -236,3 +236,61 @@ The bridge extension SHALL spawn the dashboard server using `child_process.spawn
 #### Scenario: Spawn failure detection
 - **WHEN** the spawned server process exits within 2 seconds of being spawned
 - **THEN** the extension SHALL show a warning via `ctx.ui.notify()` with message `Dashboard server failed to start` at `warning` level
+
+### Requirement: OpenSpec polling
+The bridge extension SHALL poll `openspec list --json` and `openspec status --change <name> --json` for each change every 30 seconds. It SHALL send an `openspec_update` message when data changes.
+
+#### Scenario: Poll on session start
+- **WHEN** the session starts
+- **THEN** the extension runs openspec CLI and sends an initial `openspec_update`
+
+#### Scenario: Periodic poll with changes
+- **WHEN** 30 seconds elapse and openspec data has changed
+- **THEN** the extension sends an `openspec_update` with the new data
+
+#### Scenario: Periodic poll without changes
+- **WHEN** 30 seconds elapse but openspec data is unchanged
+- **THEN** no message is sent
+
+### Requirement: OpenSpec refresh handling
+The bridge extension SHALL handle `openspec_refresh` messages by immediately running the CLI, updating the internal `lastOpenSpecJson` cache, and sending `openspec_update` via `sendOpenSpecNow`. The command handler SHALL NOT return an `openspec_update` directly — the bridge's `onMessage` callback SHALL handle it to ensure cache consistency.
+
+#### Scenario: Refresh request
+- **WHEN** the extension receives an `openspec_refresh` message
+- **THEN** it runs the openspec CLI immediately via `sendOpenSpecNow`, updates the cache, and sends `openspec_update`
+
+#### Scenario: Refresh does not cause duplicate sends
+- **WHEN** the extension receives `openspec_refresh` and the data is unchanged from the last poll
+- **THEN** only one `openspec_update` SHALL be sent (from `sendOpenSpecNow`), and the next poll cycle SHALL not re-send the same data
+
+### Requirement: OpenSpec state sync on reconnect
+The bridge extension SHALL include OpenSpec data in the `sendStateSync` flow when reconnecting to the dashboard server. This ensures the server always has current OpenSpec state after a reconnect.
+
+#### Scenario: Reconnect sends OpenSpec data
+- **WHEN** the bridge extension reconnects to the dashboard server
+- **THEN** it SHALL call `sendOpenSpecNow` to send the current OpenSpec state, regardless of whether it has changed since the last send
+
+### Requirement: Graceful CLI failure
+The extension SHALL handle openspec CLI failures gracefully without crashing.
+
+#### Scenario: CLI not found
+- **WHEN** `openspec` is not installed
+- **THEN** the extension sends `openspec_update` with `{ initialized: false, changes: [] }`
+
+#### Scenario: Project not initialized
+- **WHEN** `openspec list --json` returns an error (no openspec dir)
+- **THEN** the extension sends `openspec_update` with `{ initialized: false, changes: [] }`
+
+### Requirement: Send available models on session start
+The bridge extension SHALL read available models from `ctx.modelRegistry.getAvailable()` on session_start and send a `models_list` message.
+
+#### Scenario: Models sent on start
+- **WHEN** the session starts
+- **THEN** the extension sends `models_list` with all models that have configured API keys
+
+### Requirement: Handle request_models
+The bridge extension SHALL handle `request_models` messages by re-reading available models and responding with `models_list`.
+
+#### Scenario: Refresh models
+- **WHEN** the extension receives `request_models`
+- **THEN** it reads `modelRegistry.getAvailable()` and sends `models_list`

@@ -82,6 +82,24 @@ export function createBrowserGateway(
                 isLast: i + REPLAY_BATCH_SIZE >= events.length,
               });
             }
+
+            // Hydrate stored OpenSpec data or force refresh from extension
+            const session = sessionManager.get(msg.sessionId);
+            if (session?.openspecData) {
+              try {
+                sendTo(ws, {
+                  type: "openspec_update",
+                  sessionId: msg.sessionId,
+                  data: JSON.parse(session.openspecData),
+                });
+              } catch { /* malformed JSON, request fresh */ }
+            }
+            if (!session?.openspecData && session?.status !== "ended") {
+              piGateway.sendToSession(msg.sessionId, {
+                type: "openspec_refresh",
+                sessionId: msg.sessionId,
+              });
+            }
             break;
           }
 
@@ -126,6 +144,43 @@ export function createBrowserGateway(
               sessionId: msg.sessionId,
             });
             break;
+
+          case "request_models":
+            piGateway.sendToSession(msg.sessionId, {
+              type: "request_models",
+              sessionId: msg.sessionId,
+            });
+            break;
+
+          case "set_thinking_level":
+            piGateway.sendToSession(msg.sessionId, {
+              type: "set_thinking_level",
+              sessionId: msg.sessionId,
+              level: msg.level,
+            });
+            break;
+
+          case "shutdown":
+            piGateway.sendToSession(msg.sessionId, {
+              type: "shutdown",
+              sessionId: msg.sessionId,
+            });
+            break;
+
+          case "rename_session": {
+            // Optimistically update session name server-side
+            const nameUpdates = { name: msg.name || undefined };
+            sessionManager.update(msg.sessionId, nameUpdates);
+            // Broadcast to all browsers immediately
+            broadcast({ type: "session_updated", sessionId: msg.sessionId, updates: nameUpdates });
+            // Forward to extension to persist in pi
+            piGateway.sendToSession(msg.sessionId, {
+              type: "rename_session",
+              sessionId: msg.sessionId,
+              name: msg.name,
+            });
+            break;
+          }
 
           case "fetch_content": {
             const event = eventStore.getEvent(msg.sessionId, msg.seq);

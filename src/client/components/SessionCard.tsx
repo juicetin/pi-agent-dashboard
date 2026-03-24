@@ -1,19 +1,21 @@
-import React, { type ReactNode } from "react";
+import React, { useState, type ReactNode } from "react";
 import Icon from "@mdi/react";
-import { mdiFlash, mdiKeyboard, mdiAlphaIBoxOutline, mdiPencil, mdiSourceBranch } from "@mdi/js";
+import { mdiFlash, mdiOpenInNew, mdiPencil, mdiPencilOutline, mdiSourceBranch, mdiClose, mdiEyeOffOutline, mdiEyeOutline } from "@mdi/js";
 import type { DashboardSession } from "../../shared/types.js";
+import { getSessionDisplayName } from "../lib/session-display-name.js";
 import { formatRelativeTime } from "../lib/format.js";
 import type { DetectedEditor } from "../lib/editor-api.js";
 import { ContextUsageBar } from "./ContextUsageBar.js";
 import type { ContextUsageInfo } from "./SessionList.js";
 import type { OpenSpecData } from "../../shared/types.js";
 import { OpenSpecSection } from "./OpenSpecSection.js";
+import { InlineRenameInput } from "./InlineRenameInput.js";
 
 export const statusColors: Record<string, string> = {
   active: "bg-green-500",
   streaming: "bg-yellow-500 animate-pulse",
   idle: "bg-green-500",
-  ended: "bg-gray-600",
+  ended: "bg-[var(--bg-surface)]",
 };
 
 export const sourceBadgeColors: Record<string, string> = {
@@ -21,7 +23,7 @@ export const sourceBadgeColors: Record<string, string> = {
   zed: "text-purple-400",
   tmux: "text-orange-400",
   dashboard: "text-green-400",
-  unknown: "text-gray-500",
+  unknown: "text-[var(--text-tertiary)]",
 };
 
 export function ActivityIndicator({ session }: { session: DashboardSession }) {
@@ -36,7 +38,7 @@ export function ActivityIndicator({ session }: { session: DashboardSession }) {
   }
 
   if (session.status === "idle") {
-    return <span className="text-gray-500">Waiting for input</span>;
+    return <span className="text-[var(--text-tertiary)]">Waiting for input</span>;
   }
 
   return null;
@@ -47,7 +49,7 @@ export function TokenStats({ session }: { session: DashboardSession }) {
   if (!hasStats) return null;
 
   return (
-    <span className="text-gray-500 whitespace-nowrap">
+    <span className="text-[var(--text-tertiary)] whitespace-nowrap">
       {formatTokens(session.tokensIn ?? 0)}↑ {formatTokens(session.tokensOut ?? 0)}↓
       {(session.cacheRead ?? 0) > 0 && (
         <span className="ml-1">R{formatTokens(session.cacheRead ?? 0)}</span>
@@ -66,7 +68,7 @@ export function GitInfo({ session }: { session: DashboardSession }) {
   if (!session.gitBranch) return null;
 
   return (
-    <div className="text-[11px] mt-0.5 ml-4 flex items-center gap-1.5 text-gray-500">
+    <div className="text-[11px] mt-0.5 ml-4 flex items-center gap-1.5 text-[var(--text-tertiary)]">
       <Icon path={mdiSourceBranch} size={0.5} />
       {session.gitBranchUrl ? (
         <a href={session.gitBranchUrl} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline truncate">
@@ -77,7 +79,7 @@ export function GitInfo({ session }: { session: DashboardSession }) {
       )}
       {session.gitPrNumber != null && (
         <>
-          <span className="text-gray-600">·</span>
+          <span className="text-[var(--text-muted)]">·</span>
           {session.gitPrUrl ? (
             <a href={session.gitPrUrl} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">
               #{session.gitPrNumber}
@@ -96,7 +98,7 @@ export function GroupGitInfo({ sessions }: { sessions: DashboardSession[] }) {
   if (!session?.gitBranch) return null;
 
   return (
-    <div className="text-[11px] flex items-center gap-1.5 text-gray-500">
+    <div className="text-[11px] flex items-center gap-1.5 text-[var(--text-tertiary)]">
       <Icon path={mdiSourceBranch} size={0.5} />
       {session.gitBranchUrl ? (
         <a href={session.gitBranchUrl} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline truncate">
@@ -107,7 +109,7 @@ export function GroupGitInfo({ sessions }: { sessions: DashboardSession[] }) {
       )}
       {session.gitPrNumber != null && (
         <>
-          <span className="text-gray-600">·</span>
+          <span className="text-[var(--text-muted)]">·</span>
           {session.gitPrUrl ? (
             <a href={session.gitPrUrl} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">
               #{session.gitPrNumber}
@@ -122,9 +124,9 @@ export function GroupGitInfo({ sessions }: { sessions: DashboardSession[] }) {
 }
 
 const editorIcons: Record<string, ReactNode> = {
-  zed: "Z",
-  vscode: <Icon path={mdiKeyboard} size={0.5} />,
-  idea: <Icon path={mdiAlphaIBoxOutline} size={0.5} />,
+  zed: <Icon path={mdiOpenInNew} size={0.5} />,
+  vscode: <Icon path={mdiOpenInNew} size={0.5} />,
+  idea: <Icon path={mdiOpenInNew} size={0.5} />,
 };
 
 export function EditorButtons({
@@ -145,10 +147,10 @@ export function EditorButtons({
             e.stopPropagation();
             onOpen(editor.id);
           }}
-          className="text-[10px] px-1.5 py-0.5 rounded border border-gray-700 text-gray-400 hover:text-blue-400 hover:border-blue-500/50"
+          className="text-[10px] px-1.5 py-0.5 rounded border border-[var(--border-secondary)] text-[var(--text-secondary)] hover:text-blue-400 hover:border-blue-500/50"
           title={`Open in ${editor.name}`}
         >
-          <span className="inline-flex items-center gap-0.5">{editorIcons[editor.id] ?? <Icon path={mdiPencil} size={0.5} />} {editor.name}</span>
+          <span className="inline-flex items-center gap-0.5">{editorIcons[editor.id] ?? <Icon path={mdiOpenInNew} size={0.5} />} {editor.name}</span>
         </button>
       ))}
     </div>
@@ -170,6 +172,8 @@ export function SessionCard({
   openspecData,
   onSendPrompt,
   onOpenSpecRefresh,
+  onRename,
+  onShutdown,
 }: {
   session: DashboardSession;
   selectedId?: string;
@@ -185,32 +189,84 @@ export function SessionCard({
   openspecData?: OpenSpecData;
   onSendPrompt?: (text: string) => void;
   onOpenSpecRefresh?: () => void;
+  onRename?: (name: string) => void;
+  onShutdown?: (id: string) => void;
 }) {
   const isSelected = selectedId === session.id;
+  const [isRenaming, setIsRenaming] = useState(false);
+  const canRename = session.status !== "ended" && !!onRename;
+  const isAlive = session.status !== "ended";
+
+  function handleConfirmRename(name: string) {
+    setIsRenaming(false);
+    onRename?.(name);
+  }
 
   return (
     <li
       onClick={() => onSelect(session.id)}
-      className={`px-3 py-2.5 cursor-pointer rounded-xl shadow-md shadow-black/40 border border-white/5 hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200 ${
-        isSelected ? "bg-gray-800 border-l-2 border-l-blue-500/40" : ""
+      className={`px-3 py-2.5 cursor-pointer rounded-xl shadow-md shadow-[var(--shadow-card)] border border-[var(--border-subtle)] hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200 ${
+        isSelected ? "bg-[var(--bg-tertiary)] border-l-2 border-l-blue-500/40" : ""
       } ${isHidden ? "opacity-40" : ""}`}
     >
       {/* Line 1: status dot + name + time */}
       <div className="flex items-center gap-2">
         <span
-          className={`w-2 h-2 rounded-full flex-shrink-0 ${statusColors[session.status] ?? "bg-gray-500"}`}
+          className={`w-2 h-2 rounded-full flex-shrink-0 ${statusColors[session.status] ?? "bg-[var(--bg-surface)]"}`}
         />
-        <span className="text-sm truncate flex-1">
-          {session.cwd.split("/").pop() ?? session.id.slice(0, 8)}
-        </span>
-        <span className="text-[10px] text-gray-600">
+        {isRenaming ? (
+          <InlineRenameInput
+            currentName={getSessionDisplayName(session)}
+            onConfirm={handleConfirmRename}
+            onCancel={() => setIsRenaming(false)}
+            className="flex-1"
+          />
+        ) : (
+          <span
+            className={`text-sm truncate flex-1 ${canRename ? "cursor-text" : ""}`}
+            onDoubleClick={(e) => {
+              if (canRename) {
+                e.stopPropagation();
+                setIsRenaming(true);
+              }
+            }}
+          >
+            {getSessionDisplayName(session)}
+          </span>
+        )}
+        {canRename && !isRenaming && (
+          <button
+            onClick={(e) => { e.stopPropagation(); setIsRenaming(true); }}
+            className="text-[var(--text-muted)] hover:text-[var(--text-secondary)] p-0.5 flex-shrink-0"
+            title="Rename session"
+          >
+            <Icon path={mdiPencilOutline} size={0.45} />
+          </button>
+        )}
+        <span className="text-[10px] text-[var(--text-muted)]">
           {formatRelativeTime(now - session.startedAt)}
         </span>
+        {isAlive && onShutdown && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              if (session.status === "streaming") {
+                if (!window.confirm("Session is currently running. Exit anyway?")) return;
+              }
+              onShutdown(session.id);
+            }}
+            className="text-[var(--text-muted)] hover:text-red-400 p-0.5 flex-shrink-0"
+            title="Exit pi session"
+            data-testid="session-close-btn"
+          >
+            <Icon path={mdiClose} size={0.5} />
+          </button>
+        )}
       </div>
 
       {/* Line 2: model + thinking level */}
       {session.model && (
-        <div className="text-xs text-gray-500 mt-0.5 ml-4 truncate">
+        <div className="text-xs text-[var(--text-tertiary)] mt-0.5 ml-4 truncate">
           {session.model}{session.thinkingLevel ? ` (${session.thinkingLevel})` : ""}
         </div>
       )}
@@ -219,7 +275,7 @@ export function SessionCard({
       <div className="flex items-center justify-between mt-0.5 ml-4 text-[11px] gap-2">
         <ActivityIndicator session={session} />
         {session.cost != null && session.cost > 0 && (
-          <span className="text-gray-500">${session.cost.toFixed(2)}</span>
+          <span className="text-[var(--text-tertiary)]">${session.cost.toFixed(2)}</span>
         )}
       </div>
 
@@ -235,13 +291,13 @@ export function SessionCard({
       {showGitInfo && <GitInfo session={session} />}
 
       {/* Thin divider before action row */}
-      <div className="border-t border-gray-700/30 mt-1.5 pt-1.5 ml-4 flex items-center gap-2">
+      <div className="border-t border-[var(--border-secondary)] mt-1.5 pt-1.5 ml-4 flex items-center gap-2">
         {/* Editor buttons (left) */}
         {editors && editors.length > 0 && onOpenEditor && (
           <EditorButtons editors={editors} onOpen={onOpenEditor} />
         )}
         {/* Source badge */}
-        <span className={`text-[10px] ${sourceBadgeColors[session.source] ?? "text-gray-500"}`}>
+        <span className={`text-[10px] ${sourceBadgeColors[session.source] ?? "text-[var(--text-tertiary)]"}`}>
           {session.source}
         </span>
         {/* Spacer */}
@@ -250,15 +306,21 @@ export function SessionCard({
         {isHidden ? (
           <button
             onClick={(e) => { e.stopPropagation(); onUnhide(session.id); }}
-            className="text-[10px] text-gray-500 hover:text-green-400"
-            title="Unhide session"
-          >↩</button>
+            className="text-[var(--text-tertiary)] hover:text-green-400 p-0.5"
+            title="Show session"
+            data-testid="session-unhide-btn"
+          >
+            <Icon path={mdiEyeOutline} size={0.45} />
+          </button>
         ) : (
           <button
             onClick={(e) => { e.stopPropagation(); onHide(session.id); }}
-            className="text-[10px] text-gray-500 hover:text-red-400"
+            className="text-[var(--text-tertiary)] hover:text-[var(--text-muted)] p-0.5"
             title="Hide session"
-          >✕</button>
+            data-testid="session-hide-btn"
+          >
+            <Icon path={mdiEyeOffOutline} size={0.45} />
+          </button>
         )}
       </div>
 
@@ -269,7 +331,7 @@ export function SessionCard({
       >
         <div className="overflow-hidden">
           {isSelected && openspecData?.initialized && (
-            <div className="mt-2 pt-2 border-t border-gray-700/30">
+            <div className="mt-2 pt-2 border-t border-[var(--border-secondary)]">
               <OpenSpecSection
                 data={openspecData}
                 onSendPrompt={onSendPrompt}

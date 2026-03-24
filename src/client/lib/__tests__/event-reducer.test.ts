@@ -485,6 +485,38 @@ describe("eventReducer", () => {
   });
 });
 
+describe("model_select event", () => {
+  it("should update model from model_select", () => {
+    const state = applyEvents([
+      {
+        eventType: "model_select",
+        timestamp: Date.now(),
+        data: {
+          type: "model_select",
+          model: { provider: "anthropic", id: "claude-opus-4-6" },
+        },
+      },
+    ]);
+    expect(state.model).toBe("anthropic/claude-opus-4-6");
+  });
+
+  it("should update thinkingLevel from model_select event data", () => {
+    const state = applyEvents([
+      {
+        eventType: "model_select",
+        timestamp: Date.now(),
+        data: {
+          type: "model_select",
+          model: { provider: "anthropic", id: "claude-opus-4-6" },
+          thinkingLevel: "high",
+        },
+      },
+    ]);
+    expect(state.model).toBe("anthropic/claude-opus-4-6");
+    expect(state.thinkingLevel).toBe("high");
+  });
+});
+
 describe("toDisplayString", () => {
   it("returns empty string for null/undefined", () => {
     expect(toDisplayString(null)).toBe("");

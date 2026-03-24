@@ -68,6 +68,15 @@ TypeScript type definitions shared across all components:
 4. Bridge extension calls `pi.sendUserMessage()` or dispatches command
 5. Pi processes the command, events flow back via event flow
 
+### Model & Thinking Level Flow
+1. Bridge sends current model and thinking level in `session_register` on connect
+2. When user changes model (via `/model`), pi emits `model_select` event
+3. Bridge enriches the event with current `thinkingLevel` from context before forwarding
+4. Bridge also sends a `model_update` protocol message for session-level tracking
+5. Server extracts model/thinkingLevel from events and `model_update`, broadcasts to browsers
+6. Thinking level changes (via pi keybinding) are detected by polling every 30s
+7. Browser can send `set_thinking_level` to change thinking level remotely
+
 ### Reconnection Flow
 1. Browser reconnects with `subscribe` message including `lastSeq`
 2. Server replays missed events from SQLite in batches of 200

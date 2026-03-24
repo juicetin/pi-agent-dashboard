@@ -11,7 +11,7 @@ export function DiffView({ content }: Props) {
     <div className="font-mono text-xs overflow-x-auto">
       {lines.map((line, i) => {
         let bgColor = "";
-        let textColor = "text-gray-400";
+        let textColor = "text-[var(--text-secondary)]";
 
         if (line.startsWith("+") && !line.startsWith("+++")) {
           bgColor = "bg-green-900/30";

@@ -194,6 +194,62 @@ describe("SessionManager", () => {
     expect(manager.get("s1")!.currentTool).toBe("bash");
   });
 
+  it("should register session with name and persist to SQLite", () => {
+    const session = manager.register({
+      id: "s1",
+      cwd: "/project",
+      name: "My Session",
+      source: "tui",
+    });
+
+    expect(session.name).toBe("My Session");
+
+    const row = db.raw.prepare("SELECT name FROM sessions WHERE id = 's1'").get() as { name: string | null };
+    expect(row.name).toBe("My Session");
+  });
+
+  it("should persist name on update", () => {
+    manager.register({ id: "s1", cwd: "/project", source: "tui" });
+    manager.update("s1", { name: "Renamed Session" });
+
+    expect(manager.get("s1")!.name).toBe("Renamed Session");
+
+    const row = db.raw.prepare("SELECT name FROM sessions WHERE id = 's1'").get() as { name: string | null };
+    expect(row.name).toBe("Renamed Session");
+  });
+
+  it("should hydrate name from SQLite", () => {
+    const now = Date.now();
+    db.raw.prepare(
+      "INSERT INTO sessions (id, cwd, name, source, status, started_at, tokens_in, tokens_out, cost) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    ).run("named-s1", "/project", "Saved Name", "tui", "ended", now - 60000, 0, 0, 0);
+
+    const freshManager = createSessionManager(db);
+    expect(freshManager.get("named-s1")!.name).toBe("Saved Name");
+  });
+
+  it("should persist openspecData as JSON on update", () => {
+    manager.register({ id: "s1", cwd: "/project", source: "tui" });
+    const openspecData = JSON.stringify({ initialized: true, changes: [{ name: "feat-1", status: "in-progress", completedTasks: 1, totalTasks: 3, artifacts: [] }] });
+    manager.update("s1", { openspecData });
+
+    expect(manager.get("s1")!.openspecData).toBe(openspecData);
+
+    const row = db.raw.prepare("SELECT openspec_data FROM sessions WHERE id = 's1'").get() as { openspec_data: string | null };
+    expect(row.openspec_data).toBe(openspecData);
+  });
+
+  it("should hydrate openspecData from SQLite", () => {
+    const now = Date.now();
+    const openspecData = JSON.stringify({ initialized: true, changes: [] });
+    db.raw.prepare(
+      "INSERT INTO sessions (id, cwd, source, status, started_at, tokens_in, tokens_out, cost, openspec_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    ).run("os-s1", "/project", "tui", "ended", now - 60000, 0, 0, 0, openspecData);
+
+    const freshManager = createSessionManager(db);
+    expect(freshManager.get("os-s1")!.openspecData).toBe(openspecData);
+  });
+
   it("should mark stale active/streaming sessions as ended on hydration", () => {
     const now = Date.now();
     db.raw.prepare(

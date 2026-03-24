@@ -1,11 +1,14 @@
 import React from "react";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
-import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
+import { useThemeContext } from "../ThemeProvider.js";
+import { getSyntaxTheme } from "../../lib/syntax-theme.js";
 import type { ToolRendererProps } from "./types.js";
 import { OpenFileButton } from "./OpenFileButton.js";
 import { detectLanguage } from "./lang-detect.js";
 
 export function WriteToolRenderer({ args, status, result, context }: ToolRendererProps) {
+  const { resolved: theme } = useThemeContext();
+  const syntaxStyle = getSyntaxTheme(theme);
   const filePath = args?.path as string | undefined;
   const content = args?.content as string | undefined;
   const language = detectLanguage(filePath);
@@ -13,19 +16,19 @@ export function WriteToolRenderer({ args, status, result, context }: ToolRendere
   return (
     <div className="space-y-1">
       <div className="flex items-center gap-2">
-        <span className="text-xs text-gray-300 font-mono">{filePath ?? "file"}</span>
+        <span className="text-xs text-[var(--text-secondary)] font-mono">{filePath ?? "file"}</span>
         <OpenFileButton filePath={filePath} context={context} />
       </div>
 
       {status === "running" && !content && (
-        <div className="text-xs text-gray-600 italic">Writing…</div>
+        <div className="text-xs text-[var(--text-muted)] italic">Writing…</div>
       )}
 
       {content && (
         <div className="max-h-80 overflow-auto rounded text-xs">
           {language ? (
             <SyntaxHighlighter
-              style={oneDark}
+              style={syntaxStyle}
               language={language}
               PreTag="div"
               showLineNumbers={true}
@@ -34,13 +37,13 @@ export function WriteToolRenderer({ args, status, result, context }: ToolRendere
               {content}
             </SyntaxHighlighter>
           ) : (
-            <pre className="whitespace-pre-wrap text-gray-400 p-2 bg-gray-950 rounded">{content}</pre>
+            <pre className="whitespace-pre-wrap text-[var(--text-secondary)] p-2 bg-[var(--bg-code)] rounded">{content}</pre>
           )}
         </div>
       )}
 
       {result && status !== "running" && (
-        <div className="text-xs text-gray-500 italic">{result}</div>
+        <div className="text-xs text-[var(--text-tertiary)] italic">{result}</div>
       )}
     </div>
   );

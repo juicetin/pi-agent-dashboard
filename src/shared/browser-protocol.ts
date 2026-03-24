@@ -9,6 +9,7 @@ import type {
   FileEntry,
   Workspace,
   OpenSpecData,
+  ModelInfo,
 } from "./types.js";
 
 // ── Server → Browser ────────────────────────────────────────────────
@@ -73,6 +74,12 @@ export interface BrowserOpenSpecUpdateMessage {
   data: OpenSpecData;
 }
 
+export interface BrowserModelsListMessage {
+  type: "models_list";
+  sessionId: string;
+  models: ModelInfo[];
+}
+
 export type ServerToBrowserMessage =
   | SessionAddedMessage
   | SessionUpdatedMessage
@@ -83,7 +90,8 @@ export type ServerToBrowserMessage =
   | BrowserExtensionUiEventMessage
   | WorkspaceUpdatedMessage
   | BrowserFilesListMessage
-  | BrowserOpenSpecUpdateMessage;
+  | BrowserOpenSpecUpdateMessage
+  | BrowserModelsListMessage;
 
 // ── Browser → Server ────────────────────────────────────────────────
 
@@ -132,6 +140,28 @@ export interface OpenSpecRefreshBrowserMessage {
   sessionId: string;
 }
 
+export interface RenameSessionBrowserMessage {
+  type: "rename_session";
+  sessionId: string;
+  name: string;
+}
+
+export interface RequestModelsBrowserMessage {
+  type: "request_models";
+  sessionId: string;
+}
+
+export interface SetThinkingLevelBrowserMessage {
+  type: "set_thinking_level";
+  sessionId: string;
+  level: string;
+}
+
+export interface ShutdownBrowserMessage {
+  type: "shutdown";
+  sessionId: string;
+}
+
 export type BrowserToServerMessage =
   | SubscribeMessage
   | UnsubscribeMessage
@@ -140,4 +170,8 @@ export type BrowserToServerMessage =
   | RequestCommandsToBrowserMessage
   | FetchContentMessage
   | ListFilesToBrowserMessage
-  | OpenSpecRefreshBrowserMessage;
+  | OpenSpecRefreshBrowserMessage
+  | RenameSessionBrowserMessage
+  | RequestModelsBrowserMessage
+  | SetThinkingLevelBrowserMessage
+  | ShutdownBrowserMessage;

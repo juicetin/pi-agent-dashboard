@@ -11,13 +11,13 @@ interface Props {
 
 export function WorkspaceBar({ workspaces, selectedId, sessionCounts, onSelect, onAdd }: Props) {
   return (
-    <div className="flex items-center gap-1 px-3 py-2 border-b border-gray-800 overflow-x-auto">
+    <div className="flex items-center gap-1 px-3 py-2 border-b border-[var(--border-primary)] overflow-x-auto">
       <button
         onClick={() => onSelect(undefined)}
         className={`px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap ${
           selectedId === undefined
-            ? "bg-blue-600 text-white"
-            : "bg-gray-800 text-gray-400 hover:bg-gray-700"
+            ? "bg-blue-600 text-[var(--text-primary)]"
+            : "bg-[var(--bg-tertiary)] text-[var(--text-secondary)] hover:bg-[var(--bg-surface)]"
         }`}
       >
         All
@@ -28,8 +28,8 @@ export function WorkspaceBar({ workspaces, selectedId, sessionCounts, onSelect, 
           onClick={() => onSelect(ws.id)}
           className={`px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap flex items-center gap-1 ${
             selectedId === ws.id
-              ? "bg-blue-600 text-white"
-              : "bg-gray-800 text-gray-400 hover:bg-gray-700"
+              ? "bg-blue-600 text-[var(--text-primary)]"
+              : "bg-[var(--bg-tertiary)] text-[var(--text-secondary)] hover:bg-[var(--bg-surface)]"
           }`}
         >
           {ws.name}
@@ -42,7 +42,7 @@ export function WorkspaceBar({ workspaces, selectedId, sessionCounts, onSelect, 
       ))}
       <button
         onClick={onAdd}
-        className="px-2 py-1 rounded-full text-xs text-gray-500 hover:text-gray-300 hover:bg-gray-800"
+        className="px-2 py-1 rounded-full text-xs text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)]"
       >
         +
       </button>

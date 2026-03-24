@@ -1,10 +1,15 @@
 import React, { useState, useEffect } from "react";
+import Icon from "@mdi/react";
+import { mdiPencilOutline } from "@mdi/js";
 import type { DashboardSession } from "../../shared/types.js";
 import type { SessionState } from "../lib/event-reducer.js";
+import { getSessionDisplayName } from "../lib/session-display-name.js";
+import { InlineRenameInput } from "./InlineRenameInput.js";
 
 interface Props {
   session?: DashboardSession;
   state: SessionState;
+  onRename?: (sessionId: string, name: string) => void;
 }
 
 function formatDuration(ms: number): string {
@@ -17,14 +22,9 @@ function formatDuration(ms: number): string {
   return `${seconds}s`;
 }
 
-function formatTokens(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
-  return String(n);
-}
-
-export function SessionHeader({ session, state }: Props) {
+export function SessionHeader({ session, state, onRename }: Props) {
   const [now, setNow] = useState(Date.now());
+  const [isRenaming, setIsRenaming] = useState(false);
 
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 1000);
@@ -33,30 +33,55 @@ export function SessionHeader({ session, state }: Props) {
 
   if (!session) {
     return (
-      <div className="px-4 py-2 border-b border-gray-800 text-sm text-gray-500">
+      <div className="px-4 py-2 border-b border-[var(--border-primary)] text-sm text-[var(--text-tertiary)]">
         No session selected
       </div>
     );
   }
 
   const duration = now - session.startedAt;
+  const canRename = session.status !== "ended" && onRename;
+
+  function handleConfirmRename(name: string) {
+    setIsRenaming(false);
+    if (onRename && session) {
+      onRename(session.id, name);
+    }
+  }
 
   return (
-    <div className="px-4 py-2 border-b border-gray-800 flex items-center gap-4 text-sm">
-      <span className="font-medium">
-        {session.cwd.split("/").pop() ?? session.id.slice(0, 8)}
-      </span>
-      {state.model && <span className="text-gray-400">{state.model}</span>}
-      {state.thinkingLevel && (
-        <span className="text-gray-500">💭 {state.thinkingLevel}</span>
+    <div className="px-4 py-2 border-b border-[var(--border-primary)] flex items-center gap-4 text-sm">
+      {isRenaming ? (
+        <InlineRenameInput
+          currentName={getSessionDisplayName(session)}
+          onConfirm={handleConfirmRename}
+          onCancel={() => setIsRenaming(false)}
+          className="font-medium"
+        />
+      ) : (
+        <span className="font-medium flex items-center gap-1">
+          <span
+            onDoubleClick={() => canRename && setIsRenaming(true)}
+            className={canRename ? "cursor-pointer" : ""}
+          >
+            {getSessionDisplayName(session)}
+          </span>
+          {canRename && (
+            <button
+              onClick={() => setIsRenaming(true)}
+              className="text-[var(--text-muted)] hover:text-[var(--text-secondary)] p-0.5"
+              title="Rename session"
+            >
+              <Icon path={mdiPencilOutline} size={0.5} />
+            </button>
+          )}
+        </span>
       )}
-      <span className="text-gray-500">
-        ↓{formatTokens(state.tokensIn)} ↑{formatTokens(state.tokensOut)}
-      </span>
-      {state.cost > 0 && (
-        <span className="text-gray-500">${state.cost.toFixed(4)}</span>
+      {(state.model || session.model) && <span className="text-[var(--text-secondary)]">{state.model || session.model}</span>}
+      {(state.thinkingLevel || session.thinkingLevel) && (
+        <span className="text-[var(--text-tertiary)]">💭 {state.thinkingLevel || session.thinkingLevel}</span>
       )}
-      <span className="text-gray-600 ml-auto">{formatDuration(duration)}</span>
+      <span className="text-[var(--text-muted)] ml-auto">{formatDuration(duration)}</span>
     </div>
   );
 }

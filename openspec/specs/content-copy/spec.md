@@ -34,7 +34,11 @@ Each rendered markdown table SHALL display an always-visible icon bar in the top
 - **THEN** the table content SHALL be copied as tab-separated values with rows separated by newlines
 
 ### Requirement: Message copy buttons
-Each message bubble (user and assistant) SHALL display an always-visible icon bar in the top-right corner with two buttons: 📋 (copy as markdown) and 📝 (copy as plain text).
+Each message bubble (user and assistant) SHALL display copy buttons separated from message content by a thin horizontal divider (`border-t border-gray-700/30`). The divider row SHALL contain: 📋 (copy as markdown) and 📝 (copy as plain text) buttons.
+
+#### Scenario: Copy buttons with divider
+- **WHEN** a message bubble is rendered
+- **THEN** a thin divider SHALL separate the message content from the copy button row below
 
 #### Scenario: Copy message as markdown
 - **WHEN** the user clicks the 📋 button on a message
@@ -42,7 +46,7 @@ Each message bubble (user and assistant) SHALL display an always-visible icon ba
 
 #### Scenario: Copy message as plain text
 - **WHEN** the user clicks the 📝 button on a message
-- **THEN** the message content SHALL be copied as plain text with formatting stripped (using the rendered DOM's innerText)
+- **THEN** the message content SHALL be copied as plain text with formatting stripped
 
 ### Requirement: Copy button visibility
 All copy buttons (on code blocks, tables, and messages) SHALL be always visible, not hidden behind hover states.

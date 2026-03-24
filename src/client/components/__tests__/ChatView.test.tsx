@@ -1,7 +1,8 @@
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect, beforeAll, vi } from "vitest";
 import { render, fireEvent } from "@testing-library/react";
 import React from "react";
 import { ChatView } from "../ChatView.js";
+import { ThemeProvider } from "../ThemeProvider.js";
 import { createInitialState, type ChatMessage } from "../../lib/event-reducer.js";
 import type { ToolContext } from "../tool-renderers/index.js";
 
@@ -10,6 +11,16 @@ const defaultToolContext: ToolContext = { editors: [] };
 beforeAll(() => {
   // jsdom doesn't implement scrollTo
   Element.prototype.scrollTo = () => {};
+  // jsdom doesn't implement matchMedia
+  Object.defineProperty(window, "matchMedia", {
+    writable: true,
+    value: vi.fn().mockImplementation((query: string) => ({
+      matches: query === "(prefers-color-scheme: dark)",
+      media: query,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    })),
+  });
 });
 
 function stateWithMessages(messages: Array<{ id: string; role: "user" | "assistant"; content: string }>) {
@@ -42,7 +53,7 @@ describe("ChatView", () => {
     const state = stateWithMessages([
       { id: "1", role: "user", content: "Hello **world**" },
     ]);
-    const { container } = render(<ChatView state={state} toolContext={defaultToolContext} />);
+    const { container } = render(<ThemeProvider><ChatView state={state} toolContext={defaultToolContext} /></ThemeProvider>);
     const mdBtn = container.querySelector('button[title="Copy as Markdown"]');
     const plainBtn = container.querySelector('button[title="Copy as plain text"]');
     expect(mdBtn).not.toBeNull();
@@ -53,7 +64,7 @@ describe("ChatView", () => {
     const state = stateWithMessages([
       { id: "1", role: "assistant", content: "Here is the answer" },
     ]);
-    const { container } = render(<ChatView state={state} toolContext={defaultToolContext} />);
+    const { container } = render(<ThemeProvider><ChatView state={state} toolContext={defaultToolContext} /></ThemeProvider>);
     const mdBtn = container.querySelector('button[title="Copy as Markdown"]');
     const plainBtn = container.querySelector('button[title="Copy as plain text"]');
     expect(mdBtn).not.toBeNull();
@@ -62,7 +73,7 @@ describe("ChatView", () => {
 
   it("renders toolResult messages using ToolCallStep", () => {
     const state = stateWithToolMessage();
-    const { container } = render(<ChatView state={state} toolContext={defaultToolContext} />);
+    const { container } = render(<ThemeProvider><ChatView state={state} toolContext={defaultToolContext} /></ThemeProvider>);
 
     // Should show the tool summary (ToolCallStep renders a button with summary text)
     const button = container.querySelector("button");
@@ -75,14 +86,14 @@ describe("ChatView", () => {
 
   it("renders expandable tool call with args and result", () => {
     const state = stateWithToolMessage();
-    const { container } = render(<ChatView state={state} toolContext={defaultToolContext} />);
+    const { container } = render(<ThemeProvider><ChatView state={state} toolContext={defaultToolContext} /></ThemeProvider>);
 
     // Click to expand
     const button = container.querySelector("button")!;
     fireEvent.click(button);
 
     // Should show args and result in expanded view
-    const expanded = container.querySelector(".bg-gray-900");
+    const expanded = container.querySelector(".bg-\\[var\\(--bg-secondary\\)\\]");
     expect(expanded).not.toBeNull();
     expect(expanded!.textContent).toContain("ls -la");
     expect(expanded!.textContent).toContain("file1");
@@ -91,7 +102,7 @@ describe("ChatView", () => {
 
   it("renders running tool call with spinner icon", () => {
     const state = stateWithToolMessage({ toolStatus: "running" });
-    const { container } = render(<ChatView state={state} toolContext={defaultToolContext} />);
+    const { container } = render(<ThemeProvider><ChatView state={state} toolContext={defaultToolContext} /></ThemeProvider>);
 
     const button = container.querySelector("button");
     expect(button!.querySelector("svg")).not.toBeNull();
@@ -99,7 +110,7 @@ describe("ChatView", () => {
 
   it("renders error tool call with error icon", () => {
     const state = stateWithToolMessage({ toolStatus: "error" });
-    const { container } = render(<ChatView state={state} toolContext={defaultToolContext} />);
+    const { container } = render(<ThemeProvider><ChatView state={state} toolContext={defaultToolContext} /></ThemeProvider>);
 
     const button = container.querySelector("button");
     expect(button!.querySelector("svg")).not.toBeNull();
@@ -109,7 +120,7 @@ describe("ChatView", () => {
     const state = stateWithMessages([
       { id: "1", role: "user", content: "Hello" },
     ]);
-    const { container } = render(<ChatView state={state} toolContext={defaultToolContext} />);
+    const { container } = render(<ThemeProvider><ChatView state={state} toolContext={defaultToolContext} /></ThemeProvider>);
     const userBubble = container.querySelector(".bg-blue-500\\/10");
     expect(userBubble).not.toBeNull();
     expect(userBubble?.className).toContain("border-l-blue-400");
@@ -121,9 +132,9 @@ describe("ChatView", () => {
     const state = stateWithMessages([
       { id: "1", role: "assistant", content: "Hi there" },
     ]);
-    const { container } = render(<ChatView state={state} toolContext={defaultToolContext} />);
-    const assistantBubble = container.querySelector(".bg-gray-800");
-    expect(assistantBubble?.className).toContain("border-white/5");
+    const { container } = render(<ThemeProvider><ChatView state={state} toolContext={defaultToolContext} /></ThemeProvider>);
+    const assistantBubble = container.querySelector(".bg-\\[var\\(--bg-tertiary\\)\\]");
+    expect(assistantBubble?.className).toContain("border-[var(--border-subtle)]");
     expect(assistantBubble?.className).toContain("rounded-xl");
     expect(assistantBubble?.className).toContain("shadow-md");
   });
@@ -132,23 +143,23 @@ describe("ChatView", () => {
     const state = stateWithMessages([
       { id: "1", role: "assistant", content: "Test message" },
     ]);
-    const { container } = render(<ChatView state={state} toolContext={defaultToolContext} />);
+    const { container } = render(<ThemeProvider><ChatView state={state} toolContext={defaultToolContext} /></ThemeProvider>);
     // The divider between content and copy buttons
-    const divider = container.querySelector(".border-t.border-gray-700\\/30");
+    const divider = container.querySelector(".border-t.border-\\[var\\(--border-secondary\\)\\]");
     expect(divider).not.toBeNull();
   });
 
   it("renders tool call step with left accent border", () => {
     const state = stateWithToolMessage();
-    const { container } = render(<ChatView state={state} toolContext={defaultToolContext} />);
-    const toolStep = container.querySelector(".border-l-2.border-gray-700\\/50");
+    const { container } = render(<ThemeProvider><ChatView state={state} toolContext={defaultToolContext} /></ThemeProvider>);
+    const toolStep = container.querySelector(".border-l-2.border-\\[var\\(--border-secondary\\)\\]");
     expect(toolStep).not.toBeNull();
   });
 
   it("does not show copy buttons on streaming text", () => {
     const state = createInitialState();
     state.streamingText = "Partial response...";
-    const { container } = render(<ChatView state={state} toolContext={defaultToolContext} />);
+    const { container } = render(<ThemeProvider><ChatView state={state} toolContext={defaultToolContext} /></ThemeProvider>);
     // Streaming bubble doesn't have message-level copy buttons
     const mdBtns = container.querySelectorAll('button[title="Copy as Markdown"]');
     expect(mdBtns.length).toBe(0);

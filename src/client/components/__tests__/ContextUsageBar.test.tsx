@@ -11,13 +11,15 @@ describe("ContextUsageBar", () => {
     const bar = screen.getByTestId("context-usage-bar");
     expect(bar).toBeTruthy();
     expect(screen.queryByTestId("context-usage-fill")).toBeNull();
+    expect(screen.queryByTestId("context-usage-pct")).toBeNull();
   });
 
-  it("shows green fill below 50%", () => {
+  it("shows green fill below 50% with percentage", () => {
     render(<ContextUsageBar tokens={4000} contextWindow={10000} />);
     const fill = screen.getByTestId("context-usage-fill");
     expect(fill.style.width).toBe("40%");
     expect(fill.className).toContain("bg-green-500");
+    expect(screen.getByTestId("context-usage-pct").textContent).toBe("40%");
   });
 
   it("shows yellow fill between 50% and 80%", () => {
@@ -43,12 +45,14 @@ describe("ContextUsageBar", () => {
   it("shows tooltip with usage info", () => {
     render(<ContextUsageBar tokens={5000} contextWindow={10000} />);
     const bar = screen.getByTestId("context-usage-bar");
-    expect(bar.getAttribute("title")).toContain("50%");
+    const inner = bar.querySelector("[title]")!;
+    expect(inner.getAttribute("title")).toContain("50%");
   });
 
   it("shows no-data tooltip when tokens are null", () => {
     render(<ContextUsageBar tokens={null} contextWindow={10000} />);
     const bar = screen.getByTestId("context-usage-bar");
-    expect(bar.getAttribute("title")).toBe("No context data");
+    const inner = bar.querySelector("[title]")!;
+    expect(inner.getAttribute("title")).toBe("No context data");
   });
 });

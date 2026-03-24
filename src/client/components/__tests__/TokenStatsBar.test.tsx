@@ -35,7 +35,7 @@ describe("TokenStatsBar", () => {
         {...defaultProps}
       />
     );
-    const contextBar = container.querySelector(".h-2.bg-gray-800");
+    const contextBar = container.querySelector(".h-2.bg-\\[var\\(--bg-tertiary\\)\\]");
     expect(contextBar).not.toBeNull();
   });
 

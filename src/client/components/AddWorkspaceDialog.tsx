@@ -12,33 +12,33 @@ export function AddWorkspaceDialog({ onAdd, onCancel }: Props) {
   const derivedName = name || wsPath.split("/").filter(Boolean).pop() || "";
 
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-      <div className="bg-gray-900 rounded-lg p-6 w-full max-w-md border border-gray-700">
+    <div className="fixed inset-0 bg-[var(--bg-overlay)] flex items-center justify-center z-50">
+      <div className="bg-[var(--bg-secondary)] rounded-lg p-6 w-full max-w-md border border-[var(--border-secondary)]">
         <h3 className="text-lg font-semibold mb-4">Add Workspace</h3>
 
         <div className="space-y-3">
           <div>
-            <label className="text-sm text-gray-400 block mb-1">Path</label>
+            <label className="text-sm text-[var(--text-secondary)] block mb-1">Path</label>
             <input
               type="text"
               value={wsPath}
               onChange={(e) => setWsPath(e.target.value)}
               placeholder="/path/to/project"
-              className="w-full bg-gray-800 rounded px-3 py-2 text-sm border border-gray-700 focus:border-blue-500 focus:outline-none"
+              className="w-full bg-[var(--bg-tertiary)] rounded px-3 py-2 text-sm border border-[var(--border-secondary)] focus:border-blue-500 focus:outline-none"
               autoFocus
             />
           </div>
 
           <div>
-            <label className="text-sm text-gray-400 block mb-1">
-              Name <span className="text-gray-600">(optional)</span>
+            <label className="text-sm text-[var(--text-secondary)] block mb-1">
+              Name <span className="text-[var(--text-muted)]">(optional)</span>
             </label>
             <input
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder={derivedName}
-              className="w-full bg-gray-800 rounded px-3 py-2 text-sm border border-gray-700 focus:border-blue-500 focus:outline-none"
+              className="w-full bg-[var(--bg-tertiary)] rounded px-3 py-2 text-sm border border-[var(--border-secondary)] focus:border-blue-500 focus:outline-none"
             />
           </div>
         </div>
@@ -46,7 +46,7 @@ export function AddWorkspaceDialog({ onAdd, onCancel }: Props) {
         <div className="flex justify-end gap-2 mt-6">
           <button
             onClick={onCancel}
-            className="px-4 py-2 rounded text-sm text-gray-400 hover:bg-gray-800"
+            className="px-4 py-2 rounded text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)]"
           >
             Cancel
           </button>

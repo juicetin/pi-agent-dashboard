@@ -12,8 +12,8 @@ export function ExtensionUI({ uiEvent }: Props) {
   if (method === "confirm") {
     const result = uiEvent.result as boolean | undefined;
     return (
-      <div className="mx-4 my-1 p-2 bg-gray-800/50 rounded text-xs">
-        <span className="text-gray-400">{uiEvent.title as string}</span>
+      <div className="mx-4 my-1 p-2 bg-[var(--bg-hover)] rounded text-xs">
+        <span className="text-[var(--text-secondary)]">{uiEvent.title as string}</span>
         {result !== undefined && (
           <span className="ml-2 inline-flex items-center gap-0.5">{result ? <><Icon path={mdiCheckCircle} size={0.55} className="text-green-400" /> Allowed</> : <><Icon path={mdiCloseCircle} size={0.55} className="text-red-400" /> Denied</>}</span>
         )}
@@ -24,8 +24,8 @@ export function ExtensionUI({ uiEvent }: Props) {
 
   if (method === "select") {
     return (
-      <div className="mx-4 my-1 p-2 bg-gray-800/50 rounded text-xs">
-        <span className="text-gray-400">{uiEvent.title as string}: </span>
+      <div className="mx-4 my-1 p-2 bg-[var(--bg-hover)] rounded text-xs">
+        <span className="text-[var(--text-secondary)]">{uiEvent.title as string}: </span>
         <span className="inline-flex items-center">{uiEvent.selected as string ?? <Icon path={mdiLoading} size={0.55} spin />}</span>
       </div>
     );
@@ -40,7 +40,7 @@ export function ExtensionUI({ uiEvent }: Props) {
       error: "text-red-400",
     };
     return (
-      <div className={`mx-4 my-1 text-xs ${colors[level] ?? "text-gray-400"}`}>
+      <div className={`mx-4 my-1 text-xs ${colors[level] ?? "text-[var(--text-secondary)]"}`}>
         {uiEvent.message as string}
       </div>
     );
@@ -48,8 +48,8 @@ export function ExtensionUI({ uiEvent }: Props) {
 
   if (method === "input") {
     return (
-      <div className="mx-4 my-1 p-2 bg-gray-800/50 rounded text-xs">
-        <span className="text-gray-400">{uiEvent.title as string}: </span>
+      <div className="mx-4 my-1 p-2 bg-[var(--bg-hover)] rounded text-xs">
+        <span className="text-[var(--text-secondary)]">{uiEvent.title as string}: </span>
         <span className="inline-flex items-center">{(uiEvent.value as string) ?? <Icon path={mdiLoading} size={0.55} spin />}</span>
       </div>
     );

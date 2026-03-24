@@ -15,27 +15,49 @@ function ActionButton({ label, onClick }: { label: string; onClick: () => void }
   return (
     <button
       onClick={(e) => { e.stopPropagation(); onClick(); }}
-      className="text-[10px] px-1.5 py-0.5 rounded border border-gray-700 text-gray-400 hover:text-blue-400 hover:border-blue-500/50"
+      className="text-[10px] px-1.5 py-0.5 rounded border border-[var(--border-secondary)] text-[var(--text-secondary)] hover:text-blue-400 hover:border-blue-500/50"
     >
       {label}
     </button>
   );
 }
 
-function ArtifactDots({ artifacts }: { artifacts: OpenSpecChange["artifacts"] }) {
+const LETTER_MAP: Record<string, string> = {
+  proposal: "P",
+  design: "D",
+  specs: "S",
+  tasks: "T",
+};
+
+function artifactLetter(id: string): string {
+  return LETTER_MAP[id] ?? id.charAt(0).toUpperCase();
+}
+
+function statusColor(status: string): string {
+  if (status === "done") return "text-green-500";
+  if (status === "ready") return "text-yellow-500";
+  return "text-[var(--text-muted)]";
+}
+
+function ArtifactLetters({ artifacts }: { artifacts: OpenSpecChange["artifacts"] }) {
   return (
     <div className="flex items-center gap-1">
       {artifacts.map((a) => (
         <span
           key={a.id}
-          className={`w-1.5 h-1.5 rounded-full ${
-            a.status === "done" ? "bg-green-500" : a.status === "ready" ? "bg-yellow-500" : "bg-gray-600"
-          }`}
+          data-testid="artifact-letter"
           title={`${a.id}: ${a.status}`}
-        />
+          className={`text-[10px] font-bold font-mono ${statusColor(a.status)}`}
+        >
+          {artifactLetter(a.id)}
+        </span>
       ))}
     </div>
   );
+}
+
+function allArtifactsDone(artifacts: OpenSpecChange["artifacts"]): boolean {
+  return artifacts.length > 0 && artifacts.every((a) => a.status === "done");
 }
 
 function ChangeCard({
@@ -48,21 +70,24 @@ function ChangeCard({
   const [exploreOpen, setExploreOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
 
-  const isComplete = change.status === "complete";
   const hasTasks = change.totalTasks > 0;
+  const canApply = allArtifactsDone(change.artifacts);
+  const isComplete = change.status === "complete";
 
   return (
     <>
-      <div className="px-2 py-1.5 rounded bg-gray-800/50 space-y-1">
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-[11px] font-medium text-gray-300 truncate">{change.name}</span>
-          <ArtifactDots artifacts={change.artifacts} />
+      <div className="px-2 py-1.5 space-y-1">
+        {/* Line 1: name + letters + task count */}
+        <div className="flex items-center gap-2">
+          <span data-testid="change-name" className="text-[11px] font-medium text-[var(--text-secondary)] truncate">{change.name}</span>
+          <ArtifactLetters artifacts={change.artifacts} />
+          {hasTasks && (
+            <span className="text-[10px] text-[var(--text-tertiary)] whitespace-nowrap ml-auto">
+              {change.completedTasks}/{change.totalTasks} tasks
+            </span>
+          )}
         </div>
-        {hasTasks && (
-          <div className="text-[10px] text-gray-500">
-            {change.completedTasks}/{change.totalTasks} tasks
-          </div>
-        )}
+        {/* Line 2: action buttons */}
         <div className="flex items-center gap-1 flex-wrap">
           <ActionButton label="Explore" onClick={() => setExploreOpen(true)} />
           {!isComplete && (
@@ -71,12 +96,10 @@ function ChangeCard({
               <ActionButton label="FF" onClick={() => onSendPrompt?.(`/opsx:ff ${change.name}`)} />
             </>
           )}
-          {isComplete && (
-            <>
-              <ActionButton label="Apply" onClick={() => onSendPrompt?.(`/opsx:apply ${change.name}`)} />
-              <ActionButton label="Archive" onClick={() => setConfirmOpen(true)} />
-            </>
+          {canApply && (
+            <ActionButton label="Apply" onClick={() => onSendPrompt?.(`/opsx:apply ${change.name}`)} />
           )}
+          <ActionButton label="Archive" onClick={() => setConfirmOpen(true)} />
         </div>
       </div>
 
@@ -107,18 +130,32 @@ function ChangeCard({
 }
 
 export function OpenSpecSection({ data, onSendPrompt, onRefresh }: Props) {
-  const inProgress = data.changes.filter((c) => c.status !== "complete");
-  const completed = data.changes.filter((c) => c.status === "complete");
+  const [expanded, setExpanded] = useState(false);
+
+  if (!data.initialized) return null;
+
+  // Flat list: in-progress first, then completed
+  const sorted = [
+    ...data.changes.filter((c) => c.status !== "complete"),
+    ...data.changes.filter((c) => c.status === "complete"),
+  ];
 
   return (
     <div className="space-y-2" data-testid="openspec-section">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <span className="text-[10px] font-semibold text-gray-500 uppercase">OpenSpec</span>
+        <button
+          data-testid="openspec-header"
+          onClick={() => setExpanded((v) => !v)}
+          className="flex items-center gap-1 text-[10px] font-semibold text-[var(--text-tertiary)] uppercase hover:text-[var(--text-secondary)]"
+        >
+          <span>{expanded ? "▼" : "▶"}</span>
+          <span>OpenSpec</span>
+        </button>
         {onRefresh && (
           <button
             onClick={(e) => { e.stopPropagation(); onRefresh(); }}
-            className="text-gray-600 hover:text-gray-300"
+            className="text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
             title="Refresh"
             data-testid="openspec-refresh"
           >
@@ -127,35 +164,23 @@ export function OpenSpecSection({ data, onSendPrompt, onRefresh }: Props) {
         )}
       </div>
 
-      {/* In progress */}
-      {inProgress.length > 0 && (
-        <div className="space-y-1">
-          <span className="text-[10px] text-gray-600">In Progress</span>
-          {inProgress.map((c) => (
+      {/* Expanded content */}
+      {expanded && (
+        <>
+          {sorted.map((c) => (
             <ChangeCard key={c.name} change={c} onSendPrompt={onSendPrompt} />
           ))}
-        </div>
-      )}
 
-      {/* Completed */}
-      {completed.length > 0 && (
-        <div className="space-y-1">
-          <span className="text-[10px] text-gray-600">Completed</span>
-          {completed.map((c) => (
-            <ChangeCard key={c.name} change={c} onSendPrompt={onSendPrompt} />
-          ))}
-        </div>
+          <button
+            onClick={(e) => { e.stopPropagation(); onSendPrompt?.("/opsx:new"); }}
+            className="flex items-center gap-1 text-[10px] text-[var(--text-tertiary)] hover:text-blue-400"
+            data-testid="openspec-new"
+          >
+            <Icon path={mdiPlus} size={0.45} />
+            New Change
+          </button>
+        </>
       )}
-
-      {/* New Change */}
-      <button
-        onClick={(e) => { e.stopPropagation(); onSendPrompt?.("/opsx:new"); }}
-        className="flex items-center gap-1 text-[10px] text-gray-500 hover:text-blue-400"
-        data-testid="openspec-new"
-      >
-        <Icon path={mdiPlus} size={0.45} />
-        New Change
-      </button>
     </div>
   );
 }

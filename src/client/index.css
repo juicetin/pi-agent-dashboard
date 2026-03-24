@@ -1,13 +1,84 @@
 @import "tailwindcss";
 
+/* ── Theme Variables ─────────────────────────────────────────── */
+
+:root {
+  /* Backgrounds — wider contrast gaps for dark mode */
+  --bg-primary: #0a0a0a;       /* page background */
+  --bg-secondary: #141414;     /* panels, sidebar, expanded areas */
+  --bg-tertiary: #1e1e1e;      /* cards, inputs, selected items */
+  --bg-surface: #2a2a2a;       /* badges, buttons, elevated surfaces */
+  --bg-hover: rgba(255, 255, 255, 0.06);
+  --bg-selected: #1e1e1e;
+  --bg-code: #1a1a1a;          /* code blocks, tool output */
+  --bg-overlay: rgba(0, 0, 0, 0.6);
+
+  /* Text — clear hierarchy */
+  --text-primary: #e5e5e5;     /* headings, important text */
+  --text-secondary: #b0b0b0;   /* body text, descriptions */
+  --text-tertiary: #808080;    /* labels, secondary info */
+  --text-muted: #585858;       /* hints, disabled text */
+  --text-faint: #3a3a3a;       /* very subtle text */
+
+  /* Borders */
+  --border-primary: #252525;   /* main borders */
+  --border-secondary: #333333; /* subtle dividers */
+  --border-subtle: rgba(255, 255, 255, 0.06);
+
+  /* Accents */
+  --accent-blue: #3b82f6;
+  --accent-green: #22c55e;
+  --accent-yellow: #eab308;
+  --accent-red: #ef4444;
+  --accent-purple: #a855f7;
+  --accent-orange: #f97316;
+  --link: #60a5fa;
+  --link-hover: #93bbfd;
+
+  /* Shadows */
+  --shadow-card: rgba(0, 0, 0, 0.4);
+}
+
+[data-theme="light"] {
+  /* Backgrounds */
+  --bg-primary: #ffffff;       /* page background */
+  --bg-secondary: #fafafa;     /* panels, sidebar */
+  --bg-tertiary: #f0f0f0;      /* cards, inputs */
+  --bg-surface: #e0e0e0;       /* badges, buttons */
+  --bg-hover: rgba(0, 0, 0, 0.04);
+  --bg-selected: #e8e8e8;
+  --bg-code: #f5f5f5;
+  --bg-overlay: rgba(0, 0, 0, 0.3);
+
+  /* Text */
+  --text-primary: #1a1a1a;
+  --text-secondary: #444444;
+  --text-tertiary: #777777;
+  --text-muted: #aaaaaa;
+  --text-faint: #d0d0d0;
+
+  /* Borders */
+  --border-primary: #e0e0e0;
+  --border-secondary: #cccccc;
+  --border-subtle: rgba(0, 0, 0, 0.06);
+
+  /* Accents stay the same */
+  --link: #2563eb;
+  --link-hover: #1d4ed8;
+
+  /* Shadows */
+  --shadow-card: rgba(0, 0, 0, 0.08);
+}
+
 body {
   margin: 0;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  background-color: #0a0a0a;
-  color: #e5e5e5;
+  background-color: var(--bg-primary);
+  color: var(--text-secondary);
 }
 
-/* Markdown content styling */
+/* ── Markdown content styling ────────────────────────────────── */
+
 .markdown-content h1 { font-size: 1.5em; font-weight: 700; margin: 0.5em 0; }
 .markdown-content h2 { font-size: 1.25em; font-weight: 600; margin: 0.5em 0; }
 .markdown-content h3 { font-size: 1.1em; font-weight: 600; margin: 0.4em 0; }
@@ -24,25 +95,25 @@ body {
 .markdown-content li { margin: 0.15em 0; }
 
 .markdown-content blockquote {
-  border-left: 3px solid #4b5563;
+  border-left: 3px solid var(--border-secondary);
   padding-left: 0.75em;
   margin: 0.4em 0;
-  color: #9ca3af;
+  color: var(--text-tertiary);
 }
 
-.markdown-content a { color: #60a5fa; text-decoration: underline; }
-.markdown-content a:hover { color: #93bbfd; }
+.markdown-content a { color: var(--link); text-decoration: underline; }
+.markdown-content a:hover { color: var(--link-hover); }
 
 .markdown-content table { border-collapse: collapse; margin: 0.5em 0; width: 100%; }
 .markdown-content th,
-.markdown-content td { border: 1px solid #374151; padding: 0.3em 0.6em; text-align: left; }
-.markdown-content th { background-color: #1f2937; font-weight: 600; }
+.markdown-content td { border: 1px solid var(--border-secondary); padding: 0.3em 0.6em; text-align: left; }
+.markdown-content th { background-color: var(--bg-tertiary); font-weight: 600; }
 
 .markdown-content pre { margin: 0.5em 0; border-radius: 0.375rem; overflow-x: auto; font-family: 'SF Mono', 'Menlo', 'Monaco', 'Cascadia Code', 'Consolas', 'Courier New', monospace !important; }
 .markdown-content pre *,
 .markdown-content pre code,
 .markdown-content pre span { font-family: inherit !important; }
-.markdown-content hr { border: none; border-top: 1px solid #374151; margin: 0.5em 0; }
+.markdown-content hr { border: none; border-top: 1px solid var(--border-secondary); margin: 0.5em 0; }
 .markdown-content strong { font-weight: 700; }
 .markdown-content em { font-style: italic; }
 

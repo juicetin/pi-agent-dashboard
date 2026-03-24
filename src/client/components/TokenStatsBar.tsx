@@ -39,7 +39,7 @@ export function TokenStatsBar({ turnStats, contextUsage, tokensIn, tokensOut, ca
     : 0;
 
   return (
-    <div className="px-4 py-2 border-b border-gray-800 space-y-1.5">
+    <div className="px-4 py-2 border-b border-[var(--border-primary)] space-y-1.5">
       {/* Per-turn bar chart */}
       {turnStats.length > 0 && (
         <div className="flex items-end gap-px h-8">
@@ -72,9 +72,9 @@ export function TokenStatsBar({ turnStats, contextUsage, tokensIn, tokensOut, ca
 
       {/* Context window stacked progress bar */}
       {contextUsage && contextUsage.contextWindow > 0 && (
-        <div className="flex items-center gap-2 text-[10px] text-gray-500">
+        <div className="flex items-center gap-2 text-[10px] text-[var(--text-tertiary)]">
           <span>{contextUsage.tokens != null ? formatTokens(contextUsage.tokens) : "—"}</span>
-          <div className="flex-1 h-2 bg-gray-800 rounded-full overflow-hidden flex" data-testid="context-bar">
+          <div className="flex-1 h-2 bg-[var(--bg-tertiary)] rounded-full overflow-hidden flex" data-testid="context-bar">
             {contextPercent != null && latestTurn && latestTotal > 0 ? (
               <>
                 {latestTurn.cacheRead > 0 && (
@@ -113,7 +113,7 @@ export function TokenStatsBar({ turnStats, contextUsage, tokensIn, tokensOut, ca
 
       {/* Bar chart legend */}
       {turnStats.length > 0 && (
-        <div className="flex items-center gap-3 text-[10px] text-gray-500">
+        <div className="flex items-center gap-3 text-[10px] text-[var(--text-tertiary)]">
           <span className="inline-flex items-center gap-1">
             <span className="w-2 h-2 rounded-sm bg-blue-500 inline-block" />
             input
@@ -126,7 +126,7 @@ export function TokenStatsBar({ turnStats, contextUsage, tokensIn, tokensOut, ca
       )}
 
       {/* Token counters — cumulative, matching pi CLI format */}
-      <div className="flex items-center gap-3 text-xs text-gray-500 flex-wrap">
+      <div className="flex items-center gap-3 text-xs text-[var(--text-tertiary)] flex-wrap">
         <span>↑{formatTokens(tokensOut)}</span>
         <span>↓{formatTokens(tokensIn)}</span>
         {cacheRead > 0 && <span>R{formatTokens(cacheRead)}</span>}

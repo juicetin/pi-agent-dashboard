@@ -81,6 +81,7 @@ export function createPiGateway(
               sessionManager.register({
                 id: msg.sessionId,
                 cwd: msg.cwd,
+                name: msg.name,
                 source: msg.source,
                 model: msg.model,
                 thinkingLevel: msg.thinkingLevel,
@@ -103,6 +104,17 @@ export function createPiGateway(
                 heartbeatTimers.delete(msg.sessionId);
               }
               checkEmpty();
+            }
+
+            if (msg.type === "model_update") {
+              const session = sessionManager.get(msg.sessionId);
+              if (session) {
+                const updates: Partial<typeof session> = { model: msg.model };
+                if (msg.thinkingLevel !== undefined) {
+                  updates.thinkingLevel = msg.thinkingLevel;
+                }
+                sessionManager.update(msg.sessionId, updates);
+              }
             }
 
             if (msg.type === "stats_update") {

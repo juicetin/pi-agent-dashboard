@@ -92,11 +92,34 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
       });
     }
     if (msg.type === "openspec_update") {
+      sessionManager.update(sessionId, { openspecData: JSON.stringify(msg.data) });
       browserGateway.sendToSubscribers(sessionId, {
         type: "openspec_update",
         sessionId,
         data: msg.data,
       });
+    }
+    if (msg.type === "models_list") {
+      browserGateway.sendToSubscribers(sessionId, {
+        type: "models_list",
+        sessionId,
+        models: msg.models,
+      });
+    }
+    if (msg.type === "model_update") {
+      const modelUpdates: Partial<import("../shared/types.js").DashboardSession> = {
+        model: msg.model,
+      };
+      if (msg.thinkingLevel !== undefined) {
+        modelUpdates.thinkingLevel = msg.thinkingLevel;
+      }
+      sessionManager.update(sessionId, modelUpdates);
+      browserGateway.broadcastSessionUpdated(sessionId, modelUpdates);
+    }
+    if (msg.type === "session_name_update") {
+      const nameUpdates = { name: msg.name || undefined };
+      sessionManager.update(sessionId, nameUpdates);
+      browserGateway.broadcastSessionUpdated(sessionId, nameUpdates);
     }
     if (msg.type === "stats_update") {
       // Broadcast accumulated totals (pi-gateway already accumulated into session manager)

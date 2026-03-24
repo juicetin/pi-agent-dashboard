@@ -13,6 +13,8 @@ import {
   pruneStaleCollapsedGroups,
 } from "../lib/session-filter-storage.js";
 import { SessionCard, GroupGitInfo, EditorButtons } from "./SessionCard.js";
+import { ThemeToggle } from "./ThemeToggle.js";
+import { ThemePicker } from "./ThemePicker.js";
 import { useEditors } from "../lib/use-editors.js";
 import { openEditor } from "../lib/editor-api.js";
 import { Toast, useToast } from "./Toast.js";
@@ -30,6 +32,8 @@ interface Props {
   openspecMap?: Map<string, OpenSpecData>;
   onSendPrompt?: (sessionId: string, text: string) => void;
   onOpenSpecRefresh?: (sessionId: string) => void;
+  onRename?: (sessionId: string, name: string) => void;
+  onShutdown?: (sessionId: string) => void;
 }
 
 /** Group sessions by cwd, ordered by most recent activity. */
@@ -83,7 +87,7 @@ function ToggleButton({
       className={`text-[10px] px-1.5 py-0.5 rounded border ${
         active
           ? "border-blue-500/50 text-blue-400 bg-blue-500/10"
-          : "border-gray-700 text-gray-500 hover:text-gray-400"
+          : "border-[var(--border-secondary)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]"
       }`}
     >
       {children}
@@ -91,7 +95,7 @@ function ToggleButton({
   );
 }
 
-export function SessionList({ sessions, selectedId, onSelect, contextUsageMap, openspecMap, onSendPrompt, onOpenSpecRefresh }: Props) {
+export function SessionList({ sessions, selectedId, onSelect, contextUsageMap, openspecMap, onSendPrompt, onOpenSpecRefresh, onRename, onShutdown }: Props) {
   const now = Date.now();
   const { messages, showToast, dismissToast } = useToast();
 
@@ -179,11 +183,13 @@ export function SessionList({ sessions, selectedId, onSelect, contextUsageMap, o
   const groups = groupSessionsByDirectory(filteredSessions);
 
   return (
-    <div className="w-full border-r border-gray-800 overflow-y-auto">
-      <div className="p-3 border-b border-gray-800">
+    <div className="w-full border-r border-[var(--border-primary)] overflow-y-auto">
+      <div className="p-3 border-b border-[var(--border-primary)]">
         <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-gray-400 uppercase">Sessions</h2>
-          <div className="flex gap-1">
+          <h2 className="text-sm font-semibold text-[var(--text-secondary)] uppercase">Sessions</h2>
+          <div className="flex gap-1 items-center">
+            <ThemePicker />
+            <ThemeToggle />
             <ToggleButton active={activeOnly} onClick={handleActiveOnlyToggle}>
               Active only
             </ToggleButton>
@@ -194,7 +200,7 @@ export function SessionList({ sessions, selectedId, onSelect, contextUsageMap, o
         </div>
       </div>
       {filteredSessions.length === 0 ? (
-        <div className="p-4 text-sm text-gray-500">No active sessions</div>
+        <div className="p-4 text-sm text-[var(--text-tertiary)]">No active sessions</div>
       ) : (
         <ul>
           {groups.map((group) => {
@@ -205,15 +211,15 @@ export function SessionList({ sessions, selectedId, onSelect, contextUsageMap, o
               <React.Fragment key={group.cwd}>
                 {/* Group header — always shown */}
                 <li
-                  className="px-3 py-1.5 bg-gray-900/50 border-b border-gray-800/50 cursor-pointer hover:bg-gray-800/30"
+                  className="px-3 py-1.5 bg-[var(--bg-hover)] border-b border-[var(--border-primary)] cursor-pointer hover:bg-[var(--bg-hover)]"
                   onClick={() => handleToggleCollapse(group.cwd)}
                 >
                   <div className="flex items-center gap-1.5">
-                    <span className="inline-flex text-gray-500">
+                    <span className="inline-flex text-[var(--text-tertiary)]">
                       <Icon path={isCollapsed ? mdiChevronRight : mdiChevronDown} size={0.6} />
                     </span>
-                    <span className="text-xs font-medium text-gray-400 truncate">📁 {dirName}</span>
-                    <span className="text-[10px] text-gray-600">({group.sessions.length})</span>
+                    <span className="text-xs font-medium text-[var(--text-secondary)] truncate">📁 {dirName}</span>
+                    <span className="text-[10px] text-[var(--text-muted)]">({group.sessions.length})</span>
                   </div>
                   <GroupGitInfo sessions={group.sessions} />
                   {editorMap.get(group.cwd)?.length ? (
@@ -247,6 +253,8 @@ export function SessionList({ sessions, selectedId, onSelect, contextUsageMap, o
                       openspecData={openspecMap?.get(session.id)}
                       onSendPrompt={onSendPrompt ? (text) => onSendPrompt(session.id, text) : undefined}
                       onOpenSpecRefresh={onOpenSpecRefresh ? () => onOpenSpecRefresh(session.id) : undefined}
+                      onRename={onRename ? (name) => onRename(session.id, name) : undefined}
+                      onShutdown={onShutdown}
                     />
                   ))}
                 </div>
@@ -256,7 +264,7 @@ export function SessionList({ sessions, selectedId, onSelect, contextUsageMap, o
         </ul>
       )}
       {hiddenCount > 0 && !showHidden && (
-        <div className="p-2 text-center text-[11px] text-gray-600">
+        <div className="p-2 text-center text-[11px] text-[var(--text-muted)]">
           {hiddenCount} hidden
         </div>
       )}

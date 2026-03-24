@@ -67,12 +67,12 @@ export function ResizableSidebar({ sidebar, children }: Props) {
   if (collapsed) {
     return (
       <div
-        className="flex flex-col items-center border-r border-gray-800 bg-[#0a0a0a] flex-shrink-0"
+        className="flex flex-col items-center border-r border-[var(--border-primary)] bg-[var(--bg-primary)] flex-shrink-0"
         style={{ width: COLLAPSED_WIDTH }}
       >
         <button
           onClick={toggleCollapse}
-          className="mt-3 text-gray-500 hover:text-gray-300"
+          className="mt-3 text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]"
           title="Expand sidebar"
           data-testid="sidebar-expand"
         >
@@ -89,12 +89,12 @@ export function ResizableSidebar({ sidebar, children }: Props) {
       className="flex flex-shrink-0 relative"
       style={{ width }}
     >
-      <div className="flex-1 overflow-hidden flex flex-col border-r border-gray-800">
+      <div className="flex-1 overflow-hidden flex flex-col border-r border-[var(--border-primary)]">
         {/* Collapse toggle in header area */}
         <div className="absolute top-2 right-5 z-10">
           <button
             onClick={toggleCollapse}
-            className="text-gray-600 hover:text-gray-300"
+            className="text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
             title="Collapse sidebar"
             data-testid="sidebar-collapse"
           >

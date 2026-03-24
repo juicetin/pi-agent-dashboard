@@ -1,7 +1,7 @@
 /**
  * Extension ↔ Server WebSocket protocol messages.
  */
-import type { DashboardEvent, CommandInfo, SessionSource, ImageContent, FileEntry, TurnUsage, ContextUsage, OpenSpecData } from "./types.js";
+import type { DashboardEvent, CommandInfo, SessionSource, ImageContent, FileEntry, TurnUsage, ContextUsage, OpenSpecData, ModelInfo } from "./types.js";
 
 // ── Extension → Server ──────────────────────────────────────────────
 
@@ -9,6 +9,7 @@ export interface SessionRegisterMessage {
   type: "session_register";
   sessionId: string;
   cwd: string;
+  name?: string;
   source: SessionSource;
   model?: string;
   thinkingLevel?: string;
@@ -76,6 +77,25 @@ export interface OpenSpecUpdateMessage {
   data: OpenSpecData;
 }
 
+export interface ModelsListMessage {
+  type: "models_list";
+  sessionId: string;
+  models: ModelInfo[];
+}
+
+export interface SessionNameUpdateMessage {
+  type: "session_name_update";
+  sessionId: string;
+  name: string;
+}
+
+export interface ModelUpdateMessage {
+  type: "model_update";
+  sessionId: string;
+  model: string;
+  thinkingLevel?: string;
+}
+
 export type ExtensionToServerMessage =
   | SessionRegisterMessage
   | SessionUnregisterMessage
@@ -86,7 +106,10 @@ export type ExtensionToServerMessage =
   | StatsUpdateMessage
   | FilesListMessage
   | GitInfoUpdateMessage
-  | OpenSpecUpdateMessage;
+  | OpenSpecUpdateMessage
+  | SessionNameUpdateMessage
+  | ModelsListMessage
+  | ModelUpdateMessage;
 
 // ── Server → Extension ──────────────────────────────────────────────
 
@@ -123,10 +146,36 @@ export interface OpenSpecRefreshMessage {
   sessionId: string;
 }
 
+export interface RenameSessionExtensionMessage {
+  type: "rename_session";
+  sessionId: string;
+  name: string;
+}
+
+export interface RequestModelsMessage {
+  type: "request_models";
+  sessionId: string;
+}
+
+export interface SetThinkingLevelMessage {
+  type: "set_thinking_level";
+  sessionId: string;
+  level: string;
+}
+
+export interface ShutdownExtensionMessage {
+  type: "shutdown";
+  sessionId: string;
+}
+
 export type ServerToExtensionMessage =
   | SendPromptToExtensionMessage
   | AbortToExtensionMessage
   | RequestCommandsMessage
   | RequestStateSyncMessage
   | ListFilesMessage
-  | OpenSpecRefreshMessage;
+  | OpenSpecRefreshMessage
+  | RenameSessionExtensionMessage
+  | RequestModelsMessage
+  | SetThinkingLevelMessage
+  | ShutdownExtensionMessage;

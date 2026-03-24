@@ -1,13 +1,13 @@
 ## ADDED Requirements
 
 ### Requirement: SQLite event store
-The dashboard server SHALL persist all events in a SQLite database at the configured path (default `~/.pi/dashboard/dashboard.db`). The database SHALL be created automatically on first run with the required schema.
+The dashboard server SHALL persist all events in a SQLite database at the configured path (default `~/.pi/dashboard/dashboard.db`) using `better-sqlite3` (native file-based SQLite binding). The database SHALL be created automatically on first run with the required schema. WAL journal mode SHALL be enabled on database open.
 
 Each event record SHALL contain: id (autoincrement), sessionId, seq (per-session sequence number), eventType, payload (JSON string), createdAt (unix timestamp ms).
 
 #### Scenario: Event storage
 - **WHEN** an event arrives from a bridge extension
-- **THEN** the server SHALL assign the next sequence number for that session, serialize the payload to JSON, and insert into SQLite
+- **THEN** the server SHALL assign the next sequence number for that session, serialize the payload to JSON, and insert into SQLite. The write SHALL be persisted to disk immediately (no periodic flush needed).
 
 #### Scenario: Database creation on first run
 - **WHEN** the dashboard server starts and no database file exists
@@ -16,6 +16,10 @@ Each event record SHALL contain: id (autoincrement), sessionId, seq (per-session
 #### Scenario: Database in custom location
 - **WHEN** the server is configured with a custom `dbPath`
 - **THEN** the database SHALL be created at that path, including any parent directories
+
+#### Scenario: WAL mode enabled
+- **WHEN** the database is opened
+- **THEN** the server SHALL enable WAL journal mode via `PRAGMA journal_mode=WAL`
 
 ### Requirement: Per-session sequence numbers
 Each event SHALL receive a monotonically increasing sequence number scoped to its session. Sequence numbers SHALL start at 0 for each session and increment by 1.
@@ -89,6 +93,29 @@ Workspace records SHALL be persisted in SQLite across server restarts.
 - **WHEN** the server restarts
 - **THEN** all workspace records SHALL be loaded from SQLite and displayed in the workspace bar
 
+### Requirement: OpenSpec data persistence
+The server SHALL persist OpenSpec data as a JSON string in the `openspec_data` column of the `sessions` table. When an `openspec_update` message arrives from a bridge extension, the server SHALL store `JSON.stringify(data)` via `sessionManager.update()` in addition to forwarding it to subscribed browsers.
+
+#### Scenario: OpenSpec data stored on update
+- **WHEN** the server receives an `openspec_update` from a bridge extension
+- **THEN** it SHALL persist the data as a JSON string in the session's `openspec_data` column and forward it to subscribed browsers
+
+#### Scenario: OpenSpec data hydrated on subscribe
+- **WHEN** a browser subscribes to a session that has stored `openspecData`
+- **THEN** the server SHALL immediately send an `openspec_update` message to the browser with the parsed stored data
+
+#### Scenario: OpenSpec data missing for active session on subscribe
+- **WHEN** a browser subscribes to an active session that has no stored `openspecData`
+- **THEN** the server SHALL send an `openspec_refresh` to the bridge extension to force a poll, which will result in an `openspec_update` being stored and forwarded
+
+#### Scenario: OpenSpec data missing for ended session on subscribe
+- **WHEN** a browser subscribes to an ended session that has no stored `openspecData`
+- **THEN** the server SHALL NOT attempt to refresh (the extension is offline) and no `openspec_update` is sent
+
+#### Scenario: OpenSpec data survives server restart
+- **WHEN** the server restarts
+- **THEN** previously stored OpenSpec data SHALL be hydrated from SQLite and available for browser subscribers without requiring a fresh poll from the extension
+
 ### Requirement: Database migrations
 The database schema SHALL use versioned migrations. Each migration SHALL be idempotent. The server SHALL check the current schema version on startup and apply any pending migrations.
 
@@ -96,19 +123,4 @@ The database schema SHALL use versioned migrations. Each migration SHALL be idem
 - **WHEN** the server starts with a database from an older version
 - **THEN** it SHALL apply pending migrations to update the schema without data loss
 
-### Requirement: Periodic database flush to disk
-The dashboard server SHALL flush the in-memory sql.js database to disk at a regular interval (default 30 seconds) during normal operation. The flush SHALL call `db.save()` which exports the database and writes it to the configured `dbPath`.
 
-The flush timer SHALL be started when the server starts and cleared when the server stops.
-
-#### Scenario: Periodic flush during operation
-- **WHEN** the server has been running for 30 seconds with new events inserted
-- **THEN** the database file on disk SHALL contain those events
-
-#### Scenario: Ungraceful shutdown loses at most one interval of data
-- **WHEN** the server process is killed without graceful shutdown
-- **THEN** at most 30 seconds of data SHALL be lost (since the last periodic flush)
-
-#### Scenario: Flush timer cleanup on shutdown
-- **WHEN** the server stops gracefully
-- **THEN** the periodic flush timer SHALL be cleared and `db.close()` SHALL still be called as before

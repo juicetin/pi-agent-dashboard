@@ -8,9 +8,10 @@ import { ChatView } from "./components/ChatView.js";
 import { SessionHeader } from "./components/SessionHeader.js";
 import { TokenStatsBar } from "./components/TokenStatsBar.js";
 import { CommandInput } from "./components/CommandInput.js";
+import { StatusBar } from "./components/StatusBar.js";
 import { createInitialState, reduceEvent, type SessionState } from "./lib/event-reducer.js";
 import { useEditors } from "./lib/use-editors.js";
-import type { DashboardSession, CommandInfo, FileEntry, OpenSpecData } from "../shared/types.js";
+import type { DashboardSession, CommandInfo, FileEntry, OpenSpecData, ModelInfo } from "../shared/types.js";
 import type { ServerToBrowserMessage } from "../shared/browser-protocol.js";
 import type { ToolContext } from "./components/tool-renderers/index.js";
 import type { ContextUsageInfo } from "./components/SessionList.js";
@@ -29,6 +30,7 @@ export default function App() {
   const [sessionCommands, setSessionCommands] = useState<Map<string, CommandInfo[]>>(new Map());
   const [fileResults, setFileResults] = useState<{ query: string; files: FileEntry[] } | null>(null);
   const [openspecMap, setOpenspecMap] = useState<Map<string, OpenSpecData>>(new Map());
+  const [modelsMap, setModelsMap] = useState<Map<string, ModelInfo[]>>(new Map());
   const subscribedRef = useRef(new Set<string>());
 
   const handleMessage = useCallback((msg: ServerToBrowserMessage) => {
@@ -44,6 +46,7 @@ export default function App() {
           subscribedRef.current.add(msg.session.id);
           send({ type: "subscribe", sessionId: msg.session.id, lastSeq: 0 });
           send({ type: "request_commands", sessionId: msg.session.id });
+          send({ type: "request_models", sessionId: msg.session.id });
         }
         break;
 
@@ -88,6 +91,14 @@ export default function App() {
 
       case "files_list":
         setFileResults({ query: msg.query, files: msg.files });
+        break;
+
+      case "models_list":
+        setModelsMap((prev) => {
+          const next = new Map(prev);
+          next.set(msg.sessionId, msg.models);
+          return next;
+        });
         break;
 
       case "openspec_update":
@@ -159,6 +170,15 @@ export default function App() {
     return map;
   }, [sessionStates]);
 
+  const handleAbort = useCallback(
+    () => {
+      if (selectedId) {
+        send({ type: "abort", sessionId: selectedId });
+      }
+    },
+    [selectedId, send],
+  );
+
   const handleOpenSpecRefresh = useCallback(
     (sessionId: string) => {
       send({ type: "openspec_refresh", sessionId });
@@ -192,6 +212,20 @@ export default function App() {
     [],
   );
 
+  const handleRenameSession = useCallback(
+    (sessionId: string, name: string) => {
+      send({ type: "rename_session", sessionId, name });
+    },
+    [send],
+  );
+
+  const handleShutdownSession = useCallback(
+    (sessionId: string) => {
+      send({ type: "shutdown", sessionId });
+    },
+    [send],
+  );
+
   const handleSendPromptToSession = useCallback(
     (sessionId: string, text: string) => {
       send({ type: "send_prompt", sessionId, text });
@@ -208,11 +242,13 @@ export default function App() {
       openspecMap={openspecMap}
       onSendPrompt={handleSendPromptToSession}
       onOpenSpecRefresh={handleOpenSpecRefresh}
+      onRename={handleRenameSession}
+      onShutdown={handleShutdownSession}
     />
   );
 
   return (
-    <div className="flex h-screen bg-[#0a0a0a] text-white">
+    <div className="flex h-screen bg-[var(--bg-primary)] text-[var(--text-primary)]">
       {/* Desktop sidebar (hidden below md) */}
       <div className="hidden md:flex">
         <ResizableSidebar sidebar={sidebar}>
@@ -241,6 +277,7 @@ export default function App() {
         <SessionHeader
           session={selectedId ? sessions.get(selectedId) : undefined}
           state={selectedState}
+          onRename={handleRenameSession}
         />
         {selectedId && (
           <TokenStatsBar
@@ -254,12 +291,32 @@ export default function App() {
           />
         )}
         <ChatView state={selectedState} toolContext={toolContext} />
+        <StatusBar
+          model={selectedState.model ?? selectedSession?.model}
+          models={selectedId ? modelsMap.get(selectedId) : undefined}
+          thinkingLevel={selectedState.thinkingLevel ?? selectedSession?.thinkingLevel}
+          status={selectedState.status}
+          currentTool={selectedState.currentTool}
+          streamingText={selectedState.streamingText || undefined}
+          onSelectModel={(modelStr) => {
+            if (selectedId) {
+              send({ type: "send_prompt", sessionId: selectedId, text: `/model ${modelStr}` });
+            }
+          }}
+          onSelectThinkingLevel={(level) => {
+            if (selectedId) {
+              send({ type: "set_thinking_level", sessionId: selectedId, level });
+            }
+          }}
+        />
         <CommandInput
           commands={selectedCommands}
           onSend={handleSend}
           onListFiles={handleListFiles}
           fileResults={fileResults}
           disabled={!selectedId}
+          sessionStatus={selectedState.status}
+          onAbort={handleAbort}
         />
       </div>
     </div>

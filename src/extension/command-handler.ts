@@ -8,7 +8,6 @@ import type {
   ExtensionToServerMessage,
 } from "../shared/protocol.js";
 import type { FileEntry } from "../shared/types.js";
-import { pollOpenSpec } from "./openspec-poller.js";
 
 /** Escape regex special characters for fd pattern */
 function escapeRegex(value: string): string {
@@ -59,6 +58,13 @@ export interface CommandHandler {
 export function createCommandHandler(
   pi: ExtensionAPI,
   sessionId: string,
+  options?: {
+    getModelRegistry?: () => any;
+    setThinkingLevel?: (level: string) => void;
+    getThinkingLevel?: () => string | undefined;
+    shutdown?: () => void;
+    abort?: () => void;
+  },
 ): CommandHandler {
   return {
     handle(msg: ServerToExtensionMessage): ExtensionToServerMessage | undefined {
@@ -104,8 +110,9 @@ export function createCommandHandler(
           return undefined;
 
         case "abort":
-          // ctx.abort() is not available on ExtensionAPI directly,
-          // we'd need ctx from an event handler. For now, this is a placeholder.
+          if (options?.abort) {
+            options.abort();
+          }
           return undefined;
 
         case "request_commands": {
@@ -127,14 +134,44 @@ export function createCommandHandler(
           };
         }
 
-        case "openspec_refresh": {
-          const data = pollOpenSpec(process.cwd());
+        case "openspec_refresh":
+          // Handled by bridge.ts onMessage to update lastOpenSpecJson cache
+          return undefined;
+
+        case "rename_session":
+          pi.setSessionName(msg.name);
           return {
-            type: "openspec_update",
+            type: "session_name_update",
             sessionId,
-            data,
+            name: msg.name,
           };
+
+        case "request_models": {
+          const registry = options?.getModelRegistry?.();
+          if (registry) {
+            try {
+              registry.refresh();
+              const models = registry.getAvailable().map((m: any) => ({
+                provider: m.provider,
+                id: m.id,
+              }));
+              return { type: "models_list", sessionId, models };
+            } catch { /* ignore */ }
+          }
+          return { type: "models_list", sessionId, models: [] };
         }
+
+        case "set_thinking_level":
+          if (options?.setThinkingLevel) {
+            options.setThinkingLevel(msg.level);
+          }
+          return undefined;
+
+        case "shutdown":
+          if (options?.shutdown) {
+            options.shutdown();
+          }
+          return undefined;
 
         case "request_state_sync":
           // State sync is handled by the bridge on reconnect

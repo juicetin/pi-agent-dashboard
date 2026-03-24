@@ -25,7 +25,7 @@ export function OpenFileButton({ filePath, line, context }: Props) {
   return (
     <button
       onClick={handleClick}
-      className="inline-flex items-center gap-0.5 text-[10px] text-gray-500 hover:text-blue-400 transition-colors"
+      className="inline-flex items-center gap-0.5 text-[10px] text-[var(--text-tertiary)] hover:text-blue-400 transition-colors"
       title={`Open in ${editor.name}`}
     >
       <Icon path={mdiOpenInNew} size={0.45} />

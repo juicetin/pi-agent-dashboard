@@ -119,15 +119,30 @@ export class ConnectionManager {
     };
 
     this.ws.onclose = () => {
-      this.ws = null;
-      if (!this.intentionalClose) {
-        this.scheduleReconnect();
-      }
+      this.handleDisconnect();
     };
 
     this.ws.onerror = () => {
-      // onclose will fire after onerror
+      // Node 22's built-in WebSocket may fire onerror WITHOUT onclose
+      // on connection failure. Handle once and prevent re-entrant calls
+      // (ws.close() can re-trigger onerror synchronously).
+      this.handleDisconnect();
     };
+  }
+
+  private handleDisconnect(): void {
+    if (!this.ws) return; // Already handled — idempotent guard
+    const ws = this.ws;
+    this.ws = null;
+    // Detach handlers to prevent re-entrant calls from ws.close()
+    ws.onclose = null;
+    ws.onerror = null;
+    ws.onopen = null;
+    ws.onmessage = null;
+    try { ws.close(); } catch { /* ignore — may already be closed */ }
+    if (!this.intentionalClose) {
+      this.scheduleReconnect();
+    }
   }
 
   private scheduleReconnect(): void {

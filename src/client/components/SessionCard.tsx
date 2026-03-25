@@ -321,16 +321,18 @@ export function SessionCard({
         <span className={`text-[10px] ${sourceBadgeColors[session.source] ?? "text-[var(--text-tertiary)]"}`}>
           {session.source}
         </span>
-        {/* Resume/Fork buttons for hidden sessions */}
-        {isHidden && onResume && session.sessionFile && (
+        {/* Fork: all sessions; Resume: ended or hidden */}
+        {onResume && session.sessionFile && (
           <>
-            <button
-              onClick={(e) => { e.stopPropagation(); onResume("continue"); }}
-              className="text-[10px] px-1.5 py-0.5 rounded border border-green-500/30 text-green-400 hover:bg-green-500/10"
-              title="Resume session (continue same session)"
-            >
-              Resume
-            </button>
+            {(!isAlive || isHidden) && (
+              <button
+                onClick={(e) => { e.stopPropagation(); onResume("continue"); }}
+                className="text-[10px] px-1.5 py-0.5 rounded border border-green-500/30 text-green-400 hover:bg-green-500/10"
+                title="Resume session (continue same session)"
+              >
+                Resume
+              </button>
+            )}
             <button
               onClick={(e) => { e.stopPropagation(); onResume("fork"); }}
               className="text-[10px] px-1.5 py-0.5 rounded border border-blue-500/30 text-blue-400 hover:bg-blue-500/10"

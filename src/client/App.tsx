@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useRoute, useLocation, Redirect, Switch, Route } from "wouter";
 import { useWebSocket } from "./hooks/useWebSocket.js";
 import { useSidebarState } from "./hooks/useSidebarState.js";
 import { SessionList } from "./components/SessionList.js";
@@ -9,6 +10,7 @@ import { SessionHeader } from "./components/SessionHeader.js";
 import { TokenStatsBar } from "./components/TokenStatsBar.js";
 import { CommandInput } from "./components/CommandInput.js";
 import { StatusBar } from "./components/StatusBar.js";
+import { LandingPage } from "./components/LandingPage.js";
 import { createInitialState, reduceEvent, type SessionState } from "./lib/event-reducer.js";
 import { useEditors } from "./lib/use-editors.js";
 import type { DashboardSession, CommandInfo, FileEntry, OpenSpecData, ModelInfo } from "../shared/types.js";
@@ -22,10 +24,12 @@ const WS_URL = `${wsProtocol}//${window.location.hostname}${wsPort}/ws`;
 
 export default function App() {
   const { send, onMessage, status } = useWebSocket(WS_URL);
+  const [, navigate] = useLocation();
+  const [match, params] = useRoute("/session/:id");
+  const selectedId = match ? params?.id : undefined;
   const sidebar = useSidebarState();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [sessions, setSessions] = useState<Map<string, DashboardSession>>(new Map());
-  const [selectedId, setSelectedId] = useState<string | undefined>();
   const [sessionStates, setSessionStates] = useState<Map<string, SessionState>>(new Map());
   const [sessionCommands, setSessionCommands] = useState<Map<string, CommandInfo[]>>(new Map());
   const [fileResults, setFileResults] = useState<{ query: string; files: FileEntry[] } | null>(null);
@@ -152,15 +156,13 @@ export default function App() {
     prevStatusRef.current = status;
   }, [status]);
 
-  // Auto-select: prefer active/streaming session, fall back to first non-hidden
+  // Redirect to / if session ID in URL is not found after sessions have loaded
+  const sessionsLoaded = sessions.size > 0;
   useEffect(() => {
-    if (!selectedId && sessions.size > 0) {
-      const all = Array.from(sessions.values());
-      const active = all.find((s) => s.status === "streaming" || s.status === "active");
-      const visible = all.find((s) => !s.hidden);
-      setSelectedId((active ?? visible ?? all[0]).id);
+    if (selectedId && sessionsLoaded && !sessions.has(selectedId)) {
+      navigate("/", { replace: true });
     }
-  }, [selectedId, sessions]);
+  }, [selectedId, sessionsLoaded, sessions, navigate]);
 
   const selectedState = selectedId
     ? sessionStates.get(selectedId) ?? createInitialState()
@@ -257,10 +259,10 @@ export default function App() {
 
   const handleSelect = useCallback(
     (id: string) => {
-      setSelectedId(id);
+      navigate(`/session/${id}`);
       setMobileOpen(false);
     },
-    [],
+    [navigate],
   );
 
   const handleRenameSession = useCallback(
@@ -377,52 +379,54 @@ export default function App() {
             Server offline
           </div>
         )}
-        <SessionHeader
-          session={selectedId ? sessions.get(selectedId) : undefined}
-          state={selectedState}
-          onRename={handleRenameSession}
-        />
-        {selectedId && (
-          <TokenStatsBar
-            turnStats={selectedState.turnStats}
-            contextUsage={selectedState.contextUsage}
-            tokensIn={selectedState.tokensIn}
-            tokensOut={selectedState.tokensOut}
-            cacheRead={selectedState.cacheRead}
-            cacheWrite={selectedState.cacheWrite}
-            cost={selectedState.cost}
-          />
+        {selectedId ? (
+          <>
+            <SessionHeader
+              session={sessions.get(selectedId)}
+              state={selectedState}
+              onRename={handleRenameSession}
+              showBack
+              onBack={() => window.history.back()}
+            />
+            <TokenStatsBar
+              turnStats={selectedState.turnStats}
+              contextUsage={selectedState.contextUsage}
+              tokensIn={selectedState.tokensIn}
+              tokensOut={selectedState.tokensOut}
+              cacheRead={selectedState.cacheRead}
+              cacheWrite={selectedState.cacheWrite}
+              cost={selectedState.cost}
+            />
+            <ChatView state={selectedState} toolContext={toolContext} onCancelPending={handleCancelPending} />
+            <StatusBar
+              model={selectedState.model ?? selectedSession?.model}
+              models={modelsMap.get(selectedId)}
+              thinkingLevel={selectedState.thinkingLevel ?? selectedSession?.thinkingLevel}
+              status={selectedState.status}
+              currentTool={selectedState.currentTool}
+              streamingText={selectedState.streamingText || undefined}
+              onSelectModel={(modelStr) => {
+                send({ type: "send_prompt", sessionId: selectedId, text: `/model ${modelStr}` });
+              }}
+              onSelectThinkingLevel={(level) => {
+                send({ type: "set_thinking_level", sessionId: selectedId, level });
+              }}
+            />
+            <CommandInput
+              commands={selectedCommands}
+              onSend={handleSend}
+              onListFiles={handleListFiles}
+              fileResults={fileResults}
+              disabled={false}
+              sessionStatus={selectedState.status}
+              onAbort={handleAbort}
+              pendingPrompt={!!selectedState.pendingPrompt}
+              onCancelPending={handleCancelPending}
+            />
+          </>
+        ) : (
+          <LandingPage />
         )}
-        <ChatView state={selectedState} toolContext={toolContext} onCancelPending={handleCancelPending} />
-        <StatusBar
-          model={selectedState.model ?? selectedSession?.model}
-          models={selectedId ? modelsMap.get(selectedId) : undefined}
-          thinkingLevel={selectedState.thinkingLevel ?? selectedSession?.thinkingLevel}
-          status={selectedState.status}
-          currentTool={selectedState.currentTool}
-          streamingText={selectedState.streamingText || undefined}
-          onSelectModel={(modelStr) => {
-            if (selectedId) {
-              send({ type: "send_prompt", sessionId: selectedId, text: `/model ${modelStr}` });
-            }
-          }}
-          onSelectThinkingLevel={(level) => {
-            if (selectedId) {
-              send({ type: "set_thinking_level", sessionId: selectedId, level });
-            }
-          }}
-        />
-        <CommandInput
-          commands={selectedCommands}
-          onSend={handleSend}
-          onListFiles={handleListFiles}
-          fileResults={fileResults}
-          disabled={!selectedId}
-          sessionStatus={selectedState.status}
-          onAbort={handleAbort}
-          pendingPrompt={!!selectedState.pendingPrompt}
-          onCancelPending={handleCancelPending}
-        />
       </div>
     </div>
   );

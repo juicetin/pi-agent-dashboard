@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
+import { useLocation } from "wouter";
 import Icon from "@mdi/react";
 import { mdiChevronRight, mdiChevronDown, mdiPlus } from "@mdi/js";
 import type { DashboardSession, OpenSpecData } from "../../shared/types.js";
@@ -100,6 +101,7 @@ function ToggleButton({
 
 export function SessionList({ sessions, selectedId, onSelect, contextUsageMap, openspecMap, onSendPrompt, onOpenSpecRefresh, onRename, onShutdown, onResume, onHideSession, onUnhideSession, onSpawnSession, spawnResult, onSpawnResultSeen }: Props) {
   const now = Date.now();
+  const [, navigate] = useLocation();
   const { messages, showToast, dismissToast } = useToast();
 
   // Detect editors for all unique cwds
@@ -188,7 +190,7 @@ export function SessionList({ sessions, selectedId, onSelect, contextUsageMap, o
     <div className="w-full border-r border-[var(--border-primary)] overflow-y-auto">
       <div className="p-3 border-b border-[var(--border-primary)]">
         <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-[var(--text-secondary)] uppercase">Sessions</h2>
+          <button onClick={() => navigate("/")} className="text-lg font-bold text-[var(--text-primary)] hover:text-[var(--accent-primary)] transition-colors leading-none" title="Home">π</button>
           <div className="flex gap-1 items-center">
             <ThemePicker />
             <ThemeToggle />

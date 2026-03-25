@@ -1,61 +1,64 @@
 ## ADDED Requirements
 
-### Requirement: Spawn session from folder card
-The dashboard UI SHALL display a "New Session" button (`+` icon) on each folder card group header in the session sidebar. Clicking it SHALL send a `spawn_session` message to the server with the group's `cwd`.
+### Requirement: Headless spawn survives server restart (Unix)
+On macOS and Linux, headless pi sessions SHALL be spawned using a `sh -c "sleep 2147483647 | pi --mode rpc"` wrapper so that the stdin pipe is internal to the process group and does not depend on the dashboard server process. When the server exits, the headless agent SHALL continue running because its stdin (provided by `sleep`) remains open. The spawn SHALL use `detached: true` and `stdio: "ignore"` so no file descriptors are shared with the server. Shell arguments SHALL be escaped using a `shellEscape` helper to prevent injection. The value `2147483647` (max 32-bit signed int) SHALL be used instead of `infinity` for compatibility with older macOS versions whose BSD `sleep` does not support `infinity`.
 
-#### Scenario: User clicks new session button
-- **WHEN** the user clicks the `+` button on a folder card group header for `/projects/my-app`
-- **THEN** the browser SHALL send `{ type: "spawn_session", cwd: "/projects/my-app" }` to the server
+#### Scenario: Server exits while headless agent is running (Unix)
+- **WHEN** the dashboard server exits (via `/api/shutdown` or process termination) on macOS or Linux
+- **THEN** all headless pi agents SHALL continue running because their stdin pipe is internal to their own process group
 
-#### Scenario: Spawn succeeds
-- **WHEN** the server returns `spawn_result` with `success: true`
-- **THEN** the UI SHALL show a success toast with the result message
+#### Scenario: Headless agent reconnects after server restart
+- **WHEN** the dashboard server restarts after an exit
+- **THEN** the bridge extension in the headless agent SHALL reconnect via ConnectionManager backoff and re-register the session
 
-#### Scenario: Spawn fails
-- **WHEN** the server returns `spawn_result` with `success: false`
-- **THEN** the UI SHALL show an error toast with the failure message
+### Requirement: Headless spawn on Windows (fallback)
+On Windows (`process.platform === "win32"`), headless pi sessions SHALL be spawned directly with `spawn("pi", args, { stdio: ["pipe", "ignore", "ignore"] })` because `sh`, `sleep`, and Unix process groups are not available. The server holds the stdin pipe write end; if the server exits, the agent will terminate due to stdin EOF. This is a known limitation on Windows.
 
-### Requirement: Spawn session protocol messages
-The browser→server protocol SHALL include a `spawn_session` message type with field `cwd: string`. The server→browser protocol SHALL include a `spawn_result` message type with fields `cwd: string`, `success: boolean`, and `message: string`.
+#### Scenario: Server exits while headless agent is running (Windows)
+- **WHEN** the dashboard server exits on Windows
+- **THEN** headless pi agents MAY terminate due to stdin EOF (known limitation)
 
-#### Scenario: spawn_session message
-- **WHEN** the browser sends `{ type: "spawn_session", cwd: "/projects/my-app" }`
-- **THEN** the server SHALL spawn a pi session in that directory using the configured strategy
+### Requirement: Process group kill for headless agents
+When terminating a headless agent (via `killBySessionId`, `killAll`, or orphan cleanup), the server SHALL send SIGTERM to the entire process group using `process.kill(-pid, "SIGTERM")` (negative PID) on Unix. On Windows, the server SHALL kill the process directly using `process.kill(pid, "SIGTERM")` since process groups are not supported.
 
-#### Scenario: spawn_result response
-- **WHEN** the server completes a spawn attempt
-- **THEN** it SHALL send `{ type: "spawn_result", cwd: "...", success: boolean, message: "..." }` to the requesting browser
+#### Scenario: Kill headless agent by session ID (Unix)
+- **WHEN** the server sends a shutdown command for a headless session on macOS or Linux
+- **THEN** the server SHALL call `process.kill(-pid, "SIGTERM")` to kill the entire process group
 
-### Requirement: Headless spawn via RPC mode
-When `spawnStrategy` is `"headless"`, the server SHALL spawn pi as a detached child process using `pi --mode rpc` with the working directory set to the requested `cwd`. The environment SHALL include `PI_DASHBOARD_SPAWNED=1`.
+#### Scenario: Kill headless agent by session ID (Windows)
+- **WHEN** the server sends a shutdown command for a headless session on Windows
+- **THEN** the server SHALL call `process.kill(pid, "SIGTERM")` to kill the process directly
 
-#### Scenario: Headless spawn
-- **WHEN** `spawnStrategy` is `"headless"` and a spawn is requested for `/projects/my-app`
-- **THEN** the server SHALL spawn: `pi --mode rpc` with `cwd: "/projects/my-app"` and `env: { PI_DASHBOARD_SPAWNED: "1" }`
-- **AND** stdin/stdout SHALL be piped to `"ignore"` (no direct I/O from server)
+#### Scenario: Kill all headless agents on server stop
+- **WHEN** the server calls `killAll()` during graceful shutdown
+- **THEN** each tracked entry SHALL be killed with process group kill on Unix or direct kill on Windows
 
-#### Scenario: Headless spawn with session file (continue)
-- **WHEN** `spawnStrategy` is `"headless"` and spawn options include `sessionFile` with `mode: "continue"`
-- **THEN** the server SHALL spawn: `pi --mode rpc --session <sessionFile>`
+### Requirement: Headless PID persistence to disk
+The server SHALL persist headless process entries to `~/.pi/dashboard/headless-pids.json` using atomic writes. The file SHALL contain an array of entries with fields `pid` (number), `cwd` (string), and `spawnedAt` (ISO timestamp). Entries SHALL be written on register and removed on process exit or kill.
 
-#### Scenario: Headless spawn with session file (fork)
-- **WHEN** `spawnStrategy` is `"headless"` and spawn options include `sessionFile` with `mode: "fork"`
-- **THEN** the server SHALL spawn: `pi --mode rpc --fork <sessionFile>`
+#### Scenario: Headless process spawned
+- **WHEN** a headless pi session is spawned with PID 12345 in `/projects/app`
+- **THEN** the server SHALL write an entry `{ pid: 12345, cwd: "/projects/app", spawnedAt: "..." }` to the PID file
 
-### Requirement: Headless child process tracking
-The server SHALL track all headless child processes. When a child process exits, it SHALL be removed from tracking. On server shutdown (SIGTERM/SIGINT), the server SHALL send SIGTERM to all tracked headless child processes.
+#### Scenario: Headless process exits
+- **WHEN** a tracked headless process exits
+- **THEN** the server SHALL remove its entry from the PID file
 
-#### Scenario: Child process exits normally
-- **WHEN** a headless pi process exits
-- **THEN** the server SHALL remove it from the tracked processes map
+#### Scenario: PID file is empty
+- **WHEN** no headless processes are tracked
+- **THEN** the PID file SHALL contain `{ "entries": [] }`
 
-#### Scenario: Server shutdown with active headless sessions
-- **WHEN** the server receives SIGTERM or SIGINT and there are tracked headless processes
-- **THEN** the server SHALL send SIGTERM to each tracked process before exiting
+### Requirement: Orphan cleanup on server startup
+On startup, the server SHALL read the headless PID file and check each entry. If the PID is still alive (`process.kill(pid, 0)` succeeds), the server SHALL reclaim it into the registry. If the PID is dead, the server SHALL remove the stale entry. If the PID is alive but was spawned more than 7 days ago, the server SHALL kill it (process group on Unix, direct on Windows) and remove the entry.
 
-### Requirement: Tmux spawn remains default
-When `spawnStrategy` is `"tmux"` (or unset), the existing tmux spawn behavior SHALL be used unchanged. This is the default.
+#### Scenario: Orphan process still alive
+- **WHEN** the server starts and finds PID 12345 in the PID file and the process is still alive
+- **THEN** the server SHALL add it to the headless registry for tracking
 
-#### Scenario: Default strategy
-- **WHEN** `spawnStrategy` is not set in config
-- **THEN** the server SHALL use tmux spawn strategy (existing behavior)
+#### Scenario: Stale PID (process dead)
+- **WHEN** the server starts and finds PID 12345 in the PID file but the process is not alive
+- **THEN** the server SHALL remove the entry from the PID file
+
+#### Scenario: Very old orphan killed
+- **WHEN** the server starts and finds a PID spawned more than 7 days ago that is still alive
+- **THEN** the server SHALL kill it (process group on Unix, direct on Windows) and remove the entry

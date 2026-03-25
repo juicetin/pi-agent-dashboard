@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import Icon from "@mdi/react";
-import { mdiPencilOutline } from "@mdi/js";
+import { mdiPencilOutline, mdiArrowLeft } from "@mdi/js";
 import type { DashboardSession } from "../../shared/types.js";
 import type { SessionState } from "../lib/event-reducer.js";
 import { getSessionDisplayName } from "../lib/session-display-name.js";
@@ -10,6 +10,8 @@ interface Props {
   session?: DashboardSession;
   state: SessionState;
   onRename?: (sessionId: string, name: string) => void;
+  showBack?: boolean;
+  onBack?: () => void;
 }
 
 function formatDuration(ms: number): string {
@@ -22,7 +24,7 @@ function formatDuration(ms: number): string {
   return `${seconds}s`;
 }
 
-export function SessionHeader({ session, state, onRename }: Props) {
+export function SessionHeader({ session, state, onRename, showBack, onBack }: Props) {
   const [now, setNow] = useState(Date.now());
   const [isRenaming, setIsRenaming] = useState(false);
 
@@ -51,6 +53,16 @@ export function SessionHeader({ session, state, onRename }: Props) {
 
   return (
     <div className="px-4 py-2 border-b border-[var(--border-primary)] flex items-center gap-4 text-sm">
+      {showBack && onBack && (
+        <button
+          onClick={onBack}
+          className="text-[var(--text-muted)] hover:text-[var(--text-secondary)] p-0.5"
+          title="Go back"
+          data-testid="back-button"
+        >
+          <Icon path={mdiArrowLeft} size={0.65} />
+        </button>
+      )}
       {isRenaming ? (
         <InlineRenameInput
           currentName={getSessionDisplayName(session)}

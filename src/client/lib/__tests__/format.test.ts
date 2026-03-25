@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { formatTokens, formatRelativeTime } from "../format.js";
+import { formatTokens, formatRelativeTime, formatMessageTime } from "../format.js";
 
 describe("formatTokens", () => {
   it("should return '0' for zero", () => {
@@ -54,5 +54,56 @@ describe("formatRelativeTime", () => {
   it("should return '0s' for zero or negative", () => {
     expect(formatRelativeTime(0)).toBe("0s");
     expect(formatRelativeTime(-1000)).toBe("0s");
+  });
+});
+
+describe("formatMessageTime", () => {
+  // Helper: create a date relative to "now"
+  function makeNow(y: number, m: number, d: number, h = 12, min = 0, s = 0) {
+    return new Date(y, m - 1, d, h, min, s).getTime();
+  }
+
+  it("should show only HH:MM:SS for today", () => {
+    const now = makeNow(2026, 3, 25, 15, 0, 0);
+    const ts = makeNow(2026, 3, 25, 9, 5, 30);
+    expect(formatMessageTime(ts, now)).toBe("09:05:30");
+  });
+
+  it("should show 'Yesterday HH:MM:SS' for yesterday", () => {
+    const now = makeNow(2026, 3, 25, 15, 0, 0);
+    const ts = makeNow(2026, 3, 24, 14, 32, 5);
+    expect(formatMessageTime(ts, now)).toBe("Yesterday 14:32:05");
+  });
+
+  it("should show weekday + HH:MM:SS for 2-6 days ago (same week)", () => {
+    // 2026-03-25 is a Wednesday. Monday the 23rd is 2 days ago.
+    const now = makeNow(2026, 3, 25, 15, 0, 0);
+    const ts = makeNow(2026, 3, 23, 8, 0, 0);
+    expect(formatMessageTime(ts, now)).toBe("Monday 08:00:00");
+  });
+
+  it("should show weekday for up to 6 days ago", () => {
+    // 2026-03-25 (Wed). 6 days ago = Thu 2026-03-19
+    const now = makeNow(2026, 3, 25, 15, 0, 0);
+    const ts = makeNow(2026, 3, 19, 22, 15, 45);
+    expect(formatMessageTime(ts, now)).toBe("Thursday 22:15:45");
+  });
+
+  it("should show full date for 7+ days ago", () => {
+    const now = makeNow(2026, 3, 25, 15, 0, 0);
+    const ts = makeNow(2026, 3, 18, 14, 32, 5);
+    expect(formatMessageTime(ts, now)).toBe("2026-03-18 14:32:05");
+  });
+
+  it("should show full date for a different year", () => {
+    const now = makeNow(2026, 3, 25, 15, 0, 0);
+    const ts = makeNow(2025, 12, 31, 23, 59, 59);
+    expect(formatMessageTime(ts, now)).toBe("2025-12-31 23:59:59");
+  });
+
+  it("should pad single-digit hours, minutes, seconds", () => {
+    const now = makeNow(2026, 3, 25, 15, 0, 0);
+    const ts = makeNow(2026, 3, 25, 1, 2, 3);
+    expect(formatMessageTime(ts, now)).toBe("01:02:03");
   });
 });

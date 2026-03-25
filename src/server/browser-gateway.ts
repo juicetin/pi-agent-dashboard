@@ -13,7 +13,7 @@ import type { PiGateway } from "./pi-gateway.js";
 import type { PendingLoadManager } from "./pending-load-manager.js";
 import { spawnPiSession, type SpawnResult } from "./process-manager.js";
 import { loadConfig } from "../shared/config.js";
-import type { ChildProcess } from "node:child_process";
+import { createHeadlessPidRegistry, type HeadlessPidRegistry } from "./headless-pid-registry.js";
 
 const REPLAY_BATCH_SIZE = 200;
 
@@ -29,6 +29,8 @@ export interface BrowserGateway {
   getSubscriberCount(sessionId: string): number;
   /** Shut down all tracked headless child processes */
   shutdownHeadlessProcesses(): void;
+  /** Registry for linking headless PIDs to session IDs */
+  headlessPidRegistry: HeadlessPidRegistry;
 }
 
 export function createBrowserGateway(
@@ -42,8 +44,8 @@ export function createBrowserGateway(
   // Track subscriptions: ws → Set<sessionId>
   const subscriptions = new Map<WebSocket, Set<string>>();
 
-  // Track headless child processes: pid → ChildProcess
-  const headlessProcesses = new Map<number, ChildProcess>();
+  // Track headless child processes with sessionId linkage
+  const headlessPidRegistry = createHeadlessPidRegistry();
 
   function getSubscribers(sessionId: string): WebSocket[] {
     const result: WebSocket[] = [];
@@ -223,12 +225,16 @@ export function createBrowserGateway(
             });
             break;
 
-          case "shutdown":
-            piGateway.sendToSession(msg.sessionId, {
+          case "shutdown": {
+            const sent = piGateway.sendToSession(msg.sessionId, {
               type: "shutdown",
               sessionId: msg.sessionId,
             });
+            if (!sent) {
+              headlessPidRegistry.killBySessionId(msg.sessionId);
+            }
             break;
+          }
 
           case "rename_session": {
             // Optimistically update session name server-side
@@ -343,11 +349,7 @@ export function createBrowserGateway(
               strategy: config.spawnStrategy,
             });
             if (spawnResult.process && spawnResult.pid) {
-              const pid = spawnResult.pid;
-              headlessProcesses.set(pid, spawnResult.process);
-              spawnResult.process.on("exit", () => {
-                headlessProcesses.delete(pid);
-              });
+              headlessPidRegistry.register(spawnResult.pid, msg.cwd, spawnResult.process);
             }
             sendTo(ws, {
               type: "spawn_result",
@@ -426,14 +428,9 @@ export function createBrowserGateway(
     },
 
     shutdownHeadlessProcesses() {
-      for (const [pid, child] of headlessProcesses) {
-        try {
-          process.kill(pid, "SIGTERM");
-        } catch {
-          // Process may have already exited
-        }
-      }
-      headlessProcesses.clear();
+      headlessPidRegistry.killAll();
     },
+
+    headlessPidRegistry,
   };
 }

@@ -82,15 +82,41 @@ export function buildHeadlessArgs(options?: SessionOptions): string[] {
 function spawnHeadless(cwd: string, options?: SessionOptions): SpawnResult {
   try {
     const args = buildHeadlessArgs(options);
-    const child = spawn("pi", args, {
+
+    if (process.platform === "win32") {
+      // Windows: no sh/sleep, spawn pi directly with a pipe.
+      // stdin EOF on server exit will terminate the agent; this is a known
+      // limitation on Windows (process groups aren't supported).
+      const child = spawn("pi", args, {
+        cwd,
+        detached: true,
+        stdio: ["pipe", "ignore", "ignore"],
+        env: { ...process.env, PI_DASHBOARD_SPAWNED: "1" },
+      });
+      child.unref();
+      child.stdin?.unref();
+
+      return {
+        success: true,
+        message: `Pi session spawned headless (pid ${child.pid})`,
+        pid: child.pid,
+        process: child,
+      };
+    }
+
+    // Unix (macOS / Linux / WSL): wrap with "sleep infinity | pi" so stdin
+    // is an internal pipe that survives server restarts.
+    // "sleep 2147483647" is used instead of "sleep infinity" for compatibility
+    // with older macOS versions whose BSD sleep doesn't support "infinity".
+    // detached: true creates a new process group; we kill via -pid later.
+    const piCmd = ["pi", ...args].map(shellEscape).join(" ");
+    const child = spawn("sh", ["-c", `sleep 2147483647 | ${piCmd}`], {
       cwd,
       detached: true,
-      stdio: ["pipe", "ignore", "ignore"],
+      stdio: "ignore",
       env: { ...process.env, PI_DASHBOARD_SPAWNED: "1" },
     });
-    // Keep stdin open (RPC mode exits on stdin EOF) but unref so server can exit
     child.unref();
-    child.stdin?.unref();
 
     return {
       success: true,
@@ -104,6 +130,12 @@ function spawnHeadless(cwd: string, options?: SessionOptions): SpawnResult {
       message: `Failed to spawn headless session: ${err.message}`,
     };
   }
+}
+
+/** Escape a string for safe use in a shell command. */
+function shellEscape(s: string): string {
+  if (/^[a-zA-Z0-9_./:=@-]+$/.test(s)) return s;
+  return `'${s.replace(/'/g, "'\\''")}'`;
 }
 
 export async function spawnPiSession(cwd: string, options?: SessionOptions): Promise<SpawnResult> {

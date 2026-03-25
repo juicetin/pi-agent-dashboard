@@ -5,12 +5,17 @@ import { WebSocketServer, WebSocket } from "ws";
 import type { ExtensionToServerMessage, ServerToExtensionMessage } from "../shared/protocol.js";
 import type { SessionManager } from "./memory-session-manager.js";
 
-const HEARTBEAT_TIMEOUT = 45_000;
+export const HEARTBEAT_TIMEOUT = 45_000;
+
+export interface PiGatewayOptions {
+  heartbeatTimeout?: number;
+}
 
 export interface PiGateway {
   start(port: number): void;
   stop(): void;
   sendToSession(sessionId: string, msg: ServerToExtensionMessage): boolean;
+  connectionCount(): number;
   findSessionByCwd(cwd: string): string | undefined;
   isSessionConnected(sessionId: string): boolean;
   onEvent?: (sessionId: string, msg: ExtensionToServerMessage) => void;
@@ -22,13 +27,17 @@ export interface PiGateway {
 
 export function createPiGateway(
   sessionManager: SessionManager,
+  options?: PiGatewayOptions,
 ): PiGateway {
+  const hbTimeout = options?.heartbeatTimeout ?? HEARTBEAT_TIMEOUT;
   let wss: WebSocketServer | null = null;
 
   // Map sessionId → WebSocket
   const connections = new Map<string, WebSocket>();
   // Map sessionId → heartbeat timeout
   const heartbeatTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  // Map sessionId → { setAt: timestamp, sleepRetried: boolean } for sleep detection
+  const heartbeatMeta = new Map<string, { setAt: number; sleepRetried: boolean }>();
 
   let onEvent: ((sessionId: string, msg: ExtensionToServerMessage) => void) | undefined;
   let onEmpty: (() => void) | undefined;
@@ -46,14 +55,39 @@ export function createPiGateway(
     const existing = heartbeatTimers.get(sessionId);
     if (existing) clearTimeout(existing);
 
+    const now = Date.now();
+    heartbeatMeta.set(sessionId, { setAt: now, sleepRetried: false });
+
     heartbeatTimers.set(
       sessionId,
       setTimeout(() => {
+        const meta = heartbeatMeta.get(sessionId);
+        const elapsed = Date.now() - (meta?.setAt ?? now);
+
+        // Detect sleep: elapsed >> expected means system was suspended
+        if (meta && !meta.sleepRetried && elapsed > hbTimeout * 2) {
+          // Give one more cycle for the extension to reconnect
+          meta.sleepRetried = true;
+          meta.setAt = Date.now();
+          heartbeatTimers.set(
+            sessionId,
+            setTimeout(() => {
+              sessionManager.unregister(sessionId);
+              connections.delete(sessionId);
+              heartbeatTimers.delete(sessionId);
+              heartbeatMeta.delete(sessionId);
+              checkEmpty();
+            }, hbTimeout),
+          );
+          return;
+        }
+
         sessionManager.unregister(sessionId);
         connections.delete(sessionId);
         heartbeatTimers.delete(sessionId);
+        heartbeatMeta.delete(sessionId);
         checkEmpty();
-      }, HEARTBEAT_TIMEOUT)
+      }, hbTimeout)
     );
   }
 
@@ -145,6 +179,7 @@ export function createPiGateway(
                 clearTimeout(timer);
                 heartbeatTimers.delete(msg.sessionId);
               }
+              heartbeatMeta.delete(msg.sessionId);
               checkEmpty();
             }
 
@@ -220,6 +255,7 @@ export function createPiGateway(
         clearTimeout(timer);
       }
       heartbeatTimers.clear();
+      heartbeatMeta.clear();
       // Forcibly terminate all extension connections
       for (const ws of connections.values()) {
         ws.terminate();
@@ -236,6 +272,10 @@ export function createPiGateway(
         return true;
       }
       return false;
+    },
+
+    connectionCount(): number {
+      return connections.size;
     },
 
     isSessionConnected(sessionId: string): boolean {

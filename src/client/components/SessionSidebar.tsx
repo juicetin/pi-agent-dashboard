@@ -1,4 +1,5 @@
 import React, { useState, type ReactNode } from "react";
+import { useLocation } from "wouter";
 import Icon from "@mdi/react";
 import { mdiMonitor, mdiFlash, mdiTelevision, mdiWeb, mdiHelpCircle, mdiCog } from "@mdi/js";
 import type { DashboardSession } from "../../shared/types.js";
@@ -40,6 +41,7 @@ function formatCost(n?: number): string {
 }
 
 export function SessionSidebar({ sessions, selectedId, onSelect, onRename }: Props) {
+  const [, navigate] = useLocation();
   const active = sessions.filter((s) => s.status !== "ended");
   const ended = sessions.filter((s) => s.status === "ended");
   const [renamingId, setRenamingId] = useState<string | null>(null);
@@ -52,7 +54,7 @@ export function SessionSidebar({ sessions, selectedId, onSelect, onRename }: Pro
   return (
     <div className="w-72 border-r border-[var(--border-primary)] overflow-y-auto flex flex-col">
       <div className="p-3 border-b border-[var(--border-primary)]">
-        <h2 className="text-sm font-semibold text-[var(--text-secondary)] uppercase">Sessions</h2>
+        <button onClick={() => navigate("/")} className="text-lg font-bold text-[var(--text-primary)] hover:text-[var(--accent-primary)] transition-colors leading-none" title="Home">π</button>
       </div>
 
       {/* Active sessions */}

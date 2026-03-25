@@ -235,6 +235,51 @@ describe("ConnectionManager", () => {
     cm.disconnect();
   });
 
+  it("should reconnect when onerror fires without onclose (Node 22 built-in WebSocket)", () => {
+    const cm = new ConnectionManager({
+      url: "ws://localhost:9999",
+      WebSocketImpl: MockWebSocket as any,
+    });
+    cm.connect();
+
+    const ws1 = MockWebSocket.instances[0];
+    // Simulate Node 22 behavior: onerror fires but onclose does NOT
+    ws1.onerror?.({});
+    // ws1.onclose is NOT called
+
+    // Should still schedule reconnect after 1s
+    expect(MockWebSocket.instances).toHaveLength(1);
+    vi.advanceTimersByTime(1000);
+    expect(MockWebSocket.instances).toHaveLength(2);
+
+    // New connection should work
+    MockWebSocket.instances[1].simulateOpen();
+    expect(cm.isConnected).toBe(true);
+
+    cm.disconnect();
+  });
+
+  it("should not double-reconnect when both onerror and onclose fire", () => {
+    const cm = new ConnectionManager({
+      url: "ws://localhost:9999",
+      WebSocketImpl: MockWebSocket as any,
+    });
+    cm.connect();
+
+    const ws1 = MockWebSocket.instances[0];
+    ws1.simulateOpen();
+
+    // Simulate normal ws package behavior: onerror then onclose
+    ws1.onerror?.({});
+    // onerror clears onclose and handles reconnect, so onclose won't fire again
+
+    vi.advanceTimersByTime(1000);
+    // Should only create ONE new connection, not two
+    expect(MockWebSocket.instances).toHaveLength(2);
+
+    cm.disconnect();
+  });
+
   it("should call onReconnect when reconnecting", () => {
     const onReconnect = vi.fn();
     const cm = new ConnectionManager({

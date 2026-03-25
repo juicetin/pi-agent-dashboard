@@ -7,6 +7,7 @@ import { MarkdownContent } from "./MarkdownContent.js";
 import { CopyButton } from "./CopyButton.js";
 import { ToolCallStep } from "./ToolCallStep.js";
 import { ThinkingBlock } from "./ThinkingBlock.js";
+import { formatMessageTime } from "../lib/format.js";
 
 interface Props {
   state: SessionState;
@@ -29,7 +30,7 @@ function ImageAttachments({ images }: { images: ChatImage[] }) {
   );
 }
 
-function MessageBubble({ content, className }: { content: string; className: string }) {
+function MessageBubble({ content, className, timestamp }: { content: string; className: string; timestamp?: number }) {
   const contentRef = useRef<HTMLDivElement>(null);
 
   const getPlainText = useCallback(() => {
@@ -41,7 +42,10 @@ function MessageBubble({ content, className }: { content: string; className: str
       <div ref={contentRef}>
         <MarkdownContent content={content} />
       </div>
-      <div className="border-t border-[var(--border-secondary)] mt-2 pt-1.5 flex justify-end gap-0.5 opacity-50 hover:opacity-100 transition-opacity">
+      <div className="border-t border-[var(--border-secondary)] mt-2 pt-1.5 flex justify-end items-center gap-0.5 opacity-50 hover:opacity-100 transition-opacity">
+        {timestamp != null && (
+          <span className="text-[10px] text-[var(--text-tertiary)] mr-auto">{formatMessageTime(timestamp)}</span>
+        )}
         <CopyButton text={content} icon={<Icon path={mdiContentCopy} size={0.6} />} title="Copy as Markdown" />
         <CopyButton text={getPlainText()} icon={<Icon path={mdiTextBox} size={0.6} />} title="Copy as plain text" />
       </div>
@@ -70,6 +74,7 @@ export function ChatView({ state, toolContext, onCancelPending }: Props) {
                   <MessageBubble
                     content={msg.content}
                     className=""
+                    timestamp={msg.timestamp}
                   />
                 )}
               </div>
@@ -106,6 +111,7 @@ export function ChatView({ state, toolContext, onCancelPending }: Props) {
             <MessageBubble
               content={msg.content}
               className="bg-[var(--bg-tertiary)] border border-[var(--border-subtle)] rounded-xl shadow-md px-4 py-2 max-w-[80%]"
+              timestamp={msg.timestamp}
             />
           </div>
         );

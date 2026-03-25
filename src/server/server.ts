@@ -34,6 +34,7 @@ export interface DashboardServer {
   stop(): Promise<void>;
   sessionManager: SessionManager;
   eventStore: EventStore;
+  browserGateway: BrowserGateway;
 }
 
 export async function createServer(config: ServerConfig): Promise<DashboardServer> {
@@ -109,6 +110,8 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
       eventStore.deleteEventsForSession(sessionId);
       // Force visible + clear dataUnavailable — active sessions must always be visible
       sessionManager.update(sessionId, { hidden: false, dataUnavailable: false });
+      // Link headless PID to session ID (if spawned from dashboard)
+      browserGateway.headlessPidRegistry.linkSession(sessionId, msg.cwd);
       const session = sessionManager.get(sessionId);
       if (session) {
         browserGateway.broadcastSessionAdded(session);
@@ -286,14 +289,22 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
     }
   };
 
-  // Auto-shutdown idle timer
+  // Auto-shutdown idle timer with sleep-wake resilience
   let idleTimer: ReturnType<typeof setTimeout> | null = null;
   let stopServer: (() => Promise<void>) | null = null;
+  let lastConnectionTimestamp = 0;
 
   function startIdleTimer() {
     if (!config.autoShutdown) return;
     cancelIdleTimer();
     idleTimer = setTimeout(async () => {
+      // Double-check: verify truly idle before exiting (prevents false shutdown after sleep/wake)
+      const realIdleMs = Date.now() - lastConnectionTimestamp;
+      if (piGateway.connectionCount() > 0 || realIdleMs < config.shutdownIdleSeconds * 1000) {
+        // Sessions reconnected or not truly idle — restart timer
+        startIdleTimer();
+        return;
+      }
       console.log(`No pi sessions for ${config.shutdownIdleSeconds}s, shutting down...`);
       await stopServer?.();
       process.exit(0);
@@ -312,6 +323,7 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
   };
 
   piGateway.onConnection = () => {
+    lastConnectionTimestamp = Date.now();
     cancelIdleTimer();
   };
 
@@ -435,13 +447,22 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
       root: clientDir,
       prefix: "/",
     });
+
+    // SPA fallback: serve index.html for client-side routes
+    fastify.setNotFoundHandler(async (_request, reply) => {
+      return reply.sendFile("index.html");
+    });
   }
 
   const server: DashboardServer = {
     sessionManager,
     eventStore,
+    browserGateway,
 
     async start() {
+      // Clean up orphan headless processes from a previous server instance
+      browserGateway.headlessPidRegistry.cleanupOrphans();
+
       piGateway.start(config.piPort);
 
       fastify.server.on("upgrade", (request, socket, head) => {

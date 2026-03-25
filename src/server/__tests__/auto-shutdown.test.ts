@@ -64,6 +64,41 @@ describe("Server auto-shutdown", () => {
     exitSpy.mockRestore();
   });
 
+  it("should not shut down if session reconnects before idle timer fires", async () => {
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation(() => undefined as never);
+
+    await server.start();
+
+    // Advance to just before idle timeout
+    await vi.advanceTimersByTimeAsync(1500);
+
+    // Connect a session — this cancels the idle timer and sets lastConnectionTimestamp
+    vi.useRealTimers();
+    const { WebSocket } = await import("ws");
+    const ws = new WebSocket(`ws://localhost:${testPort + 1}`);
+    await new Promise<void>((resolve) => {
+      ws.on("open", () => {
+        ws.send(JSON.stringify({
+          type: "session_register",
+          sessionId: "wake-sess",
+          cwd: "/tmp",
+          source: "cli",
+        }));
+        setTimeout(resolve, 50);
+      });
+    });
+
+    vi.useFakeTimers();
+
+    // Even if we advance way past the idle timeout, should NOT exit because session is connected
+    await vi.advanceTimersByTimeAsync(10000);
+    expect(exitSpy).not.toHaveBeenCalled();
+
+    vi.useRealTimers();
+    ws.close();
+    exitSpy.mockRestore();
+  });
+
   it("should cancel idle timer when a session connects", async () => {
     const exitSpy = vi.spyOn(process, "exit").mockImplementation(() => undefined as never);
 

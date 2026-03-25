@@ -1,24 +1,40 @@
 ## ADDED Requirements
 
-### Requirement: On-demand session file loading
-The bridge extension SHALL handle `load_session_events` messages from the server. Upon receiving such a message, it SHALL load the specified session file using pi's `SessionManager.open()`, extract entries via `getBranch()`, convert them to dashboard events via `replayEntriesAsEvents()`, and send the result back as a single `load_session_events_result` message.
+### Requirement: Dev build and server shutdown on reload cleanup
+When `devBuildOnReload` is `true` in the loaded config, the bridge extension's cleanup function (called on `/reload`) SHALL perform the following before the normal cleanup:
 
-#### Scenario: Load session file successfully
-- **WHEN** the bridge receives `load_session_events` with `sessionId` and `sessionFile` path
-- **THEN** it SHALL call `SessionManager.open(sessionFile).getBranch()`, convert entries via `replayEntriesAsEvents(sessionId, entries)`, and send a `load_session_events_result` message containing all events
+1. Log `🔨 Dashboard: building client...` to the terminal
+2. Run `execSync("npm run build", { cwd: <packageRoot>, stdio: "inherit" })` where packageRoot is resolved from `__dirname` (two levels up from `src/extension/`)
+3. Log `✅ Dashboard: client built` on success, or log the error on failure
+4. Log `🛑 Dashboard: stopping server...` to the terminal
+5. Send `POST http://localhost:{port}/api/shutdown` (fire-and-forget)
+6. Log `✅ Dashboard: server stopped`
 
-#### Scenario: Session file does not exist
-- **WHEN** the bridge receives `load_session_events` but the file path does not exist
-- **THEN** it SHALL send a `load_session_events_error` message with `sessionId` and `error: "file_not_found"`
+Build or shutdown failures SHALL be caught and logged but SHALL NOT prevent the reload from completing.
 
-#### Scenario: Session file is corrupted
-- **WHEN** the bridge receives `load_session_events` but the file cannot be parsed
-- **THEN** it SHALL send a `load_session_events_error` message with `sessionId` and `error: "parse_error"`
+#### Scenario: Cleanup with devBuildOnReload enabled
+- **WHEN** `/reload` triggers the cleanup function and `config.devBuildOnReload` is `true`
+- **THEN** the cleanup SHALL build the client and request server shutdown before disconnecting
 
-#### Scenario: Loading does not affect current session
-- **WHEN** the bridge loads an old session file for replay
-- **THEN** the current pi session SHALL NOT be affected — the load uses a separate `SessionManager` instance
+#### Scenario: Cleanup with devBuildOnReload disabled
+- **WHEN** `/reload` triggers the cleanup function and `config.devBuildOnReload` is `false`
+- **THEN** the cleanup SHALL proceed normally without building or shutting down the server
 
-#### Scenario: Loading during active streaming
-- **WHEN** the bridge receives `load_session_events` while the current session is actively streaming
-- **THEN** the load SHALL proceed independently using a separate `SessionManager.open()` call, and live event forwarding SHALL continue uninterrupted
+#### Scenario: Build error is non-fatal
+- **WHEN** `execSync("npm run build")` throws an error during cleanup
+- **THEN** the error SHALL be logged and cleanup SHALL continue with the shutdown request
+
+### Requirement: Retry port probe after failed server launch
+When `launchServer` returns a failure result during the auto-start flow in `session_start`, the bridge extension SHALL re-probe the port using `isPortOpen(config.piPort)` before deciding whether to show a warning notification. If the re-probe returns `true` (port is now open), the bridge SHALL suppress the failure warning — another agent started the server concurrently. If the re-probe returns `false` (port is still closed), the bridge SHALL show the warning notification with the failure message.
+
+#### Scenario: Concurrent launch — another agent started the server
+- **WHEN** `launchServer` fails and the subsequent `isPortOpen` re-probe returns `true`
+- **THEN** no warning notification SHALL be shown
+
+#### Scenario: Genuine server failure
+- **WHEN** `launchServer` fails and the subsequent `isPortOpen` re-probe returns `false`
+- **THEN** the bridge SHALL show a warning notification with the failure message
+
+#### Scenario: Single agent — successful launch
+- **WHEN** `launchServer` succeeds on the first attempt
+- **THEN** the bridge SHALL show the success notification as before (no behavioral change)

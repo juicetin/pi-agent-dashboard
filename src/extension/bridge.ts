@@ -45,6 +45,15 @@ function getBridgeState(): BridgeState {
 }
 
 export default function (pi: ExtensionAPI) {
+  try {
+    initBridge(pi);
+  } catch (err) {
+    // Never crash the host pi agent — dashboard is non-essential
+    console.error("[dashboard] Bridge init failed:", err);
+  }
+}
+
+function initBridge(pi: ExtensionAPI) {
   const prev = getBridgeState();
   prev.cleanup?.();
   prev.cleanup = undefined;
@@ -86,6 +95,23 @@ export default function (pi: ExtensionAPI) {
   let lastModel: string | undefined;
   let lastThinkingLevel: string | undefined;
 
+  /** Wrap a callback so errors log instead of crashing the host pi agent. */
+  function safe<T extends (...args: any[]) => any>(fn: T): T {
+    return ((...args: any[]) => {
+      try {
+        const result = fn(...args);
+        if (result && typeof result.catch === "function") {
+          return result.catch((err: unknown) => {
+            console.error("[dashboard]", err);
+          });
+        }
+        return result;
+      } catch (err) {
+        console.error("[dashboard]", err);
+      }
+    }) as T;
+  }
+
   // Load config to determine WebSocket URL
   ensureConfig();
   const config = loadConfig();
@@ -93,7 +119,7 @@ export default function (pi: ExtensionAPI) {
 
   const connection = new ConnectionManager({
     url: dashboardUrl,
-    onMessage: async (data) => {
+    onMessage: safe(async (data: unknown) => {
       const msg = data as ServerToExtensionMessage;
       const response = await commandHandler.handle(msg);
       if (response) connection.send(response);
@@ -106,12 +132,12 @@ export default function (pi: ExtensionAPI) {
         // Small delay to let pi process the level change
         setTimeout(() => sendModelUpdateIfChanged(), 50);
       }
-    },
-    onReconnect: () => {
+    }),
+    onReconnect: safe(() => {
       sendStateSync();
       replaySessionEntries();
       sendSessionHistory();
-    },
+    }),
   });
 
   const commandHandler = createCommandHandler(pi, () => sessionId, {
@@ -296,7 +322,7 @@ export default function (pi: ExtensionAPI) {
   }
 
   for (const eventType of eventTypes) {
-    pi.on(eventType as any, async (event: any, ctx: any) => {
+    pi.on(eventType as any, safe(async (event: any, ctx: any) => {
       // Always keep latest context for abort/shutdown
       cachedCtx = ctx;
       // Don't send events before session_start has established the correct session ID
@@ -349,10 +375,10 @@ export default function (pi: ExtensionAPI) {
 
       const msg = mapEventToProtocol(sessionId, event);
       connection.send(msg);
-    });
+    }));
   }
 
-  pi.on("session_start", async (_event, ctx) => {
+  pi.on("session_start", safe(async (_event: any, ctx: any) => {
     const newSessionId = ctx.sessionManager.getSessionId();
 
     cachedHasUI = ctx.hasUI;
@@ -426,7 +452,11 @@ export default function (pi: ExtensionAPI) {
         if (result.success) {
           ctx.ui.notify(`🌐 Dashboard started at http://localhost:${config.port}`, "info");
         } else {
-          ctx.ui.notify(`Dashboard server failed to start: ${result.message}`, "warning");
+          // Another agent may have started the server concurrently — recheck before warning
+          const nowRunning = await isPortOpen(config.piPort);
+          if (!nowRunning) {
+            ctx.ui.notify(`Dashboard server failed to start: ${result.message}`, "warning");
+          }
         }
       }
     }).catch(() => {});
@@ -454,7 +484,7 @@ export default function (pi: ExtensionAPI) {
       sendSessionNameIfChanged();
       sendModelUpdateIfChanged();
     }, OPENSPEC_POLL_INTERVAL);
-  });
+  }));
 
   // Shared handler for session_switch and session_fork
   function handleSessionChange(ctx: any) {
@@ -531,17 +561,17 @@ export default function (pi: ExtensionAPI) {
     }, OPENSPEC_POLL_INTERVAL);
   }
 
-  pi.on("session_switch" as any, async (_event: any, ctx: any) => {
+  pi.on("session_switch" as any, safe(async (_event: any, ctx: any) => {
     cachedCtx = ctx;
     handleSessionChange(ctx);
-  });
+  }));
 
-  pi.on("session_fork" as any, async (_event: any, ctx: any) => {
+  pi.on("session_fork" as any, safe(async (_event: any, ctx: any) => {
     cachedCtx = ctx;
     handleSessionChange(ctx);
-  });
+  }));
 
-  pi.on("turn_end", async (event, ctx) => {
+  pi.on("turn_end", safe(async (event: any, ctx: any) => {
     cachedCtx = ctx;
     if (!sessionReady) return;
 
@@ -572,9 +602,9 @@ export default function (pi: ExtensionAPI) {
         stats: stats as any,
       });
     }
-  });
+  }));
 
-  pi.on("session_shutdown", async () => {
+  pi.on("session_shutdown", safe(async () => {
     if (heartbeatTimer) {
       clearInterval(heartbeatTimer);
       heartbeatTimer = null;
@@ -596,7 +626,7 @@ export default function (pi: ExtensionAPI) {
     // Give time for the unregister to send
     await new Promise((resolve) => setTimeout(resolve, 100));
     connection.disconnect();
-  });
+  }));
 
   // Register cleanup for /reload — saves state to globalThis and tears down resources
   const state = getBridgeState();

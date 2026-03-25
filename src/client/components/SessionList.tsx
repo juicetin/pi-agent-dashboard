@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import Icon from "@mdi/react";
-import { mdiChevronRight, mdiChevronDown } from "@mdi/js";
+import { mdiChevronRight, mdiChevronDown, mdiPlus } from "@mdi/js";
 import type { DashboardSession, OpenSpecData } from "../../shared/types.js";
 import {
   getActiveOnly,
@@ -35,6 +35,9 @@ interface Props {
   onResume?: (sessionId: string, mode: "continue" | "fork") => void;
   onHideSession?: (sessionId: string) => void;
   onUnhideSession?: (sessionId: string) => void;
+  onSpawnSession?: (cwd: string) => void;
+  spawnResult?: { success: boolean; message: string } | null;
+  onSpawnResultSeen?: () => void;
 }
 
 /** Group sessions by cwd, ordered by most recent activity. */
@@ -95,7 +98,7 @@ function ToggleButton({
   );
 }
 
-export function SessionList({ sessions, selectedId, onSelect, contextUsageMap, openspecMap, onSendPrompt, onOpenSpecRefresh, onRename, onShutdown, onResume, onHideSession, onUnhideSession }: Props) {
+export function SessionList({ sessions, selectedId, onSelect, contextUsageMap, openspecMap, onSendPrompt, onOpenSpecRefresh, onRename, onShutdown, onResume, onHideSession, onUnhideSession, onSpawnSession, spawnResult, onSpawnResultSeen }: Props) {
   const now = Date.now();
   const { messages, showToast, dismissToast } = useToast();
 
@@ -114,6 +117,14 @@ export function SessionList({ sessions, selectedId, onSelect, contextUsageMap, o
   useEffect(() => {
     removeLegacyHiddenSessions();
   }, []);
+
+  // Show toast for spawn results
+  useEffect(() => {
+    if (spawnResult) {
+      showToast(spawnResult.success ? spawnResult.message : `Spawn failed: ${spawnResult.message}`);
+      onSpawnResultSeen?.();
+    }
+  }, [spawnResult, showToast, onSpawnResultSeen]);
 
   // Filter state - active-only defaults to ON
   const [activeOnly, setActiveOnly] = useState(() => getActiveOnly());
@@ -213,8 +224,8 @@ export function SessionList({ sessions, selectedId, onSelect, contextUsageMap, o
                     <span className="text-[10px] text-[var(--text-muted)]">({group.sessions.length})</span>
                   </div>
                   <GroupGitInfo sessions={group.sessions} />
-                  {editorMap.get(group.cwd)?.length ? (
-                    <div className="mt-1 ml-5">
+                  <div className="mt-1 ml-5 flex items-center gap-1">
+                    {editorMap.get(group.cwd)?.length ? (
                       <EditorButtons
                         editors={editorMap.get(group.cwd)!}
                         onOpen={(editorId) => {
@@ -222,8 +233,23 @@ export function SessionList({ sessions, selectedId, onSelect, contextUsageMap, o
                           handleOpenEditor(group.cwd, editorId);
                         }}
                       />
-                    </div>
-                  ) : null}
+                    ) : null}
+                    {onSpawnSession && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onSpawnSession(group.cwd);
+                        }}
+                        className="text-[10px] px-1.5 py-0.5 rounded border border-[var(--border-secondary)] text-[var(--text-secondary)] hover:text-green-400 hover:border-green-500/50"
+                        title="New pi session"
+                        data-testid="spawn-session-btn"
+                      >
+                        <span className="inline-flex items-center gap-0.5">
+                          <Icon path={mdiPlus} size={0.5} /> New
+                        </span>
+                      </button>
+                    )}
+                  </div>
                 </li>
                 {/* Session cards — animated collapse */}
                 <div className={`group-collapse ${isCollapsed ? "collapsed" : "expanded"} space-y-1 p-1`}>

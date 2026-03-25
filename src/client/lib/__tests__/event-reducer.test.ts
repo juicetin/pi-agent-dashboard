@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { createInitialState, reduceEvent, toDisplayString, type SessionState } from "../event-reducer.js";
+import { createInitialState, reduceEvent, toDisplayString, type SessionState, type PendingPrompt } from "../event-reducer.js";
 import type { DashboardEvent } from "../../../shared/types.js";
 
 function applyEvents(events: DashboardEvent[]): SessionState {
@@ -753,6 +753,85 @@ describe("thinking events", () => {
     expect(state.messages[0].role).toBe("thinking");
     expect(state.streamingText).toBe("Here is the answer");
     expect(state.streamingThinking).toBe("");
+  });
+});
+
+describe("pendingPrompt", () => {
+  it("should initialize pendingPrompt as undefined", () => {
+    const state = createInitialState();
+    expect(state.pendingPrompt).toBeUndefined();
+  });
+
+  it("should preserve pendingPrompt through unrelated events", () => {
+    const pending: PendingPrompt = { text: "Hello" };
+    let state = createInitialState();
+    state = { ...state, pendingPrompt: pending };
+
+    // stats_update should not clear pendingPrompt
+    state = reduceEvent(state, {
+      eventType: "stats_update",
+      timestamp: Date.now(),
+      data: { tokensIn: 100, tokensOut: 50, cost: 0.001 },
+    });
+    expect(state.pendingPrompt).toEqual(pending);
+
+    // agent_end should not clear pendingPrompt
+    state = reduceEvent(state, {
+      eventType: "agent_end",
+      timestamp: Date.now(),
+      data: { messages: [] },
+    });
+    expect(state.pendingPrompt).toEqual(pending);
+  });
+
+  it("should clear pendingPrompt on message_start with role user", () => {
+    const pending: PendingPrompt = { text: "Fix the bug" };
+    let state = createInitialState();
+    state = { ...state, pendingPrompt: pending };
+
+    state = reduceEvent(state, {
+      eventType: "message_start",
+      timestamp: Date.now(),
+      data: {
+        message: {
+          role: "user",
+          content: [{ type: "text", text: "Fix the bug" }],
+        },
+      },
+    });
+    expect(state.pendingPrompt).toBeUndefined();
+  });
+
+  it("should clear pendingPrompt on agent_start", () => {
+    const pending: PendingPrompt = { text: "Do something" };
+    let state = createInitialState();
+    state = { ...state, pendingPrompt: pending };
+
+    state = reduceEvent(state, {
+      eventType: "agent_start",
+      timestamp: Date.now(),
+      data: {},
+    });
+    expect(state.pendingPrompt).toBeUndefined();
+  });
+
+  it("should not clear pendingPrompt on message_start with non-user role", () => {
+    const pending: PendingPrompt = { text: "Hello" };
+    let state = createInitialState();
+    state = { ...state, pendingPrompt: pending };
+
+    // message_start for assistant should not clear
+    state = reduceEvent(state, {
+      eventType: "message_start",
+      timestamp: Date.now(),
+      data: {
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "Hi there" }],
+        },
+      },
+    });
+    expect(state.pendingPrompt).toEqual(pending);
   });
 });
 

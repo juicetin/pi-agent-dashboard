@@ -132,6 +132,51 @@ describe("CommandInput autocomplete", () => {
   });
 });
 
+describe("Pending prompt behavior", () => {
+  it("disables input when pendingPrompt is true", () => {
+    const { textarea } = renderInput({ pendingPrompt: true });
+    expect(textarea.disabled).toBe(true);
+  });
+
+  it("disables send button when pendingPrompt is true", () => {
+    const { container, textarea } = renderInput({ pendingPrompt: true });
+    fireEvent.change(textarea, { target: { value: "test" } });
+    const sendBtn = container.querySelector('[data-testid="send-button"]') as HTMLButtonElement;
+    expect(sendBtn.disabled).toBe(true);
+  });
+
+  it("shows Stop button when pendingPrompt is true", () => {
+    const onCancelPending = vi.fn();
+    const { container } = renderInput({ pendingPrompt: true, onCancelPending, sessionStatus: "idle" });
+    const stopBtn = container.querySelector('[data-testid="stop-button"]');
+    expect(stopBtn).not.toBeNull();
+  });
+
+  it("calls onCancelPending when Stop clicked during pending", () => {
+    const onCancelPending = vi.fn();
+    const onAbort = vi.fn();
+    const { container } = renderInput({ pendingPrompt: true, onCancelPending, onAbort, sessionStatus: "idle" });
+    const stopBtn = container.querySelector('[data-testid="stop-button"]')!;
+    fireEvent.click(stopBtn);
+    expect(onCancelPending).toHaveBeenCalledOnce();
+    expect(onAbort).not.toHaveBeenCalled();
+  });
+
+  it("calls onCancelPending on Escape key during pending", () => {
+    const onCancelPending = vi.fn();
+    const { textarea } = renderInput({ pendingPrompt: true, onCancelPending });
+    fireEvent.keyDown(textarea, { key: "Escape" });
+    expect(onCancelPending).toHaveBeenCalledOnce();
+  });
+
+  it("does not call onCancelPending on Escape when not pending", () => {
+    const onCancelPending = vi.fn();
+    const { textarea } = renderInput({ pendingPrompt: false, onCancelPending });
+    fireEvent.keyDown(textarea, { key: "Escape" });
+    expect(onCancelPending).not.toHaveBeenCalled();
+  });
+});
+
 describe("Play/Stop buttons", () => {
   it("shows Play icon button instead of text Send", () => {
     const { container } = renderInput();

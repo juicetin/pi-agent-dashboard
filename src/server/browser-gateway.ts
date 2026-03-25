@@ -11,7 +11,9 @@ import type { SessionManager } from "./memory-session-manager.js";
 import type { EventStore } from "./memory-event-store.js";
 import type { PiGateway } from "./pi-gateway.js";
 import type { PendingLoadManager } from "./pending-load-manager.js";
-import { spawnPiSession } from "./process-manager.js";
+import { spawnPiSession, type SpawnResult } from "./process-manager.js";
+import { loadConfig } from "../shared/config.js";
+import type { ChildProcess } from "node:child_process";
 
 const REPLAY_BATCH_SIZE = 200;
 
@@ -25,6 +27,8 @@ export interface BrowserGateway {
   broadcastToAll(msg: ServerToBrowserMessage): void;
   /** Get number of browser subscribers for a session */
   getSubscriberCount(sessionId: string): number;
+  /** Shut down all tracked headless child processes */
+  shutdownHeadlessProcesses(): void;
 }
 
 export function createBrowserGateway(
@@ -37,6 +41,9 @@ export function createBrowserGateway(
 
   // Track subscriptions: ws → Set<sessionId>
   const subscriptions = new Map<WebSocket, Set<string>>();
+
+  // Track headless child processes: pid → ChildProcess
+  const headlessProcesses = new Map<number, ChildProcess>();
 
   function getSubscribers(sessionId: string): WebSocket[] {
     const result: WebSocket[] = [];
@@ -315,15 +322,38 @@ export function createBrowserGateway(
               });
               break;
             }
+            const resumeConfig = loadConfig();
             const result = await spawnPiSession(session.cwd, {
               sessionFile: session.sessionFile,
               mode: msg.mode,
+              strategy: resumeConfig.spawnStrategy,
             });
             sendTo(ws, {
               type: "resume_result",
               sessionId: msg.sessionId,
               success: result.success,
               message: result.message,
+            });
+            break;
+          }
+
+          case "spawn_session": {
+            const config = loadConfig();
+            const spawnResult = await spawnPiSession(msg.cwd, {
+              strategy: config.spawnStrategy,
+            });
+            if (spawnResult.process && spawnResult.pid) {
+              const pid = spawnResult.pid;
+              headlessProcesses.set(pid, spawnResult.process);
+              spawnResult.process.on("exit", () => {
+                headlessProcesses.delete(pid);
+              });
+            }
+            sendTo(ws, {
+              type: "spawn_result",
+              cwd: msg.cwd,
+              success: spawnResult.success,
+              message: spawnResult.message,
             });
             break;
           }
@@ -393,6 +423,17 @@ export function createBrowserGateway(
 
     getSubscriberCount(sessionId: string): number {
       return getSubscribers(sessionId).length;
+    },
+
+    shutdownHeadlessProcesses() {
+      for (const [pid, child] of headlessProcesses) {
+        try {
+          process.kill(pid, "SIGTERM");
+        } catch {
+          // Process may have already exited
+        }
+      }
+      headlessProcesses.clear();
     },
   };
 }

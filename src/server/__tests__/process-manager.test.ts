@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { detectPlatform, buildTmuxCommand } from "../process-manager.js";
+import { detectPlatform, buildTmuxCommand, buildHeadlessArgs, type SessionOptions } from "../process-manager.js";
 
 describe("Process Manager", () => {
   describe("detectPlatform", () => {
@@ -69,6 +69,56 @@ describe("Process Manager", () => {
       });
       expect(cmd).toContain("new-session");
       expect(cmd).toContain("--session /path/to/session.jsonl");
+    });
+  });
+
+  describe("buildHeadlessArgs", () => {
+    it("should return --mode rpc for fresh session", () => {
+      const args = buildHeadlessArgs();
+      expect(args).toEqual(["--mode", "rpc"]);
+    });
+
+    it("should include --session for continue mode", () => {
+      const args = buildHeadlessArgs({
+        sessionFile: "/path/to/session.jsonl",
+        mode: "continue",
+      });
+      expect(args).toEqual(["--mode", "rpc", "--session", "/path/to/session.jsonl"]);
+    });
+
+    it("should include --fork for fork mode", () => {
+      const args = buildHeadlessArgs({
+        sessionFile: "/path/to/session.jsonl",
+        mode: "fork",
+      });
+      expect(args).toEqual(["--mode", "rpc", "--fork", "/path/to/session.jsonl"]);
+    });
+
+    it("should not include session flags when no options", () => {
+      const args = buildHeadlessArgs({});
+      expect(args).toEqual(["--mode", "rpc"]);
+    });
+  });
+
+  describe("SessionOptions strategy field", () => {
+    it("should accept tmux strategy", () => {
+      const opts: SessionOptions = { strategy: "tmux" };
+      expect(opts.strategy).toBe("tmux");
+    });
+
+    it("should accept headless strategy", () => {
+      const opts: SessionOptions = { strategy: "headless" };
+      expect(opts.strategy).toBe("headless");
+    });
+
+    it("should allow strategy with session file options", () => {
+      const opts: SessionOptions = {
+        strategy: "headless",
+        sessionFile: "/path/to/session.jsonl",
+        mode: "continue",
+      };
+      const args = buildHeadlessArgs(opts);
+      expect(args).toEqual(["--mode", "rpc", "--session", "/path/to/session.jsonl"]);
     });
   });
 });

@@ -161,7 +161,8 @@ Config file: `~/.pi/dashboard/config.json` (auto-created with defaults on first 
   "piPort": 9999,
   "dbPath": "~/.pi/dashboard/dashboard.db",
   "retentionDays": 30,
-  "autoStart": true
+  "autoStart": true,
+  "devBuildOnReload": false
 }
 ```
 
@@ -172,6 +173,16 @@ Configuration precedence: CLI flags → environment variables → config file �
 | `--port` | `PI_DASHBOARD_PORT` | 8000 | HTTP + Browser WebSocket |
 | `--pi-port` | `PI_DASHBOARD_PI_PORT` | 9999 | Pi extension WebSocket |
 | `--dev` | — | false | Proxy to Vite dev server |
+
+#### Dev Build on Reload
+
+Set `"devBuildOnReload": true` in `config.json` to enable a developer workflow where `/reload` in pi automatically rebuilds the Vite client and restarts the dashboard server. This gives you a one-command full-stack refresh during development.
+
+```
+/reload → build client → stop server → reload extension → auto-start fresh server
+```
+
+> **Note:** This blocks pi for ~2-5s during the client build. The server shutdown affects all connected sessions — they auto-reconnect when one of them restarts the server.
 
 ### As a system service
 

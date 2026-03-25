@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useCallback } from "react";
 import Icon from "@mdi/react";
-import { mdiContentCopy, mdiTextBox } from "@mdi/js";
+import { mdiContentCopy, mdiTextBox, mdiLoading } from "@mdi/js";
 import type { SessionState, ChatImage } from "../lib/event-reducer.js";
 import type { ToolContext } from "./tool-renderers/index.js";
 import { MarkdownContent } from "./MarkdownContent.js";
@@ -11,6 +11,7 @@ import { ThinkingBlock } from "./ThinkingBlock.js";
 interface Props {
   state: SessionState;
   toolContext: ToolContext;
+  onCancelPending?: () => void;
 }
 
 function ImageAttachments({ images }: { images: ChatImage[] }) {
@@ -48,12 +49,12 @@ function MessageBubble({ content, className }: { content: string; className: str
   );
 }
 
-export function ChatView({ state, toolContext }: Props) {
+export function ChatView({ state, toolContext, onCancelPending }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     scrollRef.current?.scrollTo(0, scrollRef.current.scrollHeight);
-  }, [state.messages.length, state.streamingText]);
+  }, [state.messages.length, state.streamingText, state.pendingPrompt]);
 
   return (
     <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-1">
@@ -129,7 +130,24 @@ export function ChatView({ state, toolContext }: Props) {
         </div>
       )}
 
-      {state.messages.length === 0 && !state.streamingText && (
+      {/* Optimistic pending prompt card */}
+      {state.pendingPrompt && (
+        <div data-testid="pending-prompt-card" className="mt-4 mb-4 flex justify-end">
+          <div className="bg-blue-500/10 border border-blue-500/20 border-l-2 border-l-blue-400 rounded-xl shadow-md px-4 py-2 max-w-[80%]">
+            {state.pendingPrompt.images && state.pendingPrompt.images.length > 0 && (
+              <ImageAttachments images={state.pendingPrompt.images} />
+            )}
+            <div className="flex items-start gap-2">
+              <div className="flex-1">
+                <MarkdownContent content={state.pendingPrompt.text} />
+              </div>
+              <Icon path={mdiLoading} size={0.7} className="animate-spin text-blue-400 shrink-0 mt-0.5" />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {state.messages.length === 0 && !state.streamingText && !state.pendingPrompt && (
         <div className="flex items-center justify-center h-full text-[var(--text-tertiary)]">
           <p>No messages yet</p>
         </div>

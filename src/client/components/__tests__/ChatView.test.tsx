@@ -3,7 +3,7 @@ import { render, fireEvent } from "@testing-library/react";
 import React from "react";
 import { ChatView } from "../ChatView.js";
 import { ThemeProvider } from "../ThemeProvider.js";
-import { createInitialState, type ChatMessage } from "../../lib/event-reducer.js";
+import { createInitialState, type ChatMessage, type PendingPrompt } from "../../lib/event-reducer.js";
 import type { ToolContext } from "../tool-renderers/index.js";
 
 const defaultToolContext: ToolContext = { editors: [] };
@@ -163,5 +163,45 @@ describe("ChatView", () => {
     // Streaming bubble doesn't have message-level copy buttons
     const mdBtns = container.querySelectorAll('button[title="Copy as Markdown"]');
     expect(mdBtns.length).toBe(0);
+  });
+
+  it("renders optimistic pending prompt card with spinner", () => {
+    const state = createInitialState();
+    state.pendingPrompt = { text: "Fix the bug" };
+    const { getByTestId, container } = render(<ThemeProvider><ChatView state={state} toolContext={defaultToolContext} /></ThemeProvider>);
+    const card = getByTestId("pending-prompt-card");
+    expect(card).not.toBeNull();
+    expect(card.textContent).toContain("Fix the bug");
+    // Should have animate-spin spinner
+    const spinner = card.querySelector(".animate-spin");
+    expect(spinner).not.toBeNull();
+  });
+
+  it("does not render pending prompt card when pendingPrompt is undefined", () => {
+    const state = createInitialState();
+    const { container } = render(<ThemeProvider><ChatView state={state} toolContext={defaultToolContext} /></ThemeProvider>);
+    const card = container.querySelector('[data-testid="pending-prompt-card"]');
+    expect(card).toBeNull();
+  });
+
+  it("renders pending prompt card with images", () => {
+    const state = createInitialState();
+    state.pendingPrompt = {
+      text: "Check this",
+      images: [{ data: "abc123", mimeType: "image/png" }],
+    };
+    const { container } = render(<ThemeProvider><ChatView state={state} toolContext={defaultToolContext} /></ThemeProvider>);
+    const card = container.querySelector('[data-testid="pending-prompt-card"]');
+    expect(card).not.toBeNull();
+    const img = card!.querySelector("img");
+    expect(img).not.toBeNull();
+    expect(img!.getAttribute("src")).toContain("data:image/png;base64,abc123");
+  });
+
+  it("hides empty-state message when pendingPrompt is set", () => {
+    const state = createInitialState();
+    state.pendingPrompt = { text: "Hello" };
+    const { container } = render(<ThemeProvider><ChatView state={state} toolContext={defaultToolContext} /></ThemeProvider>);
+    expect(container.textContent).not.toContain("No messages yet");
   });
 });

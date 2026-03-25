@@ -11,6 +11,8 @@ interface Props {
   disabled?: boolean;
   sessionStatus?: "idle" | "streaming" | "ended";
   onAbort?: () => void;
+  pendingPrompt?: boolean;
+  onCancelPending?: () => void;
 }
 
 const sourceIcons: Record<string, ReactNode> = {
@@ -46,7 +48,7 @@ function extractAtQuery(text: string): string | null {
   return null;
 }
 
-export function CommandInput({ commands, onSend, onListFiles, fileResults, disabled, sessionStatus, onAbort }: Props) {
+export function CommandInput({ commands, onSend, onListFiles, fileResults, disabled, sessionStatus, onAbort, pendingPrompt, onCancelPending }: Props) {
   const [text, setText] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [pendingImages, setPendingImages] = useState<ImageContent[]>([]);
@@ -187,12 +189,19 @@ export function CommandInput({ commands, onSend, onListFiles, fileResults, disab
         }
       }
 
+      // Cancel pending prompt on Escape
+      if (e.key === "Escape" && pendingPrompt && onCancelPending) {
+        e.preventDefault();
+        onCancelPending();
+        return;
+      }
+
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
         handleSend();
       }
     },
-    [dropdownMode, dropdownLength, filteredCommands, fileItems, selectedIndex, selectCommand, selectFile, handleSend, text]
+    [dropdownMode, dropdownLength, filteredCommands, fileItems, selectedIndex, selectCommand, selectFile, handleSend, text, pendingPrompt, onCancelPending]
   );
 
   const handlePaste = useCallback(async (e: React.ClipboardEvent) => {
@@ -318,7 +327,7 @@ export function CommandInput({ commands, onSend, onListFiles, fileResults, disab
           onKeyDown={handleKeyDown}
           onPaste={handlePaste}
           placeholder="Send a message, /command, or @file..."
-          disabled={disabled}
+          disabled={disabled || pendingPrompt}
           rows={1}
           className="flex-1 bg-[var(--bg-tertiary)] rounded-lg px-4 py-2 text-sm text-[var(--text-primary)] placeholder-gray-500 border border-[var(--border-secondary)] focus:border-blue-500 focus:outline-none disabled:opacity-50 resize-none"
           style={{ minHeight: "38px", maxHeight: "120px" }}
@@ -330,16 +339,16 @@ export function CommandInput({ commands, onSend, onListFiles, fileResults, disab
         />
         <button
           onClick={handleSend}
-          disabled={disabled || !text.trim()}
+          disabled={disabled || pendingPrompt || !text.trim()}
           className="p-2 bg-blue-600 rounded-lg hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed self-end"
           title="Send"
           data-testid="send-button"
         >
           <Icon path={mdiPlay} size={0.7} />
         </button>
-        {sessionStatus === "streaming" && onAbort && (
+        {(sessionStatus === "streaming" || pendingPrompt) && (onAbort || onCancelPending) && (
           <button
-            onClick={onAbort}
+            onClick={pendingPrompt ? onCancelPending : onAbort}
             className="p-2 bg-red-600 rounded-lg hover:bg-red-500 self-end"
             title="Stop"
             data-testid="stop-button"

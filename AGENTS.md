@@ -38,6 +38,7 @@ pi-dashboard --dev   # Start with Vite proxy
 | `src/extension/connection.ts` | WebSocket with exponential backoff |
 | `src/extension/server-probe.ts` | TCP probe to detect running server |
 | `src/extension/server-launcher.ts` | Auto-start server as detached process |
+| `src/extension/dev-build.ts` | Dev build-on-reload helper (client build + server shutdown) |
 | `src/server/server.ts` | HTTP + WebSocket server |
 | `src/server/memory-event-store.ts` | In-memory event buffer with LRU eviction |
 | `src/server/memory-session-manager.ts` | Pure in-memory session registry |

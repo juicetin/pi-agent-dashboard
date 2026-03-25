@@ -415,6 +415,18 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
     }
   );
 
+  // Shutdown endpoint (localhost-only) — used by devBuildOnReload
+  // Skips server.stop() to avoid killing headless/spawned sessions.
+  // Just exits the process; the OS cleans up sockets.
+  fastify.post(
+    "/api/shutdown",
+    { preHandler: localhostGuard },
+    async () => {
+      setTimeout(() => process.exit(0), 100);
+      return { ok: true };
+    }
+  );
+
   // Serve static files (built web client) in production
   if (!config.dev) {
     const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -458,6 +470,7 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
 
     async stop() {
       cancelIdleTimer();
+      browserGateway.shutdownHeadlessProcesses();
       pendingLoadManager.dispose();
       stateStore.flush();
       stateStore.dispose();

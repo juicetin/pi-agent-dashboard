@@ -9,7 +9,10 @@ import { ConnectionManager } from "./connection.js";
 import { detectSessionSource } from "./source-detector.js";
 import { mapEventToProtocol } from "./event-forwarder.js";
 import { createCommandHandler } from "./command-handler.js";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { loadConfig, ensureConfig } from "../shared/config.js";
+import { runDevBuild } from "./dev-build.js";
 import { isPortOpen } from "./server-probe.js";
 import { launchServer } from "./server-launcher.js";
 import type { ServerToExtensionMessage } from "../shared/protocol.js";
@@ -593,7 +596,6 @@ export default function (pi: ExtensionAPI) {
     // Give time for the unregister to send
     await new Promise((resolve) => setTimeout(resolve, 100));
     connection.disconnect();
-    getBridgeState().cleanup = undefined;
   });
 
   // Register cleanup for /reload — saves state to globalThis and tears down resources
@@ -607,6 +609,15 @@ export default function (pi: ExtensionAPI) {
     if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null; }
     if (gitPollTimer) { clearInterval(gitPollTimer); gitPollTimer = null; }
     if (openspecPollTimer) { clearInterval(openspecPollTimer); openspecPollTimer = null; }
+
+    // Dev build & restart: rebuild client and stop server before reload
+    if (config.devBuildOnReload) {
+      const __filename = fileURLToPath(import.meta.url);
+      const __dirname = path.dirname(__filename);
+      const packageRoot = path.resolve(__dirname, "..", "..");
+      runDevBuild({ packageRoot, serverPort: config.port });
+    }
+
     connection.disconnect();
   };
 

@@ -95,6 +95,13 @@ export interface ResumeResultBrowserMessage {
   message: string;
 }
 
+export interface SpawnResultBrowserMessage {
+  type: "spawn_result";
+  cwd: string;
+  success: boolean;
+  message: string;
+}
+
 export type ServerToBrowserMessage =
   | SessionAddedMessage
   | SessionUpdatedMessage
@@ -108,7 +115,8 @@ export type ServerToBrowserMessage =
   | BrowserOpenSpecUpdateMessage
   | BrowserModelsListMessage
   | SessionsListBrowserMessage
-  | ResumeResultBrowserMessage;
+  | ResumeResultBrowserMessage
+  | SpawnResultBrowserMessage;
 
 // ── Browser → Server ────────────────────────────────────────────────
 
@@ -200,6 +208,11 @@ export interface UnhideSessionBrowserMessage {
   sessionId: string;
 }
 
+export interface SpawnSessionBrowserMessage {
+  type: "spawn_session";
+  cwd: string;
+}
+
 export type BrowserToServerMessage =
   | SubscribeMessage
   | UnsubscribeMessage
@@ -216,4 +229,5 @@ export type BrowserToServerMessage =
   | ListSessionsBrowserMessage
   | ResumeSessionBrowserMessage
   | HideSessionBrowserMessage
-  | UnhideSessionBrowserMessage;
+  | UnhideSessionBrowserMessage
+  | SpawnSessionBrowserMessage;

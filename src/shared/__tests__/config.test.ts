@@ -82,6 +82,41 @@ describe("loadConfig", () => {
     const config = loadConfig();
     expect(config.port).toBe(8000);
   });
+
+  it("should return spawnStrategy when set to headless", () => {
+    fs.writeFileSync(configFile, JSON.stringify({ spawnStrategy: "headless" }));
+
+    const config = loadConfig();
+    expect(config.spawnStrategy).toBe("headless");
+  });
+
+  it("should default spawnStrategy to tmux when missing", () => {
+    fs.writeFileSync(configFile, JSON.stringify({ port: 3000 }));
+
+    const config = loadConfig();
+    expect(config.spawnStrategy).toBe("tmux");
+  });
+
+  it("should fall back to tmux for invalid spawnStrategy", () => {
+    fs.writeFileSync(configFile, JSON.stringify({ spawnStrategy: "invalid" }));
+
+    const config = loadConfig();
+    expect(config.spawnStrategy).toBe("tmux");
+  });
+
+  it("should return devBuildOnReload true when set", () => {
+    fs.writeFileSync(configFile, JSON.stringify({ devBuildOnReload: true }));
+
+    const config = loadConfig();
+    expect(config.devBuildOnReload).toBe(true);
+  });
+
+  it("should default devBuildOnReload to false when missing", () => {
+    fs.writeFileSync(configFile, JSON.stringify({ port: 3000 }));
+
+    const config = loadConfig();
+    expect(config.devBuildOnReload).toBe(false);
+  });
 });
 
 describe("ensureConfig", () => {
@@ -113,6 +148,7 @@ describe("ensureConfig", () => {
     expect(content.autoStart).toBe(true);
     expect(content.autoShutdown).toBe(true);
     expect(content.shutdownIdleSeconds).toBe(300);
+    expect(content.devBuildOnReload).toBe(false);
   });
 
   it("should create config when directory exists but file does not", () => {

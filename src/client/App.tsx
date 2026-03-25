@@ -31,6 +31,7 @@ export default function App() {
   const [fileResults, setFileResults] = useState<{ query: string; files: FileEntry[] } | null>(null);
   const [openspecMap, setOpenspecMap] = useState<Map<string, OpenSpecData>>(new Map());
   const [modelsMap, setModelsMap] = useState<Map<string, ModelInfo[]>>(new Map());
+  const [spawnResult, setSpawnResult] = useState<{ success: boolean; message: string } | null>(null);
   const subscribedRef = useRef(new Set<string>());
 
   const handleMessage = useCallback((msg: ServerToBrowserMessage) => {
@@ -122,10 +123,13 @@ export default function App() {
         break;
 
       case "resume_result":
-        // Show toast or notification for resume/fork result
         if (!msg.success) {
           console.warn("[dashboard] Resume/fork failed:", msg.message);
         }
+        break;
+
+      case "spawn_result":
+        setSpawnResult({ success: msg.success, message: msg.message });
         break;
 
       case "sessions_list":
@@ -194,6 +198,25 @@ export default function App() {
     [selectedId, send],
   );
 
+  const handleCancelPending = useCallback(
+    () => {
+      if (selectedId) {
+        // Clear pending prompt
+        setSessionStates((prev) => {
+          const next = new Map(prev);
+          const current = next.get(selectedId);
+          if (current?.pendingPrompt) {
+            next.set(selectedId, { ...current, pendingPrompt: undefined });
+          }
+          return next;
+        });
+        // Send abort to stop any server-side processing
+        send({ type: "abort", sessionId: selectedId });
+      }
+    },
+    [selectedId, send],
+  );
+
   const handleOpenSpecRefresh = useCallback(
     (sessionId: string) => {
       send({ type: "openspec_refresh", sessionId });
@@ -214,6 +237,19 @@ export default function App() {
     (text: string, images?: import("../shared/types.js").ImageContent[]) => {
       if (selectedId) {
         send({ type: "send_prompt", sessionId: selectedId, text, images });
+        // Set optimistic pending prompt
+        setSessionStates((prev) => {
+          const next = new Map(prev);
+          const current = next.get(selectedId) ?? createInitialState();
+          next.set(selectedId, {
+            ...current,
+            pendingPrompt: {
+              text,
+              images: images?.map((img) => ({ data: img.data, mimeType: img.mimeType })),
+            },
+          });
+          return next;
+        });
       }
     },
     [selectedId, send]
@@ -251,6 +287,13 @@ export default function App() {
   const handleResumeSession = useCallback(
     (sessionId: string, mode: "continue" | "fork") => {
       send({ type: "resume_session", sessionId, mode } as any);
+    },
+    [send],
+  );
+
+  const handleSpawnSession = useCallback(
+    (cwd: string) => {
+      send({ type: "spawn_session", cwd } as any);
     },
     [send],
   );
@@ -301,6 +344,9 @@ export default function App() {
       onResume={handleResumeSession}
       onHideSession={handleHideSession}
       onUnhideSession={handleUnhideSession}
+      onSpawnSession={handleSpawnSession}
+      spawnResult={spawnResult}
+      onSpawnResultSeen={() => setSpawnResult(null)}
     />
   );
 
@@ -347,7 +393,7 @@ export default function App() {
             cost={selectedState.cost}
           />
         )}
-        <ChatView state={selectedState} toolContext={toolContext} />
+        <ChatView state={selectedState} toolContext={toolContext} onCancelPending={handleCancelPending} />
         <StatusBar
           model={selectedState.model ?? selectedSession?.model}
           models={selectedId ? modelsMap.get(selectedId) : undefined}
@@ -374,6 +420,8 @@ export default function App() {
           disabled={!selectedId}
           sessionStatus={selectedState.status}
           onAbort={handleAbort}
+          pendingPrompt={!!selectedState.pendingPrompt}
+          onCancelPending={handleCancelPending}
         />
       </div>
     </div>

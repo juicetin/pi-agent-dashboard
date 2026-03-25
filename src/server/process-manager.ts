@@ -1,7 +1,8 @@
 /**
- * Process manager for spawning pi sessions via tmux.
+ * Process manager for spawning pi sessions via tmux or headless (RPC mode).
  */
-import { execSync, spawn } from "node:child_process";
+import { execSync, spawn, type ChildProcess } from "node:child_process";
+import type { SpawnStrategy } from "../shared/config.js";
 
 export interface PlatformInfo {
   strategy: "tmux" | "wsl" | "cmd";
@@ -23,6 +24,7 @@ export function detectPlatform(platform?: string): PlatformInfo {
 export interface SessionOptions {
   sessionFile?: string;
   mode?: "continue" | "fork";
+  strategy?: SpawnStrategy;
 }
 
 export function buildTmuxCommand(cwd: string, sessionExists: boolean, options?: SessionOptions): string {
@@ -61,9 +63,54 @@ function dashboardSessionExists(): boolean {
 export interface SpawnResult {
   success: boolean;
   message: string;
+  pid?: number;
+  process?: ChildProcess;
+}
+
+export function buildHeadlessArgs(options?: SessionOptions): string[] {
+  const args = ["--mode", "rpc"];
+
+  if (options?.sessionFile && options?.mode === "continue") {
+    args.push("--session", options.sessionFile);
+  } else if (options?.sessionFile && options?.mode === "fork") {
+    args.push("--fork", options.sessionFile);
+  }
+
+  return args;
+}
+
+function spawnHeadless(cwd: string, options?: SessionOptions): SpawnResult {
+  try {
+    const args = buildHeadlessArgs(options);
+    const child = spawn("pi", args, {
+      cwd,
+      detached: true,
+      stdio: ["pipe", "ignore", "ignore"],
+      env: { ...process.env, PI_DASHBOARD_SPAWNED: "1" },
+    });
+    // Keep stdin open (RPC mode exits on stdin EOF) but unref so server can exit
+    child.unref();
+    child.stdin?.unref();
+
+    return {
+      success: true,
+      message: `Pi session spawned headless (pid ${child.pid})`,
+      pid: child.pid,
+      process: child,
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      message: `Failed to spawn headless session: ${err.message}`,
+    };
+  }
 }
 
 export async function spawnPiSession(cwd: string, options?: SessionOptions): Promise<SpawnResult> {
+  if (options?.strategy === "headless") {
+    return spawnHeadless(cwd, options);
+  }
+
   const platform = detectPlatform();
 
   if (platform.strategy === "tmux") {

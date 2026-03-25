@@ -40,6 +40,11 @@ export interface TurnStat {
 
 const MAX_TURN_STATS = 50;
 
+export interface PendingPrompt {
+  text: string;
+  images?: ChatImage[];
+}
+
 export interface SessionState {
   messages: ChatMessage[];
   toolCalls: Map<string, ToolCallState>;
@@ -57,6 +62,7 @@ export interface SessionState {
   status: "idle" | "streaming" | "ended";
   turnStats: TurnStat[];
   contextUsage?: { tokens: number | null; contextWindow: number };
+  pendingPrompt?: PendingPrompt;
 }
 
 export function createInitialState(): SessionState {
@@ -119,6 +125,7 @@ export function reduceEvent(state: SessionState, event: DashboardEvent): Session
       next.isStreaming = true;
       next.status = "streaming";
       next.streamingText = "";
+      next.pendingPrompt = undefined;
       break;
 
     case "agent_end":
@@ -131,6 +138,7 @@ export function reduceEvent(state: SessionState, event: DashboardEvent): Session
     case "message_start": {
       const msg = data.message as any;
       if (msg?.role === "user") {
+        next.pendingPrompt = undefined;
         let text = "";
         let images: ChatImage[] | undefined;
         if (Array.isArray(msg.content)) {

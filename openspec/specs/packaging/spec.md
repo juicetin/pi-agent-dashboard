@@ -1,10 +1,10 @@
 ## ADDED Requirements
 
 ### Requirement: Pi package format
-The project SHALL be distributed as a pi package installable via `pi install`. The `package.json` SHALL declare the bridge extension under the `pi.extensions` key so it auto-loads in all pi sessions after installation.
+The project SHALL be distributed as a pi package installable via `pi install` under the `@blackbelt-technology/pi-dashboard` npm scope. The `package.json` SHALL declare the bridge extension under the `pi.extensions` key so it auto-loads in all pi sessions after installation.
 
 #### Scenario: Install via pi
-- **WHEN** a user runs `pi install npm:@user/pi-dashboard`
+- **WHEN** a user runs `pi install npm:@blackbelt-technology/pi-dashboard`
 - **THEN** the bridge extension SHALL be registered globally and load in all subsequent pi sessions
 
 #### Scenario: Extension auto-loads
@@ -12,83 +12,63 @@ The project SHALL be distributed as a pi package installable via `pi install`. T
 - **THEN** the bridge extension SHALL load automatically and attempt to connect to the dashboard server
 
 #### Scenario: Uninstall via pi
-- **WHEN** a user runs `pi remove npm:@user/pi-dashboard`
+- **WHEN** a user runs `pi remove npm:@blackbelt-technology/pi-dashboard`
 - **THEN** the bridge extension SHALL no longer load in pi sessions
 
 ### Requirement: Dashboard server CLI
-The package SHALL provide a `pi-dashboard` CLI command (via `bin` in package.json) for starting the dashboard server.
+The package SHALL provide a `pi-dashboard` CLI command (via `bin` in package.json) for starting the dashboard server. The CLI SHALL accept subcommands (`start`, `stop`, `restart`, `status`) and flags (`--port`, `--pi-port`, `--dev`, `--no-tunnel`). Precedence: CLI flags → environment variables (`PI_DASHBOARD_PORT`, `PI_DASHBOARD_PI_PORT`) → config file defaults.
 
 #### Scenario: Start server
 - **WHEN** a user runs `pi-dashboard`
-- **THEN** the server SHALL start on default ports (8000 for HTTP, 9999 for Pi Gateway) and print the URL
+- **THEN** the server SHALL start in the foreground on default ports (8000 for HTTP, 9999 for Pi Gateway) and print the URL
 
 #### Scenario: Custom ports
 - **WHEN** a user runs `pi-dashboard --port 3000 --pi-port 3001`
 - **THEN** the server SHALL start on the specified ports
 
-#### Scenario: Help output
-- **WHEN** a user runs `pi-dashboard --help`
-- **THEN** the CLI SHALL display available options with descriptions
+#### Scenario: Development mode
+- **WHEN** a developer runs `pi-dashboard --dev`
+- **THEN** the server SHALL skip serving static files (expects Vite dev server running separately)
+
+#### Scenario: Disable tunnel
+- **WHEN** a user runs `pi-dashboard --no-tunnel`
+- **THEN** the server SHALL not create a zrok tunnel even if `tunnel.enabled` is `true` in config
+
+### Requirement: Runtime dependency on tsx
+The package SHALL declare `tsx` as a production dependency so the TypeScript server CLI and extension code can execute without a build step when installed via npm.
+
+#### Scenario: Server CLI works after npm install
+- **WHEN** the package is installed via `npm install @blackbelt-technology/pi-dashboard`
+- **THEN** the `pi-dashboard` binary SHALL execute successfully using the tsx loader
 
 ### Requirement: Bundled web client
 The web client SHALL be built with Vite and the production output SHALL be bundled into the npm package as static files. The dashboard server SHALL serve these files without requiring a separate build step.
 
 #### Scenario: Serve bundled client
-- **WHEN** the dashboard server starts from an installed package
-- **THEN** it SHALL serve the pre-built web client from the bundled static files directory
+- **WHEN** the dashboard server starts from an installed package (non-dev mode)
+- **THEN** it SHALL serve the pre-built web client from `dist/client/` using `@fastify/static`
 
-#### Scenario: Development mode
-- **WHEN** a developer runs the server with `--dev`
-- **THEN** it SHALL proxy requests to a Vite dev server (default `localhost:5173`) for hot module replacement
+#### Scenario: SPA fallback
+- **WHEN** a GET request is made to a path that does not match a static file, `/api/*`, or `/ws`
+- **THEN** the server SHALL return `index.html` to support client-side routing
 
 ### Requirement: Configuration file
-The dashboard server SHALL support a configuration file at `~/.pi/dashboard/config.json` for persistent settings.
-
-Configurable options:
-- `httpPort`: HTTP and browser WebSocket port (default: 8000)
-- `piGatewayPort`: Pi extension WebSocket port (default: 9999)
-- `dbPath`: SQLite database path (default: `~/.pi/dashboard/dashboard.db`)
-- `retentionDays`: Event retention period in days (default: 30)
+The dashboard server SHALL support a configuration file at `~/.pi/dashboard/config.json` for persistent settings. See the `shared-config` spec for the full schema.
 
 #### Scenario: Config file created on first run
 - **WHEN** the server starts and no config file exists
 - **THEN** it SHALL create `~/.pi/dashboard/config.json` with default values
 
 #### Scenario: CLI overrides config file
-- **WHEN** the config file sets `httpPort: 3000` and the CLI passes `--port 4000`
+- **WHEN** the config file sets `port: 3000` and the CLI passes `--port 4000`
 - **THEN** the server SHALL use port 4000 (CLI wins)
 
-### Requirement: Peer dependencies for dual runtime compatibility
-The package SHALL declare peer dependencies for both `@mariozechner/*` and `@oh-my-pi/*` package scopes with `"*"` range. All peer dependencies SHALL be optional via `peerDependenciesMeta` so that only one runtime needs to be present.
+### Requirement: Peer dependencies
+The package SHALL declare `@mariozechner/pi-coding-agent` as a peer dependency so that the bridge extension resolves core packages from the host runtime's installation.
 
-Peer dependencies: `@mariozechner/pi-coding-agent`, `@mariozechner/pi-ai`, `@mariozechner/pi-tui`, `@oh-my-pi/pi-coding-agent`, `@oh-my-pi/pi-ai`, `@oh-my-pi/pi-tui`, `@sinclair/typebox`.
-
-Runtime dependencies (React, sql.js, ws, etc.) SHALL be in `dependencies`.
-
-#### Scenario: Installed under pi (@mariozechner)
+#### Scenario: Installed under pi
 - **WHEN** the package is installed as a pi package via `pi install`
-- **THEN** `@mariozechner/pi-coding-agent` satisfies the peer dependency and no warnings are shown for missing `@oh-my-pi/*` packages
-
-#### Scenario: Installed under Oh My Pi (@oh-my-pi)
-- **WHEN** the package is installed as an Oh My Pi package
-- **THEN** `@oh-my-pi/pi-coding-agent` satisfies the peer dependency and no warnings are shown for missing `@mariozechner/*` packages
-
-#### Scenario: Peer dependency resolution
-- **WHEN** the package is installed via pi or Oh My Pi
-- **THEN** core packages SHALL be resolved from the host runtime's installation, not bundled
-
-### Requirement: Service templates
-The package SHALL include optional service templates for running the dashboard server as a background daemon:
-- `systemd/pi-dashboard.service` for Linux
-- `launchd/ai.pi.dashboard.plist` for macOS
-
-#### Scenario: Linux systemd setup
-- **WHEN** a user runs `pi-dashboard --install-service`
-- **THEN** the CLI SHALL copy the systemd unit file to `~/.config/systemd/user/` and print instructions to enable it
-
-#### Scenario: macOS launchd setup
-- **WHEN** a user runs `pi-dashboard --install-service` on macOS
-- **THEN** the CLI SHALL copy the plist file to `~/Library/LaunchAgents/` and print instructions to load it
+- **THEN** `@mariozechner/pi-coding-agent` satisfies the peer dependency
 
 ### Requirement: Architecture documentation
 The project SHALL maintain a `docs/architecture.md` file that describes the system architecture, data flow, protocol, and component interactions. This file SHALL be updated with every significant change per the project's code instructions.

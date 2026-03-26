@@ -34,15 +34,14 @@ A Node.js HTTP + WebSocket server that:
 - Accepts connections from web browsers (Browser Gateway, port 8000)
 - Stores events in an in-memory buffer with LRU eviction (max 100 sessions)
 - Manages sessions in a pure in-memory registry (populated from bridge connections)
-- Persists workspaces in `~/.pi/dashboard/workspaces.json`
-- Persists user preferences (hidden sessions) in `~/.pi/dashboard/state.json`
+- Persists user preferences (hidden sessions, pinned directories, session order) in `~/.pi/dashboard/state.json`
 - Requests on-demand session loading from bridge extensions for evicted sessions
 - Serves the built web client as static files
-- Exposes REST API for workspace CRUD, session management, event content fetch
+- Exposes REST API for session management, event content fetch, pinned directories
 
 ### 3. Web Client (`src/client/`)
 A React-based responsive web UI that:
-- Shows all active sessions organized by workspace
+- Shows all active sessions organized by directory, with pinned directories always visible at the top
 - Renders chat messages with markdown, syntax highlighting, and streaming
 - Displays collapsed tool call steps with lazy-loaded content
 - Provides command autocomplete with `/` prefix
@@ -68,7 +67,12 @@ TypeScript type definitions shared across all components:
 1. User types prompt or command in browser
 2. Browser sends `send_prompt` via WebSocket
 3. Server routes to correct bridge extension by sessionId
-4. Bridge extension calls `pi.sendUserMessage()` or dispatches command
+4. Bridge extension's command handler parses input for pi command prefixes:
+   - `!!<cmd>` → silent bash execution via `pi.exec()`, result as `bash_output` event
+   - `!<cmd>` → bash execution via `pi.exec()`, result as `bash_output` event + send to LLM
+   - `/compact [instructions]` → `ctx.compact()`, feedback as `command_feedback` event
+   - `/<command>` → `session.prompt()` for extension commands/skills/templates (fallback to `sendUserMessage()`)
+   - Plain text → `pi.sendUserMessage()` (default)
 5. Pi processes the command, events flow back via event flow
 
 ### Model & Thinking Level Flow
@@ -77,8 +81,14 @@ TypeScript type definitions shared across all components:
 3. Bridge enriches the event with current `thinkingLevel` from context before forwarding
 4. Bridge also sends a `model_update` protocol message for session-level tracking
 5. Server extracts model/thinkingLevel from events and `model_update`, broadcasts to browsers
-6. Thinking level changes (via pi keybinding) are detected by polling every 30s
+6. Thinking level changes (via pi keybinding) are detected when `model_select` events fire, on reconnect, and immediately after `set_thinking_level` commands
 7. Browser can send `set_thinking_level` to change thinking level remotely
+
+### Git & OpenSpec Polling
+1. Bridge polls git info every 30s (`git-info.ts`): branch, remote URL, PR number
+2. Bridge polls OpenSpec CLI every 30s (`openspec-poller.ts`): active changes, artifacts
+3. Changes are sent to the server only when values differ from last poll
+4. Server broadcasts updates to subscribed browsers
 
 ### Reconnection Flow
 1. Browser reconnects with `subscribe` message including `lastSeq`
@@ -99,9 +109,12 @@ When a browser subscribes to a session whose events have been evicted from memor
 | Data | Storage | Details |
 |------|---------|---------|
 | Events | In-memory Map | LRU eviction, max 100 sessions. Pinned if active bridge or browser subscribers. |
-| Sessions | In-memory Map | Populated from bridge `session_register` + `session_history_sync`. Empty on restart. |
-| Workspaces | `~/.pi/dashboard/workspaces.json` | Atomic write (tmp+rename). Read on startup. |
+| Sessions | In-memory Map + JSON | In-memory registry + `session-persistence.ts` saves metadata to JSON for server restarts. Populated from bridge `session_register` + `session_history_sync`. |
 | Hidden sessions | `~/.pi/dashboard/state.json` | Debounced writes (max 1/sec). Atomic write. |
+| Pinned directories | `~/.pi/dashboard/state.json` | Ordered array of cwd paths. Pinned dirs always visible in sidebar. |
+| Session order | `~/.pi/dashboard/state.json` | Per-cwd ordering managed by `session-order-manager.ts`. |
+| Server PID | `~/.pi/dashboard/server.pid` | Tracks running server process for daemon management. |
+| Headless PIDs | `~/.pi/dashboard/headless-pids.json` | Maps spawned headless processes to sessions. |
 | Session files | `~/.pi/agent/sessions/` (pi's own) | Source of truth. Bridge loads on demand. |
 
 ## Configuration
@@ -115,6 +128,9 @@ Precedence: CLI flags → environment variables → config file (`~/.pi/dashboar
 | `autoStart` | true | Bridge extension auto-starts server if not running |
 | `autoShutdown` | true | Server shuts down after idle period |
 | `shutdownIdleSeconds` | 300 | Idle timeout before auto-shutdown |
+| `spawnStrategy` | `"headless"` | How to spawn new sessions: `"headless"` or `"tmux"` |
+| `tunnel.enabled` | true | Enable zrok tunnel for remote access |
+| `devBuildOnReload` | false | Rebuild Vite client + restart server on `/reload` |
 
 ## Shared Config
 

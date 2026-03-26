@@ -31,7 +31,7 @@ The bridge extension SHALL extract the first user message text from the session 
 
 #### Scenario: First message sent on register
 - **WHEN** the bridge sends `session_register` and the session has at least one user message entry
-- **THEN** it SHALL include `firstMessage` with the text content of the first user message (plain text, truncated if necessary)
+- **THEN** it SHALL include `firstMessage` with the text content of the first user message (plain text, truncated to 200 characters)
 
 #### Scenario: No user messages yet
 - **WHEN** the bridge sends `session_register` for a brand new session with no messages
@@ -40,6 +40,21 @@ The bridge extension SHALL extract the first user message text from the session 
 #### Scenario: First message updated after first turn
 - **WHEN** the first `turn_end` event fires and `firstMessage` was not previously sent
 - **THEN** the bridge SHALL send a session update with the `firstMessage` extracted from the session entries
+
+### Requirement: Session display name
+The client SHALL derive a display name for each session using the following priority chain: `name` (user-set) → `firstMessage` (truncated to 50 chars) → last segment of `cwd` → first 8 characters of session ID.
+
+#### Scenario: Session with explicit name
+- **WHEN** a session has `name: "refactor auth"`
+- **THEN** the display name SHALL be `"refactor auth"`
+
+#### Scenario: Session with first message only
+- **WHEN** a session has no name but `firstMessage: "Fix the login bug in auth.ts"`
+- **THEN** the display name SHALL be `"Fix the login bug in auth.ts"`
+
+#### Scenario: Session with no name or message
+- **WHEN** a session has no name and no firstMessage
+- **THEN** the display name SHALL be the last segment of cwd (e.g., `"my-project"`)
 
 ### Requirement: Session switch and fork handling
 The bridge extension SHALL handle pi's `session_switch` and `session_fork` events by unregistering the old session and registering the new one. The session ID variable SHALL be mutable (`let`, not `const`). Both events SHALL use the same shared handler since the behavior is identical: unregister old ID, read new ID from `ctx.sessionManager.getSessionId()`, register with new ID, full state sync.
@@ -63,19 +78,15 @@ Pi fires `session_switch` for `/new` (reason: `"new"`) and `/resume` (reason: `"
 - **THEN** all forwarded events SHALL use the updated session ID
 
 ### Requirement: Hidden session lifecycle
-Sessions SHALL become hidden when they end and visible when they register. The `hidden` field SHALL be a boolean stored in SQLite.
-
-#### Scenario: Session becomes hidden on end
-- **WHEN** a session is unregistered (bridge disconnect, heartbeat timeout, or session_switch)
-- **THEN** the server SHALL set `hidden = true` on the session record
+Sessions SHALL become hidden when they end and visible when they register. The `hidden` field SHALL be a boolean persisted via the JSON-backed state store (`~/.pi/dashboard/state.json`). Session records are held in an in-memory `Map`.
 
 #### Scenario: Session becomes visible on register
 - **WHEN** a session registers (new connection or reconnection)
-- **THEN** the server SHALL set `hidden = false` on the session record
+- **THEN** the server SHALL set `hidden = false` on the session record and persist via state store
 
-#### Scenario: Sessions are never deleted
-- **WHEN** a session ends
-- **THEN** the session record SHALL remain in SQLite with `status = "ended"` and `hidden = true`; it SHALL NOT be deleted
+#### Scenario: Session remains in memory after end
+- **WHEN** a session ends (unregister)
+- **THEN** the session record SHALL remain in memory with `status = "ended"`; it SHALL NOT be deleted
 
 #### Scenario: Continue same session restores visibility
 - **WHEN** a pi instance connects with `pi --session <path>` reusing an existing session ID

@@ -3,7 +3,7 @@ import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import React from "react";
 import { Router } from "wouter";
 import { memoryLocation } from "wouter/memory-location";
-import { SessionList } from "../SessionList.js";
+import { SessionList, groupSessionsByDirectory } from "../SessionList.js";
 import { ThemeProvider } from "../ThemeProvider.js";
 import type { DashboardSession } from "../../../shared/types.js";
 
@@ -88,5 +88,131 @@ describe("SessionList spawn button", () => {
     const btn = screen.getByTestId("spawn-session-btn");
     fireEvent.click(btn);
     expect(onSpawn).toHaveBeenCalledWith("/my/project");
+  });
+});
+
+describe("SessionList placeholder spawn card", () => {
+  it("should render placeholder card when cwd is in spawningCwds", () => {
+    const spawningCwds = new Set(["/home/user/project"]);
+    render(
+      <TestRouter>
+        <ThemeProvider>
+          <SessionList
+            sessions={[makeSession()]}
+            onSelect={() => {}}
+            onSpawnSession={() => {}}
+            spawningCwds={spawningCwds}
+          />
+        </ThemeProvider>
+      </TestRouter>,
+    );
+    expect(screen.getByTestId("placeholder-session-card")).toBeTruthy();
+  });
+
+  it("should not render placeholder card when cwd is not in spawningCwds", () => {
+    const spawningCwds = new Set(["/other/project"]);
+    render(
+      <TestRouter>
+        <ThemeProvider>
+          <SessionList
+            sessions={[makeSession()]}
+            onSelect={() => {}}
+            onSpawnSession={() => {}}
+            spawningCwds={spawningCwds}
+          />
+        </ThemeProvider>
+      </TestRouter>,
+    );
+    expect(screen.queryByTestId("placeholder-session-card")).toBeNull();
+  });
+
+  it("should disable New button when cwd is in spawningCwds", () => {
+    const spawningCwds = new Set(["/home/user/project"]);
+    render(
+      <TestRouter>
+        <ThemeProvider>
+          <SessionList
+            sessions={[makeSession()]}
+            onSelect={() => {}}
+            onSpawnSession={() => {}}
+            spawningCwds={spawningCwds}
+          />
+        </ThemeProvider>
+      </TestRouter>,
+    );
+    const btn = screen.getByTestId("spawn-session-btn");
+    expect(btn.hasAttribute("disabled")).toBe(true);
+  });
+
+  it("should not disable New button when cwd is not spawning", () => {
+    const spawningCwds = new Set<string>();
+    render(
+      <TestRouter>
+        <ThemeProvider>
+          <SessionList
+            sessions={[makeSession()]}
+            onSelect={() => {}}
+            onSpawnSession={() => {}}
+            spawningCwds={spawningCwds}
+          />
+        </ThemeProvider>
+      </TestRouter>,
+    );
+    const btn = screen.getByTestId("spawn-session-btn");
+    expect(btn.hasAttribute("disabled")).toBe(false);
+  });
+});
+
+describe("groupSessionsByDirectory", () => {
+  it("groups sessions by cwd into unpinned when no pinned dirs", () => {
+    const sessions = [
+      makeSession({ id: "s1", cwd: "/a", startedAt: 100 }),
+      makeSession({ id: "s2", cwd: "/b", startedAt: 200 }),
+    ];
+    const { pinned, unpinned } = groupSessionsByDirectory(sessions);
+    expect(pinned).toHaveLength(0);
+    expect(unpinned).toHaveLength(2);
+    // Sorted by recency descending
+    expect(unpinned[0].cwd).toBe("/b");
+    expect(unpinned[1].cwd).toBe("/a");
+  });
+
+  it("puts pinned directories first in pinned order", () => {
+    const sessions = [
+      makeSession({ id: "s1", cwd: "/a", startedAt: 300 }),
+      makeSession({ id: "s2", cwd: "/b", startedAt: 200 }),
+      makeSession({ id: "s3", cwd: "/c", startedAt: 100 }),
+    ];
+    const { pinned, unpinned } = groupSessionsByDirectory(sessions, undefined, ["/c", "/a"]);
+    expect(pinned).toHaveLength(2);
+    expect(pinned[0].cwd).toBe("/c");
+    expect(pinned[0].pinned).toBe(true);
+    expect(pinned[1].cwd).toBe("/a");
+    expect(pinned[1].pinned).toBe(true);
+    expect(unpinned).toHaveLength(1);
+    expect(unpinned[0].cwd).toBe("/b");
+    expect(unpinned[0].pinned).toBe(false);
+  });
+
+  it("includes pinned directories with zero sessions", () => {
+    const sessions = [
+      makeSession({ id: "s1", cwd: "/a", startedAt: 100 }),
+    ];
+    const { pinned } = groupSessionsByDirectory(sessions, undefined, ["/empty-dir", "/a"]);
+    expect(pinned).toHaveLength(2);
+    expect(pinned[0].cwd).toBe("/empty-dir");
+    expect(pinned[0].sessions).toHaveLength(0);
+    expect(pinned[1].cwd).toBe("/a");
+    expect(pinned[1].sessions).toHaveLength(1);
+  });
+
+  it("unpinned groups are sorted by most recent session activity", () => {
+    const sessions = [
+      makeSession({ id: "s1", cwd: "/old", startedAt: 100 }),
+      makeSession({ id: "s2", cwd: "/new", startedAt: 300 }),
+      makeSession({ id: "s3", cwd: "/mid", startedAt: 200 }),
+    ];
+    const { unpinned } = groupSessionsByDirectory(sessions);
+    expect(unpinned.map((g) => g.cwd)).toEqual(["/new", "/mid", "/old"]);
   });
 });

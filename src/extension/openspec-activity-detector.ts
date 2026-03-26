@@ -63,6 +63,18 @@ export function detectOpenSpecActivity(
     return null;
   }
 
+  if (toolName === "Write") {
+    const path = args.path as string | undefined;
+    if (!path) return null;
+
+    const changeMatch = path.match(CHANGE_PATH_RE);
+    if (changeMatch) {
+      return { changeName: changeMatch[1] };
+    }
+
+    return null;
+  }
+
   if (toolName === "Bash") {
     const command = args.command as string | undefined;
     if (!command || !command.includes("openspec")) return null;

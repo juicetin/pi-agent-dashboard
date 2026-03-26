@@ -16,11 +16,11 @@ The session list SHALL include an "Active only" toggle button in its header area
 - **THEN** the toggle SHALL restore its previous state from localStorage
 
 ### Requirement: Per-card hide
-Each session card SHALL display a hide button `[✕]`. Clicking it SHALL set the session's `hidden` flag to `true` on the server and remove the card from the visible list.
+Each session card SHALL display a hide button `[✕]`. Clicking it SHALL send a `hide_session` message to the server, which sets `hidden = true` on the in-memory session record (persisted via state store) and broadcasts the update to all browsers.
 
 #### Scenario: Hide a session card
 - **WHEN** the user clicks the hide button on a session card
-- **THEN** the session SHALL be marked `hidden = true` in SQLite via the server and removed from the visible list
+- **THEN** the server SHALL mark the session `hidden = true` and broadcast `session_updated` to all browsers
 
 #### Scenario: Hide an active session
 - **WHEN** the user hides a session that is still active (not ended)
@@ -35,7 +35,7 @@ The session list SHALL include a "Show hidden" toggle. When enabled, hidden sess
 
 #### Scenario: Unhide a session
 - **WHEN** the user clicks the unhide `[↩]` button on a hidden session
-- **THEN** the session SHALL be marked `hidden = false` in SQLite via the server and displayed normally
+- **THEN** the server SHALL mark the session `hidden = false` and broadcast `session_updated` to all browsers
 
 ### Requirement: Hidden count indicator
 When hidden sessions exist and "Show hidden" is OFF, the session list SHALL display an "N hidden" indicator at the bottom of the list.
@@ -59,8 +59,8 @@ The active-only toggle, per-card hide, and server-side hidden flag SHALL work to
 - **WHEN** an ended session has `hidden = true` and "Show hidden" is ON
 - **THEN** the session SHALL be visible with muted styling and resume/fork buttons
 
-### Requirement: Stale hidden ID pruning
-Hidden state is now server-side (`hidden` column in SQLite). The client-side localStorage hidden set is no longer used. The server is the source of truth for visibility.
+### Requirement: Server-side hidden state
+Hidden state is managed server-side via the in-memory session manager with persistence through the JSON-backed state store (`~/.pi/dashboard/state.json`). The client-side localStorage hidden set is no longer used. The server is the source of truth for visibility.
 
 #### Scenario: Migration from client-side hidden
 - **WHEN** the client detects a legacy `hiddenSessions` key in localStorage

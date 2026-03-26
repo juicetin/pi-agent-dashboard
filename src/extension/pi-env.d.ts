@@ -15,5 +15,9 @@ declare module "@oh-my-pi/pi-coding-agent" {
     on(event: string, handler: (...args: any[]) => any): void;
     getCommands(): any[];
     sendUserMessage(message: string | any[]): void;
+    setSessionName(name: string): void;
+    getSessionName(): string | undefined;
+    registerCommand(name: string, options: { description?: string; handler: (args: string, ctx: any) => Promise<void> }): void;
+    exec(command: string, args: string[], options?: { timeout?: number }): Promise<{ stdout: string; stderr: string; exitCode: number }>;
   }
 }

@@ -5,7 +5,6 @@ import { describe, it, expect, afterEach } from "vitest";
 import { createPiGateway } from "../pi-gateway.js";
 import { createMemorySessionManager } from "../memory-session-manager.js";
 import { createStateStore } from "../state-store.js";
-import { createWorkspaceStore } from "../workspace-store.js";
 import { WebSocket } from "ws";
 import { join } from "node:path";
 import { mkdtempSync } from "node:fs";
@@ -25,8 +24,7 @@ function waitForOpen(ws: WebSocket): Promise<void> {
 function makeTempSessionManager() {
   const dir = mkdtempSync(join(tmpdir(), "hb-test-"));
   const stateStore = createStateStore(join(dir, "state.json"));
-  const workspaceStore = createWorkspaceStore(join(dir, "workspaces.json"));
-  return createMemorySessionManager(stateStore, workspaceStore);
+  return createMemorySessionManager(stateStore);
 }
 
 // Use a short heartbeat for fast tests

@@ -7,8 +7,8 @@ import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 
-const httpPort = 19090;
-const piPort = 19091;
+const httpPort = 19100;
+const piPort = 19101;
 let server: DashboardServer;
 
 // Ensure dist/client/index.html exists for the test

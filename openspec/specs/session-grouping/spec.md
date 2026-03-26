@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: Group sessions by directory
-The session list SHALL group sessions by their `cwd` value. Sessions with the same `cwd` SHALL appear together under a group header. ALL groups — including single-session groups — SHALL display a folder header.
+The session list SHALL group sessions by their `cwd` value. Sessions with the same `cwd` SHALL appear together under a group header. ALL groups — including single-session groups — SHALL display a folder header. Sessions within each group SHALL be rendered in the order provided by the server's session order for that cwd.
 
 #### Scenario: Multiple sessions in same directory
 - **WHEN** two or more sessions share the same `cwd`
@@ -14,6 +14,10 @@ The session list SHALL group sessions by their `cwd` value. Sessions with the sa
 #### Scenario: Sessions across different directories
 - **WHEN** sessions exist in multiple different directories
 - **THEN** each directory SHALL be its own group, ordered by most recent session activity
+
+#### Scenario: Sessions ordered within group
+- **WHEN** the server provides an order for a cwd
+- **THEN** sessions within that group SHALL be rendered in the server-provided order, with unordered sessions appended by startedAt descending
 
 ### Requirement: Group header display
 Group headers SHALL display the directory name and git context information.

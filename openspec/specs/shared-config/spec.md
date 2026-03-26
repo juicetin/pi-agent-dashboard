@@ -7,13 +7,14 @@ The shared config module SHALL read configuration from `~/.pi/dashboard/config.j
 |-------|------|---------|-------------|
 | `port` | number | 8000 | HTTP + Browser WebSocket port |
 | `piPort` | number | 9999 | Pi extension WebSocket port |
-| `dbPath` | string | `~/.pi/dashboard/dashboard.db` | SQLite database path |
-| `retentionDays` | number | 30 | Event retention period in days |
 | `autoStart` | boolean | true | Whether the extension auto-starts the server |
 | `autoShutdown` | boolean | true | Whether the server auto-shuts down when idle |
 | `shutdownIdleSeconds` | number | 300 | Seconds to wait after last pi session disconnects before shutting down |
+| `spawnStrategy` | `"tmux" \| "headless"` | `"tmux"` | Strategy for spawning new pi sessions from the dashboard |
 | `tunnel.enabled` | boolean | true | Whether to create a zrok public tunnel on server startup |
 | `devBuildOnReload` | boolean | false | Whether to build client and restart server on `/reload` |
+
+Invalid `spawnStrategy` values SHALL fall back to `"tmux"`.
 
 #### Scenario: Config with all fields present
 - **WHEN** `~/.pi/dashboard/config.json` contains `{ "port": 3000, "piPort": 4000, "autoStart": false }`
@@ -38,3 +39,11 @@ The shared config module SHALL read configuration from `~/.pi/dashboard/config.j
 #### Scenario: Config without devBuildOnReload
 - **WHEN** `~/.pi/dashboard/config.json` does not include `devBuildOnReload`
 - **THEN** `loadConfig()` SHALL return `devBuildOnReload: false`
+
+#### Scenario: Invalid spawnStrategy
+- **WHEN** `~/.pi/dashboard/config.json` contains `{ "spawnStrategy": "invalid" }`
+- **THEN** `loadConfig()` SHALL return `spawnStrategy: "tmux"` (fallback to default)
+
+#### Scenario: ensureConfig creates defaults
+- **WHEN** `ensureConfig()` is called and no config file exists
+- **THEN** it SHALL create the config directory recursively and write all defaults to the file

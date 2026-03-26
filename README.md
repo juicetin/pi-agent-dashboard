@@ -1,5 +1,9 @@
 # PI Dashboard
 
+[![CI](https://github.com/BlackBeltTechnology/pi-agent-dashboard/actions/workflows/ci.yml/badge.svg)](https://github.com/BlackBeltTechnology/pi-agent-dashboard/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/@blackbelt-technology/pi-dashboard)](https://www.npmjs.com/package/@blackbelt-technology/pi-dashboard)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 A web-based dashboard for monitoring and interacting with [pi](https://github.com/badlogic/pi-mono) agent sessions from any browser, including mobile.
 
 ## Features
@@ -10,227 +14,306 @@ A web-based dashboard for monitoring and interacting with [pi](https://github.co
 - **Command autocomplete** — `/` prefix triggers command dropdown with filtering
 - **Session statistics** — Token counts, costs, model info, thinking level
 - **Mobile-friendly** — Responsive layout with swipe drawer and touch targets
-- **Session spawning** — Launch new pi sessions from the dashboard via tmux
+- **Session spawning** — Launch new pi sessions from the dashboard (headless by default, or via tmux)
 - **Extension UI forwarding** — View blocked tool calls and extension notifications
-- **30-day event retention** — Browse historical sessions with lazy-loaded content
+- **On-demand session loading** — Browse historical sessions with lazy-loaded content from pi session files
 
-## Installation
+## Architecture
 
-### From npm (published package)
+```mermaid
+graph LR
+    subgraph "Per pi session"
+        B[Bridge Extension]
+    end
 
-**pi:**
-```bash
-pi install npm:@user/pi-dashboard
+    subgraph "Dashboard Server (Node.js)"
+        PG[Pi Gateway :9999]
+        BG[Browser Gateway :8000]
+        HTTP[HTTP / Static Files]
+        MEM[(In-Memory Store)]
+        JSON[(JSON Files)]
+    end
+
+    subgraph "Browser"
+        UI[React Web Client]
+    end
+
+    B <-->|WebSocket| PG
+    UI <-->|WebSocket| BG
+    UI -->|HTTP| HTTP
+    PG --- MEM
+    PG --- JSON
+    BG --- MEM
 ```
 
-**Oh My Pi:**
+The system has three components:
+
+| Component | Location | Role |
+|-----------|----------|------|
+| **Bridge Extension** | `src/extension/` | Runs in every pi session. Forwards events, relays commands, auto-starts server. |
+| **Dashboard Server** | `src/server/` | Aggregates events in-memory, persists metadata to JSON, serves the web client. |
+| **Web Client** | `src/client/` | React + Tailwind UI with real-time WebSocket updates. |
+
+See [docs/architecture.md](docs/architecture.md) for detailed data flows, reconnection logic, and persistence model.
+
+## Prerequisites
+
+| Requirement | Why | Install |
+|-------------|-----|---------|
+| **[pi](https://github.com/badlogic/pi-mono)** or **[Oh My Pi](https://www.npmjs.com/package/@oh-my-pi/pi-coding-agent)** | The AI coding agent that the dashboard monitors | `npm i -g @mariozechner/pi-coding-agent` |
+| **Node.js ≥ 20** | Runtime for the dashboard server | [nodejs.org](https://nodejs.org/) |
+
+### Optional tools
+
+| Tool | Purpose | When needed |
+|------|---------|-------------|
+| **tmux** | Spawn new pi sessions from the browser in a tmux window | When `spawnStrategy` is `"tmux"` |
+| **[zrok](https://zrok.io/)** | Expose dashboard over the internet via tunnel | When `tunnel.enabled` is `true` (default) |
+
+## Getting Started
+
+### 1. Install the dashboard package
+
+**From npm:**
 ```bash
-omp install npm:@user/pi-dashboard
+pi install npm:@blackbelt-technology/pi-dashboard
 ```
 
-> The extension is compatible with both [pi](https://github.com/badlogic/pi-mono) and [Oh My Pi](https://www.npmjs.com/package/@oh-my-pi/pi-coding-agent). The same package works with either runtime — no configuration needed.
+**From a local clone:**
+```bash
+git clone https://github.com/nicობ/pi-agent-dashboard.git
+cd pi-agent-dashboard
+npm install
+pi install /path/to/pi-agent-dashboard
+```
+
+### 2. Start pi
+
+```bash
+pi
+```
+
+The bridge extension auto-starts the dashboard server on first launch. You'll see:
+
+```
+🌐 Dashboard started at http://localhost:8000
+```
+
+### 3. Open the dashboard
+
+Open **http://localhost:8000** in any browser. All active pi sessions appear automatically.
+
+That's it — no manual server start, no configuration needed for basic use.
+
+### Quick test (without installing)
+
+To try the extension in a single pi session without registering it:
+
+```bash
+pi -e /path/to/pi-agent-dashboard/src/extension/bridge.ts
+```
+
+## Configuration
+
+Config file: **`~/.pi/dashboard/config.json`** (auto-created with defaults on first run)
+
+```json
+{
+  "port": 8000,
+  "piPort": 9999,
+  "autoStart": true,
+  "autoShutdown": true,
+  "shutdownIdleSeconds": 300,
+  "spawnStrategy": "headless",
+  "tunnel": { "enabled": true },
+  "devBuildOnReload": false
+}
+```
+
+**Precedence:** CLI flags → environment variables → config file → built-in defaults.
+
+| CLI Flag | Env Var | Config Key | Default | Description |
+|----------|---------|------------|---------|-------------|
+| `--port` | `PI_DASHBOARD_PORT` | `port` | `8000` | HTTP + Browser WebSocket port |
+| `--pi-port` | `PI_DASHBOARD_PI_PORT` | `piPort` | `9999` | Pi extension WebSocket port |
+| `--dev` | — | — | `false` | Development mode (proxy to Vite) |
+| `--no-tunnel` | — | `tunnel.enabled` | `true` | Disable zrok tunnel |
+| — | — | `autoStart` | `true` | Bridge auto-starts server if not running |
+| — | — | `autoShutdown` | `true` | Server shuts down when idle |
+| — | — | `shutdownIdleSeconds` | `300` | Seconds idle before auto-shutdown |
+| — | — | `spawnStrategy` | `"headless"` | Session spawn mode: `"headless"` or `"tmux"` |
+| — | — | `devBuildOnReload` | `false` | Rebuild client + restart server on `/reload` |
+
+### Override the server URL
+
+By default the bridge connects to `ws://localhost:{piPort}`. To point at a remote server:
+
+```bash
+PI_DASHBOARD_URL=ws://192.168.1.100:9999 pi
+```
+
+## Installation Methods
+
+### From npm (recommended)
+
+```bash
+# pi
+pi install npm:@blackbelt-technology/pi-dashboard
+
+# Oh My Pi
+omp install npm:@blackbelt-technology/pi-dashboard
+```
+
+> The package is compatible with both [pi](https://github.com/badlogic/pi-mono) and [Oh My Pi](https://www.npmjs.com/package/@oh-my-pi/pi-coding-agent) — no configuration needed.
 
 ### Local development install
 
-For developing or testing the dashboard locally, install dependencies first then register the package with pi:
-
 ```bash
-# 1. Clone and install dependencies
-cd /path/to/pi-chainlint
+cd /path/to/pi-agent-dashboard
 npm install
 
-# 2. Install as a local pi package (globally)
-pi install /path/to/pi-chainlint
+# Global install
+pi install /path/to/pi-agent-dashboard
 
-# Or install for the current project only
-pi install -l /path/to/pi-chainlint
+# Or project-local only
+pi install -l /path/to/pi-agent-dashboard
 ```
 
-This registers the local directory as a pi package. Pi reads the `pi.extensions` field from `package.json` and loads the bridge extension (`src/extension/bridge.ts`) automatically in every pi session.
+Pi reads the `pi.extensions` field from `package.json` and loads the bridge extension automatically.
 
-#### Quick test (single session, no install)
+### Manual settings entry
 
-To try the bridge extension without installing:
-
-```bash
-pi -e /path/to/pi-chainlint/src/extension/bridge.ts
-```
-
-This loads the extension only for the current pi session.
-
-#### Manual settings entry
-
-You can also add the package path directly to your settings file:
+Add the package path directly to your settings file:
 
 **Global** (`~/.pi/agent/settings.json`):
 ```json
 {
-  "packages": [
-    "/path/to/pi-chainlint"
-  ]
+  "packages": ["/path/to/pi-agent-dashboard"]
 }
 ```
 
 **Project-local** (`.pi/settings.json`):
 ```json
 {
-  "packages": [
-    "/path/to/pi-chainlint"
-  ]
+  "packages": ["/path/to/pi-agent-dashboard"]
 }
-```
-
-#### Verifying the extension is loaded
-
-After installing, start pi and check that the bridge extension is active:
-
-```bash
-pi
-# Then use /reload to pick up changes during development
-```
-
-The bridge extension will automatically connect to the dashboard server at `ws://localhost:9999`. Set `PI_DASHBOARD_URL` to override:
-
-```bash
-PI_DASHBOARD_URL=ws://192.168.1.100:9999 pi
 ```
 
 ### Removing
 
 ```bash
-pi remove /path/to/pi-chainlint
+pi remove /path/to/pi-agent-dashboard
 ```
 
 ## Usage
 
 ### Auto-start (default)
 
-By default, the bridge extension **automatically starts the dashboard server** when pi launches if it's not already running. You'll see a notification:
+The bridge extension **automatically starts the dashboard server** when pi launches if it's not already running. No separate terminal needed.
 
-```
-🌐 Dashboard started at http://localhost:8000
-```
+To disable: set `"autoStart": false` in `~/.pi/dashboard/config.json`.
 
-Just open that URL in your browser. No separate terminal needed.
-
-To disable auto-start, set `autoStart` to `false` in `~/.pi/dashboard/config.json`.
-
-### Manual start
-
-If you prefer to manage the server yourself (or need `--dev` mode):
+### Manual server start
 
 ```bash
-# From the project directory
 npx tsx src/server/cli.ts
-
-# Or with flags
 npx tsx src/server/cli.ts --port 8000 --pi-port 9999
-
-# Dev mode (proxies to Vite dev server for HMR)
-npx tsx src/server/cli.ts --dev
+npx tsx src/server/cli.ts --dev   # proxy to Vite dev server
 ```
 
-> **Note:** Since this is a TypeScript project without a build step for the server, use `npx tsx` to run the CLI directly. After building for production, the `pi-dashboard` bin command will work directly.
-
-### Typical local dev workflow
+### Daemon mode
 
 ```bash
-# Terminal 1: Start the dashboard server in dev mode
-cd /path/to/pi-chainlint
-npx tsx src/server/cli.ts --dev
-
-# Terminal 2: Start Vite dev server (for HMR on the web client)
-cd /path/to/pi-chainlint
-npm run dev
-
-# Terminal 3: Start pi with the bridge extension (auto-start disabled since server is already running)
-pi -e /path/to/pi-chainlint/src/extension/bridge.ts
-# Or if installed as a package, just:
-pi
-
-# Open http://localhost:3000 (Vite proxies API/WS to :8000)
+pi-dashboard start      # Start as background daemon
+pi-dashboard stop       # Stop running daemon
+pi-dashboard restart    # Restart daemon
+pi-dashboard status     # Show daemon status
 ```
 
-### Configuration
+### Session spawning
 
-Config file: `~/.pi/dashboard/config.json` (auto-created with defaults on first run)
+The dashboard can spawn new pi sessions from the browser. Two strategies are available:
+
+**Headless** (default) — Runs pi as a background process with no terminal attached. Interaction happens entirely through the dashboard web UI.
+
+**tmux** — Runs pi inside a tmux session named `pi-dashboard`. Each spawned session opens as a new tmux window. This lets you attach to the terminal when needed:
+
+```bash
+# Attach to the pi-dashboard tmux session
+tmux attach -t pi-dashboard
+
+# List all windows (each is a spawned pi session)
+tmux list-windows -t pi-dashboard
+
+# Switch between windows inside tmux
+Ctrl-b n    # next window
+Ctrl-b p    # previous window
+Ctrl-b w    # interactive window picker
+```
+
+To switch strategy, set `spawnStrategy` in `~/.pi/dashboard/config.json`:
 
 ```json
 {
-  "port": 8000,
-  "piPort": 9999,
-  "dbPath": "~/.pi/dashboard/dashboard.db",
-  "retentionDays": 30,
-  "autoStart": true,
-  "devBuildOnReload": false
+  "spawnStrategy": "tmux"
 }
 ```
 
-Configuration precedence: CLI flags → environment variables → config file → defaults.
+### Auto-start flow
 
-| CLI Flag | Env Var | Default | Description |
-|----------|---------|---------|-------------|
-| `--port` | `PI_DASHBOARD_PORT` | 8000 | HTTP + Browser WebSocket |
-| `--pi-port` | `PI_DASHBOARD_PI_PORT` | 9999 | Pi extension WebSocket |
-| `--dev` | — | false | Proxy to Vite dev server |
+```mermaid
+flowchart TD
+    A[pi session starts] --> B[ensureConfig]
+    B --> C[loadConfig]
+    C --> D{TCP probe :piPort}
+    D -->|Port open| E[Connect to server]
+    D -->|Port closed| F{autoStart?}
+    F -->|false| G[Skip]
+    F -->|true| H[Spawn server detached]
+    H --> I["Notify: 🌐 Dashboard started"]
+    I --> E
+```
 
-#### Dev Build on Reload
+The server is spawned detached (`child_process.spawn` with `detached: true`, `unref()`), so it outlives the pi session. Duplicate spawn attempts from concurrent pi sessions fail harmlessly with `EADDRINUSE`.
 
-Set `"devBuildOnReload": true` in `config.json` to enable a developer workflow where `/reload` in pi automatically rebuilds the Vite client and restarts the dashboard server. This gives you a one-command full-stack refresh during development.
+### Dev build on reload
+
+Set `"devBuildOnReload": true` in `config.json` for a one-command full-stack refresh:
 
 ```
 /reload → build client → stop server → reload extension → auto-start fresh server
 ```
 
-> **Note:** This blocks pi for ~2-5s during the client build. The server shutdown affects all connected sessions — they auto-reconnect when one of them restarts the server.
-
-### As a system service
-
-```bash
-# macOS
-pi-dashboard --install-service
-
-# Linux
-pi-dashboard --install-service
-```
-
-## Architecture
-
-The dashboard consists of three components:
-
-```
-┌─────────────┐     WebSocket      ┌──────────────┐     WebSocket     ┌─────────────┐
-│   Bridge    │ ◄─────────────────► │  Dashboard   │ ◄───────────────► │  Web Client  │
-│  Extension  │    (port 9999)      │   Server     │    (port 8000)    │  (React)     │
-│  (per pi)   │                     │  (Node.js)   │                   │  (Browser)   │
-└─────────────┘                     └──────────────┘                   └─────────────┘
-                                          │
-                                    ┌─────┴─────┐
-                                    │  SQLite   │
-                                    │  Database │
-                                    └───────────┘
-```
-
-1. **Bridge Extension** (`src/extension/`) — Runs in every pi session, forwards events to the server
-2. **Dashboard Server** (`src/server/`) — Aggregates events, persists to SQLite, serves the web client
-3. **Web Client** (`src/client/`) — React UI with real-time updates
-
-See [docs/architecture.md](docs/architecture.md) for detailed documentation.
+> **Note:** Blocks pi for ~2–5s during the build. The server shutdown affects all connected sessions — they auto-reconnect when one restarts the server.
 
 ## Development
 
+### Commands
+
 ```bash
-# Install dependencies
-npm install
+npm install          # Install dependencies
+npm test             # Run all tests (vitest)
+npm run test:watch   # Watch mode
+npm run build        # Build web client (Vite)
+npm run dev          # Start Vite dev server (HMR)
+npm run lint         # Type-check (tsc --noEmit)
+npm run reload       # Reload all connected pi sessions
+npm run reload:check # Type-check + reload all pi sessions
+```
 
-# Run tests
-npm test
+### Typical local dev workflow
 
-# Start dev server (with HMR)
-pi-dashboard --dev
+```bash
+# Terminal 1: Dashboard server in dev mode
+npx tsx src/server/cli.ts --dev
 
-# Build for production
-npm run build
+# Terminal 2: Vite dev server (HMR for the web client)
+npm run dev
+
+# Terminal 3: pi with the bridge extension
+pi -e src/extension/bridge.ts   # or just `pi` if installed
+
+# Open http://localhost:3000 (Vite proxies API/WS to :8000)
 ```
 
 ### Project Structure
@@ -241,23 +324,38 @@ src/
 │   ├── protocol.ts        # Extension ↔ Server messages
 │   ├── browser-protocol.ts # Server ↔ Browser messages
 │   ├── types.ts           # Data models
+│   ├── config.ts          # Shared config loader
 │   └── rest-api.ts        # REST API types
 ├── extension/        # Bridge extension (runs in pi)
 │   ├── bridge.ts          # Main extension entry
 │   ├── connection.ts      # WebSocket with reconnection
 │   ├── event-forwarder.ts # Event mapping
 │   ├── source-detector.ts # Session source detection
-│   └── command-handler.ts # Command relay
+│   ├── command-handler.ts # Command relay
+│   ├── server-probe.ts    # TCP probe for server detection
+│   ├── server-launcher.ts # Auto-start server as detached process
+│   ├── git-info.ts        # Git branch/remote/PR detection
+│   ├── openspec-poller.ts # OpenSpec change data polling
+│   ├── session-history.ts # Session history sync
+│   ├── state-replay.ts    # Event synthesis on reconnect
+│   ├── stats-extractor.ts # Token/cost stats extraction
+│   └── dev-build.ts       # Dev build-on-reload helper
 ├── server/           # Dashboard server
-│   ├── cli.ts             # CLI entry point
+│   ├── cli.ts             # CLI entry (start/stop/restart/status)
 │   ├── server.ts          # HTTP + WebSocket server
-│   ├── db.ts              # SQLite database
-│   ├── event-store.ts     # Event persistence
-│   ├── session-manager.ts # Session registry
-│   ├── workspace-manager.ts # Workspace CRUD
-│   ├── pi-gateway.ts      # Extension WebSocket
-│   ├── browser-gateway.ts # Browser WebSocket
-│   └── process-manager.ts # tmux session spawning
+│   ├── pi-gateway.ts      # Extension WebSocket gateway
+│   ├── browser-gateway.ts # Browser WebSocket gateway
+│   ├── memory-event-store.ts    # In-memory event buffer (LRU)
+│   ├── memory-session-manager.ts # In-memory session registry
+│   ├── state-store.ts   # User prefs: hidden sessions, pinned dirs, session order
+│   ├── state-store.ts     # JSON-backed user preferences
+│   ├── session-persistence.ts # Session metadata persistence
+│   ├── session-order-manager.ts # Per-cwd session ordering
+│   ├── process-manager.ts # tmux/headless session spawning
+│   ├── editor-registry.ts # Available editor detection
+│   ├── tunnel.ts          # Zrok tunnel integration
+│   ├── server-pid.ts      # PID file for daemon management
+│   └── json-store.ts      # Atomic JSON file helpers
 └── client/           # React web client
     ├── App.tsx
     ├── hooks/             # WebSocket hook
@@ -278,6 +376,36 @@ pi.events.emit("dashboard:ui", {
 ```
 
 Supported methods: `confirm`, `select`, `input`, `notify`.
+
+## CI/CD
+
+### Continuous Integration
+
+Every push to `main` and every pull request triggers the CI workflow (`.github/workflows/ci.yml`):
+
+1. `npm ci` — install dependencies
+2. `npm run lint` — type check
+3. `npm test` — run tests
+4. `npm run build` — build web client
+
+### Releasing to npm
+
+The publish workflow (`.github/workflows/publish.yml`) triggers on `v*` tags:
+
+```bash
+npm version patch   # or minor / major
+git push --follow-tags
+```
+
+This runs CI checks, then publishes to npm with `--provenance` for supply chain transparency.
+
+### npm Token Setup
+
+The publish workflow requires an `NPM_TOKEN` secret in the GitHub repository:
+
+1. Generate a token at [npmjs.com](https://www.npmjs.com/) → Access Tokens → Generate New Token (Granular Access Token)
+2. Grant publish access to `@blackbelt-technology` packages
+3. Add it as a repository secret: GitHub repo → Settings → Secrets and variables → Actions → New repository secret → Name: `NPM_TOKEN`
 
 ## License
 

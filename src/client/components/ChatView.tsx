@@ -7,6 +7,8 @@ import { MarkdownContent } from "./MarkdownContent.js";
 import { CopyButton } from "./CopyButton.js";
 import { ToolCallStep } from "./ToolCallStep.js";
 import { ThinkingBlock } from "./ThinkingBlock.js";
+import { BashOutputCard } from "./BashOutputCard.js";
+import { CommandFeedbackCard } from "./CommandFeedbackCard.js";
 import { formatMessageTime } from "../lib/format.js";
 
 interface Props {
@@ -101,6 +103,32 @@ export function ChatView({ state, toolContext, onCancelPending }: Props) {
               status={msg.toolStatus ?? "running"}
               result={msg.result}
               context={toolContext}
+            />
+          );
+        }
+
+        if (msg.role === "bashOutput") {
+          const args = msg.args as any;
+          return (
+            <BashOutputCard
+              key={msg.id}
+              command={args?.command ?? ""}
+              output={msg.content}
+              exitCode={args?.exitCode ?? 0}
+              excludeFromContext={args?.excludeFromContext ?? false}
+              timestamp={msg.timestamp}
+            />
+          );
+        }
+
+        if (msg.role === "commandFeedback") {
+          const args = msg.args as any;
+          return (
+            <CommandFeedbackCard
+              key={msg.id}
+              command={args?.command ?? ""}
+              status={args?.status ?? "started"}
+              message={msg.content || undefined}
             />
           );
         }

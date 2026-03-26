@@ -30,7 +30,7 @@ const DEFAULTS: DashboardConfig = {
   autoStart: true,
   autoShutdown: true,
   shutdownIdleSeconds: 300,
-  spawnStrategy: "tmux",
+  spawnStrategy: "headless",
   tunnel: { enabled: true },
   devBuildOnReload: false,
 };

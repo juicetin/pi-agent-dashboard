@@ -117,16 +117,19 @@ body {
 .markdown-content strong { font-weight: 700; }
 .markdown-content em { font-style: italic; }
 
-/* Collapsible group animation */
+/* Collapsible group animation — grid row trick for auto-height transitions */
 .group-collapse {
-  overflow: hidden;
-  transition: max-height 250ms ease-in-out, opacity 250ms ease-in-out;
+  display: grid;
+  transition: grid-template-rows 250ms ease-in-out, opacity 250ms ease-in-out;
 }
 .group-collapse.collapsed {
-  max-height: 0 !important;
+  grid-template-rows: 0fr;
   opacity: 0;
 }
 .group-collapse.expanded {
-  max-height: 1000px;
+  grid-template-rows: 1fr;
   opacity: 1;
+}
+.group-collapse > * {
+  overflow: hidden;
 }

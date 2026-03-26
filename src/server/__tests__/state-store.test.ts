@@ -107,4 +107,89 @@ describe("state-store", () => {
     // File should still have same content
     store.dispose();
   });
+
+  describe("pinned directories", () => {
+    it("starts with no pinned directories", () => {
+      const store = createStateStore(filePath);
+      expect(store.getPinnedDirectories()).toEqual([]);
+      store.dispose();
+    });
+
+    it("pins a directory", () => {
+      const store = createStateStore(filePath);
+      store.pinDirectory("/home/user/project-a");
+      expect(store.getPinnedDirectories()).toEqual(["/home/user/project-a"]);
+      store.dispose();
+    });
+
+    it("does not duplicate when pinning already-pinned directory", () => {
+      const store = createStateStore(filePath);
+      store.pinDirectory("/home/user/project-a");
+      store.pinDirectory("/home/user/project-a");
+      expect(store.getPinnedDirectories()).toEqual(["/home/user/project-a"]);
+      store.dispose();
+    });
+
+    it("unpins a directory", () => {
+      const store = createStateStore(filePath);
+      store.pinDirectory("/a");
+      store.pinDirectory("/b");
+      store.unpinDirectory("/a");
+      expect(store.getPinnedDirectories()).toEqual(["/b"]);
+      store.dispose();
+    });
+
+    it("no-op when unpinning non-pinned directory", () => {
+      const store = createStateStore(filePath);
+      store.pinDirectory("/a");
+      store.unpinDirectory("/nonexistent");
+      expect(store.getPinnedDirectories()).toEqual(["/a"]);
+      store.dispose();
+    });
+
+    it("reorders pinned directories", () => {
+      const store = createStateStore(filePath);
+      store.pinDirectory("/a");
+      store.pinDirectory("/b");
+      store.pinDirectory("/c");
+      store.reorderPinnedDirs(["/c", "/a", "/b"]);
+      expect(store.getPinnedDirectories()).toEqual(["/c", "/a", "/b"]);
+      store.dispose();
+    });
+
+    it("persists pinned directories after flush", () => {
+      const store = createStateStore(filePath);
+      store.pinDirectory("/a");
+      store.pinDirectory("/b");
+      store.flush();
+
+      const store2 = createStateStore(filePath);
+      expect(store2.getPinnedDirectories()).toEqual(["/a", "/b"]);
+      store.dispose();
+      store2.dispose();
+    });
+
+    it("preserves order across persistence", () => {
+      const store = createStateStore(filePath);
+      store.pinDirectory("/a");
+      store.pinDirectory("/b");
+      store.pinDirectory("/c");
+      store.reorderPinnedDirs(["/c", "/a", "/b"]);
+      store.flush();
+
+      const store2 = createStateStore(filePath);
+      expect(store2.getPinnedDirectories()).toEqual(["/c", "/a", "/b"]);
+      store.dispose();
+      store2.dispose();
+    });
+
+    it("returns a copy from getPinnedDirectories", () => {
+      const store = createStateStore(filePath);
+      store.pinDirectory("/a");
+      const dirs = store.getPinnedDirectories();
+      dirs.push("/mutated");
+      expect(store.getPinnedDirectories()).toEqual(["/a"]);
+      store.dispose();
+    });
+  });
 });

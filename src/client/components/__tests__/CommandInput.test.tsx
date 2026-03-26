@@ -74,10 +74,11 @@ describe("CommandInput autocomplete", () => {
     expect(getDropdownItems(container)).toContain("/deploy");
   });
 
-  it("should hide dropdown when commands prop is empty", () => {
+  it("should show only builtin commands when commands prop is empty", () => {
     const { container, textarea } = renderInput({ commands: [] });
     fireEvent.change(textarea, { target: { value: "/" } });
-    expect(getDropdownItems(container)).toHaveLength(0);
+    // Built-in commands like /compact are always available
+    expect(getDropdownItems(container)).toContain("/compact");
   });
 
   it("should select command with Tab", () => {

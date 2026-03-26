@@ -9,10 +9,13 @@ import { createMemoryEventStore, type EventStore } from "./memory-event-store.js
 import { createMemorySessionManager, type SessionManager } from "./memory-session-manager.js";
 import { createPiGateway, type PiGateway } from "./pi-gateway.js";
 import { createBrowserGateway, type BrowserGateway } from "./browser-gateway.js";
-import { createWorkspaceStore, type WorkspaceStore } from "./workspace-store.js";
 import { createStateStore, type StateStore } from "./state-store.js";
+import { createSessionPersistence, type SessionPersistence } from "./session-persistence.js";
+import { createSessionOrderManager, type SessionOrderManager } from "./session-order-manager.js";
+import { createPendingForkRegistry, type PendingForkRegistry } from "./pending-fork-registry.js";
 
 import { createPendingLoadManager, type PendingLoadManager } from "./pending-load-manager.js";
+import { writePid, removePid } from "./server-pid.js";
 import type { ApiResponse } from "../shared/types.js";
 import { extractSessionUpdates } from "./event-status-extraction.js";
 import { createTunnel, deleteTunnel } from "./tunnel.js";
@@ -39,8 +42,21 @@ export interface DashboardServer {
 
 export async function createServer(config: ServerConfig): Promise<DashboardServer> {
   const stateStore = createStateStore();
-  const workspaceStore = createWorkspaceStore();
-  const sessionManager = createMemorySessionManager(stateStore, workspaceStore);
+  const sessionManager = createMemorySessionManager(stateStore);
+  const sessionPersistence = createSessionPersistence();
+  const sessionOrderManager = createSessionOrderManager(stateStore);
+  const pendingForkRegistry = createPendingForkRegistry();
+
+  // Restore persisted sessions from previous server run
+  for (const session of sessionPersistence.load()) {
+    sessionManager.restore({ ...session, dataUnavailable: true });
+  }
+
+  // Save sessions to disk on any change
+  sessionManager.onChange = () => {
+    sessionPersistence.save(sessionManager.listAll());
+  };
+
   const piGateway = createPiGateway(sessionManager);
 
   // Create event store with pinning callback
@@ -57,7 +73,7 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
     browserGateway.broadcastSessionUpdated(sessionId, { dataUnavailable: true });
   });
 
-  const browserGateway = createBrowserGateway(sessionManager, eventStore, piGateway, pendingLoadManager);
+  const browserGateway = createBrowserGateway(sessionManager, eventStore, piGateway, pendingLoadManager, pendingForkRegistry, sessionOrderManager, stateStore);
 
   // Handle bridge disconnect — cancel pending loads
   piGateway.onDisconnect = (bridgeSessionId) => {
@@ -112,9 +128,32 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
       sessionManager.update(sessionId, { hidden: false, dataUnavailable: false });
       // Link headless PID to session ID (if spawned from dashboard)
       browserGateway.headlessPidRegistry.linkSession(sessionId, msg.cwd);
-      const session = sessionManager.get(sessionId);
-      if (session) {
-        browserGateway.broadcastSessionAdded(session);
+
+      // Insert into session order — check for pending fork to place after parent
+      const forkParent = pendingForkRegistry.consumeFork(msg.cwd);
+      sessionOrderManager.insert(msg.cwd, sessionId, forkParent ?? undefined);
+
+      // Carry over attachedProposal only for forked/resumed sessions (not brand new spawns)
+      if (forkParent) {
+        const session = sessionManager.get(sessionId);
+        if (session && !session.attachedProposal) {
+          const donor = sessionManager.listAll().find(
+            (s) => s.id !== sessionId && s.cwd === msg.cwd && s.status === "ended" && s.attachedProposal,
+          );
+          if (donor?.attachedProposal) {
+            sessionManager.update(sessionId, { attachedProposal: donor.attachedProposal });
+          }
+        }
+      }
+
+      // Broadcast order update
+      const validIds = new Set(sessionManager.listAll().filter((s) => s.cwd === msg.cwd).map((s) => s.id));
+      const order = sessionOrderManager.getOrder(msg.cwd, validIds);
+      browserGateway.broadcastToAll({ type: "sessions_reordered", cwd: msg.cwd, sessionIds: order });
+
+      const updatedSession = sessionManager.get(sessionId);
+      if (updatedSession) {
+        browserGateway.broadcastSessionAdded(updatedSession);
       }
     }
     if (msg.type === "session_history_sync") {
@@ -163,14 +202,35 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
       });
     }
     if (msg.type === "openspec_activity_update") {
-      const activityUpdates: Partial<import("../shared/types.js").DashboardSession> = {
-        openspecPhase: msg.phase ?? undefined,
-        openspecChange: msg.changeName ?? undefined,
-      };
+      const activityUpdates: Partial<import("../shared/types.js").DashboardSession> = {};
+      if (msg.phase !== undefined) activityUpdates.openspecPhase = msg.phase;
+      if (msg.changeName !== undefined) activityUpdates.openspecChange = msg.changeName;
+
+      // Apply updates first so we can check accumulated state
       sessionManager.update(sessionId, activityUpdates);
+
+      // Auto-attach: when both phase and changeName are accumulated and no proposal is attached
+      const session = sessionManager.get(sessionId);
+      const attachUpdates: Partial<import("../shared/types.js").DashboardSession> = {};
+      if (session?.openspecPhase && session?.openspecChange && !session.attachedProposal) {
+        attachUpdates.attachedProposal = session.openspecChange;
+        // Auto-name if session name is empty
+        if (!session.name?.trim()) {
+          attachUpdates.name = session.openspecChange;
+          piGateway.sendToSession(sessionId, {
+            type: "rename_session",
+            sessionId,
+            name: session.openspecChange,
+          });
+        }
+        sessionManager.update(sessionId, attachUpdates);
+      }
+
       browserGateway.broadcastSessionUpdated(sessionId, {
         openspecPhase: msg.phase ?? null,
         openspecChange: msg.changeName ?? null,
+        ...(attachUpdates.attachedProposal !== undefined ? { attachedProposal: attachUpdates.attachedProposal } : {}),
+        ...(attachUpdates.name !== undefined ? { name: attachUpdates.name } : {}),
       });
     }
     if (msg.type === "models_list") {
@@ -347,34 +407,8 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
     }
   );
 
-  fastify.get("/api/workspaces", async () => {
-    return { success: true, data: workspaceStore.list() } satisfies ApiResponse;
-  });
-
-  fastify.post<{ Body: { path: string; name?: string } }>("/api/workspaces", async (request) => {
-    try {
-      const ws = workspaceStore.create(request.body);
-      return { success: true, data: ws } satisfies ApiResponse;
-    } catch (err: any) {
-      return { success: false, error: err.message } satisfies ApiResponse;
-    }
-  });
-
-  fastify.put<{ Params: { id: string }; Body: { name?: string; sortOrder?: number } }>(
-    "/api/workspaces/:id",
-    async (request) => {
-      try {
-        const ws = workspaceStore.update(request.params.id, request.body);
-        return { success: true, data: ws } satisfies ApiResponse;
-      } catch (err: any) {
-        return { success: false, error: err.message } satisfies ApiResponse;
-      }
-    }
-  );
-
-  fastify.delete<{ Params: { id: string } }>("/api/workspaces/:id", async (request) => {
-    workspaceStore.delete(request.params.id);
-    return { success: true } satisfies ApiResponse;
+  fastify.get("/api/pinned-dirs", async () => {
+    return { success: true, data: stateStore.getPinnedDirectories() } satisfies ApiResponse;
   });
 
   // Editor detection endpoint (localhost-only)
@@ -427,6 +461,16 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
     }
   );
 
+  // Health endpoint — liveness check for CLI status and probing
+  const serverStartTime = Date.now();
+  fastify.get("/api/health", async () => {
+    return {
+      ok: true,
+      pid: process.pid,
+      uptime: Math.floor((Date.now() - serverStartTime) / 1000),
+    };
+  });
+
   // Shutdown endpoint (localhost-only) — used by devBuildOnReload
   // Skips server.stop() to avoid killing headless/spawned sessions.
   // Just exits the process; the OS cleans up sockets.
@@ -476,6 +520,7 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
       });
 
       await fastify.listen({ port: config.port, host: "0.0.0.0" });
+      writePid(process.pid);
       console.log(`Dashboard server running at http://localhost:${config.port}`);
       console.log(`Pi gateway listening on port ${config.piPort}`);
 
@@ -490,9 +535,13 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
     },
 
     async stop() {
+      removePid();
       cancelIdleTimer();
       browserGateway.shutdownHeadlessProcesses();
       pendingLoadManager.dispose();
+      sessionPersistence.flush();
+      sessionPersistence.dispose();
+      pendingForkRegistry.dispose();
       stateStore.flush();
       stateStore.dispose();
 

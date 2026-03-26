@@ -7,7 +7,6 @@ import type {
   CommandInfo,
   ImageContent,
   FileEntry,
-  Workspace,
   OpenSpecData,
   ModelInfo,
   PiSessionInfo,
@@ -57,11 +56,6 @@ export interface BrowserExtensionUiEventMessage {
   uiEvent: Record<string, unknown>;
 }
 
-export interface WorkspaceUpdatedMessage {
-  type: "workspace_updated";
-  workspaces: Workspace[];
-}
-
 export interface BrowserFilesListMessage {
   type: "files_list";
   sessionId: string;
@@ -102,6 +96,17 @@ export interface SpawnResultBrowserMessage {
   message: string;
 }
 
+export interface SessionsReorderedMessage {
+  type: "sessions_reordered";
+  cwd: string;
+  sessionIds: string[];
+}
+
+export interface PinnedDirsUpdatedMessage {
+  type: "pinned_dirs_updated";
+  paths: string[];
+}
+
 export type ServerToBrowserMessage =
   | SessionAddedMessage
   | SessionUpdatedMessage
@@ -110,13 +115,14 @@ export type ServerToBrowserMessage =
   | EventReplayMessage
   | BrowserCommandsListMessage
   | BrowserExtensionUiEventMessage
-  | WorkspaceUpdatedMessage
   | BrowserFilesListMessage
   | BrowserOpenSpecUpdateMessage
   | BrowserModelsListMessage
   | SessionsListBrowserMessage
   | ResumeResultBrowserMessage
-  | SpawnResultBrowserMessage;
+  | SpawnResultBrowserMessage
+  | SessionsReorderedMessage
+  | PinnedDirsUpdatedMessage;
 
 // ── Browser → Server ────────────────────────────────────────────────
 
@@ -213,6 +219,38 @@ export interface SpawnSessionBrowserMessage {
   cwd: string;
 }
 
+export interface AttachProposalBrowserMessage {
+  type: "attach_proposal";
+  sessionId: string;
+  changeName: string;
+}
+
+export interface DetachProposalBrowserMessage {
+  type: "detach_proposal";
+  sessionId: string;
+}
+
+export interface ReorderSessionsBrowserMessage {
+  type: "reorder_sessions";
+  cwd: string;
+  sessionIds: string[];
+}
+
+export interface PinDirectoryMessage {
+  type: "pin_directory";
+  path: string;
+}
+
+export interface UnpinDirectoryMessage {
+  type: "unpin_directory";
+  path: string;
+}
+
+export interface ReorderPinnedDirsMessage {
+  type: "reorder_pinned_dirs";
+  paths: string[];
+}
+
 export type BrowserToServerMessage =
   | SubscribeMessage
   | UnsubscribeMessage
@@ -230,4 +268,10 @@ export type BrowserToServerMessage =
   | ResumeSessionBrowserMessage
   | HideSessionBrowserMessage
   | UnhideSessionBrowserMessage
-  | SpawnSessionBrowserMessage;
+  | SpawnSessionBrowserMessage
+  | AttachProposalBrowserMessage
+  | DetachProposalBrowserMessage
+  | ReorderSessionsBrowserMessage
+  | PinDirectoryMessage
+  | UnpinDirectoryMessage
+  | ReorderPinnedDirsMessage;

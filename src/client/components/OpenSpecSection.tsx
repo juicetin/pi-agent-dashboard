@@ -7,15 +7,19 @@ import { ConfirmDialog } from "./ConfirmDialog.js";
 
 interface Props {
   data: OpenSpecData;
+  attachedProposal?: string | null;
   onSendPrompt?: (text: string) => void;
   onRefresh?: () => void;
+  onAttach?: (changeName: string) => void;
+  onDetach?: () => void;
 }
 
-function ActionButton({ label, onClick }: { label: string; onClick: () => void }) {
+function ActionButton({ label, onClick, testId }: { label: string; onClick: () => void; testId?: string }) {
   return (
     <button
       onClick={(e) => { e.stopPropagation(); onClick(); }}
       className="text-[10px] px-1.5 py-0.5 rounded border border-[var(--border-secondary)] text-[var(--text-secondary)] hover:text-blue-400 hover:border-blue-500/50"
+      data-testid={testId}
     >
       {label}
     </button>
@@ -63,9 +67,13 @@ function allArtifactsDone(artifacts: OpenSpecChange["artifacts"]): boolean {
 function ChangeCard({
   change,
   onSendPrompt,
+  showAttach,
+  onAttach,
 }: {
   change: OpenSpecChange;
   onSendPrompt?: (text: string) => void;
+  showAttach?: boolean;
+  onAttach?: (changeName: string) => void;
 }) {
   const [exploreOpen, setExploreOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -89,6 +97,9 @@ function ChangeCard({
         </div>
         {/* Line 2: action buttons */}
         <div className="flex items-center gap-1 flex-wrap">
+          {showAttach && onAttach && (
+            <ActionButton label="Attach" onClick={() => onAttach(change.name)} testId="attach-btn" />
+          )}
           <ActionButton label="Explore" onClick={() => setExploreOpen(true)} />
           {!isComplete && (
             <>
@@ -129,16 +140,21 @@ function ChangeCard({
   );
 }
 
-export function OpenSpecSection({ data, onSendPrompt, onRefresh }: Props) {
+export function OpenSpecSection({ data, attachedProposal, onSendPrompt, onRefresh, onAttach, onDetach }: Props) {
   const [expanded, setExpanded] = useState(false);
+  const [bulkArchiveConfirm, setBulkArchiveConfirm] = useState(false);
 
   if (!data.initialized) return null;
 
-  // Flat list: in-progress first, then completed
-  const sorted = [
-    ...data.changes.filter((c) => c.status !== "complete"),
-    ...data.changes.filter((c) => c.status === "complete"),
-  ];
+  const isAttached = !!attachedProposal;
+
+  // When attached, show only the matching change; otherwise show all (in-progress first)
+  const displayChanges = isAttached
+    ? data.changes.filter((c) => c.name === attachedProposal)
+    : [
+        ...data.changes.filter((c) => c.status !== "complete"),
+        ...data.changes.filter((c) => c.status === "complete"),
+      ];
 
   return (
     <div className="space-y-2" data-testid="openspec-section">
@@ -150,26 +166,65 @@ export function OpenSpecSection({ data, onSendPrompt, onRefresh }: Props) {
           className="flex items-center gap-1 text-[10px] font-semibold text-[var(--text-tertiary)] uppercase hover:text-[var(--text-secondary)]"
         >
           <span>{expanded ? "▼" : "▶"}</span>
-          <span>OpenSpec</span>
+          <span>OpenSpec{isAttached ? `: ${attachedProposal}` : ""}</span>
         </button>
-        {onRefresh && (
-          <button
-            onClick={(e) => { e.stopPropagation(); onRefresh(); }}
-            className="text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
-            title="Refresh"
-            data-testid="openspec-refresh"
-          >
-            <Icon path={mdiRefresh} size={0.5} />
-          </button>
-        )}
+        <div className="flex items-center gap-1">
+          {isAttached && onDetach && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onDetach(); }}
+              className="text-[10px] px-1.5 py-0.5 rounded border border-[var(--border-secondary)] text-[var(--text-secondary)] hover:text-red-400 hover:border-red-500/50"
+              data-testid="detach-btn"
+            >
+              Detach
+            </button>
+          )}
+          {!isAttached && onSendPrompt && (
+            <button
+              onClick={(e) => { e.stopPropagation(); setBulkArchiveConfirm(true); }}
+              className="text-[10px] px-1.5 py-0.5 rounded border border-[var(--border-secondary)] text-[var(--text-secondary)] hover:text-orange-400 hover:border-orange-500/50"
+              data-testid="bulk-archive-btn"
+            >
+              Bulk Archive
+            </button>
+          )}
+          {onRefresh && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onRefresh(); }}
+              className="text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+              title="Refresh"
+              data-testid="openspec-refresh"
+            >
+              <Icon path={mdiRefresh} size={0.5} />
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Expanded content */}
       {expanded && (
         <>
-          {sorted.map((c) => (
-            <ChangeCard key={c.name} change={c} onSendPrompt={onSendPrompt} />
-          ))}
+          {displayChanges.length > 0 ? (
+            displayChanges.map((c) => (
+              <ChangeCard
+                key={c.name}
+                change={c}
+                onSendPrompt={onSendPrompt}
+                showAttach={!isAttached}
+                onAttach={onAttach}
+              />
+            ))
+          ) : isAttached && attachedProposal ? (
+            <ChangeCard
+              change={{
+                name: attachedProposal,
+                status: "in-progress",
+                artifacts: [],
+                totalTasks: 0,
+                completedTasks: 0,
+              }}
+              onSendPrompt={onSendPrompt}
+            />
+          ) : null}
 
           <button
             onClick={(e) => { e.stopPropagation(); onSendPrompt?.("/opsx:new"); }}
@@ -180,6 +235,18 @@ export function OpenSpecSection({ data, onSendPrompt, onRefresh }: Props) {
             New Change
           </button>
         </>
+      )}
+
+      {bulkArchiveConfirm && (
+        <ConfirmDialog
+          message="Bulk archive all completed changes?"
+          confirmLabel="Bulk Archive"
+          onConfirm={() => {
+            onSendPrompt?.("/opsx:bulk-archive");
+            setBulkArchiveConfirm(false);
+          }}
+          onCancel={() => setBulkArchiveConfirm(false)}
+        />
       )}
     </div>
   );

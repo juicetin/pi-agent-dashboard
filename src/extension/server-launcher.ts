@@ -1,5 +1,7 @@
 /**
  * Server launcher — spawns the dashboard server as a detached process.
+ * The spawned server runs in foreground mode (no subcommand) and writes
+ * its own PID file at ~/.pi/dashboard/server.pid.
  */
 import { spawn } from "node:child_process";
 import path from "node:path";
@@ -40,8 +42,10 @@ export async function launchServer(config: DashboardConfig): Promise<LaunchResul
   const args = buildSpawnArgs(config);
 
   try {
-    // Use tsx to run TypeScript directly, fall back to node
-    const child = spawn("npx", ["tsx", cliPath, ...args], {
+    // Spawn server in foreground mode using node --import tsx.
+    // The server writes its own PID file on startup, so
+    // `pi-dashboard status` can detect it.
+    const child = spawn(process.execPath, ["--import", "tsx", cliPath, ...args], {
       detached: true,
       stdio: "ignore",
       env: { ...process.env },

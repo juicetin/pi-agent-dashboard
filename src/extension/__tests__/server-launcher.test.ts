@@ -20,7 +20,9 @@ describe("server-launcher", () => {
       autoStart: true,
       autoShutdown: true,
       shutdownIdleSeconds: 300,
+      spawnStrategy: "tmux",
       tunnel: { enabled: true },
+      devBuildOnReload: false,
     });
 
     expect(args).toContain("--port");

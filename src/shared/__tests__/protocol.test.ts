@@ -8,7 +8,6 @@ import type {
   BrowserToServerMessage,
 } from "../browser-protocol.js";
 import type {
-  Workspace,
   DashboardSession,
   DashboardEvent,
   SessionSource,
@@ -126,7 +125,6 @@ describe("Protocol message serialization round-trip", () => {
           status: "active",
           model: "claude-sonnet-4-20250514",
           thinkingLevel: "medium",
-          workspaceId: "w1",
           startedAt: Date.now(),
         },
       },
@@ -164,10 +162,6 @@ describe("Protocol message serialization round-trip", () => {
         type: "extension_ui_event",
         sessionId: "s1",
         uiEvent: { method: "notify", message: "done", level: "info" },
-      },
-      {
-        type: "workspace_updated",
-        workspaces: [],
       },
     ];
 

@@ -155,9 +155,32 @@ describe("detectOpenSpecActivity", () => {
     });
   });
 
+  describe("change name detection from file writes", () => {
+    it("detects change name from openspec change file write", () => {
+      const result = detectOpenSpecActivity("Write", {
+        path: "openspec/changes/session-sync/proposal.md",
+      });
+      expect(result).toEqual({ changeName: "session-sync" });
+    });
+
+    it("detects change name from absolute path write", () => {
+      const result = detectOpenSpecActivity("Write", {
+        path: "/Users/dev/project/openspec/changes/my-feature/spec.md",
+      });
+      expect(result).toEqual({ changeName: "my-feature" });
+    });
+
+    it("returns null for non-openspec file writes", () => {
+      const result = detectOpenSpecActivity("Write", {
+        path: "src/server/server.ts",
+      });
+      expect(result).toBeNull();
+    });
+  });
+
   describe("edge cases", () => {
     it("returns null for unknown tool names", () => {
-      const result = detectOpenSpecActivity("Write", { path: "foo.ts" });
+      const result = detectOpenSpecActivity("Unknown", { path: "foo.ts" });
       expect(result).toBeNull();
     });
 

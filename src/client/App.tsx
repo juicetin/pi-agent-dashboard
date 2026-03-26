@@ -36,7 +36,27 @@ export default function App() {
   const [openspecMap, setOpenspecMap] = useState<Map<string, OpenSpecData>>(new Map());
   const [modelsMap, setModelsMap] = useState<Map<string, ModelInfo[]>>(new Map());
   const [spawnResult, setSpawnResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [spawningCwds, setSpawningCwds] = useState<Set<string>>(new Set());
+  const spawningCwdsRef = useRef<Set<string>>(spawningCwds);
+  spawningCwdsRef.current = spawningCwds;
+  const spawnTimeoutsRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const [sessionOrderMap, setSessionOrderMap] = useState<Map<string, string[]>>(new Map());
+  const [pinnedDirectories, setPinnedDirectories] = useState<string[]>([]);
   const subscribedRef = useRef(new Set<string>());
+
+  const clearSpawningCwd = useCallback((cwd: string) => {
+    setSpawningCwds((prev) => {
+      if (!prev.has(cwd)) return prev;
+      const next = new Set(prev);
+      next.delete(cwd);
+      return next;
+    });
+    const timer = spawnTimeoutsRef.current.get(cwd);
+    if (timer) {
+      clearTimeout(timer);
+      spawnTimeoutsRef.current.delete(cwd);
+    }
+  }, []);
 
   const handleMessage = useCallback((msg: ServerToBrowserMessage) => {
     switch (msg.type) {
@@ -46,6 +66,11 @@ export default function App() {
           next.set(msg.session.id, msg.session);
           return next;
         });
+        // Clear placeholder and auto-select if this was a spawned session
+        if (spawningCwdsRef.current.has(msg.session.cwd)) {
+          clearSpawningCwd(msg.session.cwd);
+          navigate(`/session/${msg.session.id}`);
+        }
         // Auto-subscribe to new sessions
         if (!subscribedRef.current.has(msg.session.id)) {
           subscribedRef.current.add(msg.session.id);
@@ -134,14 +159,29 @@ export default function App() {
 
       case "spawn_result":
         setSpawnResult({ success: msg.success, message: msg.message });
+        if (!msg.success) {
+          clearSpawningCwd(msg.cwd);
+        }
         break;
 
       case "sessions_list":
         // Sessions discovered from pi listing — add to session map if not already present
         // The server already creates SQLite records; the browser gets them via session_added
         break;
+
+      case "sessions_reordered":
+        setSessionOrderMap((prev) => {
+          const next = new Map(prev);
+          next.set(msg.cwd, msg.sessionIds);
+          return next;
+        });
+        break;
+
+      case "pinned_dirs_updated":
+        setPinnedDirectories(msg.paths);
+        break;
     }
-  }, [send]);
+  }, [send, clearSpawningCwd, navigate]);
 
   useEffect(() => {
     return onMessage(handleMessage);
@@ -152,6 +192,7 @@ export default function App() {
   useEffect(() => {
     if (status === "connected" && prevStatusRef.current !== "connected") {
       subscribedRef.current.clear();
+      setSessionOrderMap(new Map());
     }
     prevStatusRef.current = status;
   }, [status]);
@@ -226,6 +267,20 @@ export default function App() {
     [send],
   );
 
+  const handleAttachProposal = useCallback(
+    (sessionId: string, changeName: string) => {
+      send({ type: "attach_proposal", sessionId, changeName });
+    },
+    [send],
+  );
+
+  const handleDetachProposal = useCallback(
+    (sessionId: string) => {
+      send({ type: "detach_proposal", sessionId });
+    },
+    [send],
+  );
+
   const handleListFiles = useCallback(
     (query: string) => {
       if (selectedId) {
@@ -295,9 +350,20 @@ export default function App() {
 
   const handleSpawnSession = useCallback(
     (cwd: string) => {
+      setSpawningCwds((prev) => {
+        const next = new Set(prev);
+        next.add(cwd);
+        return next;
+      });
+      // Safety timeout: auto-clear after 30s
+      const timer = setTimeout(() => {
+        spawnTimeoutsRef.current.delete(cwd);
+        clearSpawningCwd(cwd);
+      }, 30_000);
+      spawnTimeoutsRef.current.set(cwd, timer);
       send({ type: "spawn_session", cwd } as any);
     },
-    [send],
+    [send, clearSpawningCwd],
   );
 
   const handleHideSession = useCallback(
@@ -339,16 +405,41 @@ export default function App() {
       onSelect={handleSelect}
       contextUsageMap={contextUsageMap}
       openspecMap={openspecMap}
+      sessionOrderMap={sessionOrderMap}
+      onReorderSessions={(cwd, sessionIds) => {
+        setSessionOrderMap((prev) => {
+          const next = new Map(prev);
+          next.set(cwd, sessionIds);
+          return next;
+        });
+        send({ type: "reorder_sessions", cwd, sessionIds } as any);
+      }}
       onSendPrompt={handleSendPromptToSession}
       onOpenSpecRefresh={handleOpenSpecRefresh}
+      onAttachProposal={handleAttachProposal}
+      onDetachProposal={handleDetachProposal}
       onRename={handleRenameSession}
       onShutdown={handleShutdownSession}
       onResume={handleResumeSession}
       onHideSession={handleHideSession}
       onUnhideSession={handleUnhideSession}
       onSpawnSession={handleSpawnSession}
+      spawningCwds={spawningCwds}
       spawnResult={spawnResult}
       onSpawnResultSeen={() => setSpawnResult(null)}
+      pinnedDirectories={pinnedDirectories}
+      onPinDirectory={(dirPath) => {
+        setPinnedDirectories((prev) => prev.includes(dirPath) ? prev : [...prev, dirPath]);
+        send({ type: "pin_directory", path: dirPath } as any);
+      }}
+      onUnpinDirectory={(dirPath) => {
+        setPinnedDirectories((prev) => prev.filter((p) => p !== dirPath));
+        send({ type: "unpin_directory", path: dirPath } as any);
+      }}
+      onReorderPinnedDirs={(paths) => {
+        setPinnedDirectories(paths);
+        send({ type: "reorder_pinned_dirs", paths } as any);
+      }}
     />
   );
 

@@ -56,7 +56,11 @@ describe("Headless shutdown fallback", () => {
     bridge.send(JSON.stringify({
       type: "session_register", sessionId: "headless-1", cwd: "/test/cwd", source: "tui",
     }));
-    await delay(150);
+    // Wait for session_register to be processed (may need longer under load)
+    for (let i = 0; i < 20; i++) {
+      if (registry.getPid("headless-1") !== undefined) break;
+      await delay(50);
+    }
 
     // Verify the session got linked
     expect(registry.getPid("headless-1")).toBe(pid);

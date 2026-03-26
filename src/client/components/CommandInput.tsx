@@ -1,7 +1,16 @@
-import React, { useState, useCallback, useRef, useEffect, type ReactNode } from "react";
+import React, { useState, useCallback, useRef, useEffect, useMemo, type ReactNode } from "react";
 import Icon from "@mdi/react";
-import { mdiFlash, mdiClipboardText, mdiWrench, mdiFolder, mdiFile, mdiPlay, mdiStop } from "@mdi/js";
+import { mdiFlash, mdiClipboardText, mdiWrench, mdiFolder, mdiFile, mdiPlay, mdiStop, mdiConsole } from "@mdi/js";
 import type { CommandInfo, ImageContent, FileEntry } from "../../shared/types.js";
+
+/** Built-in pi commands available from the dashboard */
+const BUILTIN_COMMANDS: CommandInfo[] = [
+  { name: "compact", description: "Compact session context", source: "builtin" },
+  { name: "reload", description: "Reload extensions, skills, prompts, and themes", source: "builtin" },
+  { name: "new", description: "Start a new session", source: "builtin" },
+  { name: "name", description: "Set session display name", source: "builtin" },
+  { name: "quit", description: "Quit pi", source: "builtin" },
+];
 
 interface Props {
   commands: CommandInfo[];
@@ -19,6 +28,7 @@ const sourceIcons: Record<string, ReactNode> = {
   extension: <Icon path={mdiFlash} size={0.6} />,
   prompt: <Icon path={mdiClipboardText} size={0.6} />,
   skill: <Icon path={mdiWrench} size={0.6} />,
+  builtin: <Icon path={mdiConsole} size={0.6} />,
 };
 
 const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10MB base64
@@ -48,7 +58,13 @@ function extractAtQuery(text: string): string | null {
   return null;
 }
 
-export function CommandInput({ commands, onSend, onListFiles, fileResults, disabled, sessionStatus, onAbort, pendingPrompt, onCancelPending }: Props) {
+export function CommandInput({ commands: externalCommands, onSend, onListFiles, fileResults, disabled, sessionStatus, onAbort, pendingPrompt, onCancelPending }: Props) {
+  // Merge server commands with built-in commands, avoiding duplicates
+  const commands = useMemo(() => {
+    const names = new Set(externalCommands.map((c) => c.name));
+    const builtins = BUILTIN_COMMANDS.filter((c) => !names.has(c.name));
+    return [...builtins, ...externalCommands];
+  }, [externalCommands]);
   const [text, setText] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [pendingImages, setPendingImages] = useState<ImageContent[]>([]);
@@ -326,7 +342,7 @@ export function CommandInput({ commands, onSend, onListFiles, fileResults, disab
           onChange={(e) => setText(e.target.value)}
           onKeyDown={handleKeyDown}
           onPaste={handlePaste}
-          placeholder="Send a message, /command, or @file..."
+          placeholder="Message, /command, !shell, or @file..."
           disabled={disabled || pendingPrompt}
           rows={1}
           className="flex-1 bg-[var(--bg-tertiary)] rounded-lg px-4 py-2 text-sm text-[var(--text-primary)] placeholder-gray-500 border border-[var(--border-secondary)] focus:border-blue-500 focus:outline-none disabled:opacity-50 resize-none"

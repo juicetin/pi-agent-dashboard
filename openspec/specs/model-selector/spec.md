@@ -35,6 +35,23 @@ The status bar SHALL be always visible between ChatView and CommandInput, replac
 - **WHEN** the session is streaming
 - **THEN** the status bar shows the model selector on the left and working status on the right
 
+### Requirement: Thinking level selector
+The status bar SHALL include a thinking level selector next to the model selector. Clicking it SHALL open a dropdown with available thinking levels.
+
+Available levels: `off`, `minimal`, `low`, `medium`, `high`, `xhigh`.
+
+#### Scenario: Display current thinking level
+- **WHEN** a session has a thinking level set
+- **THEN** the status bar shows the current level
+
+#### Scenario: Change thinking level
+- **WHEN** user selects a different level from the dropdown
+- **THEN** a `set_thinking_level` message SHALL be sent to the server, which forwards it to the bridge extension
+
+#### Scenario: Bridge applies thinking level
+- **WHEN** the bridge receives a `set_thinking_level` message
+- **THEN** it SHALL call `pi.setThinkingLevel(level)` and send a `model_update` message back with the new level
+
 ### Requirement: Models list from extension
 The extension SHALL send a `models_list` message on session_start with all available models from `modelRegistry.getAvailable()`.
 

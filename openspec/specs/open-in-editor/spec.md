@@ -45,14 +45,22 @@ The server SHALL expose `GET /api/editors?path=<cwd>` that returns detected edit
 - **THEN** the server SHALL respond with `{ success: false, error: "path parameter required" }`
 
 ### Requirement: Open editor endpoint
-The server SHALL expose `POST /api/open-editor` accepting `{ path: string, editor: string }`. It SHALL validate that `path` matches a known session `cwd` and `editor` is a recognized editor ID, then spawn the editor CLI as a detached process.
+The server SHALL expose `POST /api/open-editor` accepting `{ path: string, editor: string, file?: string, line?: number }`. It SHALL validate that `path` matches a known session `cwd` and `editor` is a recognized editor ID, then spawn the editor CLI as a detached process. When `file` is provided, the editor SHALL open that specific file (resolved relative to `path`). When both `file` and `line` are provided, the editor SHALL open the file at the specified line using `file:line` syntax.
 
-#### Scenario: Valid open request
-- **WHEN** a POST request is made with a valid session cwd and recognized editor ID
-- **THEN** the server SHALL spawn the editor CLI with the path as argument and respond with `{ success: true }`
+#### Scenario: Open project folder
+- **WHEN** a POST request is made with `path` and `editor` only
+- **THEN** the server SHALL spawn the editor CLI with the cwd as argument and respond with `{ success: true }`
+
+#### Scenario: Open specific file
+- **WHEN** a POST request includes `file: "src/main.ts"`
+- **THEN** the server SHALL resolve the file path relative to `path` and open it in the editor
+
+#### Scenario: Open file at line
+- **WHEN** a POST request includes `file: "src/main.ts"` and `line: 42`
+- **THEN** the server SHALL open the file at line 42 using `path/src/main.ts:42` syntax
 
 #### Scenario: Unknown path
-- **WHEN** a POST request is made with a path that does not match any active session's cwd
+- **WHEN** a POST request is made with a path that does not match any session's cwd
 - **THEN** the server SHALL respond with `{ success: false, error: "unknown session path" }`
 
 #### Scenario: Unknown editor

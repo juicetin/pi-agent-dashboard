@@ -156,7 +156,8 @@ export function createHeadlessPidRegistry(options?: HeadlessPidRegistryOptions):
         }
       }
       entries.clear();
-      persist();
+      // Don't persist here — keep disk entries so cleanupOrphans() can
+      // reclaim surviving processes after a server restart.
     },
 
     size() {

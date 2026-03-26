@@ -14,8 +14,44 @@ import type { PendingLoadManager } from "./pending-load-manager.js";
 import { spawnPiSession, type SpawnResult } from "./process-manager.js";
 import { loadConfig } from "../shared/config.js";
 import { createHeadlessPidRegistry, type HeadlessPidRegistry } from "./headless-pid-registry.js";
+import type { PendingForkRegistry } from "./pending-fork-registry.js";
+import type { SessionOrderManager } from "./session-order-manager.js";
+import type { StateStore } from "./state-store.js";
+import { execSync } from "node:child_process";
 
 const REPLAY_BATCH_SIZE = 200;
+
+/**
+ * Fallback: find and kill a headless pi process by matching the session ID
+ * in the process command line. This handles the case where the PID registry
+ * is empty (e.g., after server restart).
+ */
+function killHeadlessBySessionId(sessionId: string): boolean {
+  if (process.platform === "win32") return false;
+  try {
+    // Find the wrapper shell process: sh -c sleep ... | pi --mode rpc --session .../<sessionId>.jsonl
+    const output = execSync(
+      `ps -eo pid,command | grep "${sessionId}" | grep "sleep 2147483647" | grep -v grep`,
+      { encoding: "utf8", timeout: 3000 },
+    ).trim();
+    if (!output) return false;
+    for (const line of output.split("\n")) {
+      const pid = parseInt(line.trim(), 10);
+      if (pid > 0) {
+        try {
+          // Kill the entire process group (wrapper shell + sleep + pi)
+          process.kill(-pid, "SIGTERM");
+        } catch {
+          // Try direct kill if process group fails
+          try { process.kill(pid, "SIGTERM"); } catch { /* ignore */ }
+        }
+      }
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 export interface BrowserGateway {
   wss: WebSocketServer;
@@ -38,6 +74,9 @@ export function createBrowserGateway(
   eventStore: EventStore,
   piGateway: PiGateway,
   pendingLoadManager?: PendingLoadManager,
+  pendingForkRegistry?: PendingForkRegistry,
+  sessionOrderManager?: SessionOrderManager,
+  stateStore?: StateStore,
 ): BrowserGateway {
   const wss = new WebSocketServer({ noServer: true });
 
@@ -77,6 +116,21 @@ export function createBrowserGateway(
     const allSessions = sessionManager.listAll();
     for (const session of allSessions) {
       sendTo(ws, { type: "session_added", session });
+    }
+
+    // Send pinned directories on connect
+    if (stateStore) {
+      sendTo(ws, { type: "pinned_dirs_updated", paths: stateStore.getPinnedDirectories() });
+    }
+
+    // Send session orders for all cwds
+    if (sessionOrderManager) {
+      const allOrders = sessionOrderManager.getAllOrders();
+      for (const [cwd, sessionIds] of Object.entries(allOrders)) {
+        if (sessionIds.length > 0) {
+          sendTo(ws, { type: "sessions_reordered", cwd, sessionIds });
+        }
+      }
     }
 
     ws.on("message", async (raw) => {
@@ -226,13 +280,19 @@ export function createBrowserGateway(
             break;
 
           case "shutdown": {
-            const sent = piGateway.sendToSession(msg.sessionId, {
+            // Send shutdown to bridge (graceful shutdown via pi API)
+            piGateway.sendToSession(msg.sessionId, {
               type: "shutdown",
               sessionId: msg.sessionId,
             });
-            if (!sent) {
-              headlessPidRegistry.killBySessionId(msg.sessionId);
-            }
+            // Kill headless process group to ensure the wrapper shell is terminated
+            headlessPidRegistry.killBySessionId(msg.sessionId);
+            // Fallback: find and kill by session ID in process list
+            killHeadlessBySessionId(msg.sessionId);
+            // Immediately mark as ended so the UI updates without waiting
+            // for heartbeat timeout
+            sessionManager.unregister(msg.sessionId);
+            broadcast({ type: "session_removed", sessionId: msg.sessionId });
             break;
           }
 
@@ -328,6 +388,10 @@ export function createBrowserGateway(
               });
               break;
             }
+            // Record pending fork for session ordering
+            if (msg.mode === "fork" && pendingForkRegistry) {
+              pendingForkRegistry.recordFork(session.cwd, msg.sessionId);
+            }
             const resumeConfig = loadConfig();
             const result = await spawnPiSession(session.cwd, {
               sessionFile: session.sessionFile,
@@ -360,6 +424,31 @@ export function createBrowserGateway(
             break;
           }
 
+          case "attach_proposal": {
+            const updates: Record<string, unknown> = { attachedProposal: msg.changeName };
+            const session = sessionManager.get(msg.sessionId);
+            // Auto-name: set session name to proposal name if name is empty
+            if (session && !session.name?.trim()) {
+              updates.name = msg.changeName;
+              // Forward rename to extension so pi's internal name is updated
+              piGateway.sendToSession(msg.sessionId, {
+                type: "rename_session",
+                sessionId: msg.sessionId,
+                name: msg.changeName,
+              });
+            }
+            sessionManager.update(msg.sessionId, updates);
+            broadcast({ type: "session_updated", sessionId: msg.sessionId, updates });
+            break;
+          }
+
+          case "detach_proposal": {
+            const updates = { attachedProposal: null, openspecPhase: null, openspecChange: null };
+            sessionManager.update(msg.sessionId, updates);
+            broadcast({ type: "session_updated", sessionId: msg.sessionId, updates });
+            break;
+          }
+
           case "hide_session": {
             const updates = { hidden: true };
             sessionManager.update(msg.sessionId, updates);
@@ -371,6 +460,38 @@ export function createBrowserGateway(
             const updates = { hidden: false };
             sessionManager.update(msg.sessionId, updates);
             broadcast({ type: "session_updated", sessionId: msg.sessionId, updates });
+            break;
+          }
+
+          case "reorder_sessions": {
+            if (sessionOrderManager) {
+              sessionOrderManager.reorder(msg.cwd, msg.sessionIds);
+              broadcast({ type: "sessions_reordered", cwd: msg.cwd, sessionIds: msg.sessionIds });
+            }
+            break;
+          }
+
+          case "pin_directory": {
+            if (stateStore) {
+              stateStore.pinDirectory(msg.path);
+              broadcast({ type: "pinned_dirs_updated", paths: stateStore.getPinnedDirectories() });
+            }
+            break;
+          }
+
+          case "unpin_directory": {
+            if (stateStore) {
+              stateStore.unpinDirectory(msg.path);
+              broadcast({ type: "pinned_dirs_updated", paths: stateStore.getPinnedDirectories() });
+            }
+            break;
+          }
+
+          case "reorder_pinned_dirs": {
+            if (stateStore) {
+              stateStore.reorderPinnedDirs(msg.paths);
+              broadcast({ type: "pinned_dirs_updated", paths: stateStore.getPinnedDirectories() });
+            }
             break;
           }
         }

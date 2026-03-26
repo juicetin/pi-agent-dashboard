@@ -1,17 +1,8 @@
 /** Source environment where a pi session is running */
-export type SessionSource = "tui" | "zed" | "tmux" | "dashboard" | "unknown";
+export type SessionSource = "tui" | "zed" | "tmux" | "dashboard" | "terminal" | "unknown";
 
 /** Current status of a session */
 export type SessionStatus = "active" | "idle" | "streaming" | "ended";
-
-/** A workspace (project folder) */
-export interface Workspace {
-  id: string;
-  name: string;
-  path: string;
-  sortOrder: number;
-  createdAt: number;
-}
 
 /** A dashboard session representing a connected pi instance */
 export interface DashboardSession {
@@ -22,7 +13,6 @@ export interface DashboardSession {
   status: SessionStatus;
   model?: string;
   thinkingLevel?: string;
-  workspaceId?: string;
   startedAt: number;
   endedAt?: number;
   tokensIn?: number;
@@ -38,6 +28,7 @@ export interface DashboardSession {
   openspecData?: string;
   openspecPhase?: OpenSpecPhase | null;
   openspecChange?: string | null;
+  attachedProposal?: string | null;
   sessionFile?: string;
   sessionDir?: string;
   hidden?: boolean;
@@ -56,7 +47,7 @@ export interface DashboardEvent {
 export interface CommandInfo {
   name: string;
   description?: string;
-  source: "extension" | "prompt" | "skill";
+  source: "extension" | "prompt" | "skill" | "builtin";
   location?: string;
   path?: string;
 }
@@ -144,6 +135,22 @@ export interface PiSessionInfo {
   modified: string;
   messageCount: number;
   firstMessage?: string;
+}
+
+/** Data payload for bash_output dashboard events */
+export interface BashOutputData {
+  command: string;
+  output: string;
+  exitCode: number;
+  /** true for !! (silent), false for ! (sent to LLM) */
+  excludeFromContext: boolean;
+}
+
+/** Data payload for command_feedback dashboard events */
+export interface CommandFeedbackData {
+  command: string;
+  status: "started" | "completed" | "error";
+  message?: string;
 }
 
 /** REST API response envelope */

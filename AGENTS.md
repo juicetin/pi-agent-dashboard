@@ -62,6 +62,7 @@ pi-dashboard --dev   # Start with Vite proxy
 | `src/server/session-order-manager.ts` | Per-cwd session ordering with persistence |
 | `src/server/directory-service.ts` | Server-side session discovery, event loading, and OpenSpec polling |
 | `src/server/pending-fork-registry.ts` | Tracks pending fork operations for session placement |
+| `src/server/pending-resume-registry.ts` | Queues prompts for auto-resume of ended sessions |
 | `src/server/json-store.ts` | Atomic JSON file read/write helpers |
 | `src/server/process-manager.ts` | Session spawning via tmux or headless mode |
 | `src/server/editor-registry.ts` | Detects available editors (running processes + CLI) |

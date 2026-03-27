@@ -4,6 +4,7 @@
  * directly on the server without requiring bridge connections.
  */
 import { pollOpenSpecAsync } from "../shared/openspec-poller.js";
+import { discoverSessionsForCwd } from "./session-discovery.js";
 import { replayEntriesAsEvents } from "../shared/state-replay.js";
 import type { OpenSpecData } from "../shared/types.js";
 import type { StateStore } from "./state-store.js";
@@ -11,15 +12,8 @@ import type { SessionManager } from "./memory-session-manager.js";
 
 const POLL_INTERVAL = 30_000;
 
-export interface DiscoveredSession {
-  id: string;
-  cwd: string;
-  name?: string;
-  startedAt: number;
-  firstMessage?: string;
-  sessionFile?: string;
-  sessionDir?: string;
-}
+import type { DiscoveredSession } from "./session-discovery.js";
+export type { DiscoveredSession } from "./session-discovery.js";
 
 export interface LoadResult {
   success: boolean;
@@ -34,7 +28,7 @@ export interface DirectoryAddedResult {
 
 export interface DirectoryService {
   knownDirectories(): string[];
-  discoverSessions(cwd: string): Promise<DiscoveredSession[]>;
+  discoverSessions(cwd: string): DiscoveredSession[];
   loadSessionEvents(sessionId: string, sessionFile: string): Promise<LoadResult>;
   getOpenSpecData(cwd: string): OpenSpecData | undefined;
   refreshOpenSpec(cwd: string): Promise<OpenSpecData>;
@@ -65,23 +59,8 @@ export function createDirectoryService(
     return Array.from(dirs);
   }
 
-  async function discoverSessions(cwd: string): Promise<DiscoveredSession[]> {
-    try {
-      const mod = await import("@mariozechner/pi-coding-agent") as any;
-      const SM = mod.SessionManager;
-      const sessions = await SM.list(cwd);
-      return (sessions || []).map((s: any) => ({
-        id: s.id,
-        cwd: s.cwd,
-        name: s.name,
-        startedAt: s.created instanceof Date ? s.created.getTime() : Date.now(),
-        firstMessage: s.firstMessage || undefined,
-        sessionFile: s.path,
-        sessionDir: s.cwd,
-      }));
-    } catch {
-      return [];
-    }
+  function discoverSessions(cwd: string): DiscoveredSession[] {
+    return discoverSessionsForCwd(cwd);
   }
 
   async function loadSessionEvents(sessionId: string, sessionFile: string): Promise<LoadResult> {

@@ -1,390 +1,262 @@
-# Session Knowledge Synthesis Part 2: c4a0a521 (General)
+# Session Knowledge: c4a0a521 (2026-03-25)
 
-Continued from `session-knowledge-c4a0a521.md`. Covers the later phase: session persistence deep-dive, event loading, context usage tracking, session discovery, status broadcast, and operational issues.
-
----
-
-## 1. The @mariozechner/pi-coding-agent Peer Dependency Trap
-
-### The Problem
-Three server-side modules used `import("@mariozechner/pi-coding-agent")`:
-- `loadSessionEvents()` in directory-service.ts
-- `discoverSessions()` in directory-service.ts
-- `handleLoadSessionEvents()` in command-handler.ts
-
-**This package is a peer dependency — it only exists inside pi's process.** The dashboard server runs independently and does NOT have it installed. The dynamic import **silently fails** (caught by try/catch or Promise.catch), producing zero errors in logs but causing complete functionality loss.
-
-### Impact
-| Function | Effect of Silent Failure |
-|----------|-------------------------|
-| `loadSessionEvents()` | Events never loaded from disk → chat history empty for ended sessions |
-| `discoverSessions()` | Historical sessions never found → "Show hidden" shows 5 sessions instead of 77 |
-| `handleLoadSessionEvents()` | Used by bridge (has the package) — works fine |
-
-### Discovery Method
-Tried to run the dynamic import manually from the project directory:
-```bash
-npx tsx -e "import('@mariozechner/pi-coding-agent').then(m => console.log('OK')).catch(e => console.error('FAIL:', e.message))"
-# FAIL: Cannot find package '@mariozechner/pi-coding-agent'
-```
-
-### Fix: Standalone Modules
-Created three modules that read pi's data formats directly without the dependency:
-
-| Module | Purpose | What It Reads |
-|--------|---------|---------------|
-| `session-file-reader.ts` | Load session entries (chat replay) | JSONL file → tree branch traversal |
-| `session-discovery.ts` | List all sessions for a cwd | `~/.pi/agent/sessions/<encoded-cwd>/*.jsonl` headers |
-| `session-stats-reader.ts` | Extract token/cost/context stats | JSONL file → accumulate from assistant message `usage` |
-
-### Key Lesson
-**Never use `import("@mariozechner/pi-coding-agent")` in server code.** It only works inside the bridge extension (which runs in pi's process). All server-side session file operations must use standalone readers.
+**Session ID**: c4a0a521-dd40-4cd6-8a7a-0e090b3fe9ce  
+**Duration**: ~3+ hours of continuous work  
+**Focus Areas**: Command handling, session state management, OpenSpec integration, dashboard restart issues
 
 ---
 
-## 2. Session File Format Deep Dive
+## Critical Bugs & Issues Found
 
-### JSONL Structure
-- One JSON object per line
-- First line: session header `{ type: "session", id: "...", cwd: "...", timestamp: "..." }`
-- Subsequent lines: entries with `{ type, id, parentId, timestamp, ... }`
+### 1. !! Command Loading State Never Clears
+**Problem**: When executing `!!` (bash command without LLM context), the command card stays in a loading state indefinitely. Refresh hides it but doesn't properly complete the state.
 
-### Entry Types Found
-| Type | Fields | Purpose |
-|------|--------|---------|
-| `session` | `id`, `cwd`, `timestamp` | Header (always first) |
-| `message` | `message: { role, content, usage }` | User/assistant/toolResult messages |
-| `model_change` | `provider`, `modelId` | Model switch events |
-| `thinking_level_change` | `level` | Thinking budget changes |
-| `session_info` | `name` | Session rename |
-| `label` | `targetId`, `label` | Branch labels |
-| `leaf` | `entryId` | Current branch pointer |
+**Root Cause**: The `pendingPrompt` state in the event reducer is only cleared by:
+- `agent_start` events
+- `message_start` with user role
 
-### Tree Structure — SURPRISE
-Sessions use a **tree structure** via `parentId` chains, not a flat list:
-- Each entry has `id` and `parentId`
-- `getBranch()` walks from `leafId` back to root via `parentId`
-- The `leaf` entry type records which branch is "current"
-- Forks create new branches from existing entries
-- **The standalone reader must implement tree traversal** to get the correct message order
+For `!!` commands, there's no `agent_start` because the command runs directly (excludeFromContext: true) and sends only a `bash_output` event, never triggering the LLM.
 
-### Assistant Message Usage Data
-```json
-{
-  "usage": {
-    "input": 1,
-    "output": 316,
-    "cacheRead": 134241,
-    "cacheWrite": 366,
-    "totalTokens": 134924,
-    "cost": {
-      "input": 0.000005,
-      "output": 0.0079,
-      "cacheRead": 0.0671205,
-      "cacheWrite": 0.0022875,
-      "total": 0.07731299999999999
-    }
-  }
-}
-```
-- `totalTokens` approximates context usage (input + output + cache)
-- `cost.total` is per-turn cost
-- These are on every assistant message — accumulate for session totals
+**Solution Required**: Clear `pendingPrompt` when `bash_output` or `command_feedback` events are received in the event reducer.
 
-### Path Encoding Formula
-Pi encodes cwd to directory name: `--${cwd.replace(/^[/\\]/, "").replace(/[/\\:]/g, "-")}--`
-Example: `/Users/robson/Project/pi-agent-dashboard` → `--Users-robson-Project-pi-agent-dashboard--`
-Location: `~/.pi/agent/sessions/<encoded-cwd>/`
+**Discovery**: This is a critical UX issue affecting direct bash commands that should be fast and responsive.
 
 ---
 
-## 3. Context Usage Tracking — Full Data Path
+### 2. OpenSpec Archive State Lost After Dashboard Restart
+**Problem**: When dashboard restarts, the session-to-OpenSpec change attachments are lost. Previously attached changes no longer appear on session cards.
 
-### The Problem
-After server restart, context usage bars (showing % of context window used) were empty for all sessions.
-
-### Root Cause Chain
-1. `contextUsage` was only in client-side `SessionState` (from event reducer)
-2. It was set by `stats_update` events which included `contextUsage: { tokens, contextWindow }`
-3. `stats_update` events came from the bridge's live `turn_end` handler
-4. After restart, no live events → no context data
-5. Event replay from session files DID generate `stats_update` but WITHOUT `contextUsage`
-6. Even with replay, `contextUsage` requires `contextWindow` which comes from `ctx.getContextUsage()` — a live API
-
-### Fix: Multiple Layers
-1. **Added `contextTokens` and `contextWindow` to `DashboardSession`** — server-side persistence
-2. **Server stores context usage from bridge events** — `pi-gateway.ts` updates session on every `stats_update`
-3. **Server broadcasts context data in `session_updated`** — so all browser cards show the bar
-4. **Client merges two sources** — live event-reduced state (priority) + server-persisted session data (fallback)
-5. **Event replay includes `contextUsage`** — `state-replay.ts` now adds `contextUsage` to `stats_update` using `totalTokens` from usage data + model-inferred context window
-6. **Session file enrichment** — `session-stats-reader.ts` extracts `lastTotalTokens` on startup
-
-### Context Window Inference — GOTCHA
-Since session files don't contain the model's context window, we infer it from the model name:
-```typescript
-function inferContextWindow(model: string): number {
-  if (id.includes("claude")) return 200_000;
-  if (id.includes("gpt-4o")) return 128_000;
-  if (id.includes("gemini")) return 1_000_000;
-  if (id.includes("deepseek")) return 128_000;
-  return 200_000; // default
-}
-```
-
-**Surprise**: The bridge reported `contextWindow: 1,000,000` for `claude-opus-4-6`. This came from `ctx.getContextUsage()` (the authoritative source). The inference function would say 200k. The live value from the bridge takes priority — the inference is only a fallback for sessions without live data.
-
-### Session Stats Enrichment Condition — GOTCHA
-Originally, enrichment only ran when `cost === 0` (session had no stats). But context data could be missing even when cost was present (e.g., first restart enriched cost but not context). Fixed to also run when `contextTokens === undefined`.
+**Location**: Session state persistence layer  
+**Impact**: Users lose work context and change associations when dashboard restarts  
+**Discovery**: Session metadata persistence needs to include OpenSpec attachment state, not just session visibility
 
 ---
 
-## 4. Session Status Broadcast — Three Attempts
+### 3. Inactive & Ended Session Logs Not Loading
+**Problem**: When selecting an inactive or ended session card, the chat log doesn't load. Messages don't appear to replay from session file.
 
-### Attempt 1: `piGateway.onDisconnect` Was Never Set
-- **Discovery**: `piGateway.onDisconnect` existed in the interface but was never assigned in `server.ts`
-- After heartbeat timeout, `unregister()` set status to "ended" but browsers were never notified
-- Cards showed stale "active" status indefinitely
+**Related Issues**:
+- Context usage statistics not loaded for inactive sessions
+- Session file reader doesn't load initial token/cost stats on startup
+- Lazy loading approach doesn't work for session card state refresh
 
-### Attempt 2: Immediate End on Disconnect — TOO AGGRESSIVE
-```typescript
-piGateway.onDisconnect = (sessionId) => {
-  sessionManager.update(sessionId, { status: "ended" });
-  browserGateway.broadcastSessionUpdated(sessionId, { status: "ended" });
-};
-```
-- **Problem**: During `/reload`, the bridge disconnects briefly then reconnects
-- This caused cards to flash "ended" → "active" on every reload
-- New sessions spawned from dashboard never appeared (set to ended immediately)
-
-### Attempt 3: onUnregister Callback — CORRECT
-```typescript
-sessionManager.onUnregister = (sessionId) => {
-  browserGateway.broadcastSessionUpdated(sessionId, { status: "ended" });
-};
-```
-- Fires only after heartbeat timeout (45s) — temporary disconnects don't trigger it
-- Bridge reconnects within 45s → session stays "active"
-- True disconnects → 45s delay then card updates to "ended"
-
-### Key Lesson
-**Don't end sessions on WebSocket close.** The bridge disconnects/reconnects during `/reload`, `/compact`, and other internal operations. Use the heartbeat timeout as the canonical "session ended" signal.
+**Discovery**: Session initialization needs to eagerly load token stats and message count before display, not lazily on selection.
 
 ---
 
-## 5. Session Discovery — register/unregister Dance
+### 4. Context Usage Stats Not Persisted for Inactive Sessions
+**Problem**: Inactive sessions show no context usage progressbar. The stats are lost when session becomes inactive.
 
-### Original Approach (Problematic)
-For each discovered session file:
-```typescript
-sessionManager.register({...});    // → status "active", broadcasts session_added
-sessionManager.unregister(id);     // → status "ended", triggers onUnregister broadcast
-sessionManager.update(id, { hidden: true });
-browserGateway.broadcastSessionAdded(session);
-```
+**Question Raised**: Inactive session showed 200k tokens - where does this come from? Need to understand max context length storage.
 
-### Problems
-1. `register()` calls `stateStore.setHidden(id, false)` → clears hidden state
-2. `unregister()` triggers `onUnregister` → broadcasts `session_updated` to browsers that don't have the session yet
-3. For 77 sessions: 77 × 3 = 231 state mutations + 77 × 2 = 154 broadcasts — flooding the browser
-4. Race conditions between `session_updated` and `session_added` messages
-
-### Fix: Direct `restore()`
-```typescript
-sessionManager.restore({
-  id, cwd, name, source: "tui", status: "ended",
-  startedAt, sessionFile, sessionDir, hidden: true, dataUnavailable: true,
-  model, contextTokens, contextWindow,
-});
-browserGateway.broadcastSessionAdded(session);  // Single broadcast
-```
-- No register/unregister — quiet restore
-- Single broadcast per session
-- Stats enrichment runs during restore
+**Infrastructure Gap**: Need a tool to extract session-level stats from pi session .jsonl files for initial card state population.
 
 ---
 
-## 6. Lazy Subscription — Performance Optimization
+### 5. Session Card State Not Updating on Page Refresh
+**Problem**: When hiding/unhiding sessions or after resuming a session, the card status doesn't update properly.
 
-### Before
-- ALL sessions (60+) subscribed on browser connect
-- Each subscribe triggered `loadSessionEvents()` from disk
-- 60+ concurrent file reads on startup
+**Specific Case**: "Show hidden" doesn't display all pi sessions for the cwd. Hidden sessions appear when unhidden, but auto-resumed sessions shouldn't be hidden.
 
-### After
-- **Active sessions** (`status !== "ended"`): auto-subscribed for live events
-- **Ended sessions**: subscribed on-demand when user clicks the card
-- On connect: only ~5 active sessions load events
-- Clicking an ended session triggers subscribe → event load from disk → chat appears
-
-### Default Filter State
-`activeOnly` defaults to `true` (stored in localStorage). This means ended sessions are hidden by default. The "Show all" toggle reveals them. The "Show hidden" toggle reveals sessions marked as hidden by the server.
+**Discovery**: Session visibility state and session status state (idle/streaming/ended) are getting out of sync.
 
 ---
 
-## 7. Auto-Resume Behavior Change
+## Performance Issues
 
-### Before
-When a session was resumed (via Resume button):
-- Old session: `hidden: true` (disappeared from list)
-- New session: appears as active
+### OpenSpec Operations Taking Several Seconds
+**Problem**: Attaching, detaching, and executing OpenSpec commands consistently take 3-5+ seconds to respond.
 
-### After
-- Old session: stays visible (only `resuming` flag cleared)
-- New session: appears as active
-- User can see both and manually hide the old one if desired
+**Areas Affected**:
+- Change attachment from combo box (should show "Attaching..." indicator)
+- Change detachment
+- OpenSpec command execution
 
----
+**Discovery**: This is significantly worse than expected for local operations. Likely causes:
+- Unnecessary rebuilds on `/reload` trigger
+- File I/O contention
+- State synchronization overhead between server and bridge
 
-## 8. OpenSpec Bulk Archive — Conflict Resolution
-
-### Conflict Detection
-When multiple changes modify the same spec capability:
-```
-session-grouping → [pinned-directories, fix-pinned-dir-symlink-and-path-display]
-```
-
-### Resolution Strategy
-1. Read delta specs from each conflicting change
-2. Check for actual requirement overlap (different requirements = no real conflict)
-3. Apply in chronological order (older first)
-4. Both changes implemented → both specs applied
-
-### Spec Merge Process
-- New capabilities: `cp delta → main spec`
-- Existing capabilities: `cat delta >> existing spec`
-- Archive: `mv change-dir → archive/YYYY-MM-DD-name/`
+**Needed**: Performance profiling to identify bottleneck.
 
 ---
 
-## 9. ESM Module Issues
+## Infrastructure & Architecture Discoveries
 
-### `require()` in ESM — headless-pid-registry.ts
-```typescript
-// BROKEN in ESM:
-const { EventEmitter } = require("node:events");
+### The `/reload` Command Behavior
+**Fact**: `/reload` is an internal pi command, not a Dashboard command  
+**Discovery**: It doesn't always trigger properly through the command handler  
+**Problem**: Code catches the command so errors are hidden from the assistant  
+**Solution Created**: `scripts/reload-all.sh` script that:
+- Builds the bridge TypeScript
+- Finds all connected pi sessions via WebSocket  
+- Sends reload message to each session
 
-// FIX: static import at top level
-import { EventEmitter } from "node:events";
+### Dashboard Build Configuration Issue
+**Discovery**: Dashboard config can disable building and stop server for `/reload` calls  
+**Impact**: This prevents bridge code from reloading on development changes  
+**Question**: Why would you disable this? Seems like a footgun.
+
+### TypeScript Compilation in Event Loop
+**Problem**: `reload-all.sh --check` compiles tests (slow) even though only type-checking is needed  
+**Specific Error Found**:
 ```
-- The server runs as ESM (`"type": "module"` in package.json)
-- `require()` is not available in ESM modules
-- This caused server startup to crash with `ReferenceError: require is not defined`
-- Only manifested when `cleanupOrphans()` was called (startup with existing headless processes)
+src/client/components/MarkdownContent.tsx(182,21): error TS2769
+  Type 'Record<string, unknown>' not assignable to 'CSSProperties'
+```
+**Discovery**: SyntaxHighlighter type definitions are too strict. Needs type casting or version update.
 
 ---
 
-## 10. Persistence Debounce and Shutdown Race
+## State Management Gaps
 
-### The Race
-1. Session change triggers `sessionPersistence.save()` (debounced 1s)
-2. `/api/shutdown` calls `process.exit(0)` after 100ms
-3. Debounce timer hasn't fired → last changes lost
+### Session State Initialization
+**Discovery**: Sessions need to load full state on startup, not lazy-load on selection:
+- Token stats (input, output, cache read/write)
+- Cost accumulation
+- Context window and usage
+- Message count
+- Model and thinking level
 
-### Fix
-Added `sessionPersistence.flush()` and `stateStore.flush()` before `process.exit()` in the `/api/shutdown` handler.
+**Tool Needed**: Session file reader that can extract these stats from .jsonl files synchronously during app initialization.
 
-### Note
-`SIGINT`/`SIGTERM` handlers call `server.stop()` which flushes correctly. Only the HTTP shutdown endpoint had this gap.
+### Session Visibility & Status Sync
+**Problems**:
+- Hidden state not properly synchronized with actual session status
+- Auto-resumed sessions should not be hidden
+- Visibility state and connection status getting out of sync
 
----
-
-## 11. JSON Serialization Behavior
-
-### `undefined` vs `null` in JSON
-```javascript
-JSON.stringify({ a: 1, b: undefined, c: null })
-// → '{"a":1,"c":null}'
-```
-- `undefined` values are **dropped** from JSON output
-- `null` values are **preserved**
-- Session fields like `attachedProposal` are `string | null | undefined`
-- When never set: `undefined` → not in JSON → restored as `undefined` ✓
-- When explicitly detached: `null` → in JSON → restored as `null` ✓
-- When attached: `"name"` → in JSON → restored as `"name"` ✓
-
-### Implication
-Don't rely on the absence of a field to distinguish "never set" from "explicitly cleared". Use `null` for explicit clearing.
+**Discovery**: The hidden/visible toggle and actual pi session list need bidirectional sync. Current unidirectional flow loses state on restart.
 
 ---
 
-## 12. Vitest Process Leak — Operational Hazard
+## Electron Embedding Discussion
 
-### Symptoms
-- 9 orphaned `node (vitest N)` processes consuming ~500MB each
-- 92% swap usage (50.9 GiB), 43% memory
-- System becomes sluggish
+**Topic**: How to embed this 3-process architecture into an Electron app
 
-### Cause
-Multiple concurrent test runs from different pi sessions. Vitest spawns worker processes that don't always terminate when the parent test run is interrupted.
-
-### Cleanup
-```bash
-ps aux | grep vitest
-kill <pids>
-# Or more aggressively:
-pkill -f vitest
+**Current Architecture (Web-based)**:
+```
+Pi Sessions (bridge ext) ←→ Dashboard Server ←→ Browser (React)
+             WebSocket 9999         WebSocket 8000 (/ws)
 ```
 
-### Prevention
-- Don't run tests concurrently from multiple sessions
-- Use `--no-file-parallelism` for integration tests that use real ports
-- Auto-attach tests with real servers can hang on port conflicts
+**Proposed Electron Model** (2-process):
+- Main process: Bundle dashboard server + React app
+- Render process: The React UI
+- Bridge: Still runs as pi extension in separate pi sessions
+
+**Key Question**: How would the bridge connect to the embedded server when running inside Electron? Would need:
+- Named pipes instead of TCP on some platforms
+- Electron IPC bridge layer
+- Headless session manager integration
 
 ---
 
-## 13. register() Merge Logic — What Survives Reconnect
+## Important Discoveries & Surprises
 
-When a bridge reconnects to a server with an existing (restored) session, `register()` creates a new session object. What's preserved:
+### 1. Connected Session Discovery Works Well
+**Discovery**: The `reload-all.sh` script successfully finds 5+ connected sessions by querying the Dashboard server's active WebSocket connections. This is the right approach.
 
-| Field | Preserved? | Source |
-|-------|-----------|--------|
-| `tokensIn/tokensOut/cacheRead/cacheWrite/cost` | ✓ | Existing session |
-| `attachedProposal` | ✓ (fixed) | Existing session |
-| `contextTokens/contextWindow` | ✓ (fixed) | Existing session |
-| `name` | ✓ (fixed) | `params.name ?? existing.name` |
-| `firstMessage` | ✓ (fixed) | `params.firstMessage ?? existing.firstMessage` |
-| `model/thinkingLevel` | Overwritten | From bridge registration params |
-| `status` | Always "active" | Set by register() |
-| `gitBranch/gitPrNumber` | NOT preserved | Re-polled by bridge |
-| `openspecPhase/openspecChange` | NOT preserved | Re-polled by bridge |
-| `hidden` | Always false | Active sessions must be visible |
-| `startedAt` | Preserved | `params.startedAt ?? existing.startedAt` |
-| `dataUnavailable` | Always false | Active session has bridge |
+### 2. Vitest Process Accumulation
+**Issue**: Running reload repeatedly causes vitest processes to pile up  
+**Fix Used**: `killall vitest`  
+**Discovery**: Build system isn't properly cleaning up child processes
+
+### 3. Blue Logo Styling
+**Change Made**: Type logo (droid icon) changed to blue to match CLI appearance  
+**Discovery**: Small visual consistency improvements have measurable impact on perceived quality
+
+### 4. Session Card Stats Must Be Eager-Loaded
+**Discovery**: Lazy loading stats on selection breaks the UX because:
+- Users can't see which sessions are actually active without scrolling
+- Page refreshes lose all visual state
+- Multiple cards with no stats look like loading errors
+- Forces users to click each card to see its status
+
+**Solution**: Load token/cost stats for ALL visible cards during app initialization, not on demand.
 
 ---
 
-## 14. Operational Commands Reference
+## What Did NOT Work
 
-### Build & Deploy
-```bash
-npm run build              # Vite build of web client
-npm run reload             # Reload all connected pi sessions
-npm run reload:check       # Type-check + reload all
-./scripts/reload-all.sh    # Direct reload script
-```
+### 1. Lazy Loading Session Stats
+- Breaks UX for fast visibility scanning
+- Loses state on page refresh
+- Creates false sense of loading errors
 
-### Server Management
-```bash
-npx tsx src/server/cli.ts start   # Daemon mode
-npx tsx src/server/cli.ts stop    # Stop daemon
-npx tsx src/server/cli.ts         # Foreground mode
-curl -s -X POST http://localhost:8000/api/shutdown  # HTTP shutdown
-```
+### 2. Build-on-Reload with Test Compilation
+- Makes development loop too slow
+- Type-checking tests is unnecessary overhead
+- Should only rebuild bridge TypeScript, not test suite
 
-### Debug
-```bash
-# Check server health
-curl -s http://localhost:8000/api/health
+### 3. Auto-Hide Resumed Sessions
+- Users don't expect sessions to disappear
+- "Show hidden" filter becomes confusing
+- Should keep visibility state explicit
 
-# Query sessions
-curl -s http://localhost:8000/api/sessions | node -e "..."
+### 4. Unidirectional Session State Updates
+- Server restart loses session-to-spec attachments
+- Hidden state doesn't persist across restarts
+- Visibility toggles not durable
 
-# Check persisted data
-cat ~/.pi/dashboard/sessions.json | node -e "..."
+---
 
-# Kill orphaned vitest
-pkill -f vitest
+## Technical Debt & Refactoring Opportunities
 
-# Check session files on disk
-ls ~/.pi/agent/sessions/--<encoded-cwd>--/*.jsonl | wc -l
-```
+1. **Event Reducer Cleanup**: `pendingPrompt` should clear on `bash_output` and `command_feedback`, not just `agent_start`
+
+2. **Session Initialization**: Create a unified "bootstrap" phase that:
+   - Loads all session metadata from disk
+   - Extracts token stats from .jsonl files
+   - Populates card state before first render
+
+3. **State Persistence**: Extend session JSON storage to include:
+   - OpenSpec attachment ID
+   - Last known status (idle/streaming/ended)
+   - Token stats snapshot
+   - Visibility flag
+
+4. **Performance Audit**: Profile:
+   - OpenSpec operation latency chain
+   - File I/O patterns during reload
+   - WebSocket message throughput
+   - React reconciliation for card updates
+
+5. **Build Configuration**: Decouple:
+   - Bridge TypeScript compilation (required)
+   - Test compilation (optional for dev)
+   - Dashboard server restart (optional)
+
+---
+
+## Patterns & Conventions Observed
+
+- **Command Routing**: Commands with `!!` prefix are bash-only (no LLM), `!` includes LLM context, `/` are slash commands
+- **Event Types**: bash_output, command_feedback, message_start/end, agent_start/end, tool_execution_*, turn_end, stats_update
+- **Session Status**: idle, streaming, ended
+- **WebSocket Messaging**: Server→Extension via port 9999, Server↔Browser via port 8000
+- **Script Pattern**: Simple shell scripts in `/scripts/` for integration tasks (reload-all.sh)
+
+---
+
+## Questions for Follow-up
+
+1. Why does the 200k token count appear for inactive sessions?
+2. What's the actual bottleneck in OpenSpec operations (profiling needed)?
+3. Should "Show hidden" be a checkbox or a completely separate view?
+4. Can we pre-compile session stats on the server to avoid client-side I/O?
+5. How should Electron embedding handle the bridge connection discovery?
+
+---
+
+## Summary
+
+This was a highly productive session that uncovered several critical UX bugs, a major state persistence issue, and important architectural insights about session initialization and state management. The team discovered that:
+
+1. Direct bash commands (`!!`) have a broken UX due to event reducer gaps
+2. Session state must be eagerly loaded on app startup for usability
+3. Build tooling needs separation of concerns (bridge vs tests)
+4. OpenSpec operations need performance investigation
+5. State durability across restarts requires explicit persistence
+
+The session produced working reload infrastructure (`reload-all.sh`), identified specific TypeScript compilation issues, and clarified the path forward for Electron embedding.

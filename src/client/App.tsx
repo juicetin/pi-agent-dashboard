@@ -101,6 +101,14 @@ export default function App() {
         setSessions((prev) => {
           const next = new Map(prev);
           next.set(msg.session.id, msg.session);
+          // Clear resuming flag on any session in the same cwd (handles fork case)
+          if (msg.session.status !== "ended") {
+            for (const [id, s] of next) {
+              if (id !== msg.session.id && s.cwd === msg.session.cwd && s.resuming) {
+                next.set(id, { ...s, resuming: false });
+              }
+            }
+          }
           return next;
         });
         // Clear placeholder and auto-select if this was a spawned session
@@ -192,6 +200,15 @@ export default function App() {
       case "resume_result":
         if (!msg.success) {
           console.warn("[dashboard] Resume/fork failed:", msg.message);
+          // Clear optimistic resuming state on failure
+          setSessions((prev) => {
+            const next = new Map(prev);
+            const existing = next.get(msg.sessionId);
+            if (existing) {
+              next.set(msg.sessionId, { ...existing, resuming: false });
+            }
+            return next;
+          });
         }
         break;
 
@@ -420,6 +437,15 @@ export default function App() {
 
   const handleResumeSession = useCallback(
     (sessionId: string, mode: "continue" | "fork") => {
+      // Optimistic: show resuming state immediately
+      setSessions((prev) => {
+        const next = new Map(prev);
+        const existing = next.get(sessionId);
+        if (existing) {
+          next.set(sessionId, { ...existing, resuming: true });
+        }
+        return next;
+      });
       send({ type: "resume_session", sessionId, mode } as any);
     },
     [send],
@@ -586,7 +612,12 @@ export default function App() {
                   currentTool={selectedState.currentTool}
                   streamingText={selectedState.streamingText || undefined}
                   onSelectModel={(modelStr) => {
-                    send({ type: "send_prompt", sessionId: selectedId, text: `/model ${modelStr}` });
+                    const slashIdx = modelStr.indexOf("/");
+                    if (slashIdx > 0) {
+                      const provider = modelStr.slice(0, slashIdx);
+                      const modelId = modelStr.slice(slashIdx + 1);
+                      send({ type: "set_model", sessionId: selectedId, provider, modelId });
+                    }
                   }}
                   onSelectThinkingLevel={(level) => {
                     send({ type: "set_thinking_level", sessionId: selectedId, level });

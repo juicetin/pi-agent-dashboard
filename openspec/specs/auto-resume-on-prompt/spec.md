@@ -1,3 +1,7 @@
+## Purpose
+
+Automatically resumes ended sessions when the user sends a prompt, queuing the prompt server-side and forwarding it once the session reconnects.
+
 ## ADDED Requirements
 
 ### Requirement: Auto-resume on prompt to ended session
@@ -7,7 +11,7 @@ When the server receives a `send_prompt` message for a session with status `"end
 - **WHEN** the server receives `send_prompt` for a session with `status === "ended"` and a valid `sessionFile`
 - **THEN** the server SHALL store the prompt in the `PendingResumeRegistry` keyed by the session's `cwd`
 - **AND** set `resuming: true` on the old session and broadcast `session_updated`
-- **AND** spawn a new pi process with `pi --session <sessionFile>` in continue mode
+- **AND** spawn pi with `pi --session <sessionFile>` in continue mode (reuses same session ID)
 
 #### Scenario: Prompt sent to ended session without session file
 - **WHEN** the server receives `send_prompt` for a session with `status === "ended"` and no `sessionFile`
@@ -47,24 +51,28 @@ When a new session registers via `session_register`, the server SHALL check the 
 - **WHEN** a new session sends `session_register` with a `cwd` that has no pending resume entry
 - **THEN** the server SHALL proceed normally without any prompt forwarding
 
-### Requirement: Auto-hide old session on successful resume
-When a pending resume is successfully flushed, the server SHALL hide the old ended session.
+### Requirement: Clear resuming flag on successful flush
+When a pending resume is successfully flushed, the server SHALL clear the resuming state. Since `pi --session` reuses the same session ID, the session transitions in-place — no hiding or navigation is needed.
 
-#### Scenario: Old session hidden after flush
-- **WHEN** the pending resume prompt is successfully forwarded to the new session
-- **THEN** the server SHALL set `hidden: true` and `resuming: false` on the old session
-- **AND** broadcast `session_updated` with those changes
+#### Scenario: Resuming flag cleared after flush
+- **WHEN** the pending resume prompt is successfully forwarded to the session
+- **THEN** the server SHALL set `resuming: false` on the session
+- **AND** broadcast `session_updated` with `{ resuming: false }`
 
-### Requirement: Auto-navigate browser to new session
-When a pending resume is successfully flushed, the server SHALL notify the browser to navigate to the new session.
+### Requirement: Double-send guard
+If the user sends another prompt while auto-resume is already in progress, the server SHALL update the queued prompt without spawning a second process.
 
-#### Scenario: Navigation message sent
-- **WHEN** the pending resume prompt is successfully forwarded to the new session
-- **THEN** the server SHALL broadcast an `auto_resume_navigate` message with `oldSessionId` and `newSessionId`
+#### Scenario: Prompt sent while already resuming
+- **WHEN** the server receives `send_prompt` for a session with `resuming === true`
+- **THEN** the server SHALL overwrite the pending prompt in the registry
+- **AND** SHALL NOT spawn a second pi process
 
-#### Scenario: Client handles navigation
-- **WHEN** the client receives `auto_resume_navigate`
-- **THEN** the client SHALL navigate to `/session/<newSessionId>`
+### Requirement: Manual resume blocked during auto-resume
+If a session is already being auto-resumed, the server SHALL reject manual resume requests.
+
+#### Scenario: Manual resume while auto-resuming
+- **WHEN** the server receives `resume_session` for a session with `resuming === true`
+- **THEN** the server SHALL return a `resume_result` with `success: false` and message "Session is already being resumed"
 
 ### Requirement: Spawn failure handling
 When the resume spawn fails, the server SHALL clean up the pending state.

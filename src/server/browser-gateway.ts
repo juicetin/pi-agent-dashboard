@@ -19,6 +19,7 @@ import type { PendingForkRegistry } from "./pending-fork-registry.js";
 import type { SessionOrderManager } from "./session-order-manager.js";
 import type { StateStore } from "./state-store.js";
 import type { DirectoryService } from "./directory-service.js";
+import { createPendingResumeRegistry, type PendingResumeRegistry } from "./pending-resume-registry.js";
 import { execSync, execFile } from "node:child_process";
 import { promisify } from "node:util";
 const execFileAsync = promisify(execFile);
@@ -71,6 +72,8 @@ export interface BrowserGateway {
   shutdownHeadlessProcesses(): void;
   /** Registry for linking headless PIDs to session IDs */
   headlessPidRegistry: HeadlessPidRegistry;
+  /** Registry for pending auto-resume prompts */
+  pendingResumeRegistry: PendingResumeRegistry;
 }
 
 export function createBrowserGateway(
@@ -90,6 +93,15 @@ export function createBrowserGateway(
 
   // Track headless child processes with sessionId linkage
   const headlessPidRegistry = createHeadlessPidRegistry();
+
+  // Track pending auto-resume prompts for ended sessions
+  const pendingResumeRegistry = createPendingResumeRegistry({
+    onTimeout(oldSessionId) {
+      // Clear resuming flag when resume times out
+      sessionManager.update(oldSessionId, { resuming: false });
+      broadcast({ type: "session_updated", sessionId: oldSessionId, updates: { resuming: false } });
+    },
+  });
 
   function getSubscribers(sessionId: string): WebSocket[] {
     const result: WebSocket[] = [];
@@ -251,14 +263,51 @@ export function createBrowserGateway(
             break;
 
           case "send_prompt": {
-            const sent = piGateway.sendToSession(msg.sessionId, {
-              type: "send_prompt",
-              sessionId: msg.sessionId,
-              text: msg.text,
-              images: msg.images,
-            });
-            if (!sent) {
-              console.error(`[dashboard] send_prompt failed: no bridge connection for session ${msg.sessionId}`);
+            const promptSession = sessionManager.get(msg.sessionId);
+            if (promptSession?.status === "ended") {
+              // Auto-resume: queue prompt and spawn pi to continue
+              if (!promptSession.sessionFile) {
+                console.error(`[dashboard] auto-resume failed: no session file for session ${msg.sessionId}`);
+                break;
+              }
+              // If already resuming, just update the queued prompt (don't spawn again)
+              const alreadyResuming = promptSession.resuming;
+              pendingResumeRegistry.record(promptSession.cwd, {
+                text: msg.text,
+                images: msg.images,
+                oldSessionId: msg.sessionId,
+                sessionFile: promptSession.sessionFile,
+              });
+              if (alreadyResuming) break;
+              // Show resuming state on the session card
+              sessionManager.update(msg.sessionId, { resuming: true });
+              broadcast({ type: "session_updated", sessionId: msg.sessionId, updates: { resuming: true } });
+              // Spawn pi to continue the session
+              const autoResumeConfig = loadConfig();
+              const spawnResult = await spawnPiSession(promptSession.cwd, {
+                sessionFile: promptSession.sessionFile,
+                mode: "continue",
+                strategy: autoResumeConfig.spawnStrategy,
+              });
+              if (!spawnResult.success) {
+                console.error(`[dashboard] auto-resume spawn failed: ${spawnResult.message}`);
+                pendingResumeRegistry.consume(promptSession.cwd);
+                sessionManager.update(msg.sessionId, { resuming: false });
+                broadcast({ type: "session_updated", sessionId: msg.sessionId, updates: { resuming: false } });
+              }
+              if (spawnResult.process && spawnResult.pid) {
+                headlessPidRegistry.register(spawnResult.pid, promptSession.cwd, spawnResult.process);
+              }
+            } else {
+              const sent = piGateway.sendToSession(msg.sessionId, {
+                type: "send_prompt",
+                sessionId: msg.sessionId,
+                text: msg.text,
+                images: msg.images,
+              });
+              if (!sent) {
+                console.error(`[dashboard] send_prompt failed: no bridge connection for session ${msg.sessionId}`);
+              }
             }
             break;
           }
@@ -319,6 +368,15 @@ export function createBrowserGateway(
               type: "set_thinking_level",
               sessionId: msg.sessionId,
               level: msg.level,
+            });
+            break;
+
+          case "set_model":
+            piGateway.sendToSession(msg.sessionId, {
+              type: "set_model",
+              sessionId: msg.sessionId,
+              provider: msg.provider,
+              modelId: msg.modelId,
             });
             break;
 
@@ -428,6 +486,15 @@ export function createBrowserGateway(
                 sessionId: msg.sessionId,
                 success: false,
                 message: "Session is already active",
+              });
+              break;
+            }
+            if (session.resuming) {
+              sendTo(ws, {
+                type: "resume_result",
+                sessionId: msg.sessionId,
+                success: false,
+                message: "Session is already being resumed",
               });
               break;
             }
@@ -625,5 +692,7 @@ export function createBrowserGateway(
     },
 
     headlessPidRegistry,
+
+    pendingResumeRegistry,
   };
 }

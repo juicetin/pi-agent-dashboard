@@ -140,6 +140,19 @@ function initBridge(pi: ExtensionAPI) {
     getModelRegistry: () => cachedModelRegistry,
     setThinkingLevel: (level: string) => (pi as any).setThinkingLevel?.(level),
     getThinkingLevel: () => (pi as any).getThinkingLevel?.(),
+    setModel: async (provider: string, modelId: string) => {
+      const registry = cachedModelRegistry;
+      if (!registry) return;
+      const model = registry.find(provider, modelId);
+      if (!model) return;
+      try {
+        await (pi as any).setModel(model);
+      } catch {
+        return;
+      }
+      // model_select event updates cachedCtx; small delay lets it propagate
+      setTimeout(() => sendModelUpdateIfChanged(), 50);
+    },
     shutdown: () => {
       if (cachedCtx?.shutdown) {
         cachedCtx.shutdown();

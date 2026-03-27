@@ -45,6 +45,10 @@ const sourceLabels: Record<string, string> = {
 };
 
 export function ActivityIndicator({ session }: { session: DashboardSession }) {
+  if (session.resuming) {
+    return <span className="text-yellow-400">Resuming…</span>;
+  }
+
   if (session.status === "ended") return null;
 
   if (session.currentTool) {
@@ -237,7 +241,7 @@ export function SessionCard({
       {/* Left gutter: source icon vertically centered */}
       <div className="flex flex-col items-center flex-shrink-0 w-4 pt-1">
         <span
-          className={`w-2 h-2 rounded-full ${statusColors[session.status] ?? "bg-[var(--bg-surface)]"}`}
+          className={`w-2 h-2 rounded-full ${session.resuming ? "bg-yellow-500 animate-pulse" : (statusColors[session.status] ?? "bg-[var(--bg-surface)]")}`}
         />
         <span className="flex-1" />
         <span
@@ -335,7 +339,8 @@ export function SessionCard({
             {(!isAlive || isHidden) && (
               <button
                 onClick={(e) => { e.stopPropagation(); onResume("continue"); }}
-                className="text-[10px] px-1.5 py-0.5 rounded border border-green-500/30 text-green-400 hover:bg-green-500/10"
+                disabled={session.resuming}
+                className="text-[10px] px-1.5 py-0.5 rounded border border-green-500/30 text-green-400 hover:bg-green-500/10 disabled:opacity-50 disabled:cursor-not-allowed"
                 title="Resume session (continue same session)"
               >
                 Resume
@@ -343,7 +348,8 @@ export function SessionCard({
             )}
             <button
               onClick={(e) => { e.stopPropagation(); onResume("fork"); }}
-              className="text-[10px] px-1.5 py-0.5 rounded border border-blue-500/30 text-blue-400 hover:bg-blue-500/10"
+              disabled={session.resuming}
+              className="text-[10px] px-1.5 py-0.5 rounded border border-blue-500/30 text-blue-400 hover:bg-blue-500/10 disabled:opacity-50 disabled:cursor-not-allowed"
               title="Fork session (new session from this point)"
             >
               Fork

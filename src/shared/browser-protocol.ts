@@ -188,6 +188,13 @@ export interface SetThinkingLevelBrowserMessage {
   level: string;
 }
 
+export interface SetModelBrowserMessage {
+  type: "set_model";
+  sessionId: string;
+  provider: string;
+  modelId: string;
+}
+
 export interface ShutdownBrowserMessage {
   type: "shutdown";
   sessionId: string;
@@ -268,6 +275,7 @@ export type BrowserToServerMessage =
   | RenameSessionBrowserMessage
   | RequestModelsBrowserMessage
   | SetThinkingLevelBrowserMessage
+  | SetModelBrowserMessage
   | ShutdownBrowserMessage
   | ListSessionsBrowserMessage
   | ResumeSessionBrowserMessage

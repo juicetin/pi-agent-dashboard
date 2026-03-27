@@ -74,8 +74,11 @@ The command handler SHALL process `send_prompt` text in this exact order:
 1. Check for `!!` prefix → silent bash execution
 2. Check for `!` prefix → bash execution with LLM send
 3. Check for `/compact` → compact routing
-4. Check for `/` prefix → session.prompt() routing
-5. Default → `pi.sendUserMessage(text)` (existing behavior)
+4. Check for `/quit` or `/exit` → shutdown
+5. Check for `/reload` → extension reload
+6. Check for `/model provider/id` → model switch via `setModel` callback
+7. Check for `/` prefix → session.prompt() routing
+8. Default → `pi.sendUserMessage(text)` (existing behavior)
 
 #### Scenario: Routing precedence
 - **WHEN** `send_prompt` text is `!!echo hello`
@@ -83,4 +86,19 @@ The command handler SHALL process `send_prompt` text in this exact order:
 
 #### Scenario: Non-command text passthrough
 - **WHEN** `send_prompt` text is `explain this code`
-- **THEN** the handler SHALL reach step 5 and call `pi.sendUserMessage("explain this code")`
+- **THEN** the handler SHALL reach step 8 and call `pi.sendUserMessage("explain this code")`
+
+### Requirement: Model command routing
+The command handler SHALL detect `/model provider/id` in `send_prompt` text and route it through the `setModel` callback instead of sending to the LLM. The `/model` command is a TUI-only command in pi and does not work via `session.prompt()` or `sendUserMessage()`.
+
+- `/model provider/id` (with a `/` in the argument): call `setModel(provider, modelId)` and send a `command_feedback` event
+- `/model` (bare, no argument) or `/model name` (no `/` in argument): fall through to generic slash command routing (opens TUI model selector)
+
+#### Scenario: Model switch with provider/id
+- **WHEN** `send_prompt` text is `/model anthropic/claude-haiku-4-5`
+- **THEN** the handler SHALL call `setModel("anthropic", "claude-haiku-4-5")` and send a `command_feedback` event with `command: "/model anthropic/claude-haiku-4-5"` and `status: "completed"`
+- **AND** SHALL NOT call `sendUserMessage()`
+
+#### Scenario: Bare /model falls through
+- **WHEN** `send_prompt` text is `/model` or `/model something` (no `/` in argument)
+- **THEN** the handler SHALL fall through to generic slash command routing

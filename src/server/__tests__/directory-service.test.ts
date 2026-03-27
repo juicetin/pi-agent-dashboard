@@ -17,7 +17,17 @@ vi.mock("../../shared/state-replay.js", () => ({
   replayEntriesAsEvents: vi.fn(() => []),
 }));
 
-// Mock the pi-coding-agent SessionManager
+// Mock session-discovery
+vi.mock("../session-discovery.js", () => ({
+  discoverSessionsForCwd: vi.fn(() => []),
+}));
+
+// Mock session-file-reader
+vi.mock("../session-file-reader.js", () => ({
+  loadSessionEntries: vi.fn(() => []),
+}));
+
+// Mock the pi-coding-agent SessionManager (legacy, kept for compatibility)
 vi.mock("@mariozechner/pi-coding-agent", () => ({
   SessionManager: {
     list: vi.fn(async () => []),
@@ -101,18 +111,18 @@ describe("DirectoryService", () => {
   });
 
   describe("discoverSessions", () => {
-    it("calls SessionManager.list and returns metadata", async () => {
-      const { SessionManager: SM } = await import("@mariozechner/pi-coding-agent") as any;
-      SM.list.mockResolvedValueOnce([
+    it("calls discoverSessionsForCwd and returns metadata", async () => {
+      const { discoverSessionsForCwd } = await import("../session-discovery.js");
+      (discoverSessionsForCwd as any).mockReturnValueOnce([
         {
           id: "hist-1",
           cwd: "/project",
           name: "old session",
-          path: "/project/.pi/sessions/hist-1.jsonl",
-          created: new Date("2024-01-01"),
-          modified: new Date("2024-01-02"),
-          messageCount: 5,
+          startedAt: Date.now(),
+          modifiedAt: Date.now(),
           firstMessage: "hello",
+          sessionFile: "/project/.pi/sessions/hist-1.jsonl",
+          sessionDir: "/project/.pi/sessions",
         },
       ]);
 
@@ -120,33 +130,33 @@ describe("DirectoryService", () => {
       const sessionManager = createMockSessionManager();
       service = createDirectoryService(stateStore, sessionManager);
 
-      const sessions = await service.discoverSessions("/project");
+      const sessions = service.discoverSessions("/project");
       expect(sessions).toHaveLength(1);
       expect(sessions[0].id).toBe("hist-1");
       expect(sessions[0].cwd).toBe("/project");
       expect(sessions[0].sessionFile).toBe("/project/.pi/sessions/hist-1.jsonl");
     });
 
-    it("returns empty array on error", async () => {
-      const { SessionManager: SM } = await import("@mariozechner/pi-coding-agent") as any;
-      SM.list.mockRejectedValueOnce(new Error("not found"));
+    it("returns empty array when no sessions found", async () => {
+      const { discoverSessionsForCwd } = await import("../session-discovery.js");
+      (discoverSessionsForCwd as any).mockReturnValueOnce([]);
 
       const stateStore = createMockStateStore();
       const sessionManager = createMockSessionManager();
       service = createDirectoryService(stateStore, sessionManager);
 
-      const sessions = await service.discoverSessions("/nonexistent");
+      const sessions = service.discoverSessions("/nonexistent");
       expect(sessions).toEqual([]);
     });
   });
 
   describe("loadSessionEvents", () => {
     it("loads and converts session entries", async () => {
-      const { SessionManager: SM } = await import("@mariozechner/pi-coding-agent") as any;
+      const { loadSessionEntries } = await import("../session-file-reader.js");
       const { replayEntriesAsEvents } = await import("../../shared/state-replay.js");
       
       const mockEntries = [{ type: "message", message: { role: "user", content: "hi" } }];
-      SM.open.mockReturnValueOnce({ getBranch: () => mockEntries });
+      (loadSessionEntries as any).mockReturnValueOnce(mockEntries);
       (replayEntriesAsEvents as any).mockReturnValueOnce([
         { type: "event_forward", sessionId: "s1", event: { eventType: "message_start", timestamp: 1, data: {} } },
       ]);
@@ -158,12 +168,12 @@ describe("DirectoryService", () => {
       const result = await service.loadSessionEvents("s1", "/path/to/session.jsonl");
       expect(result.success).toBe(true);
       expect(result.events).toHaveLength(1);
-      expect(SM.open).toHaveBeenCalledWith("/path/to/session.jsonl");
+      expect(loadSessionEntries).toHaveBeenCalledWith("/path/to/session.jsonl");
     });
 
     it("returns error on missing file", async () => {
-      const { SessionManager: SM } = await import("@mariozechner/pi-coding-agent") as any;
-      SM.open.mockImplementationOnce(() => { throw Object.assign(new Error("not found"), { code: "ENOENT" }); });
+      const { loadSessionEntries } = await import("../session-file-reader.js");
+      (loadSessionEntries as any).mockImplementationOnce(() => { throw Object.assign(new Error("not found"), { code: "ENOENT" }); });
 
       const stateStore = createMockStateStore();
       const sessionManager = createMockSessionManager();
@@ -196,10 +206,10 @@ describe("DirectoryService", () => {
 
   describe("onDirectoryAdded", () => {
     it("discovers sessions and polls openspec immediately", async () => {
-      const { SessionManager: SM } = await import("@mariozechner/pi-coding-agent") as any;
+      const { discoverSessionsForCwd } = await import("../session-discovery.js");
       const { pollOpenSpecAsync } = await import("../../shared/openspec-poller.js");
       
-      SM.list.mockResolvedValueOnce([]);
+      (discoverSessionsForCwd as any).mockReturnValueOnce([]);
       (pollOpenSpecAsync as any).mockResolvedValue({ initialized: false, changes: [] });
 
       const stateStore = createMockStateStore();
@@ -207,7 +217,7 @@ describe("DirectoryService", () => {
       service = createDirectoryService(stateStore, sessionManager);
 
       const result = await service.onDirectoryAdded("/new/dir");
-      expect(SM.list).toHaveBeenCalledWith("/new/dir");
+      expect(discoverSessionsForCwd).toHaveBeenCalledWith("/new/dir");
       expect(result.sessions).toEqual([]);
       expect(result.openspecData).toBeDefined();
     });

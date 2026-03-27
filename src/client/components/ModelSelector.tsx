@@ -13,10 +13,25 @@ export function ModelSelector({ current, models, onSelect }: Props) {
   const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [pendingModel, setPendingModel] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const hasModels = models && models.length > 0;
+
+  // Clear pending state when current model updates to match
+  useEffect(() => {
+    if (pendingModel && current === pendingModel) {
+      setPendingModel(null);
+    }
+  }, [current, pendingModel]);
+
+  // Safety timeout: clear pending after 10s if no update arrives
+  useEffect(() => {
+    if (!pendingModel) return;
+    const timer = setTimeout(() => setPendingModel(null), 10_000);
+    return () => clearTimeout(timer);
+  }, [pendingModel]);
 
   const filtered = hasModels
     ? models.filter((m) => {
@@ -47,9 +62,13 @@ export function ModelSelector({ current, models, onSelect }: Props) {
   }, [open]);
 
   const handleSelect = (m: ModelInfo) => {
-    onSelect(`${m.provider}/${m.id}`);
+    const label = `${m.provider}/${m.id}`;
+    setPendingModel(label);
+    onSelect(label);
     setOpen(false);
   };
+
+  const displayModel = pendingModel ?? current;
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "ArrowDown") {
@@ -78,8 +97,10 @@ export function ModelSelector({ current, models, onSelect }: Props) {
         disabled={!hasModels}
         data-testid="model-selector-button"
       >
-        <span className="font-mono truncate max-w-[200px]">{current ?? "no model"}</span>
-        {hasModels && <Icon path={mdiChevronDown} size={0.5} />}
+        <span className="font-mono truncate max-w-[200px]">
+          {pendingModel ? `${pendingModel} ⏳` : (current ?? "no model")}
+        </span>
+        {hasModels && !pendingModel && <Icon path={mdiChevronDown} size={0.5} />}
       </button>
 
       {open && (

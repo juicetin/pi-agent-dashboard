@@ -17,8 +17,17 @@ The status bar SHALL display the current model name. Clicking it SHALL open an a
 
 #### Scenario: Select model
 - **WHEN** user clicks a model in the dropdown
-- **THEN** a `send_prompt` is sent with text `/model provider/id`
+- **THEN** a `set_model` message SHALL be sent with `{ provider, modelId }` extracted from the selected model string
 - **AND** the dropdown closes
+- **AND** the selector SHALL display the selected model name with a pending indicator (⏳)
+
+#### Scenario: Pending model indicator clears on confirmation
+- **WHEN** the server confirms the model change via `session_updated` or `model_select` event
+- **THEN** the pending indicator SHALL be removed and the selector SHALL show the confirmed model name
+
+#### Scenario: Pending model indicator timeout
+- **WHEN** no model confirmation is received within 10 seconds
+- **THEN** the pending indicator SHALL be removed and the selector SHALL revert to showing the current model
 
 #### Scenario: No models available
 - **WHEN** no models list has been received from the extension

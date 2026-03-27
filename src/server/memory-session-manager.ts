@@ -29,6 +29,8 @@ export interface SessionManager {
   listAll(): DashboardSession[];
   /** Called after any mutation (register, unregister, update). */
   onChange?: () => void;
+  /** Called after a session is unregistered (status set to ended). */
+  onUnregister?: (sessionId: string) => void;
 }
 
 export function createMemorySessionManager(
@@ -95,6 +97,7 @@ export function createMemorySessionManager(
         session.status = "ended";
         session.endedAt = Date.now();
         mgr.onChange?.();
+        mgr.onUnregister?.(sessionId);
       }
     },
 

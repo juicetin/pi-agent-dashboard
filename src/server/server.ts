@@ -107,6 +107,19 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
     }
   };
 
+  // Broadcast session ended to browsers when sessions are unregistered
+  // (heartbeat timeout in pi-gateway, ~45s after disconnect)
+  sessionManager.onUnregister = (sessionId) => {
+    const session = sessionManager.get(sessionId);
+    if (session) {
+      browserGateway.broadcastSessionUpdated(sessionId, {
+        status: "ended",
+        endedAt: session.endedAt,
+        currentTool: undefined,
+      });
+    }
+  };
+
   // Wire up event forwarding from pi gateway to browser gateway
   piGateway.onEvent = (sessionId, msg) => {
     if (msg.type === "event_forward") {
@@ -185,6 +198,22 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
             data: openspecData,
           } as any);
         }).catch(() => {});
+      }
+
+      // Flush pending auto-resume prompt if one exists for this cwd
+      const pendingResume = browserGateway.pendingResumeRegistry.consume(msg.cwd);
+      if (pendingResume) {
+        // Forward the queued prompt to the resumed session
+        piGateway.sendToSession(sessionId, {
+          type: "send_prompt",
+          sessionId,
+          text: pendingResume.text,
+          images: pendingResume.images,
+        });
+        // Clear resuming flag — register() already set status="active" and hidden=false
+        // No navigation needed: pi --session reuses the same session ID
+        sessionManager.update(sessionId, { resuming: false });
+        browserGateway.broadcastSessionUpdated(sessionId, { resuming: false });
       }
     }
     // session_history_sync removed — server discovers sessions directly via DirectoryService
@@ -521,10 +550,17 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
     await fastify.register(fastifyStatic, {
       root: clientDir,
       prefix: "/",
+      setHeaders: (res, filePath) => {
+        // No-cache for HTML (so browser always gets latest asset references)
+        if (filePath.endsWith(".html")) {
+          res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+        }
+      },
     });
 
     // SPA fallback: serve index.html for client-side routes
     fastify.setNotFoundHandler(async (_request, reply) => {
+      reply.header("Cache-Control", "no-cache, no-store, must-revalidate");
       return reply.sendFile("index.html");
     });
   }
@@ -567,25 +603,43 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
         try {
           const dirs = directoryService.knownDirectories();
           for (const cwd of dirs) {
-            const discovered = await directoryService.discoverSessions(cwd);
+            const discovered = directoryService.discoverSessions(cwd);
             for (const hist of discovered) {
               if (!sessionManager.get(hist.id)) {
-                sessionManager.register({
+                // Restore discovered sessions directly as ended+hidden
+                // (no register/unregister dance that triggers spurious broadcasts)
+                const needsStats = true;
+                let contextTokens: number | undefined;
+                let contextWindow: number | undefined;
+                let model: string | undefined;
+                if (needsStats && hist.sessionFile) {
+                  try {
+                    const stats = extractSessionStats(hist.sessionFile);
+                    if (stats) {
+                      contextTokens = stats.lastTotalTokens;
+                      contextWindow = stats.contextWindow;
+                      model = stats.model;
+                    }
+                  } catch { /* ignore */ }
+                }
+                sessionManager.restore({
                   id: hist.id,
                   cwd: hist.cwd,
                   name: hist.name,
                   source: "tui",
+                  status: "ended",
+                  startedAt: hist.startedAt,
                   sessionFile: hist.sessionFile,
                   sessionDir: hist.sessionDir,
                   firstMessage: hist.firstMessage,
-                  startedAt: hist.startedAt,
+                  hidden: true,
+                  dataUnavailable: true,
+                  model,
+                  contextTokens,
+                  contextWindow,
                 });
-                sessionManager.unregister(hist.id);
-                sessionManager.update(hist.id, { hidden: true });
                 const session = sessionManager.get(hist.id);
-                if (session) {
-                  browserGateway.broadcastSessionAdded(session);
-                }
+                if (session) browserGateway.broadcastSessionAdded(session);
               }
             }
           }

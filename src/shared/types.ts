@@ -35,6 +35,7 @@ export interface DashboardSession {
   hidden?: boolean;
   firstMessage?: string;
   dataUnavailable?: boolean;
+  resuming?: boolean;
 }
 
 /** An event forwarded from a pi session */

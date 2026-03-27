@@ -55,6 +55,7 @@ function searchFiles(cwd: string, query: string): FileEntry[] {
 export type ParsedPrompt =
   | { type: "bash"; command: string; excludeFromContext: boolean }
   | { type: "compact"; customInstructions: string | undefined }
+  | { type: "model"; provider: string; modelId: string }
   | { type: "shutdown" }
   | { type: "reload" }
   | { type: "slash"; text: string }
@@ -92,6 +93,15 @@ export function parseSendPrompt(text: string): ParsedPrompt {
     return { type: "reload" };
   }
 
+  // 4c. Check /model <provider/id>
+  if (text.startsWith("/model ")) {
+    const modelStr = text.slice(7).trim();
+    const slashIdx = modelStr.indexOf("/");
+    if (slashIdx > 0) {
+      return { type: "model", provider: modelStr.slice(0, slashIdx), modelId: modelStr.slice(slashIdx + 1) };
+    }
+  }
+
   // 5. Check / prefix (generic slash command)
   if (text.startsWith("/") && !text.includes("\n")) {
     return { type: "slash", text };
@@ -123,6 +133,8 @@ export function createCommandHandler(
     compact?: (options: { customInstructions?: string }) => void;
     /** Trigger session reload (extensions, settings, skills, etc.) */
     reload?: () => void;
+    /** Switch model via pi.setModel() */
+    setModel?: (provider: string, modelId: string) => Promise<void>;
     /** Route slash commands through session.prompt() */
     sessionPrompt?: (text: string) => void;
   },
@@ -171,6 +183,22 @@ export function createCommandHandler(
                 eventType: "command_feedback",
                 timestamp: Date.now(),
                 data: { command: "/reload", status: "completed" },
+              },
+            });
+            return undefined;
+          }
+
+          if (parsed.type === "model") {
+            if (options?.setModel) {
+              await options.setModel(parsed.provider, parsed.modelId);
+            }
+            options?.eventSink?.({
+              type: "event_forward",
+              sessionId,
+              event: {
+                eventType: "command_feedback",
+                timestamp: Date.now(),
+                data: { command: `/model ${parsed.provider}/${parsed.modelId}`, status: "completed" },
               },
             });
             return undefined;
@@ -252,6 +280,12 @@ export function createCommandHandler(
         case "set_thinking_level":
           if (options?.setThinkingLevel) {
             options.setThinkingLevel(msg.level);
+          }
+          return undefined;
+
+        case "set_model":
+          if (options?.setModel) {
+            await options.setModel(msg.provider, msg.modelId);
           }
           return undefined;
 

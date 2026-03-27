@@ -501,6 +501,58 @@ describe("CommandHandler", () => {
       }));
     });
   });
+
+  describe("set_model", () => {
+    it("should call setModel with provider and modelId", async () => {
+      const pi = createMockPi();
+      const setModel = vi.fn().mockResolvedValue(undefined);
+      const handler = createCommandHandler(pi as any, "s1", { setModel });
+
+      await handler.handle({
+        type: "set_model",
+        sessionId: "s1",
+        provider: "anthropic",
+        modelId: "claude-sonnet-4-20250514",
+      } as ServerToExtensionMessage);
+
+      expect(setModel).toHaveBeenCalledWith("anthropic", "claude-sonnet-4-20250514");
+    });
+
+    it("should not throw when setModel option is not provided", async () => {
+      const pi = createMockPi();
+      const handler = createCommandHandler(pi as any, "s1");
+
+      await expect(handler.handle({
+        type: "set_model",
+        sessionId: "s1",
+        provider: "anthropic",
+        modelId: "unknown-model",
+      } as ServerToExtensionMessage)).resolves.toBeUndefined();
+    });
+
+    it("should route /model slash command through setModel callback", async () => {
+      const pi = createMockPi();
+      const setModel = vi.fn().mockResolvedValue(undefined);
+      const eventSink = vi.fn();
+      const handler = createCommandHandler(pi as any, "s1", { setModel, eventSink });
+
+      await handler.handle({
+        type: "send_prompt",
+        sessionId: "s1",
+        text: "/model anthropic/claude-haiku-4-5",
+      });
+
+      expect(setModel).toHaveBeenCalledWith("anthropic", "claude-haiku-4-5");
+      expect(pi.sendUserMessage).not.toHaveBeenCalled();
+      expect(eventSink).toHaveBeenCalledWith(expect.objectContaining({
+        type: "event_forward",
+        event: expect.objectContaining({
+          eventType: "command_feedback",
+          data: expect.objectContaining({ command: "/model anthropic/claude-haiku-4-5", status: "completed" }),
+        }),
+      }));
+    });
+  });
 });
 
 describe("parseSendPrompt", () => {
@@ -569,5 +621,21 @@ describe("parseSendPrompt", () => {
 
   it("should detect /reload as reload", () => {
     expect(parseSendPrompt("/reload")).toEqual({ type: "reload" });
+  });
+
+  it("should detect /model provider/id as model command", () => {
+    expect(parseSendPrompt("/model anthropic/claude-haiku-4-5")).toEqual({
+      type: "model",
+      provider: "anthropic",
+      modelId: "claude-haiku-4-5",
+    });
+  });
+
+  it("should treat /model without slash in arg as generic slash", () => {
+    expect(parseSendPrompt("/model something")).toEqual({ type: "slash", text: "/model something" });
+  });
+
+  it("should treat bare /model as generic slash", () => {
+    expect(parseSendPrompt("/model")).toEqual({ type: "slash", text: "/model" });
   });
 });

@@ -77,6 +77,18 @@ TypeScript type definitions shared across all components:
    - Plain text → `pi.sendUserMessage()` (default)
 5. Pi processes the command, events flow back via event flow
 
+### Auto-Resume on Prompt
+When a user sends a prompt to an ended session, the server automatically resumes it:
+1. Server detects `send_prompt` for a session with `status === "ended"` and a valid `sessionFile`
+2. Prompt is queued in `PendingResumeRegistry` (keyed by cwd, 30s expiry)
+3. Session is set to `resuming: true`, card shows pulsing yellow dot + "Resuming…"
+4. Server spawns `pi --session <file>` (continue mode)
+5. `pi --session` reconnects with the same session ID — `session_register` sets status back to `"active"`
+6. Server flushes queued prompt to the session and clears `resuming` flag
+7. No navigation needed — user is already viewing the same session
+8. On timeout (30s) or spawn failure, `resuming` flag is cleared and session returns to normal ended state
+9. If user sends another prompt while already resuming, the queued prompt is updated without spawning a second process
+
 ### Model & Thinking Level Flow
 1. Bridge sends current model and thinking level in `session_register` on connect
 2. When user changes model (via `/model`), pi emits `model_select` event

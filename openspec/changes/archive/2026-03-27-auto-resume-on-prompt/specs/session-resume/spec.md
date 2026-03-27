@@ -28,3 +28,23 @@ When a session has `resuming === true`, the session card SHALL display a "Resumi
 #### Scenario: Resuming takes priority over ended state
 - **WHEN** `session.resuming` is `true` and `session.status` is `"ended"`
 - **THEN** the resuming indicator SHALL be shown instead of the normal ended appearance (grey dot, no activity)
+
+### Requirement: Resume and Fork buttons disabled during resuming
+When a session has `resuming === true`, the Resume and Fork buttons SHALL be disabled.
+
+#### Scenario: Buttons disabled while resuming
+- **WHEN** `session.resuming` is `true`
+- **THEN** the Resume and Fork buttons SHALL be disabled with reduced opacity (`disabled:opacity-50`)
+
+#### Scenario: Optimistic resuming state on button click
+- **WHEN** the user clicks Resume or Fork
+- **THEN** the client SHALL set `resuming: true` optimistically on the session
+- **AND** buttons SHALL be disabled immediately
+
+#### Scenario: Resuming cleared on failure
+- **WHEN** the server returns `resume_result` with `success: false`
+- **THEN** the client SHALL clear `resuming` to `false` and re-enable buttons
+
+#### Scenario: Resuming cleared on session activation
+- **WHEN** a `session_added` message arrives with `status !== "ended"` for the same cwd
+- **THEN** the client SHALL clear `resuming` on any other session in that cwd

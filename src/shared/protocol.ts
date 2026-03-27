@@ -186,6 +186,13 @@ export interface ListSessionsExtensionMessage {
   cwd: string;
 }
 
+export interface SetModelMessage {
+  type: "set_model";
+  sessionId: string;
+  provider: string;
+  modelId: string;
+}
+
 export interface ShutdownExtensionMessage {
   type: "shutdown";
   sessionId: string;
@@ -203,4 +210,5 @@ export type ServerToExtensionMessage =
   | RequestModelsMessage
   | SetThinkingLevelMessage
   | ListSessionsExtensionMessage
+  | SetModelMessage
   | ShutdownExtensionMessage;

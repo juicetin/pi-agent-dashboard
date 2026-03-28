@@ -172,6 +172,17 @@ describe("MarkdownContent", () => {
     expect(container.querySelector("li")).not.toBeNull();
   });
 
+  it("renders mermaid code block as MermaidBlock instead of syntax highlighter", () => {
+    const content = "```mermaid\ngraph TD; A-->B\n```";
+    const { container } = render(<ThemeProvider><MarkdownContent content={content} /></ThemeProvider>);
+    // Should NOT have syntax highlighter
+    const highlighted = container.querySelector('[class*="language-"]');
+    expect(highlighted).toBeNull();
+    // Should have mermaid-related content (loading state or rendered)
+    const text = container.textContent || "";
+    expect(text).toMatch(/loading diagram|graph TD/i);
+  });
+
   // ASCII table fixer disabled pending refinement
   it.skip("renders ASCII box-drawing table in monospace code block", () => {
     const content = [

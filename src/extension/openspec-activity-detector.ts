@@ -35,13 +35,18 @@ const CLI_CHANGE_FLAG_RE = /openspec\s+\S+.*--change\s+["']?([^\s"']+)["']?/;
 /** Regex to match openspec archive <name> */
 const CLI_ARCHIVE_RE = /openspec\s+archive\s+["']?([^\s"']+)["']?/;
 
+/** Regex to match openspec new change "name" (positional arg) */
+const CLI_NEW_CHANGE_RE = /openspec\s+new\s+change\s+["']?([^\s"']+)["']?/;
+
 export function detectOpenSpecActivity(
   toolName: string,
   args: Record<string, unknown> | undefined,
 ): DetectedActivity | null {
   if (!args) return null;
 
-  if (toolName === "Read") {
+  const tool = toolName.toLowerCase();
+
+  if (tool === "read") {
     const path = args.path as string | undefined;
     if (!path) return null;
 
@@ -63,7 +68,7 @@ export function detectOpenSpecActivity(
     return null;
   }
 
-  if (toolName === "Write") {
+  if (tool === "write") {
     const path = args.path as string | undefined;
     if (!path) return null;
 
@@ -75,7 +80,7 @@ export function detectOpenSpecActivity(
     return null;
   }
 
-  if (toolName === "Bash") {
+  if (tool === "bash") {
     const command = args.command as string | undefined;
     if (!command || !command.includes("openspec")) return null;
 
@@ -89,6 +94,12 @@ export function detectOpenSpecActivity(
     const archiveMatch = command.match(CLI_ARCHIVE_RE);
     if (archiveMatch) {
       return { changeName: archiveMatch[1] };
+    }
+
+    // Check for openspec new change "name"
+    const newChangeMatch = command.match(CLI_NEW_CHANGE_RE);
+    if (newChangeMatch) {
+      return { changeName: newChangeMatch[1] };
     }
 
     return null;

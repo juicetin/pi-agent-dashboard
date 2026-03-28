@@ -55,6 +55,7 @@ pi-dashboard --dev   # Start with Vite proxy
 | `src/server/memory-session-manager.ts` | Pure in-memory session registry |
 | `src/client/components/FolderOpenSpecSection.tsx` | Folder-level OpenSpec UI: collapsible change list, refresh, bulk archive |
 | `src/client/components/SessionOpenSpecActions.tsx` | Session-level OpenSpec: attach combo box, action buttons, detach |
+| `src/client/components/DialogPortal.tsx` | Portal wrapper rendering dialogs at document.body with scroll lock |
 | `src/client/components/PinDirectoryDialog.tsx` | Dialog to pin a directory by path |
 | `src/client/components/SortablePinnedGroup.tsx` | Drag-to-reorder wrapper for pinned directory groups |
 | `src/server/state-store.ts` | JSON-backed user preferences (hidden sessions) |
@@ -80,6 +81,8 @@ pi-dashboard --dev   # Start with Vite proxy
 | `src/client/lib/event-reducer.ts` | Event-sourced state reducer |
 | `src/client/lib/truncate-path.ts` | Middle-truncation utility for filesystem paths |
 | `src/server/resolve-path.ts` | Safe realpath resolution (symlink handling) |
+| `.pi/skills/openspec-coherence-check/SKILL.md` | Skill: sweep proposals for staleness, conflicts, obsolescence against codebase |
+| `.pi/skills/openspec-coherence-check/references/proposal-queue-schema.md` | JSON schema for `.pi/proposal-queue.json` |
 
 ## Code Instructions
 

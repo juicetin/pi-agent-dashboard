@@ -8,6 +8,7 @@ import Icon from "@mdi/react";
 import { mdiContentCopy, mdiTable } from "@mdi/js";
 import { CopyButton } from "./CopyButton.js";
 import { wrapAsciiTables } from "../lib/wrap-ascii-tables.js";
+import { MermaidBlock } from "./MermaidBlock.js";
 
 interface Props {
   content: string;
@@ -174,6 +175,10 @@ export function MarkdownContent({ content }: Props) {
           code({ className, children, ...props }) {
             const match = /language-(\w+)/.exec(className || "");
             const codeString = String(children).replace(/\n$/, "");
+
+            if (match && match[1] === "mermaid") {
+              return <MermaidBlock code={codeString} />;
+            }
 
             if (match) {
               return (

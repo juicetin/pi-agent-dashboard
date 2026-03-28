@@ -9,7 +9,7 @@ export function PinDirectoryDialog({ onPin, onCancel }: Props) {
   const [dirPath, setDirPath] = useState("");
 
   return (
-    <div className="fixed inset-0 bg-[var(--bg-overlay)] flex items-center justify-center z-50">
+    <div className="fixed inset-0 bg-[var(--bg-overlay)] flex items-center justify-center z-[60]">
       <div className="bg-[var(--bg-secondary)] rounded-lg p-6 w-full max-w-md border border-[var(--border-secondary)]">
         <h3 className="text-lg font-semibold mb-4">Pin Directory</h3>
 

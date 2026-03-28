@@ -1,8 +1,10 @@
 import React, { useState } from "react";
 import type { DashboardSession, OpenSpecChange } from "../../shared/types.js";
+import { ChangeState, deriveChangeState } from "../../shared/types.js";
 import { ExploreDialog } from "./ExploreDialog.js";
 import { ConfirmDialog } from "./ConfirmDialog.js";
-import { ArtifactLetters, allArtifactsDone } from "./openspec-helpers.js";
+import { DialogPortal } from "./DialogPortal.js";
+import { ArtifactLetters } from "./openspec-helpers.js";
 
 function ActionButton({ label, onClick, testId }: { label: string; onClick: () => void; testId?: string }) {
   return (
@@ -93,19 +95,18 @@ export function SessionOpenSpecActions({ session, changes, onAttach, onDetach, o
     );
   }
 
-  const isComplete = change.status === "complete";
-  const canApply = allArtifactsDone(change.artifacts);
+  const state = deriveChangeState(change);
 
   return (
     <div className="mt-1 space-y-1" data-testid="session-openspec-actions">
       {/* Line 1: badge + artifact letters + detach right-aligned */}
       <div className="flex items-center gap-1.5">
-        <span className="text-[11px] text-[var(--text-tertiary)]" data-testid="attached-badge">📋 {attached}</span>
+        <span className="text-[11px]" data-testid="attached-badge">📋 <span className="text-blue-400">{attached}</span></span>
         <ArtifactLetters artifacts={change.artifacts} changeName={change.name} onReadArtifact={onReadArtifact} />
         <span className="flex-1" />
         <ActionButton label="Detach" onClick={onDetach} testId="detach-btn" />
       </div>
-      {/* Line 2: action buttons */}
+      {/* Line 2: action buttons driven by ChangeState */}
       {!isEnded && (
         <div className="flex items-center gap-1 flex-wrap">
           {change.artifacts.length > 0 && (
@@ -116,34 +117,37 @@ export function SessionOpenSpecActions({ session, changes, onAttach, onDetach, o
             />
           )}
           <ActionButton label="Explore" onClick={() => setExploreOpen(true)} testId="explore-btn" />
-          {!isComplete && (
+          {state === ChangeState.PLANNING && (
             <>
               <ActionButton label="Continue" onClick={() => onSendPrompt(`/opsx:continue ${attached}`)} testId="continue-btn" />
               <ActionButton label="FF" onClick={() => onSendPrompt(`/opsx:ff ${attached}`)} testId="ff-btn" />
             </>
           )}
-          {canApply && (
+          {(state === ChangeState.READY || state === ChangeState.IMPLEMENTING) && (
             <ActionButton label="Apply" onClick={() => onSendPrompt(`/opsx:apply ${attached}`)} testId="apply-btn" />
           )}
-          {isComplete && (
-            <ActionButton label="Archive" onClick={() => setArchiveConfirm(true)} testId="archive-btn" />
+          {state === ChangeState.COMPLETE && (
+            <>
+              <ActionButton label="Verify" onClick={() => onSendPrompt(`/opsx:verify ${attached}`)} testId="verify-btn" />
+              <ActionButton label="Archive" onClick={() => setArchiveConfirm(true)} testId="archive-btn" />
+            </>
           )}
         </div>
       )}
 
       {exploreOpen && (
-        <ExploreDialog
+        <DialogPortal><ExploreDialog
           changeName={attached}
           onSend={(text) => {
             onSendPrompt(`/skill:openspec-explore ${attached}\n${text}`);
             setExploreOpen(false);
           }}
           onClose={() => setExploreOpen(false)}
-        />
+        /></DialogPortal>
       )}
 
       {archiveConfirm && (
-        <ConfirmDialog
+        <DialogPortal><ConfirmDialog
           message={`Archive "${attached}"?`}
           confirmLabel="Archive"
           onConfirm={() => {
@@ -151,7 +155,7 @@ export function SessionOpenSpecActions({ session, changes, onAttach, onDetach, o
             setArchiveConfirm(false);
           }}
           onCancel={() => setArchiveConfirm(false)}
-        />
+        /></DialogPortal>
       )}
     </div>
   );

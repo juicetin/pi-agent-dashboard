@@ -25,7 +25,7 @@ export function ExploreDialog({ changeName, onSend, onClose }: Props) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center" data-testid="explore-dialog">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center" data-testid="explore-dialog">
       <div className="absolute inset-0 bg-[var(--bg-overlay)]" onClick={onClose} />
       <div className="relative bg-[var(--bg-secondary)] border border-[var(--border-secondary)] rounded-lg p-4 max-w-md w-full mx-4 space-y-3">
         <div className="flex items-center justify-between">

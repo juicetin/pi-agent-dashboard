@@ -102,6 +102,23 @@ export interface OpenSpecChange {
   artifacts: OpenSpecArtifact[];
 }
 
+/** Lifecycle state of an OpenSpec change, derived from artifacts + task status */
+export enum ChangeState {
+  PLANNING = "PLANNING",
+  READY = "READY",
+  IMPLEMENTING = "IMPLEMENTING",
+  COMPLETE = "COMPLETE",
+}
+
+/** Derive the lifecycle state of an OpenSpec change from its data */
+export function deriveChangeState(change: OpenSpecChange): ChangeState {
+  const allDone = change.artifacts.length > 0 && change.artifacts.every((a) => a.status === "done");
+  if (!allDone) return ChangeState.PLANNING;
+  if (change.status === "complete") return ChangeState.COMPLETE;
+  if (change.status === "in-progress") return ChangeState.IMPLEMENTING;
+  return ChangeState.READY;
+}
+
 /** OpenSpec data for a session's project */
 export interface OpenSpecData {
   initialized: boolean;

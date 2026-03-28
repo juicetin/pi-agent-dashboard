@@ -17,7 +17,8 @@ function makeSession(overrides: Partial<DashboardSession> = {}): DashboardSessio
   };
 }
 
-const inProgressChange: OpenSpecChange = {
+// PLANNING: not all artifacts done
+const planningChange: OpenSpecChange = {
   name: "add-auth",
   status: "in-progress",
   completedTasks: 2,
@@ -28,6 +29,35 @@ const inProgressChange: OpenSpecChange = {
   ],
 };
 
+// READY: all artifacts done, status no-tasks
+const readyChange: OpenSpecChange = {
+  name: "ready-change",
+  status: "no-tasks",
+  completedTasks: 0,
+  totalTasks: 0,
+  artifacts: [
+    { id: "proposal", status: "done" },
+    { id: "design", status: "done" },
+    { id: "specs", status: "done" },
+    { id: "tasks", status: "done" },
+  ],
+};
+
+// IMPLEMENTING: all artifacts done, status in-progress
+const implementingChange: OpenSpecChange = {
+  name: "impl-change",
+  status: "in-progress",
+  completedTasks: 2,
+  totalTasks: 5,
+  artifacts: [
+    { id: "proposal", status: "done" },
+    { id: "design", status: "done" },
+    { id: "specs", status: "done" },
+    { id: "tasks", status: "done" },
+  ],
+};
+
+// COMPLETE: all artifacts done, status complete
 const completeChange: OpenSpecChange = {
   name: "fix-bug",
   status: "complete",
@@ -54,7 +84,7 @@ describe("SessionOpenSpecActions", () => {
     render(
       <SessionOpenSpecActions
         session={makeSession()}
-        changes={[inProgressChange, completeChange]}
+        changes={[planningChange, completeChange]}
         {...defaultProps}
       />,
     );
@@ -76,7 +106,7 @@ describe("SessionOpenSpecActions", () => {
     render(
       <SessionOpenSpecActions
         session={makeSession()}
-        changes={[completeChange, inProgressChange]}
+        changes={[completeChange, planningChange]}
         {...defaultProps}
       />,
     );
@@ -90,7 +120,7 @@ describe("SessionOpenSpecActions", () => {
     render(
       <SessionOpenSpecActions
         session={makeSession()}
-        changes={[inProgressChange]}
+        changes={[planningChange]}
         {...defaultProps}
         onAttach={onAttach}
       />,
@@ -99,28 +129,70 @@ describe("SessionOpenSpecActions", () => {
     expect(onAttach).toHaveBeenCalledWith("add-auth");
   });
 
-  // --- Attached state: in-progress ---
+  // --- PLANNING state: Continue, FF, Explore, Read ---
 
-  it("shows badge and action buttons for in-progress change", () => {
+  it("shows Read, Explore, Continue, FF for PLANNING state", () => {
     render(
       <SessionOpenSpecActions
         session={makeSession({ attachedProposal: "add-auth" })}
-        changes={[inProgressChange]}
+        changes={[planningChange]}
         {...defaultProps}
       />,
     );
     expect(screen.getByTestId("attached-badge").textContent).toContain("add-auth");
+    expect(screen.getByTestId("read-btn")).toBeTruthy();
     expect(screen.getByTestId("explore-btn")).toBeTruthy();
     expect(screen.getByTestId("continue-btn")).toBeTruthy();
     expect(screen.getByTestId("ff-btn")).toBeTruthy();
     expect(screen.getByTestId("detach-btn")).toBeTruthy();
-    expect(screen.queryByTestId("apply-btn")).toBeNull(); // not all artifacts done
-    expect(screen.queryByTestId("archive-btn")).toBeNull(); // not complete
+    expect(screen.queryByTestId("apply-btn")).toBeNull();
+    expect(screen.queryByTestId("verify-btn")).toBeNull();
+    expect(screen.queryByTestId("archive-btn")).toBeNull();
   });
 
-  // --- Attached state: complete ---
+  // --- READY state: Apply, Explore, Read ---
 
-  it("shows Explore, Archive, Detach for complete change", () => {
+  it("shows Read, Explore, Apply for READY state", () => {
+    render(
+      <SessionOpenSpecActions
+        session={makeSession({ attachedProposal: "ready-change" })}
+        changes={[readyChange]}
+        {...defaultProps}
+      />,
+    );
+    expect(screen.getByTestId("read-btn")).toBeTruthy();
+    expect(screen.getByTestId("explore-btn")).toBeTruthy();
+    expect(screen.getByTestId("apply-btn")).toBeTruthy();
+    expect(screen.getByTestId("detach-btn")).toBeTruthy();
+    expect(screen.queryByTestId("continue-btn")).toBeNull();
+    expect(screen.queryByTestId("ff-btn")).toBeNull();
+    expect(screen.queryByTestId("verify-btn")).toBeNull();
+    expect(screen.queryByTestId("archive-btn")).toBeNull();
+  });
+
+  // --- IMPLEMENTING state: Apply, Explore, Read ---
+
+  it("shows Read, Explore, Apply for IMPLEMENTING state", () => {
+    render(
+      <SessionOpenSpecActions
+        session={makeSession({ attachedProposal: "impl-change" })}
+        changes={[implementingChange]}
+        {...defaultProps}
+      />,
+    );
+    expect(screen.getByTestId("read-btn")).toBeTruthy();
+    expect(screen.getByTestId("explore-btn")).toBeTruthy();
+    expect(screen.getByTestId("apply-btn")).toBeTruthy();
+    expect(screen.getByTestId("detach-btn")).toBeTruthy();
+    expect(screen.queryByTestId("continue-btn")).toBeNull();
+    expect(screen.queryByTestId("ff-btn")).toBeNull();
+    expect(screen.queryByTestId("verify-btn")).toBeNull();
+    expect(screen.queryByTestId("archive-btn")).toBeNull();
+  });
+
+  // --- COMPLETE state: Verify, Archive, Explore, Read ---
+
+  it("shows Read, Explore, Verify, Archive for COMPLETE state", () => {
     render(
       <SessionOpenSpecActions
         session={makeSession({ attachedProposal: "fix-bug" })}
@@ -128,22 +200,30 @@ describe("SessionOpenSpecActions", () => {
         {...defaultProps}
       />,
     );
+    expect(screen.getByTestId("read-btn")).toBeTruthy();
     expect(screen.getByTestId("explore-btn")).toBeTruthy();
+    expect(screen.getByTestId("verify-btn")).toBeTruthy();
     expect(screen.getByTestId("archive-btn")).toBeTruthy();
     expect(screen.getByTestId("detach-btn")).toBeTruthy();
     expect(screen.queryByTestId("continue-btn")).toBeNull();
     expect(screen.queryByTestId("ff-btn")).toBeNull();
+    expect(screen.queryByTestId("apply-btn")).toBeNull();
   });
 
-  it("shows Apply button when all artifacts done", () => {
+  // --- Blue badge color ---
+
+  it("renders attached proposal name with text-blue-400", () => {
     render(
       <SessionOpenSpecActions
-        session={makeSession({ attachedProposal: "fix-bug" })}
-        changes={[completeChange]}
+        session={makeSession({ attachedProposal: "add-auth" })}
+        changes={[planningChange]}
         {...defaultProps}
       />,
     );
-    expect(screen.getByTestId("apply-btn")).toBeTruthy();
+    const badge = screen.getByTestId("attached-badge");
+    const nameSpan = badge.querySelector(".text-blue-400");
+    expect(nameSpan).toBeTruthy();
+    expect(nameSpan!.textContent).toBe("add-auth");
   });
 
   // --- Action callbacks ---
@@ -153,7 +233,7 @@ describe("SessionOpenSpecActions", () => {
     render(
       <SessionOpenSpecActions
         session={makeSession({ attachedProposal: "add-auth" })}
-        changes={[inProgressChange]}
+        changes={[planningChange]}
         {...defaultProps}
         onSendPrompt={onSendPrompt}
       />,
@@ -162,12 +242,40 @@ describe("SessionOpenSpecActions", () => {
     expect(onSendPrompt).toHaveBeenCalledWith("/opsx:continue add-auth");
   });
 
+  it("Verify sends correct prompt", () => {
+    const onSendPrompt = vi.fn();
+    render(
+      <SessionOpenSpecActions
+        session={makeSession({ attachedProposal: "fix-bug" })}
+        changes={[completeChange]}
+        {...defaultProps}
+        onSendPrompt={onSendPrompt}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("verify-btn"));
+    expect(onSendPrompt).toHaveBeenCalledWith("/opsx:verify fix-bug");
+  });
+
+  it("Apply sends correct prompt", () => {
+    const onSendPrompt = vi.fn();
+    render(
+      <SessionOpenSpecActions
+        session={makeSession({ attachedProposal: "ready-change" })}
+        changes={[readyChange]}
+        {...defaultProps}
+        onSendPrompt={onSendPrompt}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("apply-btn"));
+    expect(onSendPrompt).toHaveBeenCalledWith("/opsx:apply ready-change");
+  });
+
   it("Detach calls onDetach", () => {
     const onDetach = vi.fn();
     render(
       <SessionOpenSpecActions
         session={makeSession({ attachedProposal: "add-auth" })}
-        changes={[inProgressChange]}
+        changes={[planningChange]}
         {...defaultProps}
         onDetach={onDetach}
       />,
@@ -182,7 +290,7 @@ describe("SessionOpenSpecActions", () => {
     render(
       <SessionOpenSpecActions
         session={makeSession({ attachedProposal: "add-auth", status: "ended" })}
-        changes={[inProgressChange]}
+        changes={[planningChange]}
         {...defaultProps}
       />,
     );
@@ -199,7 +307,7 @@ describe("SessionOpenSpecActions", () => {
     render(
       <SessionOpenSpecActions
         session={makeSession({ attachedProposal: "add-auth" })}
-        changes={[inProgressChange]}
+        changes={[planningChange]}
         {...defaultProps}
       />,
     );
@@ -211,7 +319,7 @@ describe("SessionOpenSpecActions", () => {
     render(
       <SessionOpenSpecActions
         session={makeSession({ attachedProposal: "add-auth" })}
-        changes={[inProgressChange]}
+        changes={[planningChange]}
         {...defaultProps}
         onReadArtifact={onReadArtifact}
       />,
@@ -226,7 +334,7 @@ describe("SessionOpenSpecActions", () => {
     render(
       <SessionOpenSpecActions
         session={makeSession({ attachedProposal: "archived-change" })}
-        changes={[inProgressChange]}
+        changes={[planningChange]}
         {...defaultProps}
       />,
     );

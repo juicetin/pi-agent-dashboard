@@ -24,6 +24,7 @@ import { useEditors } from "../lib/use-editors.js";
 import { openEditor } from "../lib/editor-api.js";
 import { Toast, useToast } from "./Toast.js";
 import { PinDirectoryDialog } from "./PinDirectoryDialog.js";
+import { DialogPortal } from "./DialogPortal.js";
 import { truncatePathMiddle } from "../lib/truncate-path.js";
 
 export interface ContextUsageInfo {
@@ -344,6 +345,9 @@ export function SessionList({ sessions, selectedId, onSelect, contextUsageMap, o
               onRefresh={() => onOpenSpecRefresh?.(group.cwd)}
               onBulkArchive={() => onBulkArchive?.(group.cwd)}
               onReadArtifact={onReadArtifact ? (changeName, artifactId) => onReadArtifact(group.cwd, changeName, artifactId) : undefined}
+              sessions={group.sessions}
+              onSendPrompt={onSendPrompt}
+              onNavigateToSession={onSelect}
             />
           )}
           <div className="mt-1 ml-5 flex items-center gap-1">
@@ -466,13 +470,13 @@ export function SessionList({ sessions, selectedId, onSelect, contextUsageMap, o
         </div>
       )}
       {showPinDialog && onPinDirectory && (
-        <PinDirectoryDialog
+        <DialogPortal><PinDirectoryDialog
           onPin={(dirPath) => {
             onPinDirectory(dirPath);
             setShowPinDialog(false);
           }}
           onCancel={() => setShowPinDialog(false)}
-        />
+        /></DialogPortal>
       )}
       <Toast messages={messages} onDismiss={dismissToast} />
     </div>

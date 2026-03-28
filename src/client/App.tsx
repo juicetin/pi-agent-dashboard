@@ -5,6 +5,8 @@ import { useSidebarState } from "./hooks/useSidebarState.js";
 import { SessionList } from "./components/SessionList.js";
 import { ResizableSidebar } from "./components/ResizableSidebar.js";
 import { HamburgerButton, MobileOverlay } from "./components/MobileOverlay.js";
+import { MobileShell } from "./components/MobileShell.js";
+import { useMobile } from "./hooks/useMobile.js";
 import { ChatView } from "./components/ChatView.js";
 import { MarkdownPreviewView } from "./components/MarkdownPreviewView.js";
 import { useOpenSpecReader } from "./hooks/useOpenSpecReader.js";
@@ -14,7 +16,7 @@ import { TokenStatsBar } from "./components/TokenStatsBar.js";
 import { CommandInput } from "./components/CommandInput.js";
 import { StatusBar } from "./components/StatusBar.js";
 import { LandingPage } from "./components/LandingPage.js";
-import { createInitialState, reduceEvent, type SessionState } from "./lib/event-reducer.js";
+import { createInitialState, reduceEvent, addInteractiveRequest, resolveInteractiveRequest, type SessionState } from "./lib/event-reducer.js";
 import { useEditors } from "./lib/use-editors.js";
 import type { DashboardSession, CommandInfo, FileEntry, OpenSpecData, ModelInfo } from "../shared/types.js";
 import type { ServerToBrowserMessage } from "../shared/browser-protocol.js";
@@ -59,6 +61,7 @@ export default function App() {
   const [match, params] = useRoute("/session/:id");
   const selectedId = match ? params?.id : undefined;
   const sidebar = useSidebarState();
+  const isMobile = useMobile();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [sessions, setSessions] = useState<Map<string, DashboardSession>>(new Map());
   const [sessionStates, setSessionStates] = useState<Map<string, SessionState>>(new Map());
@@ -235,6 +238,15 @@ export default function App() {
       case "pinned_dirs_updated":
         setPinnedDirectories(msg.paths);
         break;
+
+      case "extension_ui_request":
+        setSessionStates((prev) => {
+          const next = new Map(prev);
+          const current = next.get(msg.sessionId) ?? createInitialState();
+          next.set(msg.sessionId, addInteractiveRequest(current, msg.requestId, msg.method, msg.params));
+          return next;
+        });
+        break;
     }
   }, [send, clearSpawningCwd, navigate]);
 
@@ -331,6 +343,23 @@ export default function App() {
         });
         // Send abort to stop any server-side processing
         send({ type: "abort", sessionId: selectedId });
+      }
+    },
+    [selectedId, send],
+  );
+
+  const handleRespondToUi = useCallback(
+    (requestId: string, result?: unknown, cancelled?: boolean) => {
+      if (selectedId) {
+        send({ type: "extension_ui_response", sessionId: selectedId, requestId, result, cancelled } as any);
+        setSessionStates((prev) => {
+          const next = new Map(prev);
+          const current = next.get(selectedId);
+          if (current) {
+            next.set(selectedId, resolveInteractiveRequest(current, requestId, result, cancelled));
+          }
+          return next;
+        });
       }
     },
     [selectedId, send],
@@ -548,98 +577,181 @@ export default function App() {
     />
   );
 
+  const connectionBanner = (
+    <>
+      {status === "connecting" && (
+        <div className="bg-yellow-600/20 text-yellow-400 text-xs px-3 py-1 text-center">
+          Connecting...
+        </div>
+      )}
+      {status === "offline" && (
+        <div className="bg-red-600/20 text-red-400 text-xs px-3 py-1 text-center">
+          Server offline
+        </div>
+      )}
+    </>
+  );
+
+  const sessionDetail = selectedId ? (
+    <div className="flex-1 flex flex-col min-w-0 h-full">
+      {connectionBanner}
+      <SessionHeader
+        session={sessions.get(selectedId)}
+        state={selectedState}
+        onRename={handleRenameSession}
+        showBack
+        onBack={isMobile ? () => navigate("/") : () => window.history.back()}
+        mobileActions={isMobile ? {
+          editors: selectedCwd ? editorMap.get(selectedCwd) : undefined,
+          openspecChanges: selectedCwd ? openspecMap.get(selectedCwd)?.changes : undefined,
+          onHide: () => handleHideSession(selectedId),
+          onUnhide: () => handleUnhideSession(selectedId),
+          onResume: (mode) => handleResumeSession(selectedId, mode),
+          onShutdown: () => handleShutdownSession(selectedId),
+          onOpenEditor: selectedCwd ? (editorId) => {
+            import("./lib/editor-api.js").then(({ openEditor }) => openEditor(selectedCwd!, editorId));
+          } : undefined,
+          onAttachProposal: (changeName) => handleAttachProposal(selectedId, changeName),
+          onDetachProposal: () => handleDetachProposal(selectedId),
+        } : undefined}
+      />
+      {/* Mobile info strip */}
+      {isMobile && selectedSession && (
+        <div className="px-4 py-1.5 border-b border-[var(--border-primary)] text-xs text-[var(--text-tertiary)]">
+          <div className="flex items-center gap-2 flex-wrap">
+            {(selectedState.model || selectedSession.model) && (
+              <span>{selectedState.model || selectedSession.model}</span>
+            )}
+            {(selectedState.thinkingLevel || selectedSession.thinkingLevel) && (
+              <span>💭 {selectedState.thinkingLevel || selectedSession.thinkingLevel}</span>
+            )}
+            {selectedState.status === "streaming" && selectedState.currentTool && (
+              <span className="text-yellow-400">⚡ {selectedState.currentTool}</span>
+            )}
+            {selectedState.status === "streaming" && !selectedState.currentTool && (
+              <span className="text-green-400">Thinking…</span>
+            )}
+            <span className="flex-1" />
+            {selectedState.cost > 0 && <span>${selectedState.cost.toFixed(2)}</span>}
+          </div>
+          {selectedState.contextUsage && selectedState.contextUsage.contextWindow > 0 && (
+            <div className="mt-1">
+              <div className="flex items-center gap-2 text-[10px]">
+                <span>{selectedState.contextUsage.tokens != null ? `${Math.round((selectedState.contextUsage.tokens / 1000))}k` : "—"}</span>
+                <div className="flex-1 h-1.5 bg-[var(--bg-tertiary)] rounded-full overflow-hidden">
+                  {selectedState.contextUsage.tokens != null && (
+                    <div
+                      className="h-full bg-blue-500 rounded-full"
+                      style={{ width: `${Math.min((selectedState.contextUsage.tokens / selectedState.contextUsage.contextWindow) * 100, 100)}%` }}
+                    />
+                  )}
+                </div>
+                <span>{Math.round(selectedState.contextUsage.contextWindow / 1000)}k</span>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+      {!isMobile && (
+        <TokenStatsBar
+          turnStats={selectedState.turnStats}
+          contextUsage={selectedState.contextUsage}
+          tokensIn={selectedState.tokensIn}
+          tokensOut={selectedState.tokensOut}
+          cacheRead={selectedState.cacheRead}
+          cacheWrite={selectedState.cacheWrite}
+          cost={selectedState.cost}
+        />
+      )}
+      {previewState ? (
+        <OpenSpecPreview
+          cwd={previewState.cwd}
+          changeName={previewState.changeName}
+          initialArtifact={previewState.artifactId}
+          artifacts={previewState.artifacts}
+          onBack={() => setPreviewState(null)}
+        />
+      ) : (
+        <>
+          <ChatView state={selectedState} toolContext={toolContext} onCancelPending={handleCancelPending} onRespondToUi={handleRespondToUi} />
+          <StatusBar
+            model={selectedState.model ?? selectedSession?.model}
+            models={modelsMap.get(selectedId)}
+            thinkingLevel={selectedState.thinkingLevel ?? selectedSession?.thinkingLevel}
+            status={selectedState.status}
+            currentTool={selectedState.currentTool}
+            streamingText={selectedState.streamingText || undefined}
+            onSelectModel={(modelStr) => {
+              const slashIdx = modelStr.indexOf("/");
+              if (slashIdx > 0) {
+                const provider = modelStr.slice(0, slashIdx);
+                const modelId = modelStr.slice(slashIdx + 1);
+                send({ type: "set_model", sessionId: selectedId, provider, modelId });
+              }
+            }}
+            onSelectThinkingLevel={(level) => {
+              send({ type: "set_thinking_level", sessionId: selectedId, level });
+            }}
+          />
+          <CommandInput
+            commands={selectedCommands}
+            onSend={handleSend}
+            onListFiles={handleListFiles}
+            fileResults={fileResults}
+            disabled={false}
+            sessionStatus={selectedState.status}
+            onAbort={handleAbort}
+            pendingPrompt={!!selectedState.pendingPrompt}
+            onCancelPending={handleCancelPending}
+          />
+        </>
+      )}
+    </div>
+  ) : null;
+
+  // Mobile: two-step full-screen navigation
+  if (isMobile) {
+    const mobileDepth = previewState ? 2 : selectedId ? 1 : 0;
+    return (
+      <div className="bg-[var(--bg-primary)] text-[var(--text-primary)]">
+        <MobileShell
+          depth={mobileDepth}
+          onBack={() => {
+            if (previewState) {
+              setPreviewState(null);
+            } else {
+              navigate("/");
+            }
+          }}
+          listPanel={
+            <div className="flex flex-col h-full">
+              {connectionBanner}
+              {sessionList}
+            </div>
+          }
+          detailPanel={sessionDetail ?? <LandingPage />}
+        />
+      </div>
+    );
+  }
+
+  // Desktop: side-by-side layout
   return (
     <div className="flex h-screen bg-[var(--bg-primary)] text-[var(--text-primary)]">
-      {/* Desktop sidebar (hidden below md) */}
       <div className="hidden md:flex">
         <ResizableSidebar sidebar={sidebar}>
           {sessionList}
         </ResizableSidebar>
       </div>
 
-      {/* Mobile hamburger + overlay (hidden above md) */}
       <HamburgerButton onClick={() => setMobileOpen(true)} />
       <MobileOverlay open={mobileOpen} onClose={() => setMobileOpen(false)}>
         {sessionList}
       </MobileOverlay>
 
       <div className="flex-1 flex flex-col min-w-0">
-        {/* Connection status */}
-        {status === "connecting" && (
-          <div className="bg-yellow-600/20 text-yellow-400 text-xs px-3 py-1 text-center">
-            Connecting...
-          </div>
-        )}
-        {status === "offline" && (
-          <div className="bg-red-600/20 text-red-400 text-xs px-3 py-1 text-center">
-            Server offline
-          </div>
-        )}
-        {selectedId ? (
-          <>
-            <SessionHeader
-              session={sessions.get(selectedId)}
-              state={selectedState}
-              onRename={handleRenameSession}
-              showBack
-              onBack={() => window.history.back()}
-            />
-            <TokenStatsBar
-              turnStats={selectedState.turnStats}
-              contextUsage={selectedState.contextUsage}
-              tokensIn={selectedState.tokensIn}
-              tokensOut={selectedState.tokensOut}
-              cacheRead={selectedState.cacheRead}
-              cacheWrite={selectedState.cacheWrite}
-              cost={selectedState.cost}
-            />
-            {previewState ? (
-              <OpenSpecPreview
-                cwd={previewState.cwd}
-                changeName={previewState.changeName}
-                initialArtifact={previewState.artifactId}
-                artifacts={previewState.artifacts}
-                onBack={() => setPreviewState(null)}
-              />
-            ) : (
-              <>
-                <ChatView state={selectedState} toolContext={toolContext} onCancelPending={handleCancelPending} />
-                <StatusBar
-                  model={selectedState.model ?? selectedSession?.model}
-                  models={modelsMap.get(selectedId)}
-                  thinkingLevel={selectedState.thinkingLevel ?? selectedSession?.thinkingLevel}
-                  status={selectedState.status}
-                  currentTool={selectedState.currentTool}
-                  streamingText={selectedState.streamingText || undefined}
-                  onSelectModel={(modelStr) => {
-                    const slashIdx = modelStr.indexOf("/");
-                    if (slashIdx > 0) {
-                      const provider = modelStr.slice(0, slashIdx);
-                      const modelId = modelStr.slice(slashIdx + 1);
-                      send({ type: "set_model", sessionId: selectedId, provider, modelId });
-                    }
-                  }}
-                  onSelectThinkingLevel={(level) => {
-                    send({ type: "set_thinking_level", sessionId: selectedId, level });
-                  }}
-                />
-                <CommandInput
-                  commands={selectedCommands}
-                  onSend={handleSend}
-                  onListFiles={handleListFiles}
-                  fileResults={fileResults}
-                  disabled={false}
-                  sessionStatus={selectedState.status}
-                  onAbort={handleAbort}
-                  pendingPrompt={!!selectedState.pendingPrompt}
-                  onCancelPending={handleCancelPending}
-                />
-              </>
-            )}
-          </>
-        ) : (
-          <LandingPage />
-        )}
+        {connectionBanner}
+        {sessionDetail ?? <LandingPage />}
       </div>
     </div>
   );

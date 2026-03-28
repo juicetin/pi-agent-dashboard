@@ -633,6 +633,17 @@ export function createBrowserGateway(
             }
             break;
           }
+
+          case "extension_ui_response": {
+            piGateway.sendToSession(msg.sessionId, {
+              type: "extension_ui_response",
+              sessionId: msg.sessionId,
+              requestId: msg.requestId,
+              result: msg.result,
+              cancelled: msg.cancelled,
+            });
+            break;
+          }
         }
       } catch {
         // Ignore malformed messages

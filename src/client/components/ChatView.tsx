@@ -1,7 +1,7 @@
 import React, { useRef, useEffect, useCallback } from "react";
 import Icon from "@mdi/react";
 import { mdiContentCopy, mdiTextBox, mdiLoading } from "@mdi/js";
-import type { SessionState, ChatImage } from "../lib/event-reducer.js";
+import type { SessionState, ChatImage, InteractiveUiRequest } from "../lib/event-reducer.js";
 import type { ToolContext } from "./tool-renderers/index.js";
 import { MarkdownContent } from "./MarkdownContent.js";
 import { CopyButton } from "./CopyButton.js";
@@ -10,11 +10,14 @@ import { ThinkingBlock } from "./ThinkingBlock.js";
 import { BashOutputCard } from "./BashOutputCard.js";
 import { CommandFeedbackCard } from "./CommandFeedbackCard.js";
 import { formatMessageTime } from "../lib/format.js";
+import { useMobile } from "../hooks/useMobile.js";
+import { getInteractiveRenderer } from "./interactive-renderers/registry.js";
 
 interface Props {
   state: SessionState;
   toolContext: ToolContext;
   onCancelPending?: () => void;
+  onRespondToUi?: (requestId: string, result?: unknown, cancelled?: boolean) => void;
 }
 
 function ImageAttachments({ images }: { images: ChatImage[] }) {
@@ -55,20 +58,40 @@ function MessageBubble({ content, className, timestamp }: { content: string; cla
   );
 }
 
-export function ChatView({ state, toolContext, onCancelPending }: Props) {
+function InteractiveUiCard({ request, onRespondToUi }: {
+  request: InteractiveUiRequest;
+  onRespondToUi?: (requestId: string, result?: unknown, cancelled?: boolean) => void;
+}) {
+  const Renderer = getInteractiveRenderer(request.method);
+  return (
+    <Renderer
+      requestId={request.requestId}
+      method={request.method}
+      params={request.params}
+      status={request.status}
+      result={request.result}
+      onRespond={(result) => onRespondToUi?.(request.requestId, result)}
+      onCancel={() => onRespondToUi?.(request.requestId, undefined, true)}
+    />
+  );
+}
+
+export function ChatView({ state, toolContext, onCancelPending, onRespondToUi }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const isMobile = useMobile();
+  const bubbleMax = isMobile ? "max-w-[95%]" : "max-w-[80%]";
 
   useEffect(() => {
     scrollRef.current?.scrollTo(0, scrollRef.current.scrollHeight);
   }, [state.messages.length, state.streamingText, state.pendingPrompt]);
 
   return (
-    <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-1">
+    <div ref={scrollRef} className={`flex-1 overflow-y-auto ${isMobile ? "p-2" : "p-4"} space-y-1`}>
       {state.messages.map((msg) => {
         if (msg.role === "user") {
           return (
             <div key={msg.id} className="mt-4 mb-4 flex justify-end">
-              <div className="bg-blue-500/10 border border-blue-500/20 border-l-2 border-l-blue-400 rounded-xl shadow-md px-4 py-2 max-w-[80%]">
+              <div className={`bg-blue-500/10 border border-blue-500/20 border-l-2 border-l-blue-400 rounded-xl shadow-md px-4 py-2 ${bubbleMax}`}>
                 {msg.images && msg.images.length > 0 && (
                   <ImageAttachments images={msg.images} />
                 )}
@@ -133,12 +156,30 @@ export function ChatView({ state, toolContext, onCancelPending }: Props) {
           );
         }
 
+        if (msg.role === "interactiveUi") {
+          const args = msg.args as any;
+          const request: InteractiveUiRequest = {
+            requestId: args.requestId,
+            method: args.method,
+            params: args.params,
+            status: args.status,
+            result: args.result,
+          };
+          return (
+            <InteractiveUiCard
+              key={msg.id}
+              request={request}
+              onRespondToUi={onRespondToUi}
+            />
+          );
+        }
+
         // assistant
         return (
           <div key={msg.id} className="mt-4 mb-4 flex justify-start">
             <MessageBubble
               content={msg.content}
-              className="bg-[var(--bg-tertiary)] border border-[var(--border-subtle)] rounded-xl shadow-md px-4 py-2 max-w-[80%]"
+              className={`bg-[var(--bg-tertiary)] border border-[var(--border-subtle)] rounded-xl shadow-md px-4 py-2 ${bubbleMax}`}
               timestamp={msg.timestamp}
             />
           </div>
@@ -157,7 +198,7 @@ export function ChatView({ state, toolContext, onCancelPending }: Props) {
       {/* Streaming text */}
       {state.streamingText && (
         <div className="flex justify-start">
-          <div className="bg-[var(--bg-tertiary)] border border-[var(--border-subtle)] rounded-xl shadow-md px-4 py-2 max-w-[80%]">
+          <div className={`bg-[var(--bg-tertiary)] border border-[var(--border-subtle)] rounded-xl shadow-md px-4 py-2 ${bubbleMax}`}>
             <MarkdownContent content={state.streamingText} />
             <span className="inline-block w-1.5 h-4 bg-[var(--bg-surface)] animate-pulse ml-0.5" />
           </div>
@@ -167,7 +208,7 @@ export function ChatView({ state, toolContext, onCancelPending }: Props) {
       {/* Optimistic pending prompt card */}
       {state.pendingPrompt && (
         <div data-testid="pending-prompt-card" className="mt-4 mb-4 flex justify-end">
-          <div className="bg-blue-500/10 border border-blue-500/20 border-l-2 border-l-blue-400 rounded-xl shadow-md px-4 py-2 max-w-[80%]">
+          <div className={`bg-blue-500/10 border border-blue-500/20 border-l-2 border-l-blue-400 rounded-xl shadow-md px-4 py-2 ${bubbleMax}`}>
             {state.pendingPrompt.images && state.pendingPrompt.images.length > 0 && (
               <ImageAttachments images={state.pendingPrompt.images} />
             )}

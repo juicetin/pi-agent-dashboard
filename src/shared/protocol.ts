@@ -42,10 +42,12 @@ export interface CommandsListMessage {
   commands: CommandInfo[];
 }
 
-export interface ExtensionUiEventMessage {
-  type: "extension_ui_event";
+export interface ExtensionUiRequestMessage {
+  type: "extension_ui_request";
   sessionId: string;
-  uiEvent: Record<string, unknown>;
+  requestId: string;
+  method: string;
+  params: Record<string, unknown>;
 }
 
 export interface StatsUpdateMessage {
@@ -121,7 +123,7 @@ export type ExtensionToServerMessage =
   | SessionHeartbeatMessage
   | EventForwardMessage
   | CommandsListMessage
-  | ExtensionUiEventMessage
+  | ExtensionUiRequestMessage
   | StatsUpdateMessage
   | FilesListMessage
   | GitInfoUpdateMessage
@@ -200,9 +202,18 @@ export interface ShutdownExtensionMessage {
 
 // LoadSessionEventsMessage removed — server loads directly via DirectoryService
 
+export interface ExtensionUiResponseMessage {
+  type: "extension_ui_response";
+  sessionId: string;
+  requestId: string;
+  result?: unknown;
+  cancelled?: boolean;
+}
+
 export type ServerToExtensionMessage =
   | SendPromptToExtensionMessage
   | AbortToExtensionMessage
+  | ExtensionUiResponseMessage
   | RequestCommandsMessage
   | RequestStateSyncMessage
   | ListFilesMessage

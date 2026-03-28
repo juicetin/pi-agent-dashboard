@@ -50,10 +50,12 @@ export interface BrowserCommandsListMessage {
   commands: CommandInfo[];
 }
 
-export interface BrowserExtensionUiEventMessage {
-  type: "extension_ui_event";
+export interface BrowserExtensionUiRequestMessage {
+  type: "extension_ui_request";
   sessionId: string;
-  uiEvent: Record<string, unknown>;
+  requestId: string;
+  method: string;
+  params: Record<string, unknown>;
 }
 
 export interface BrowserFilesListMessage {
@@ -114,7 +116,7 @@ export type ServerToBrowserMessage =
   | EventMessage
   | EventReplayMessage
   | BrowserCommandsListMessage
-  | BrowserExtensionUiEventMessage
+  | BrowserExtensionUiRequestMessage
   | BrowserFilesListMessage
   | BrowserOpenSpecUpdateMessage
   | BrowserModelsListMessage
@@ -263,9 +265,18 @@ export interface OpenSpecBulkArchiveBrowserMessage {
   cwd: string;
 }
 
+export interface BrowserExtensionUiResponseMessage {
+  type: "extension_ui_response";
+  sessionId: string;
+  requestId: string;
+  result?: unknown;
+  cancelled?: boolean;
+}
+
 export type BrowserToServerMessage =
   | SubscribeMessage
   | UnsubscribeMessage
+  | BrowserExtensionUiResponseMessage
   | SendPromptToBrowserMessage
   | AbortToBrowserMessage
   | RequestCommandsToBrowserMessage

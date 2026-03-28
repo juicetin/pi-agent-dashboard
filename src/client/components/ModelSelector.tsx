@@ -127,7 +127,7 @@ export function ModelSelector({ current, models, onSelect }: Props) {
                   <button
                     key={label}
                     onClick={() => handleSelect(m)}
-                    className={`w-full px-3 py-1.5 text-left text-xs font-mono flex items-center gap-2 ${
+                    className={`w-full px-3 py-1.5 md:py-1.5 min-h-[44px] md:min-h-0 text-left text-xs font-mono flex items-center gap-2 ${
                       i === selectedIndex ? "bg-[var(--bg-tertiary)]" : "hover:bg-[var(--bg-hover)]"
                     } ${isCurrent ? "text-[var(--accent-blue)]" : "text-[var(--text-secondary)]"}`}
                   >

@@ -52,9 +52,11 @@ describe("Protocol message serialization round-trip", () => {
         ],
       },
       {
-        type: "extension_ui_event",
+        type: "extension_ui_request",
         sessionId: "s1",
-        uiEvent: { method: "confirm", title: "Allow?", result: true },
+        requestId: "req-1",
+        method: "confirm",
+        params: { title: "Allow?", message: "Delete files?" },
       },
       {
         type: "stats_update",
@@ -90,6 +92,18 @@ describe("Protocol message serialization round-trip", () => {
       {
         type: "request_state_sync",
         sessionId: "s1",
+      },
+      {
+        type: "extension_ui_response",
+        sessionId: "s1",
+        requestId: "req-1",
+        result: { confirmed: true },
+      },
+      {
+        type: "extension_ui_response",
+        sessionId: "s1",
+        requestId: "req-2",
+        cancelled: true,
       },
     ];
 
@@ -146,9 +160,11 @@ describe("Protocol message serialization round-trip", () => {
         commands: [],
       },
       {
-        type: "extension_ui_event",
+        type: "extension_ui_request",
         sessionId: "s1",
-        uiEvent: { method: "notify", message: "done", level: "info" },
+        requestId: "req-2",
+        method: "notify",
+        params: { message: "done", level: "info" },
       },
     ];
 
@@ -188,6 +204,12 @@ describe("Protocol message serialization round-trip", () => {
         type: "fetch_content",
         sessionId: "s1",
         seq: 42,
+      },
+      {
+        type: "extension_ui_response",
+        sessionId: "s1",
+        requestId: "req-1",
+        result: { value: "Option A" },
       },
     ];
 

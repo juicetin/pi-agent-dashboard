@@ -1,0 +1,181 @@
+import React, { useState, useRef, useEffect } from "react";
+import Icon from "@mdi/react";
+import {
+  mdiDotsVertical,
+  mdiPencilOutline,
+  mdiEyeOffOutline,
+  mdiEyeOutline,
+  mdiPlay,
+  mdiSourceFork,
+  mdiOpenInNew,
+  mdiClose,
+  mdiSourceBranch,
+  mdiLinkVariant,
+} from "@mdi/js";
+import type { DashboardSession, OpenSpecChange } from "../../shared/types.js";
+import type { DetectedEditor } from "../lib/editor-api.js";
+
+interface Props {
+  session: DashboardSession;
+  editors?: DetectedEditor[];
+  openspecChanges?: OpenSpecChange[];
+  onRename?: () => void;
+  onHide?: () => void;
+  onUnhide?: () => void;
+  onResume?: (mode: "continue" | "fork") => void;
+  onShutdown?: () => void;
+  onOpenEditor?: (editorId: string) => void;
+  onAttachProposal?: (changeName: string) => void;
+  onDetachProposal?: () => void;
+}
+
+function MenuRow({ icon, label, onClick, danger }: {
+  icon: string;
+  label: string;
+  onClick: () => void;
+  danger?: boolean;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`w-full flex items-center gap-3 px-4 py-3 text-sm text-left min-h-[44px] ${
+        danger
+          ? "text-red-400 hover:bg-red-500/10"
+          : "text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
+      }`}
+    >
+      <Icon path={icon} size={0.7} />
+      <span>{label}</span>
+    </button>
+  );
+}
+
+export function MobileActionMenu({ session, editors, openspecChanges, onRename, onHide, onUnhide, onResume, onShutdown, onOpenEditor, onAttachProposal, onDetachProposal }: Props) {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const isAlive = session.status !== "ended";
+  const isHidden = !!session.hidden;
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  // Also close on touch outside
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: TouchEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("touchstart", handler);
+    return () => document.removeEventListener("touchstart", handler);
+  }, [open]);
+
+  function act(fn: () => void) {
+    setOpen(false);
+    fn();
+  }
+
+  return (
+    <div ref={containerRef} className="relative">
+      <button
+        onClick={() => setOpen(!open)}
+        className="p-2 min-w-[44px] min-h-[44px] flex items-center justify-center text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+        aria-label="Session actions"
+        data-testid="mobile-kebab-btn"
+      >
+        <Icon path={mdiDotsVertical} size={0.8} />
+      </button>
+
+      {open && (
+        <div className="absolute right-0 top-full mt-1 w-64 bg-[var(--bg-secondary)] border border-[var(--border-secondary)] rounded-xl shadow-lg z-50 overflow-hidden" data-testid="mobile-action-menu">
+          {/* Git info row (non-interactive) */}
+          {session.gitBranch && (
+            <div className="px-4 py-2 text-xs text-[var(--text-tertiary)] flex items-center gap-2 border-b border-[var(--border-primary)]">
+              <Icon path={mdiSourceBranch} size={0.55} />
+              <span className="truncate">{session.gitBranch}</span>
+              {session.gitPrNumber != null && (
+                <>
+                  <span>·</span>
+                  {session.gitPrUrl ? (
+                    <a href={session.gitPrUrl} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline flex items-center gap-0.5">
+                      #{session.gitPrNumber} <Icon path={mdiLinkVariant} size={0.4} />
+                    </a>
+                  ) : (
+                    <span>#{session.gitPrNumber}</span>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+
+          {/* Rename */}
+          {isAlive && onRename && (
+            <MenuRow icon={mdiPencilOutline} label="Rename" onClick={() => act(onRename)} />
+          )}
+
+          {/* Hide / Unhide */}
+          {isHidden ? (
+            onUnhide && <MenuRow icon={mdiEyeOutline} label="Show session" onClick={() => act(onUnhide)} />
+          ) : (
+            onHide && <MenuRow icon={mdiEyeOffOutline} label="Hide session" onClick={() => act(onHide)} />
+          )}
+
+          {/* Resume / Fork */}
+          {onResume && session.sessionFile && (
+            <>
+              {(!isAlive || isHidden) && (
+                <MenuRow icon={mdiPlay} label="Resume" onClick={() => act(() => onResume("continue"))} />
+              )}
+              <MenuRow icon={mdiSourceFork} label="Fork" onClick={() => act(() => onResume("fork"))} />
+            </>
+          )}
+
+          {/* Editors */}
+          {editors?.map((editor) => (
+            <MenuRow
+              key={editor.id}
+              icon={mdiOpenInNew}
+              label={`Open in ${editor.name}`}
+              onClick={() => act(() => onOpenEditor?.(editor.id))}
+            />
+          ))}
+
+          {/* OpenSpec attach/detach */}
+          {session.openspecChange && onDetachProposal && (
+            <MenuRow icon={mdiLinkVariant} label={`Detach: ${session.openspecChange}`} onClick={() => act(onDetachProposal)} />
+          )}
+          {!session.openspecChange && onAttachProposal && openspecChanges && openspecChanges.length > 0 && (
+            openspecChanges.map((change) => (
+              <MenuRow
+                key={change.name}
+                icon={mdiLinkVariant}
+                label={`Attach: ${change.name}`}
+                onClick={() => act(() => onAttachProposal(change.name))}
+              />
+            ))
+          )}
+
+          {/* Exit */}
+          {isAlive && onShutdown && (
+            <MenuRow icon={mdiClose} label="Exit session" onClick={() => {
+              if (session.status === "streaming") {
+                if (!window.confirm("Session is currently running. Exit anyway?")) return;
+              }
+              act(onShutdown);
+            }} danger />
+          )}
+        </div>
+      )}
+    </div>
+  );
+}

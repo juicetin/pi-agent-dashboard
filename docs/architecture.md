@@ -27,6 +27,10 @@ A global pi extension that runs in every pi session. It:
 - Handles reconnection with exponential backoff and event buffering
 - Sends heartbeats every 15s
 - Detects OpenSpec activity (phase/change) from tool events
+- Proxies `ctx.ui` dialog methods (confirm, select, input, editor) to the dashboard via `ui-proxy.ts`
+  - TUI sessions: races terminal dialog against dashboard response (first wins)
+  - Headless sessions: only dashboard can respond
+  - Fire-and-forget methods (notify) are forwarded alongside the original call
 
 ### 2. Dashboard Server (`src/server/`)
 A Node.js HTTP + WebSocket server that:
@@ -64,6 +68,16 @@ TypeScript type definitions shared across all components:
 3. Server receives, stores in in-memory buffer, assigns sequence number
 4. Server broadcasts to all subscribed browsers via `event` message
 5. Browser's event reducer processes event, React renders update
+
+### Interactive UI Flow (extension dialog → browser → response)
+1. Extension calls `ctx.ui.confirm()` / `select()` / `input()` / `editor()`
+2. Bridge UI proxy intercepts, sends `extension_ui_request` to server
+3. Server forwards to subscribed browsers
+4. Browser renders interactive card inline in chat (renderers in `interactive-renderers/`)
+5. User clicks Allow/Deny/option/submits text
+6. Browser sends `extension_ui_response` to server
+7. Server routes to bridge extension
+8. Bridge UI proxy resolves the original dialog promise
 
 ### Command Flow (browser → pi)
 1. User types prompt or command in browser

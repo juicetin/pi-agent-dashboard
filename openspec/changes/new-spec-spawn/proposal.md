@@ -8,7 +8,7 @@ Depends on: `openspec-folder-card-ui` (provides the folder-level UI where the bu
 
 - "New Spec" button on folder card's OpenSpec section spawns a new pi session with `/opsx:explore` as the initial prompt.
 - Spawn mechanism extended to support an initial prompt: passed as a positional argument to `pi` CLI (e.g., `pi "/opsx:explore"`).
-- Fix: add regex for `openspec new change "name"` pattern in activity detector so the change name is caught immediately when `openspec new change` runs (not delayed until `openspec status --change`).
+- ~~Fix: add regex for `openspec new change "name"` pattern in activity detector~~ *(Already implemented — `CLI_NEW_CHANGE_RE` exists in `openspec-activity-detector.ts` lines 38-39, added by `fix-openspec-activity-detection` archive.)*
 - Auto-attach: when a proposal is created during the explore session, the activity detector catches the change name, and the existing server-side auto-attach logic attaches it to the creating session.
 
 ## Capabilities
@@ -18,11 +18,11 @@ Depends on: `openspec-folder-card-ui` (provides the folder-level UI where the bu
 
 ### Modified Capabilities
 - `process-manager`: Modified — `spawnPiSession` accepts optional `initialPrompt` parameter, passed as positional arg to pi CLI.
-- `proposal-attachment`: Modified — activity detector adds regex for `openspec new change "name"` positional syntax for immediate change name detection.
+- `proposal-attachment`: *(Already done)* — activity detector `CLI_NEW_CHANGE_RE` regex was added by `fix-openspec-activity-detection` archive.
 
 ## Impact
 
 - **Server** (`src/server/`): `process-manager.ts` gains `initialPrompt` option. `browser-gateway.ts` handles new `spawn_spec_session` message type (or extends `spawn_session` with prompt field).
-- **Extension** (`src/extension/`): `openspec-activity-detector.ts` gains `CLI_NEW_CHANGE_RE` regex.
+- **Extension** (`src/extension/`): *(Already done)* `openspec-activity-detector.ts` already has `CLI_NEW_CHANGE_RE` regex (added by `fix-openspec-activity-detection`).
 - **Client** (`src/client/`): "New Spec" button in folder OpenSpec section triggers spawn with prompt.
 - **Protocol** (`src/shared/`): `browser-protocol.ts` — `spawn_session` message extended or new message type for prompt-based spawn.

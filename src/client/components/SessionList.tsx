@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useLocation } from "wouter";
 import Icon from "@mdi/react";
 import { mdiChevronRight, mdiChevronDown, mdiPlus, mdiPin, mdiPinOff } from "@mdi/js";
-import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
+import { DndContext, closestCenter, PointerSensor, TouchSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy, arrayMove } from "@dnd-kit/sortable";
 import { SortableSessionCard } from "./SortableSessionCard.js";
 import { SortablePinnedGroup } from "./SortablePinnedGroup.js";
@@ -264,6 +264,7 @@ export function SessionList({ sessions, selectedId, onSelect, contextUsageMap, o
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 5 } }),
   );
 
   const handleDragEnd = useCallback((event: DragEndEvent) => {
@@ -305,7 +306,7 @@ export function SessionList({ sessions, selectedId, onSelect, contextUsageMap, o
     return (
       <div key={group.cwd} className="bg-[var(--bg-secondary)] rounded-lg p-2">
         <div
-          className="px-2 py-1.5 cursor-pointer rounded hover:bg-[var(--bg-hover)]"
+          className="px-2 py-1.5 min-h-[44px] md:min-h-0 cursor-pointer rounded hover:bg-[var(--bg-hover)]"
           onClick={() => handleToggleCollapse(group.cwd)}
         >
           <div className="flex items-center gap-1.5">

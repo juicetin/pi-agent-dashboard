@@ -44,6 +44,8 @@ pi-dashboard --dev   # Start with Vite proxy
 | `src/extension/dev-build.ts` | Dev build-on-reload helper (client build + server shutdown) |
 | `src/extension/git-info.ts` | Git branch/remote/PR detection (polled every 30s) |
 | `src/extension/git-link-builder.ts` | Git remote URL parsing and platform-specific links |
+| `src/extension/ui-proxy.ts` | Proxies ctx.ui dialogs to dashboard (confirm/select/input/editor/notify) |
+| `.pi/extensions/ask-user.ts` | LLM-callable `ask_user` tool for interactive questions via dashboard UI |
 | `src/extension/openspec-activity-detector.ts` | Detects OpenSpec activity from tool events |
 | `src/shared/openspec-poller.ts` | OpenSpec CLI polling (shared, used by server DirectoryService) |
 | `src/shared/state-replay.ts` | Synthesizes events from pi entries (shared, used by server + bridge) |
@@ -77,6 +79,7 @@ pi-dashboard --dev   # Start with Vite proxy
 | `scripts/reload-all.sh` | Build bridge + reload all pi sessions |
 | `src/client/components/MarkdownPreviewView.tsx` | Generic reusable markdown preview with back button, tabs, loading/error states |
 | `src/client/hooks/useOpenSpecReader.ts` | Maps OpenSpec artifacts to file paths, fetches content, concatenates specs |
+| `src/client/components/interactive-renderers/` | Registry + renderers for interactive UI dialogs (confirm, select, input, editor, notify) |
 | `src/client/App.tsx` | React app with WebSocket integration |
 | `src/client/lib/event-reducer.ts` | Event-sourced state reducer |
 | `src/client/lib/truncate-path.ts` | Middle-truncation utility for filesystem paths |

@@ -2,6 +2,7 @@ import React, { useState, type ReactNode } from "react";
 import Icon from "@mdi/react";
 import { mdiLoading, mdiCheck, mdiAlertCircle, mdiChevronRight, mdiChevronDown } from "@mdi/js";
 import { getToolRenderer, type ToolContext } from "./tool-renderers/index.js";
+import { useMobile } from "../hooks/useMobile.js";
 
 interface Props {
   toolName: string;
@@ -35,14 +36,15 @@ const statusIcons: Record<string, ReactNode> = {
 };
 
 export function ToolCallStep({ toolName, toolCallId, args, status, result, context }: Props) {
+  const isMobile = useMobile();
   const [expanded, setExpanded] = useState(false);
   const Renderer = getToolRenderer(toolName);
 
   return (
-    <div className="mx-4 border-l-2 border-[var(--border-secondary)] pl-3">
+    <div className={`${isMobile ? "mx-2" : "mx-4"} border-l-2 border-[var(--border-secondary)] pl-3`}>
       <button
         onClick={() => setExpanded(!expanded)}
-        className="flex items-center gap-1.5 text-xs text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] w-full text-left"
+        className={`flex items-center gap-1.5 text-xs text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] w-full text-left ${isMobile ? "min-h-[44px] py-2" : ""}`}
       >
         <span className={`inline-flex ${status === "error" ? "text-red-400" : status === "complete" ? "text-green-400" : "text-yellow-400"}`}>
           {statusIcons[status]}

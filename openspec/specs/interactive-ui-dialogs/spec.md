@@ -204,15 +204,15 @@ The `NotifyRenderer` SHALL display an inline notification with appropriate color
 - **THEN** the renderer SHALL display the message in red/error styling
 
 ### Requirement: Chat view renders interactive UI inline
-The `ChatView` SHALL render interactive UI requests as inline cards in the conversation flow. The event reducer SHALL track interactive UI state (pending requests with their params, resolved requests with results).
+The `ChatView` SHALL render interactive UI requests as inline cards in the conversation flow. The event reducer SHALL add interactive requests to the `messages` array as `role: "interactiveUi"` entries so they appear in chronological order alongside other messages. The `interactiveRequests` array SHALL be maintained as a lookup index for resolving responses.
 
 #### Scenario: Interactive request appears in chat
 - **WHEN** the client receives an `extension_ui_request` for a subscribed session
-- **THEN** a new interactive UI card SHALL appear in the chat view at the current position
+- **THEN** a new `interactiveUi` message SHALL be added to the messages array and rendered inline at the current position
 
 #### Scenario: Interactive request resolves in chat
 - **WHEN** the user responds to a pending interactive UI card
-- **THEN** the card SHALL transition from pending (with controls) to resolved (compact summary)
+- **THEN** both the message entry and the `interactiveRequests` entry SHALL be updated to resolved status with the result
 
 ### Requirement: Cleanup of ExtensionUI component
 The orphaned `ExtensionUI.tsx` component SHALL be removed. The old `extension_ui_event` message types (`ExtensionUiEventMessage` in protocol.ts, `BrowserExtensionUiEventMessage` in browser-protocol.ts) SHALL be removed and replaced by the new request/response types.

@@ -270,7 +270,7 @@ export function CommandInput({ commands: externalCommands, onSend, onListFiles, 
             <button
               key={cmd.name}
               onClick={() => selectCommand(cmd)}
-              className={`w-full px-3 py-2 text-left text-sm flex items-center gap-2 ${
+              className={`w-full px-3 py-2 min-h-[44px] md:min-h-0 text-left text-sm flex items-center gap-2 ${
                 i === selectedIndex ? "bg-[var(--bg-tertiary)]" : "hover:bg-[var(--bg-hover)]"
               }`}
             >
@@ -292,7 +292,7 @@ export function CommandInput({ commands: externalCommands, onSend, onListFiles, 
               <button
                 key={file.path}
                 onClick={() => selectFile(file)}
-                className={`w-full px-3 py-2 text-left text-sm flex items-center gap-2 ${
+                className={`w-full px-3 py-2 min-h-[44px] md:min-h-0 text-left text-sm flex items-center gap-2 ${
                   i === selectedIndex ? "bg-[var(--bg-tertiary)]" : "hover:bg-[var(--bg-hover)]"
                 }`}
               >

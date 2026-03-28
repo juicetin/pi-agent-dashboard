@@ -122,6 +122,7 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
 
   // Wire up event forwarding from pi gateway to browser gateway
   piGateway.onEvent = (sessionId, msg) => {
+
     if (msg.type === "event_forward") {
       const seq = eventStore.insertEvent(sessionId, msg.event);
       browserGateway.broadcastEvent(sessionId, seq, msg.event);
@@ -294,6 +295,15 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
       }
       sessionManager.update(sessionId, modelUpdates);
       browserGateway.broadcastSessionUpdated(sessionId, modelUpdates);
+    }
+    if (msg.type === "extension_ui_request") {
+      browserGateway.sendToSubscribers(sessionId, {
+        type: "extension_ui_request",
+        sessionId,
+        requestId: msg.requestId,
+        method: msg.method,
+        params: msg.params,
+      });
     }
     if (msg.type === "session_name_update") {
       const nameUpdates = { name: msg.name || undefined };

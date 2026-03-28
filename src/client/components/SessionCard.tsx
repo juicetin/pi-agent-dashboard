@@ -11,6 +11,7 @@ import type { OpenSpecData, OpenSpecChange } from "../../shared/types.js";
 import { SessionOpenSpecActions } from "./SessionOpenSpecActions.js";
 import { OpenSpecActivityBadge } from "./OpenSpecActivityBadge.js";
 import { InlineRenameInput } from "./InlineRenameInput.js";
+import { useMobile } from "../hooks/useMobile.js";
 
 export const statusColors: Record<string, string> = {
   active: "bg-green-500",
@@ -224,10 +225,76 @@ export function SessionCard({
   const [isRenaming, setIsRenaming] = useState(false);
   const canRename = session.status !== "ended" && !!onRename;
   const isAlive = session.status !== "ended";
+  const isMobile = useMobile();
 
   function handleConfirmRename(name: string) {
     setIsRenaming(false);
     onRename?.(name);
+  }
+
+  // Simplified mobile card
+  if (isMobile) {
+    return (
+      <li
+        onClick={() => onSelect(session.id)}
+        className={`px-4 py-3 cursor-pointer rounded-xl shadow-md shadow-[var(--shadow-card)] border border-[var(--border-subtle)] hover:shadow-lg transition-all duration-200 bg-[var(--bg-tertiary)] ${
+          isHidden ? "opacity-40" : ""
+        } ${session.status === "streaming" || session.resuming ? "card-working-pulse" : ""}`}
+      >
+        {/* Line 1: status dot + name + age */}
+        <div className="flex items-center gap-2">
+          <span
+            className={`w-2 h-2 rounded-full flex-shrink-0 ${session.resuming ? "bg-yellow-500 animate-pulse" : (statusColors[session.status] ?? "bg-[var(--bg-surface)]")}`}
+          />
+          <span className="text-sm truncate flex-1">
+            {getSessionDisplayName(session)}
+          </span>
+          <span className="text-[11px] text-[var(--text-muted)] flex-shrink-0">
+            {formatRelativeTime(now - session.startedAt)}
+          </span>
+        </div>
+
+        {/* Line 2: model + activity + cost */}
+        <div className="flex items-center mt-1 gap-2 text-[12px]">
+          {session.model && (
+            <span className="text-[var(--text-tertiary)] truncate">
+              {session.model}
+            </span>
+          )}
+          <span className="flex-1" />
+          <ActivityIndicator session={session} />
+          {session.cost != null && session.cost > 0 && (
+            <span className="text-[var(--text-tertiary)]">${session.cost.toFixed(2)}</span>
+          )}
+        </div>
+
+        {/* OpenSpec activity badge */}
+        {session.openspecPhase ? (
+          <OpenSpecActivityBadge
+            phase={session.openspecPhase!}
+            changeName={session.openspecChange ?? undefined}
+            completedTasks={
+              session.openspecChange
+                ? openspecChanges?.find((c) => c.name === session.openspecChange)?.completedTasks
+                : undefined
+            }
+            totalTasks={
+              session.openspecChange
+                ? openspecChanges?.find((c) => c.name === session.openspecChange)?.totalTasks
+                : undefined
+            }
+          />
+        ) : null}
+
+        {/* Context usage bar */}
+        <div className="mt-1">
+          <ContextUsageBar
+            tokens={contextUsage?.tokens ?? null}
+            contextWindow={contextUsage?.contextWindow}
+          />
+        </div>
+      </li>
+    );
   }
 
   return (

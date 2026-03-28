@@ -41,7 +41,7 @@ export function ThinkingLevelSelector({ current, onSelect }: Props) {
                   onSelect(level);
                   setOpen(false);
                 }}
-                className={`w-full text-left px-3 py-1.5 text-xs font-mono hover:bg-[var(--bg-tertiary)] transition-colors ${
+                className={`w-full text-left px-3 py-1.5 md:py-1.5 min-h-[44px] md:min-h-0 text-xs font-mono hover:bg-[var(--bg-tertiary)] transition-colors ${
                   level === current ? "text-[var(--accent)] font-bold" : "text-[var(--text-secondary)]"
                 }`}
               >

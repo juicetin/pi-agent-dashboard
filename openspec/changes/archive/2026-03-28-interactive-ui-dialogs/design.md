@@ -42,6 +42,8 @@ Pi's `ctx.ui` property on `ExtensionContext` is typed as `ui: ExtensionUIContext
 
 **Trade-off:** The TUI dialog remains visible after dashboard answers. Acceptable because pi redraws on next output. We do NOT attempt to programmatically dismiss the TUI dialog (no API for that).
 
+**Refinement:** Dashboard-spawned sessions (detected via `PI_DASHBOARD_SPAWNED` env var) skip the race entirely and use dashboard-only mode. In an unattended tmux window, the original TUI dialog auto-resolves repeatedly, causing a flood of duplicate requests. The env var check in `bridge.ts` passes `hasUI: false` to the proxy for these sessions.
+
 ### 3. Bidirectional request/response protocol
 
 **Decision:** Replace the existing one-way `extension_ui_event` with a request/response pair:
@@ -82,6 +84,8 @@ NotifyRenderer    — Inline styled notification
 **Decision:** Interactive UI requests appear as a new entry type in the event reducer state. They render inline in ChatView at the position they occurred, not as overlays or modals.
 
 **Why:** Dialogs are contextual — they happen mid-conversation (e.g., "should I delete this file?"). Inline rendering preserves the conversation flow. Overlays would obscure the context that prompted the dialog.
+
+**Implementation:** Interactive requests are added to the `messages` array as `role: "interactiveUi"` entries (not a separate list), so they appear in chronological order within the chat flow. The `interactiveRequests` array on `SessionState` is kept as a lookup index for resolving responses.
 
 **Pending requests** show interactive controls. **Resolved requests** collapse to a one-line summary (e.g., "🔒 Allow rm -rf? ✅ Allowed").
 

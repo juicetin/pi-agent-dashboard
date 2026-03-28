@@ -1,10 +1,13 @@
 import React, { useState, useEffect } from "react";
 import Icon from "@mdi/react";
 import { mdiPencilOutline, mdiArrowLeft } from "@mdi/js";
-import type { DashboardSession } from "../../shared/types.js";
+import type { DashboardSession, OpenSpecChange } from "../../shared/types.js";
 import type { SessionState } from "../lib/event-reducer.js";
+import type { DetectedEditor } from "../lib/editor-api.js";
 import { getSessionDisplayName } from "../lib/session-display-name.js";
 import { InlineRenameInput } from "./InlineRenameInput.js";
+import { MobileActionMenu } from "./MobileActionMenu.js";
+import { useMobile } from "../hooks/useMobile.js";
 
 interface Props {
   session?: DashboardSession;
@@ -12,6 +15,18 @@ interface Props {
   onRename?: (sessionId: string, name: string) => void;
   showBack?: boolean;
   onBack?: () => void;
+  /** Mobile action menu props (only used on mobile) */
+  mobileActions?: {
+    editors?: DetectedEditor[];
+    openspecChanges?: OpenSpecChange[];
+    onHide?: () => void;
+    onUnhide?: () => void;
+    onResume?: (mode: "continue" | "fork") => void;
+    onShutdown?: () => void;
+    onOpenEditor?: (editorId: string) => void;
+    onAttachProposal?: (changeName: string) => void;
+    onDetachProposal?: () => void;
+  };
 }
 
 function formatDuration(ms: number): string {
@@ -24,7 +39,7 @@ function formatDuration(ms: number): string {
   return `${seconds}s`;
 }
 
-export function SessionHeader({ session, state, onRename, showBack, onBack }: Props) {
+export function SessionHeader({ session, state, onRename, showBack, onBack, mobileActions }: Props) {
   const [now, setNow] = useState(Date.now());
   const [isRenaming, setIsRenaming] = useState(false);
 
@@ -51,6 +66,52 @@ export function SessionHeader({ session, state, onRename, showBack, onBack }: Pr
     }
   }
 
+  const isMobile = useMobile();
+
+  // Mobile: compact header with back + name + kebab
+  if (isMobile) {
+    return (
+      <div className="px-2 py-1 border-b border-[var(--border-primary)] flex items-center gap-2 text-sm min-h-[44px]">
+        {showBack && onBack && (
+          <button
+            onClick={onBack}
+            className="p-2 min-w-[44px] min-h-[44px] flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+            title="Go back"
+            data-testid="back-button"
+          >
+            <Icon path={mdiArrowLeft} size={0.7} />
+          </button>
+        )}
+        {isRenaming ? (
+          <InlineRenameInput
+            currentName={getSessionDisplayName(session)}
+            onConfirm={handleConfirmRename}
+            onCancel={() => setIsRenaming(false)}
+            className="font-medium flex-1"
+          />
+        ) : (
+          <span className="font-medium truncate flex-1">{getSessionDisplayName(session)}</span>
+        )}
+        {mobileActions && (
+          <MobileActionMenu
+            session={session}
+            editors={mobileActions.editors}
+            openspecChanges={mobileActions.openspecChanges}
+            onRename={canRename ? () => setIsRenaming(true) : undefined}
+            onHide={mobileActions.onHide}
+            onUnhide={mobileActions.onUnhide}
+            onResume={mobileActions.onResume}
+            onShutdown={mobileActions.onShutdown}
+            onOpenEditor={mobileActions.onOpenEditor}
+            onAttachProposal={mobileActions.onAttachProposal}
+            onDetachProposal={mobileActions.onDetachProposal}
+          />
+        )}
+      </div>
+    );
+  }
+
+  // Desktop: full header
   return (
     <div className="px-4 py-2 border-b border-[var(--border-primary)] flex items-center gap-4 text-sm">
       {showBack && onBack && (

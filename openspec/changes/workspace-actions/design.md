@@ -1,6 +1,6 @@
 ## Context
 
-The process manager (`src/server/process-manager.ts`) already implements `spawnPiSession(cwd)` via tmux but has no REST endpoint. The sidebar group headers show editor buttons but no action buttons for spawning sessions or creating worktrees. Git worktree creation needs a server endpoint that runs `git worktree add`.
+The process manager (`src/server/process-manager.ts`) already implements `spawnPiSession(cwd)` via tmux but has no REST endpoint. The sidebar group headers (both pinned and unpinned) show editor buttons but no action buttons for spawning sessions or creating worktrees. Git worktree creation needs a server endpoint that runs `git worktree add`.\n\n**Note**: The workspace system (`workspace-store.ts`, `WorkspaceBar.tsx`, `AddWorkspaceDialog.tsx`) was removed by `pinned-directories` (2026-03-27). Groups now use `PinDirectoryDialog.tsx` for adding directories. Action buttons integrate with the current `SessionList.tsx` group header structure.
 
 ## Goals / Non-Goals
 

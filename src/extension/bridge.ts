@@ -22,6 +22,7 @@ import { replayEntriesAsEvents } from "../shared/state-replay.js";
 import { expandPromptTemplateFromDisk } from "./prompt-expander.js";
 import { detectOpenSpecActivity } from "./openspec-activity-detector.js";
 import type { OpenSpecPhase } from "../shared/types.js";
+import { createUiProxy } from "./ui-proxy.js";
 
 const HEARTBEAT_INTERVAL = 15_000;
 const GIT_POLL_INTERVAL = 30_000;
@@ -95,6 +96,7 @@ function initBridge(pi: ExtensionAPI) {
   let cachedCtx: any | undefined = prev.ctx;
   let lastModel: string | undefined;
   let lastThinkingLevel: string | undefined;
+  let uiProxy: ReturnType<typeof createUiProxy> | undefined;
 
   /** Wrap a callback so errors log instead of crashing the host pi agent. */
   function safe<T extends (...args: any[]) => any>(fn: T): T {
@@ -122,6 +124,11 @@ function initBridge(pi: ExtensionAPI) {
     url: dashboardUrl,
     onMessage: safe(async (data: unknown) => {
       const msg = data as ServerToExtensionMessage;
+      // Route UI responses to the proxy
+      if (msg.type === "extension_ui_response" && uiProxy) {
+        uiProxy.handleResponse(msg);
+        return;
+      }
       const response = await commandHandler.handle(msg);
       if (response) connection.send(response);
       // Immediately send model/thinking update after handling set_thinking_level
@@ -401,6 +408,24 @@ function initBridge(pi: ExtensionAPI) {
     cachedHasUI = ctx.hasUI;
     cachedCtx = ctx;
     sessionId = newSessionId;
+
+    // Set up UI proxy to forward dialogs to dashboard.
+    // For dashboard-spawned sessions (tmux or headless), skip the TUI race —
+    // the dashboard is the primary UI, and the TUI dialog in an unattended
+    // tmux window would auto-resolve/flood.
+    const dashboardSpawned = !!process.env.PI_DASHBOARD_SPAWNED;
+    uiProxy = createUiProxy({
+      ui: ctx.ui as any,
+      hasUI: ctx.hasUI && !dashboardSpawned,
+      getSessionId: () => sessionId,
+      send: (msg: any) => connection.send(msg),
+    });
+    // Replace ctx.ui methods with proxied versions
+    (ctx.ui as any).confirm = uiProxy.wrappedUi.confirm;
+    (ctx.ui as any).select = uiProxy.wrappedUi.select;
+    (ctx.ui as any).input = uiProxy.wrappedUi.input;
+    (ctx.ui as any).editor = uiProxy.wrappedUi.editor;
+    (ctx.ui as any).notify = uiProxy.wrappedUi.notify;
 
     // Connect first, then auto-start if needed.
     // session_register must be buffered before any event_forward messages.

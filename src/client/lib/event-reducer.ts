@@ -11,7 +11,7 @@ export interface ChatImage {
 
 export interface ChatMessage {
   id: string;
-  role: "user" | "assistant" | "toolResult" | "thinking" | "bashOutput" | "commandFeedback";
+  role: "user" | "assistant" | "toolResult" | "thinking" | "bashOutput" | "commandFeedback" | "interactiveUi";
   content: string;
   images?: ChatImage[];
   toolName?: string;
@@ -45,6 +45,14 @@ export interface PendingPrompt {
   images?: ChatImage[];
 }
 
+export interface InteractiveUiRequest {
+  requestId: string;
+  method: string;
+  params: Record<string, unknown>;
+  status: "pending" | "resolved" | "cancelled";
+  result?: unknown;
+}
+
 export interface SessionState {
   messages: ChatMessage[];
   toolCalls: Map<string, ToolCallState>;
@@ -63,6 +71,7 @@ export interface SessionState {
   turnStats: TurnStat[];
   contextUsage?: { tokens: number | null; contextWindow: number };
   pendingPrompt?: PendingPrompt;
+  interactiveRequests: InteractiveUiRequest[];
 }
 
 export function createInitialState(): SessionState {
@@ -79,6 +88,7 @@ export function createInitialState(): SessionState {
     cost: 0,
     status: "idle",
     turnStats: [],
+    interactiveRequests: [],
   };
 }
 
@@ -114,6 +124,53 @@ export function truncateLines(text: string | unknown, maxLines: number): string 
   const lines = str.split("\n");
   if (lines.length <= maxLines) return str;
   return lines.slice(0, maxLines).join("\n");
+}
+
+/** Add a new interactive UI request to session state */
+export function addInteractiveRequest(
+  state: SessionState,
+  requestId: string,
+  method: string,
+  params: Record<string, unknown>,
+): SessionState {
+  const request: InteractiveUiRequest = { requestId, method, params, status: "pending" };
+  return {
+    ...state,
+    interactiveRequests: [...state.interactiveRequests, request],
+    messages: [
+      ...state.messages,
+      {
+        id: `ui-${requestId}`,
+        role: "interactiveUi",
+        content: method,
+        timestamp: Date.now(),
+        args: { requestId, method, params, status: "pending" } as any,
+      },
+    ],
+  };
+}
+
+/** Resolve an interactive UI request in session state */
+export function resolveInteractiveRequest(
+  state: SessionState,
+  requestId: string,
+  result?: unknown,
+  cancelled?: boolean,
+): SessionState {
+  const newStatus = cancelled ? "cancelled" as const : "resolved" as const;
+  return {
+    ...state,
+    interactiveRequests: state.interactiveRequests.map((req) =>
+      req.requestId === requestId
+        ? { ...req, status: newStatus, result }
+        : req,
+    ),
+    messages: state.messages.map((msg) =>
+      msg.id === `ui-${requestId}`
+        ? { ...msg, args: { ...msg.args as any, status: newStatus, result } }
+        : msg,
+    ),
+  };
 }
 
 export function reduceEvent(state: SessionState, event: DashboardEvent): SessionState {

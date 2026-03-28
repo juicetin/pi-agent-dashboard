@@ -18,4 +18,4 @@ _(none)_
 
 ## Impact
 
-- **Client** (`src/client/components/OpenSpecSection.tsx` or equivalent): Relocate the "+ New Change" button into the header row next to "Bulk Archive".
+- **Client** (`src/client/components/FolderOpenSpecSection.tsx`): Relocate the "+ New Change" button into the header row next to "Bulk Archive".

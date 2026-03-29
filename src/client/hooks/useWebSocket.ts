@@ -1,7 +1,7 @@
 import { useEffect, useRef, useCallback, useState } from "react";
 import type { ServerToBrowserMessage, BrowserToServerMessage } from "../../shared/browser-protocol.js";
 
-export type ConnectionStatus = "connected" | "connecting" | "offline";
+export type ConnectionStatus = "connected" | "connecting" | "offline" | "auth_required";
 
 const OFFLINE_THRESHOLD = 3;
 
@@ -38,7 +38,17 @@ export function useWebSocket(url: string) {
       ws.onclose = () => {
         failCountRef.current++;
         if (failCountRef.current >= OFFLINE_THRESHOLD) {
-          setStatus("offline");
+          // Check if it's an auth issue before marking as offline
+          fetch("/auth/status")
+            .then((res) => res.json())
+            .then((data) => {
+              if (data.authenticated === false) {
+                setStatus("auth_required");
+              } else {
+                setStatus("offline");
+              }
+            })
+            .catch(() => setStatus("offline"));
         } else {
           setStatus("connecting");
         }

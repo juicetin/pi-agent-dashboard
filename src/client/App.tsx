@@ -16,6 +16,8 @@ import { TokenStatsBar } from "./components/TokenStatsBar.js";
 import { CommandInput } from "./components/CommandInput.js";
 import { StatusBar } from "./components/StatusBar.js";
 import { LandingPage } from "./components/LandingPage.js";
+import { SettingsPanel } from "./components/SettingsPanel.js";
+import { ZrokInstallGuide } from "./components/ZrokInstallGuide.js";
 import { TerminalView } from "./components/TerminalView.js";
 import { createInitialState, reduceEvent, addInteractiveRequest, resolveInteractiveRequest, type SessionState } from "./lib/event-reducer.js";
 import { useEditors } from "./lib/use-editors.js";
@@ -62,6 +64,8 @@ export default function App() {
   const [, navigate] = useLocation();
   const [match, params] = useRoute("/session/:id");
   const [termMatch, termParams] = useRoute("/terminal/:id");
+  const [settingsMatch] = useRoute("/settings");
+  const [tunnelSetupMatch] = useRoute("/tunnel-setup");
   const selectedId = match ? params?.id : undefined;
   const selectedTerminalId = termMatch ? termParams?.id : undefined;
   const sidebar = useSidebarState();
@@ -692,6 +696,14 @@ export default function App() {
           Server offline
         </div>
       )}
+      {status === "auth_required" && (
+        <div className="bg-amber-600/20 text-amber-400 text-xs px-3 py-1 text-center">
+          Session expired —{" "}
+          <a href={`/auth/login?return=${encodeURIComponent(window.location.pathname)}`} className="underline hover:text-amber-300">
+            Sign in
+          </a>
+        </div>
+      )}
     </>
   );
 
@@ -892,7 +904,9 @@ export default function App() {
         {/* Terminal views are always mounted (keep-alive), CSS hidden/shown */}
         {terminalViews}
         {/* Show session detail or landing page when no terminal is selected */}
-        {!selectedTerminalId && (sessionDetail ?? <LandingPage />)}
+        {!selectedTerminalId && !settingsMatch && !tunnelSetupMatch && (sessionDetail ?? <LandingPage />)}
+        {settingsMatch && <SettingsPanel />}
+        {tunnelSetupMatch && <ZrokInstallGuide onBack={() => navigate("/")} />}
       </div>
     </div>
   );

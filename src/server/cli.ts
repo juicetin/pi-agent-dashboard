@@ -76,6 +76,7 @@ export function buildConfig(flags: Partial<ServerConfig>): ServerConfig {
     autoShutdown: fileConfig.autoShutdown,
     shutdownIdleSeconds: fileConfig.shutdownIdleSeconds,
     tunnel: flags.tunnel ?? fileConfig.tunnel.enabled,
+    authConfig: fileConfig.auth,
   };
 }
 

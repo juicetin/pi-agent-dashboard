@@ -135,6 +135,28 @@ The server exposes `GET /api/file?cwd=...&path=...` for reading files or listing
 ### Markdown Preview View
 The web client includes a generic `MarkdownPreviewView` component that replaces the chat area. It supports a back button, title, optional tab bar, and loading/error states. For OpenSpec artifacts, the `useOpenSpecReader` hook maps artifact IDs (P/S/D/T) to file paths, fetches content via the file API, and concatenates specs from subdirectories.
 
+### OAuth Authentication Flow
+
+Optional OAuth2 authentication protects the dashboard when accessed via tunnel (external). Localhost access is always unguarded.
+
+1. Server loads `auth` config from `~/.pi/dashboard/config.json` at startup
+2. If `auth.providers` has entries, the auth plugin registers routes and an `onRequest` hook
+3. The `onRequest` hook skips localhost requests (`isLoopback`), `/auth/*` paths, and `/api/health`
+4. External requests without a valid `pi_dash_token` JWT cookie are redirected to `/auth/login`
+5. `/auth/login` shows a provider picker (or auto-redirects if single provider)
+6. OAuth callback exchanges code for token, fetches user info, validates against `allowedEmails`
+7. On success, a signed JWT cookie is set (7-day expiry) and user is redirected back
+8. WebSocket upgrade requests are also validated — external connections without valid cookie get 401
+9. Supported providers: GitHub (hardcoded endpoints), Google/Keycloak/OIDC (via OIDC discovery)
+
+### Settings Panel
+The web client includes a Settings panel (gear icon in sidebar header → `/settings` route) that lets users view and edit all dashboard configuration. The panel:
+1. Loads config via `GET /api/config` (secrets redacted as `***`)
+2. Renders grouped form fields: Server, Sessions, Tunnel, Authentication, Developer
+3. Sends only changed fields via `PUT /api/config` (partial merge)
+4. Server preserves `***` secrets (doesn't overwrite real values), writes to disk, and applies runtime-safe changes
+5. Port/piPort changes flag `restartRequired` in the response
+
 ### Reconnection Flow
 1. Browser reconnects with `subscribe` message including `lastSeq`
 2. Server replays missed events from in-memory buffer in batches of 200
@@ -178,6 +200,29 @@ Precedence: CLI flags → environment variables → config file (`~/.pi/dashboar
 | `shutdownIdleSeconds` | 300 | Idle timeout before auto-shutdown |
 | `spawnStrategy` | `"headless"` | How to spawn new sessions: `"headless"` or `"tmux"` |
 | `tunnel.enabled` | true | Enable zrok tunnel for remote access |
+
+### Tunnel Lifecycle
+
+When `tunnel.enabled` is true and the server starts:
+
+1. **Binary detection** — `detectZrokBinary()` checks if `zrok` is on PATH via `which`/`where`
+2. **Stale cleanup** — `cleanupStaleZrok()` reads `~/.pi/dashboard/zrok.pid`, kills orphaned zrok processes from previous crashes
+3. **Subprocess spawn** — `createTunnel(port)` spawns `zrok share public --headless localhost:{port}` as a child process
+4. **URL parsing** — The public URL is parsed from stdout (30s timeout)
+5. **PID tracking** — The subprocess PID is written to `~/.pi/dashboard/zrok.pid`
+6. **Shutdown** — `deleteTunnel()` kills the subprocess and removes the PID file
+
+The client can query `GET /api/tunnel-status` which returns `{ status: "active"|"inactive"|"unavailable", url?, serverOs }`.
+If zrok is not installed, the sidebar tunnel button navigates to `/tunnel-setup` which shows an OS-specific installation guide.
+
+### PWA Support
+
+The dashboard is installable as a Progressive Web App on mobile devices:
+
+- **Manifest** (`public/manifest.json`) — app name, icons, standalone display mode
+- **Service Worker** (`public/sw.js`) — minimal fetch pass-through for installability
+- **QR Code Button** — sidebar header shows a QR code icon when a tunnel is active; clicking opens a dialog with a scannable QR code and copyable URL
+- **Tunnel Status Polling** — `useTunnelStatus` hook fetches `GET /api/tunnel-status` on mount and every 30s to detect tunnel availability changes
 | `devBuildOnReload` | false | Rebuild Vite client + restart server on `/reload` |
 
 ## Shared Config

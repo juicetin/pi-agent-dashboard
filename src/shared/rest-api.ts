@@ -70,3 +70,12 @@ export interface BrowseResult {
 }
 
 export type BrowseResponse = ApiResponse<BrowseResult>;
+
+// ── Tunnel Status ───────────────────────────────────────────────────
+
+export type TunnelStatus =
+  | { status: "active"; url: string; serverOs: string }
+  | { status: "inactive"; serverOs: string }
+  | { status: "unavailable"; serverOs: string };
+
+export type TunnelStatusResponse = ApiResponse<TunnelStatus>;

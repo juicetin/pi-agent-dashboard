@@ -75,12 +75,23 @@ pi-dashboard --dev   # Start with Vite proxy
 | `src/server/editor-registry.ts` | Detects available editors (running processes + CLI) |
 | `src/server/event-status-extraction.ts` | Extracts session status/tool updates from events |
 | `src/server/headless-pid-registry.ts` | Maps headless child PIDs to session IDs |
+| `src/server/auth.ts` | OAuth2 authentication: provider registry, JWT helpers, user allowlist |
+| `src/server/auth-plugin.ts` | Fastify plugin: auth routes, onRequest hook, WS upgrade validation |
+| `src/server/config-api.ts` | Config REST API: read (redacted), write (partial merge), secret preservation |
+| `src/client/components/SettingsPanel.tsx` | Settings UI: all dashboard config fields, grouped form, save to server |
+| `src/client/hooks/useAuthStatus.ts` | Client auth status hook and login redirect helper |
 | `src/server/localhost-guard.ts` | Localhost-only access guard for routes |
 | `src/server/server-pid.ts` | PID file management for daemon mode |
 | `src/server/terminal-manager.ts` | PTY lifecycle, ring buffer, spawn/attach/kill terminals |
 | `src/server/terminal-gateway.ts` | Binary WebSocket upgrade handler for `/ws/terminal/:id` |
 | `scripts/fix-pty-permissions.cjs` | Postinstall: fix node-pty spawn-helper execute permissions |
-| `src/server/tunnel.ts` | Zrok tunnel integration via REST API |
+| `src/server/tunnel.ts` | Zrok tunnel via `zrok share public` subprocess with binary detection, PID tracking, stale cleanup |
+| `src/client/components/TunnelButton.tsx` | Sidebar tunnel status button — copies URL when active, navigates to setup guide when unavailable |
+| `src/client/components/QrCodeDialog.tsx` | QR code dialog showing tunnel URL as scannable QR code with copy button |
+| `src/client/hooks/useTunnelStatus.ts` | Tunnel status polling hook (fetch on mount + 30s interval) |
+| `public/manifest.json` | PWA web app manifest for installability |
+| `public/sw.js` | Minimal service worker for PWA installability |
+| `src/client/components/ZrokInstallGuide.tsx` | OS-aware zrok installation guide view (macOS/Linux/Windows) |
 | `src/server/cli.ts` | CLI entry point with subcommands (start/stop/restart/status) |
 | `src/shared/rest-api.ts` | REST API type definitions |
 | `scripts/reload-all.sh` | Build bridge + reload all pi sessions |

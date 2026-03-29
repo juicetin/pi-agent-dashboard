@@ -1,52 +1,56 @@
 ## ADDED Requirements
 
 ### Requirement: Zrok enrollment detection
-The tunnel module SHALL detect whether zrok is enrolled on the current machine by checking for the existence and validity of `~/.zrok/environment.json`. If the file exists and contains valid JSON with `apiEndpoint` and `zId` fields, zrok is considered enrolled.
+The tunnel module SHALL detect whether zrok is enrolled on the current machine by checking for the existence and validity of `~/.zrok2/environment.json` (v2) or `~/.zrok/environment.json` (v1), preferring v2. If the file exists and contains valid JSON with `api_endpoint`, `ziti_identity`, and `zrok_token` fields, zrok is considered enrolled.
 
 #### Scenario: Zrok is enrolled
-- **WHEN** `~/.zrok/environment.json` exists with valid `apiEndpoint` and `zId`
+- **WHEN** `~/.zrok2/environment.json` or `~/.zrok/environment.json` exists with valid `api_endpoint`, `ziti_identity`, and `zrok_token`
 - **THEN** the module SHALL report zrok as enrolled and return the parsed config
 
 #### Scenario: Zrok is not enrolled
-- **WHEN** `~/.zrok/environment.json` does not exist
+- **WHEN** neither `~/.zrok2/environment.json` nor `~/.zrok/environment.json` exists
 - **THEN** the module SHALL report zrok as not enrolled
 
 #### Scenario: Zrok config is malformed
-- **WHEN** `~/.zrok/environment.json` exists but contains invalid JSON
+- **WHEN** the environment file exists but contains invalid JSON
 - **THEN** the module SHALL report zrok as not enrolled and not throw
 
 ### Requirement: Public share creation
-The tunnel module SHALL create a public proxy share by calling `POST {apiEndpoint}/api/v1/share` with the environment's `zId`, share mode `public`, backend mode `proxy`, backend endpoint `http://localhost:{port}`, frontend selection `["public"]`, and auth scheme `none`. The zrok API token SHALL be sent in the `x-token` header.
+The tunnel module SHALL create a public proxy share by spawning `zrok share public --headless localhost:{port}` as a child process. The module SHALL parse the public URL from the process stdout and store the child process reference for cleanup.
 
 #### Scenario: Successful share creation
-- **WHEN** the zrok API returns a successful response with `shareToken` and `frontendProxyEndpoints`
-- **THEN** the module SHALL return the public URL from `frontendProxyEndpoints[0]` and store the share token for cleanup
+- **WHEN** the `zrok share public` process starts and prints a public URL to stdout
+- **THEN** the module SHALL return the public URL and store the process reference for cleanup
 
 #### Scenario: Share creation fails
-- **WHEN** the zrok API returns an error or the request fails
+- **WHEN** the `zrok share public` process fails to start or exits with an error
 - **THEN** the module SHALL log a warning and return null (server continues without tunnel)
 
+#### Scenario: Subprocess crashes during operation
+- **WHEN** the `zrok share public` process exits unexpectedly after initial URL was obtained
+- **THEN** the module SHALL log a warning and update tunnel status to inactive
+
 ### Requirement: Share cleanup
-The tunnel module SHALL delete the share by calling `DELETE {apiEndpoint}/api/v1/unshare` with the environment's `zId` and the stored `shareToken` on server shutdown.
+The tunnel module SHALL kill the `zrok share public` child process on server shutdown and remove the PID file.
 
 #### Scenario: Clean shutdown
-- **WHEN** the server stops and a share exists
-- **THEN** the module SHALL delete the share before completing shutdown
+- **WHEN** the server stops and a zrok subprocess is running
+- **THEN** the module SHALL kill the subprocess and remove the PID file
 
 #### Scenario: Cleanup fails
-- **WHEN** the unshare API call fails
-- **THEN** the module SHALL log a warning and continue shutdown (don't block on cleanup failure)
+- **WHEN** killing the subprocess fails
+- **THEN** the module SHALL log a warning and continue shutdown
 
 #### Scenario: No share to clean up
-- **WHEN** the server stops but no share was created (zrok not enrolled or creation failed)
+- **WHEN** the server stops but no zrok subprocess is running
 - **THEN** the module SHALL skip cleanup without errors
 
 ### Requirement: Tunnel lifecycle integration
 The server SHALL create the tunnel after `fastify.listen()` completes and delete it during `server.stop()`. The public URL SHALL be printed to the console.
 
 #### Scenario: Server starts with zrok enrolled and tunnel enabled
-- **WHEN** the server starts, zrok is enrolled, and `tunnel.enabled` is true
-- **THEN** the server SHALL create a public share and print `🌐 Tunnel: https://xxxxx.share.zrok.io`
+- **WHEN** the server starts, zrok is enrolled, zrok binary is available, and `tunnel.enabled` is true
+- **THEN** the server SHALL spawn the zrok subprocess and print `🌐 Tunnel: <url>`
 
 #### Scenario: Server starts with zrok not enrolled
 - **WHEN** the server starts but zrok is not enrolled
@@ -55,3 +59,63 @@ The server SHALL create the tunnel after `fastify.listen()` completes and delete
 #### Scenario: Server starts with tunnel disabled
 - **WHEN** the server starts with `tunnel.enabled` set to false (via config or `--no-tunnel`)
 - **THEN** the server SHALL skip tunnel creation
+
+### Requirement: Tunnel URL availability for auth
+The tunnel module SHALL expose the active tunnel URL so that the auth module can use it to construct OAuth redirect URIs. The `createTunnel()` function SHALL store the tunnel URL and provide a `getTunnelUrl()` function to retrieve it.
+
+#### Scenario: Tunnel created — URL available
+- **WHEN** `createTunnel()` succeeds and returns a URL
+- **THEN** `getTunnelUrl()` SHALL return that URL
+
+#### Scenario: No tunnel — URL is null
+- **WHEN** no tunnel has been created (zrok not enrolled, disabled, or creation failed)
+- **THEN** `getTunnelUrl()` SHALL return null
+
+#### Scenario: Tunnel deleted — URL cleared
+- **WHEN** `deleteTunnel()` is called
+- **THEN** `getTunnelUrl()` SHALL return null
+
+### Requirement: Zrok binary detection
+The tunnel module SHALL detect whether the `zrok` binary is available on the system PATH using `which zrok` (Unix) or `where zrok` (Windows).
+
+#### Scenario: Zrok binary is available
+- **WHEN** `which zrok` (or `where zrok`) succeeds
+- **THEN** the module SHALL report zrok as available
+
+#### Scenario: Zrok binary is not available
+- **WHEN** `which zrok` (or `where zrok`) fails
+- **THEN** the module SHALL report zrok as unavailable
+
+### Requirement: Stale process cleanup
+The tunnel module SHALL write the zrok subprocess PID to `~/.pi/dashboard/zrok.pid` when creating a tunnel. On server start, the module SHALL check for a stale PID file and kill the associated process if it is still running and is a zrok process.
+
+#### Scenario: Stale PID file exists with running zrok process
+- **WHEN** the server starts and `~/.pi/dashboard/zrok.pid` exists with a PID that is still running
+- **THEN** the module SHALL kill the stale process and remove the PID file
+
+#### Scenario: Stale PID file exists but process is not running
+- **WHEN** the server starts and `~/.pi/dashboard/zrok.pid` exists but the PID is not running
+- **THEN** the module SHALL remove the stale PID file
+
+#### Scenario: No stale PID file
+- **WHEN** the server starts and no `~/.pi/dashboard/zrok.pid` exists
+- **THEN** the module SHALL proceed without cleanup
+
+### Requirement: Tunnel status endpoint
+The server SHALL expose `GET /api/tunnel-status` returning the current tunnel state as a discriminated union on `status` with values `"active"`, `"inactive"`, or `"unavailable"`. When active, the response SHALL include `url` (string) and `serverOs` (string). When inactive or unavailable, only `serverOs` SHALL be present.
+
+#### Scenario: Tunnel is active
+- **WHEN** a zrok tunnel is running
+- **THEN** the endpoint SHALL return `{ status: "active", url: "<public-url>", serverOs: "<os>" }`
+
+#### Scenario: Tunnel is inactive but zrok is available
+- **WHEN** no tunnel is running but zrok binary is installed
+- **THEN** the endpoint SHALL return `{ status: "inactive", serverOs: "<os>" }`
+
+#### Scenario: Zrok is not installed
+- **WHEN** the zrok binary is not found on PATH
+- **THEN** the endpoint SHALL return `{ status: "unavailable", serverOs: "<os>" }`
+
+#### Scenario: Tunnel status after tunnel creation
+- **WHEN** the server starts with zrok enrolled and tunnel enabled, and the tunnel is successfully created
+- **THEN** subsequent calls to `GET /api/tunnel-status` SHALL return status `"active"` with the tunnel URL

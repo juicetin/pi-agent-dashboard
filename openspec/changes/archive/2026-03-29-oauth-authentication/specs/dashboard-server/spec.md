@@ -36,3 +36,17 @@ The auth routes (`/auth/*`) SHALL NOT be subject to the localhost guard. They MU
 #### Scenario: External access to /auth/login
 - **WHEN** a non-localhost request hits `/auth/login`
 - **THEN** the request SHALL return the login page or redirect to the provider
+
+### Requirement: Config REST endpoints
+The server SHALL expose `GET /api/config` and `PUT /api/config` endpoints, both protected by `localhostGuard`.
+
+#### Scenario: Config endpoints registered
+- **WHEN** the server starts
+- **THEN** `GET /api/config` and `PUT /api/config` SHALL be available with `localhostGuard` preHandler
+
+### Requirement: Runtime config reload
+The server SHALL support runtime config reloading when `PUT /api/config` is called. A `reloadConfig(partial)` function SHALL merge, persist, and apply changes to the running server instance.
+
+#### Scenario: Config reload applies runtime changes
+- **WHEN** `PUT /api/config` writes new config
+- **THEN** the server SHALL call `reloadConfig()` to apply hot-swappable settings

@@ -14,6 +14,8 @@ Configuration lives in `~/.pi/dashboard/config.json` via `src/shared/config.ts`,
 - Zero friction for localhost — no login, no config needed
 - Opt-in: no `auth` config = disabled, identical to current behavior
 - Single new module (`src/server/auth.ts`) encapsulating all auth logic
+- Settings panel in the web client for viewing/editing all dashboard config
+- Runtime config apply without server restart (where possible)
 
 **Non-Goals:**
 - User roles / authorization (all authenticated users have full access)
@@ -86,14 +88,14 @@ These are 3 simple HTTP calls. A custom module keeps dependencies minimal (same 
         "name": "Corporate SSO"
       }
     },
-    "allowedEmails": ["user@example.com"]
+    "allowedUsers": ["octocat", "user@example.com", "*@company.com"]
   }
 }
 ```
 
 - `secret`: Used to sign JWTs. Auto-generated on first config write if missing.
 - `providers`: Map of provider name → credentials. Only configured providers are available.
-- `allowedEmails` (optional): Whitelist. If omitted, any authenticated user is allowed.
+- `allowedUsers` (optional): User allowlist matching against usernames, emails, or domain wildcards. If omitted, any authenticated user is allowed.
 
 **Built-in provider endpoints** (well-known, no discovery needed):
 - GitHub: `https://github.com/login/oauth/authorize`, token at `https://github.com/login/oauth/access_token`, profile at `https://api.github.com/user`
@@ -126,7 +128,34 @@ These are 3 simple HTTP calls. A custom module keeps dependencies minimal (same 
 - **[Token expiry]** → JWT tokens need an expiry. Default to 7 days. After expiry, user is redirected to login again.
 - **[Callback URL registration]** → Users must register the correct callback URL in their OAuth provider. This is provider-specific and must be documented clearly. The callback URL includes the tunnel URL which changes on each server restart (unless zrok reserved). Mitigation: Document this limitation. For stable URLs, recommend zrok reserved shares.
 
+### 8. Settings panel in the sidebar
+
+**Decision**: Add a gear icon button at the end of the sidebar header (after the collapse button). Clicking it replaces the main content area with a `SettingsPanel` component that renders form fields for all `DashboardConfig` fields. Changes are sent via `PUT /api/config` and applied at runtime.
+
+**Rationale**: Using the main content area (like a route) keeps the sidebar simple. A gear icon is a universally understood settings affordance. Placing it at the end of the header row keeps it discoverable but unobtrusive.
+
+**Alternative considered**: Modal dialog — harder to browse all settings comfortably, doesn't fit the panel-based layout.
+
+### 9. Config REST endpoints
+
+**Decision**: Two new endpoints, both localhost-only:
+- `GET /api/config` — returns the full `DashboardConfig` (with `auth.secret` and `auth.providers[*].clientSecret` redacted)
+- `PUT /api/config` — accepts a partial config object, merges with existing, writes to disk, and applies runtime changes
+
+**Rationale**: Reuses the existing `localhostGuard` pattern. Partial merge means the client only sends changed fields. Secrets are redacted on read to avoid leaking them to the browser; on write, omitted secret fields preserve the existing values.
+
+### 10. Runtime config apply
+
+**Decision**: After writing config to disk, the server applies changes that can take effect without restart:
+- `autoShutdown` / `shutdownIdleSeconds` — update idle timer parameters
+- `auth` — rebuild provider registry and update secret (next request uses new config)
+- `tunnel.enabled` — flag only; actual tunnel start/stop requires restart (document this)
+- `port` / `piPort` — require restart (document this)
+- `spawnStrategy` — takes effect on next spawn
+
+**Rationale**: Most settings can be hot-swapped. Port changes inherently require rebinding, so we show a "restart required" note for those.
+
 ## Open Questions
 
-- Should we support `allowedEmails` as glob patterns (e.g., `*@company.com`) or exact matches only?
+- (Resolved) `allowedUsers` supports exact usernames, exact emails, and `*@domain` wildcards
 - Should the JWT expiry be configurable, or is 7 days a sensible fixed default?

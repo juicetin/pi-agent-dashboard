@@ -11,6 +11,19 @@ export const CONFIG_FILE = path.join(CONFIG_DIR, "config.json");
 
 export type SpawnStrategy = "tmux" | "headless";
 
+export interface AuthProviderConfig {
+  clientId: string;
+  clientSecret: string;
+  issuerUrl?: string;
+  name?: string;
+}
+
+export interface AuthConfig {
+  secret: string;
+  providers: Record<string, AuthProviderConfig>;
+  allowedUsers?: string[];
+}
+
 export interface DashboardConfig {
   port: number;
   piPort: number;
@@ -20,6 +33,7 @@ export interface DashboardConfig {
   spawnStrategy: SpawnStrategy;
   tunnel: { enabled: boolean };
   devBuildOnReload: boolean;
+  auth?: AuthConfig;
 }
 
 const VALID_SPAWN_STRATEGIES: SpawnStrategy[] = ["tmux", "headless"];
@@ -34,6 +48,37 @@ const DEFAULTS: DashboardConfig = {
   tunnel: { enabled: true },
   devBuildOnReload: false,
 };
+
+/**
+ * Parse and validate the auth config section.
+ * Returns undefined if auth is not configured or has no providers.
+ */
+function parseAuthConfig(raw: any): AuthConfig | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const providers = raw.providers;
+  if (!providers || typeof providers !== "object" || Object.keys(providers).length === 0) {
+    return undefined;
+  }
+  // Validate each provider has at least clientId and clientSecret
+  const validProviders: Record<string, AuthProviderConfig> = {};
+  for (const [key, value] of Object.entries(providers)) {
+    const p = value as any;
+    if (p && typeof p === "object" && p.clientId && p.clientSecret) {
+      validProviders[key] = {
+        clientId: p.clientId,
+        clientSecret: p.clientSecret,
+        ...(p.issuerUrl ? { issuerUrl: p.issuerUrl } : {}),
+        ...(p.name ? { name: p.name } : {}),
+      };
+    }
+  }
+  if (Object.keys(validProviders).length === 0) return undefined;
+  return {
+    secret: raw.secret ?? "",
+    providers: validProviders,
+    ...(Array.isArray(raw.allowedUsers) ? { allowedUsers: raw.allowedUsers } : Array.isArray(raw.allowedEmails) ? { allowedUsers: raw.allowedEmails } : {}),
+  };
+}
 
 /**
  * Load configuration from ~/.pi/dashboard/config.json.
@@ -64,6 +109,7 @@ export function loadConfig(): DashboardConfig {
         enabled: parsed.tunnel?.enabled ?? defaults.tunnel.enabled,
       },
       devBuildOnReload: parsed.devBuildOnReload ?? defaults.devBuildOnReload,
+      auth: parseAuthConfig(parsed.auth),
     };
   } catch {
     return defaults;

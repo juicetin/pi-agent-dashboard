@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useLocation } from "wouter";
 import Icon from "@mdi/react";
-import { mdiChevronRight, mdiChevronDown, mdiChevronLeft, mdiPlus, mdiPin, mdiPinOff, mdiConsoleLine } from "@mdi/js";
+import { mdiChevronRight, mdiChevronDown, mdiChevronLeft, mdiPlus, mdiPin, mdiPinOff, mdiConsoleLine, mdiCog } from "@mdi/js";
 import { DndContext, closestCenter, PointerSensor, TouchSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy, arrayMove } from "@dnd-kit/sortable";
 import { SortableSessionCard } from "./SortableSessionCard.js";
@@ -28,6 +28,10 @@ import { Toast, useToast } from "./Toast.js";
 import { PinDirectoryDialog } from "./PinDirectoryDialog.js";
 import { DialogPortal } from "./DialogPortal.js";
 import { truncatePathMiddle } from "../lib/truncate-path.js";
+import { TunnelButton } from "./TunnelButton.js";
+import { QrCodeDialog } from "./QrCodeDialog.js";
+import { useTunnelStatus } from "../hooks/useTunnelStatus.js";
+import { mdiQrcode } from "@mdi/js";
 
 export interface ContextUsageInfo {
   tokens: number | null;
@@ -194,6 +198,8 @@ export function SessionList({ sessions, selectedId, onSelect, contextUsageMap, o
   const now = Date.now();
   const [, navigate] = useLocation();
   const { messages, showToast, dismissToast } = useToast();
+  const tunnelStatus = useTunnelStatus();
+  const [qrOpen, setQrOpen] = useState(false);
 
   // Detect editors for all unique cwds (sessions + pinned directories)
   const cwds = useMemo(() => [...sessions.map((s) => s.cwd), ...(pinnedDirectories ?? [])], [sessions, pinnedDirectories]);
@@ -531,6 +537,25 @@ export function SessionList({ sessions, selectedId, onSelect, contextUsageMap, o
                 <Icon path={mdiChevronLeft} size={0.6} />
               </button>
             )}
+            <TunnelButton />
+            {tunnelStatus?.status === "active" && (
+              <button
+                onClick={() => setQrOpen(true)}
+                className="text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+                title="Show QR code"
+                data-testid="qr-code-btn"
+              >
+                <Icon path={mdiQrcode} size={0.6} />
+              </button>
+            )}
+            <button
+              onClick={() => navigate("/settings")}
+              className="text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+              title="Settings"
+              data-testid="settings-btn"
+            >
+              <Icon path={mdiCog} size={0.6} />
+            </button>
           </div>
         </div>
       </div>
@@ -571,6 +596,9 @@ export function SessionList({ sessions, selectedId, onSelect, contextUsageMap, o
         /></DialogPortal>
       )}
       <Toast messages={messages} onDismiss={dismissToast} />
+      {qrOpen && tunnelStatus?.status === "active" && (
+        <QrCodeDialog url={tunnelStatus.url} onClose={() => setQrOpen(false)} />
+      )}
       </div>
     </div>
   );

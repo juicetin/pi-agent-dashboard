@@ -13,8 +13,14 @@ The shared config module SHALL read configuration from `~/.pi/dashboard/config.j
 | `spawnStrategy` | `"tmux" \| "headless"` | `"tmux"` | Strategy for spawning new pi sessions from the dashboard |
 | `tunnel.enabled` | boolean | true | Whether to create a zrok public tunnel on server startup |
 | `devBuildOnReload` | boolean | false | Whether to build client and restart server on `/reload` |
+| `auth` | object \| undefined | undefined | Optional OAuth authentication configuration |
+| `auth.secret` | string | (auto-generated) | JWT signing secret |
+| `auth.providers` | object | `{}` | Map of provider name → credentials |
+| `auth.allowedUsers` | string[] | `[]` | User allowlist: emails, usernames, or `*@domain` wildcards. Empty = allow all |
 
 Invalid `spawnStrategy` values SHALL fall back to `"tmux"`.
+
+When `auth` is undefined or not present, authentication SHALL be completely disabled.
 
 #### Scenario: Config with all fields present
 - **WHEN** `~/.pi/dashboard/config.json` contains `{ "port": 3000, "piPort": 4000, "autoStart": false }`
@@ -26,7 +32,7 @@ Invalid `spawnStrategy` values SHALL fall back to `"tmux"`.
 
 #### Scenario: Empty or missing config
 - **WHEN** `~/.pi/dashboard/config.json` does not exist or is empty
-- **THEN** `loadConfig()` SHALL return all default values
+- **THEN** `loadConfig()` SHALL return all default values with `auth` as undefined
 
 #### Scenario: Config with auto-shutdown fields
 - **WHEN** `~/.pi/dashboard/config.json` contains `{ "autoShutdown": false, "shutdownIdleSeconds": 60 }`
@@ -46,4 +52,16 @@ Invalid `spawnStrategy` values SHALL fall back to `"tmux"`.
 
 #### Scenario: ensureConfig creates defaults
 - **WHEN** `ensureConfig()` is called and no config file exists
-- **THEN** it SHALL create the config directory recursively and write all defaults to the file
+- **THEN** it SHALL create the config directory recursively and write all defaults to the file (without `auth` key)
+
+#### Scenario: Config with auth section
+- **WHEN** `~/.pi/dashboard/config.json` contains `{ "auth": { "secret": "abc", "providers": { "github": { "clientId": "x", "clientSecret": "y" } } } }`
+- **THEN** `loadConfig()` SHALL return the `auth` object with the provider configuration intact
+
+#### Scenario: Config with auth but no providers
+- **WHEN** `~/.pi/dashboard/config.json` contains `{ "auth": { "providers": {} } }`
+- **THEN** `loadConfig()` SHALL return `auth` as undefined (empty providers = auth disabled)
+
+#### Scenario: Config with allowedUsers
+- **WHEN** `~/.pi/dashboard/config.json` contains `{ "auth": { ..., "allowedUsers": ["octocat", "user@example.com", "*@company.com"] } }`
+- **THEN** `loadConfig()` SHALL return `auth.allowedUsers` as `["octocat", "user@example.com", "*@company.com"]`

@@ -58,7 +58,7 @@ The auth module SHALL implement the OAuth2 authorization code flow. The `/auth/l
 - **THEN** the `state` parameter SHALL encode the return URL so the callback can redirect back after login
 
 ### Requirement: OAuth callback handling
-The `/auth/callback/:provider` route SHALL exchange the authorization code for an access token, fetch the user's profile (email, display name), validate the user against `allowedEmails` (if configured), issue a signed JWT cookie, and redirect to the return URL (or `/`).
+The `/auth/callback/:provider` route SHALL exchange the authorization code for an access token, fetch the user's profile (email, display name, username), validate the user against `allowedUsers` (if configured), issue a signed JWT cookie, and redirect to the return URL (or `/`).
 
 #### Scenario: Successful callback with valid code
 - **WHEN** the OAuth provider redirects back with a valid `code` and `state`
@@ -72,24 +72,47 @@ The `/auth/callback/:provider` route SHALL exchange the authorization code for a
 - **WHEN** the token exchange fails (invalid code, expired, etc.)
 - **THEN** the server SHALL redirect to `/auth/login` with an error query parameter
 
-#### Scenario: User not in allowedEmails
-- **WHEN** `auth.allowedEmails` is configured and the user's email does not match any entry
+#### Scenario: User not in allowedUsers
+- **WHEN** `auth.allowedUsers` is configured and neither the user's email nor username matches any entry
 - **THEN** the server SHALL return a 403 page explaining access is denied
 
-#### Scenario: allowedEmails not configured
-- **WHEN** `auth.allowedEmails` is not set or is an empty array
+#### Scenario: allowedUsers not configured
+- **WHEN** `auth.allowedUsers` is not set or is an empty array
 - **THEN** any authenticated user SHALL be allowed
 
-#### Scenario: allowedEmails with domain wildcard
-- **WHEN** `auth.allowedEmails` contains `*@company.com` and the user's email is `user@company.com`
+#### Scenario: allowedUsers with email match
+- **WHEN** `auth.allowedUsers` contains `user@example.com` and the user's email is `user@example.com`
 - **THEN** the user SHALL be allowed
 
+#### Scenario: allowedUsers with domain wildcard
+- **WHEN** `auth.allowedUsers` contains `*@company.com` and the user's email is `user@company.com`
+- **THEN** the user SHALL be allowed
+
+#### Scenario: allowedUsers with GitHub username
+- **WHEN** `auth.allowedUsers` contains `octocat` and the GitHub user's login is `octocat`
+- **THEN** the user SHALL be allowed (username match, case-insensitive)
+
+#### Scenario: allowedUsers with OIDC preferred_username
+- **WHEN** `auth.allowedUsers` contains `jdoe` and the OIDC user's `preferred_username` is `jdoe`
+- **THEN** the user SHALL be allowed
+
+### Requirement: User info includes username
+The `fetchUserInfo` function SHALL return `email`, `name`, and `username` for each provider. For GitHub, `username` SHALL be the `login` field. For OIDC providers, `username` SHALL be `preferred_username`. The `username` is used for access control matching against `allowedUsers`.
+
+#### Scenario: GitHub user info includes username
+- **WHEN** user info is fetched from GitHub
+- **THEN** the result SHALL include `username` set to `data.login`
+
+#### Scenario: OIDC user info includes username
+- **WHEN** user info is fetched from an OIDC provider
+- **THEN** the result SHALL include `username` set to `data.preferred_username` (or `data.sub` if absent)
+
 ### Requirement: JWT session token
-The auth module SHALL issue a JWT signed with `auth.secret` from config. The JWT payload SHALL contain `sub` (email), `name` (display name), `provider` (provider key), and `exp` (expiry timestamp). The default expiry SHALL be 7 days. The cookie SHALL be named `pi_dash_token`, set as `HttpOnly`, `Secure` (when not localhost), and `SameSite=Lax`.
+The auth module SHALL issue a JWT signed with `auth.secret` from config. The JWT payload SHALL contain `sub` (email), `name` (display name), `username`, `provider` (provider key), and `exp` (expiry timestamp). The default expiry SHALL be 7 days. The cookie SHALL be named `pi_dash_token`, set as `HttpOnly`, `Secure` (when not localhost), and `SameSite=Lax`.
 
 #### Scenario: JWT issued on successful login
 - **WHEN** OAuth callback succeeds
-- **THEN** a JWT with `{ sub, name, provider, exp }` SHALL be signed with `auth.secret` and set as cookie `pi_dash_token`
+- **THEN** a JWT with `{ sub, name, username, provider, exp }` SHALL be signed with `auth.secret` and set as cookie `pi_dash_token`
 
 #### Scenario: Valid JWT on subsequent request
 - **WHEN** an external request includes a valid, non-expired `pi_dash_token` cookie

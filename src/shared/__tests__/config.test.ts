@@ -117,6 +117,96 @@ describe("loadConfig", () => {
     const config = loadConfig();
     expect(config.devBuildOnReload).toBe(false);
   });
+
+  it("should return auth undefined when no auth key", () => {
+    fs.writeFileSync(configFile, JSON.stringify({ port: 3000 }));
+    const config = loadConfig();
+    expect(config.auth).toBeUndefined();
+  });
+
+  it("should return auth undefined when auth has empty providers", () => {
+    fs.writeFileSync(configFile, JSON.stringify({ auth: { providers: {} } }));
+    const config = loadConfig();
+    expect(config.auth).toBeUndefined();
+  });
+
+  it("should return auth undefined when auth.providers is missing", () => {
+    fs.writeFileSync(configFile, JSON.stringify({ auth: { secret: "abc" } }));
+    const config = loadConfig();
+    expect(config.auth).toBeUndefined();
+  });
+
+  it("should parse auth config with github provider", () => {
+    fs.writeFileSync(configFile, JSON.stringify({
+      auth: {
+        secret: "my-secret",
+        providers: {
+          github: { clientId: "id1", clientSecret: "secret1" },
+        },
+        allowedUsers: ["user@example.com", "octocat"],
+      },
+    }));
+    const config = loadConfig();
+    expect(config.auth).toBeDefined();
+    expect(config.auth!.secret).toBe("my-secret");
+    expect(config.auth!.providers.github.clientId).toBe("id1");
+    expect(config.auth!.providers.github.clientSecret).toBe("secret1");
+    expect(config.auth!.allowedUsers).toEqual(["user@example.com", "octocat"]);
+  });
+
+  it("should parse auth config with keycloak provider including issuerUrl", () => {
+    fs.writeFileSync(configFile, JSON.stringify({
+      auth: {
+        secret: "sec",
+        providers: {
+          keycloak: { clientId: "kc", clientSecret: "ks", issuerUrl: "https://kc.example.com/realms/test" },
+        },
+      },
+    }));
+    const config = loadConfig();
+    expect(config.auth!.providers.keycloak.issuerUrl).toBe("https://kc.example.com/realms/test");
+  });
+
+  it("should skip providers missing clientId or clientSecret", () => {
+    fs.writeFileSync(configFile, JSON.stringify({
+      auth: {
+        secret: "sec",
+        providers: {
+          github: { clientId: "id1" }, // missing clientSecret
+          google: { clientId: "id2", clientSecret: "s2" },
+        },
+      },
+    }));
+    const config = loadConfig();
+    expect(config.auth).toBeDefined();
+    expect(config.auth!.providers.github).toBeUndefined();
+    expect(config.auth!.providers.google).toBeDefined();
+  });
+
+  it("should return auth undefined when all providers are invalid", () => {
+    fs.writeFileSync(configFile, JSON.stringify({
+      auth: {
+        secret: "sec",
+        providers: {
+          github: { clientId: "id1" }, // missing clientSecret
+        },
+      },
+    }));
+    const config = loadConfig();
+    expect(config.auth).toBeUndefined();
+  });
+
+  it("should default auth.secret to empty string when missing", () => {
+    fs.writeFileSync(configFile, JSON.stringify({
+      auth: {
+        providers: {
+          github: { clientId: "id1", clientSecret: "s1" },
+        },
+      },
+    }));
+    const config = loadConfig();
+    expect(config.auth!.secret).toBe("");
+  });
 });
 
 describe("ensureConfig", () => {

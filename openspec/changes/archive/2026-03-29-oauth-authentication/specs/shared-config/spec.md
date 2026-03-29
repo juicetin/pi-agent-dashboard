@@ -16,7 +16,7 @@ The shared config module SHALL read configuration from `~/.pi/dashboard/config.j
 | `auth` | object \| undefined | undefined | Optional OAuth authentication configuration |
 | `auth.secret` | string | (auto-generated) | JWT signing secret |
 | `auth.providers` | object | `{}` | Map of provider name → credentials |
-| `auth.allowedEmails` | string[] | `[]` | Email whitelist (supports `*@domain` wildcards). Empty = allow all |
+| `auth.allowedUsers` | string[] | `[]` | User allowlist: emails, usernames, or `*@domain` wildcards. Empty = allow all |
 
 Invalid `spawnStrategy` values SHALL fall back to `"tmux"`.
 
@@ -61,3 +61,7 @@ When `auth` is undefined or not present, authentication SHALL be completely disa
 #### Scenario: Config with auth but no providers
 - **WHEN** `~/.pi/dashboard/config.json` contains `{ "auth": { "providers": {} } }`
 - **THEN** `loadConfig()` SHALL return `auth` as undefined (empty providers = auth disabled)
+
+#### Scenario: Config with allowedUsers
+- **WHEN** `~/.pi/dashboard/config.json` contains `{ "auth": { ..., "allowedUsers": ["octocat", "user@example.com", "*@company.com"] } }`
+- **THEN** `loadConfig()` SHALL return `auth.allowedUsers` as `["octocat", "user@example.com", "*@company.com"]`

@@ -70,7 +70,7 @@ See [docs/architecture.md](docs/architecture.md) for detailed data flows, reconn
 | Tool | Purpose | When needed |
 |------|---------|-------------|
 | **tmux** | Spawn new pi sessions from the browser in a tmux window | When `spawnStrategy` is `"tmux"` |
-| **[zrok](https://zrok.io/)** | Expose dashboard over the internet via tunnel | When `tunnel.enabled` is `true` (default) |
+| **[zrok](https://zrok.io/)** | Expose dashboard over the internet via tunnel (runs `zrok share public` subprocess) | When `tunnel.enabled` is `true` (default) |
 
 ## Getting Started
 
@@ -131,6 +131,46 @@ Config file: **`~/.pi/dashboard/config.json`** (auto-created with defaults on fi
   "devBuildOnReload": false
 }
 ```
+
+### Authentication (Optional)
+
+Add an `auth` section to enable OAuth2 authentication for external (tunnel) access. Localhost is always unguarded.
+
+```json
+{
+  "auth": {
+    "secret": "auto-generated-if-omitted",
+    "providers": {
+      "github": {
+        "clientId": "your-github-client-id",
+        "clientSecret": "your-github-client-secret"
+      },
+      "google": {
+        "clientId": "your-google-client-id",
+        "clientSecret": "your-google-client-secret"
+      },
+      "keycloak": {
+        "clientId": "your-keycloak-client-id",
+        "clientSecret": "your-keycloak-client-secret",
+        "issuerUrl": "https://keycloak.example.com/realms/myrealm"
+      }
+    },
+    "allowedUsers": ["octocat", "user@example.com", "*@company.com"]
+  }
+}
+```
+
+| Key | Required | Description |
+|-----|----------|-------------|
+| `auth.secret` | No | JWT signing secret (auto-generated if omitted) |
+| `auth.providers` | Yes | Map of provider name → `{ clientId, clientSecret, issuerUrl? }` |
+| `auth.allowedUsers` | No | User allowlist: usernames, emails, or `*@domain` wildcards. Empty = allow all |
+
+**Supported providers:** `github`, `google`, `keycloak`, `oidc` (generic OIDC with `issuerUrl`).
+
+**Callback URL:** Register `https://<tunnel-url>/auth/callback/<provider>` in your OAuth provider settings. For stable URLs, use zrok reserved shares.
+
+**Settings UI:** Click the ⚙ gear icon in the sidebar header to open the Settings panel, where all config fields (including auth) can be edited from the browser.
 
 **Precedence:** CLI flags → environment variables → config file → built-in defaults.
 
@@ -355,7 +395,7 @@ src/
 │   ├── session-order-manager.ts # Per-cwd session ordering
 │   ├── process-manager.ts # tmux/headless session spawning
 │   ├── editor-registry.ts # Available editor detection
-│   ├── tunnel.ts          # Zrok tunnel integration
+│   ├── tunnel.ts          # Zrok tunnel via subprocess (binary detection, PID tracking, stale cleanup)
 │   ├── server-pid.ts      # PID file for daemon management
 │   └── json-store.ts      # Atomic JSON file helpers
 └── client/           # React web client

@@ -22,12 +22,15 @@ import { writePid, removePid } from "./server-pid.js";
 import type { ApiResponse } from "../shared/types.js";
 import { extractSessionStats } from "./session-stats-reader.js";
 import { extractSessionUpdates } from "./event-status-extraction.js";
-import { createTunnel, deleteTunnel } from "./tunnel.js";
+import { createTunnel, deleteTunnel, getTunnelStatus, detectZrokBinary, cleanupStaleZrok } from "./tunnel.js";
 import { detectEditors, EDITORS } from "./editor-registry.js";
 import { localhostGuard } from "./localhost-guard.js";
 import { listDirectories } from "./browse.js";
+import { readConfigRedacted, writeConfigPartial } from "./config-api.js";
 import { spawn } from "node:child_process";
 import fs from "node:fs/promises";
+import { registerAuthPlugin, validateWsUpgrade } from "./auth-plugin.js";
+import type { AuthConfig } from "../shared/config.js";
 
 export interface ServerConfig {
   port: number;
@@ -36,6 +39,7 @@ export interface ServerConfig {
   autoShutdown: boolean;
   shutdownIdleSeconds: number;
   tunnel: boolean;
+  authConfig?: AuthConfig;
 }
 
 export interface DashboardServer {
@@ -449,6 +453,14 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
     connectionTimeout: 10_000,
   });
 
+  // Register auth plugin if configured (must be before routes)
+  if (config.authConfig) {
+    await registerAuthPlugin(fastify, { authConfig: config.authConfig, port: config.port });
+  } else {
+    // Auth disabled — still expose /auth/status so clients can detect this
+    fastify.get("/auth/status", async () => ({ authenticated: true, authEnabled: false }));
+  }
+
   // REST API routes
   fastify.get("/api/sessions", async () => {
     const sessions = sessionManager.listAll();
@@ -575,6 +587,51 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
     }
   );
 
+  // Config endpoints (localhost-only)
+  fastify.get(
+    "/api/config",
+    { preHandler: localhostGuard },
+    async () => {
+      return { success: true, data: readConfigRedacted() };
+    },
+  );
+
+  fastify.put(
+    "/api/config",
+    { preHandler: localhostGuard },
+    async (request, reply) => {
+      const partial = request.body as Record<string, any>;
+      if (!partial || typeof partial !== "object") {
+        return reply.code(400).send({ success: false, error: "Invalid body" });
+      }
+      const result = writeConfigPartial(partial);
+      if (!result.success) {
+        return reply.code(500).send({ success: false, error: result.error });
+      }
+
+      // Apply runtime-safe changes
+      const reloaded = (await import("../shared/config.js")).loadConfig();
+      if (partial.autoShutdown !== undefined || partial.shutdownIdleSeconds !== undefined) {
+        config.autoShutdown = reloaded.autoShutdown;
+        config.shutdownIdleSeconds = reloaded.shutdownIdleSeconds;
+      }
+      if (partial.auth !== undefined) {
+        config.authConfig = reloaded.auth;
+        // Rebuild auth provider registry if plugin is registered
+        if (reloaded.auth && (fastify as any)._reloadAuth) {
+          await (fastify as any)._reloadAuth(reloaded.auth);
+        }
+      }
+
+      return { success: true, restartRequired: result.restartRequired };
+    },
+  );
+
+  // Tunnel status endpoint
+  fastify.get("/api/tunnel-status", async () => {
+    return getTunnelStatus();
+  });
+
   // Health endpoint — liveness check for CLI status and probing
   const serverStartTime = Date.now();
   fastify.get("/api/health", async () => {
@@ -634,6 +691,16 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
       piGateway.start(config.piPort);
 
       fastify.server.on("upgrade", (request, socket, head) => {
+        // Auth check for WebSocket upgrades (when auth is configured)
+        if (config.authConfig?.secret) {
+          const remoteAddress = request.socket.remoteAddress || "";
+          if (!validateWsUpgrade(request.headers.cookie, remoteAddress, config.authConfig.secret)) {
+            socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
+            socket.destroy();
+            return;
+          }
+        }
+
         if (request.url === "/ws") {
           browserGateway.wss.handleUpgrade(request, socket, head, (ws) => {
             browserGateway.wss.emit("connection", ws, request);
@@ -651,9 +718,13 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
       console.log(`Pi gateway listening on port ${config.piPort}`);
 
       if (config.tunnel) {
-        const tunnelUrl = await createTunnel(config.port);
-        if (tunnelUrl) {
-          console.log(`🌐 Tunnel: ${tunnelUrl}`);
+        const hasZrok = detectZrokBinary();
+        if (hasZrok) {
+          cleanupStaleZrok();
+          const tunnelUrl = await createTunnel(config.port);
+          if (tunnelUrl) {
+            console.log(`🌐 Tunnel: ${tunnelUrl}`);
+          }
         }
       }
 

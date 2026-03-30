@@ -1,48 +1,200 @@
 import React, { useEffect, useRef, useState, useId } from "react";
 import { useThemeContext } from "./ThemeProvider.js";
+import { useZoomPan } from "../hooks/useZoomPan.js";
+import Icon from "@mdi/react";
+import { mdiMagnifyPlusOutline, mdiMagnifyMinusOutline, mdiArrowExpandAll } from "@mdi/js";
 
 let mermaidIdCounter = 0;
+
+// ── Mermaid code sanitisation ───────────────────────────────────────────────
+// LLMs often produce mermaid code with minor issues that cause parse errors.
+// We fix the most common problems before handing the code to mermaid.render().
+
+function sanitizeMermaidCode(raw: string): string {
+  let code = raw.trim();
+
+  // Remove common leading indentation (dedent) — mermaid is whitespace-sensitive
+  const lines = code.split("\n");
+  const nonEmptyLines = lines.filter((l) => l.trim().length > 0);
+  if (nonEmptyLines.length > 1) {
+    // Skip the first line (diagram type declaration) when computing indent
+    const bodyLines = nonEmptyLines.slice(1);
+    const minIndent = bodyLines.reduce((min, line) => {
+      const match = line.match(/^(\s+)/);
+      return match ? Math.min(min, match[1].length) : min;
+    }, Infinity);
+    if (minIndent > 0 && minIndent < Infinity) {
+      code = lines
+        .map((line, i) => (i === 0 ? line : line.slice(Math.min(minIndent, line.search(/\S|$/)))))
+        .join("\n");
+    }
+  }
+
+  return code;
+}
+
+// ── Serialized render queue ─────────────────────────────────────────────────
+// Mermaid uses global state and cannot handle concurrent render() calls.
+// We serialize all renders through a single promise chain.
+
+let renderQueue: Promise<void> = Promise.resolve();
+let lastInitTheme: string | null = null;
+
+async function renderMermaid(
+  id: string,
+  code: string,
+  theme: string,
+): Promise<string> {
+  return new Promise<string>((resolve, reject) => {
+    renderQueue = renderQueue.then(async () => {
+      try {
+        const mermaid = (await import("mermaid")).default;
+        if (lastInitTheme !== theme) {
+          mermaid.initialize({
+            startOnLoad: false,
+            theme: theme === "dark" ? "dark" : "default",
+            suppressErrorRendering: true,
+          });
+          lastInitTheme = theme;
+        }
+        const sanitized = sanitizeMermaidCode(code);
+        const result = await mermaid.render(id, sanitized);
+        resolve(result.svg);
+        // Clean up any leftover error elements mermaid injects into the DOM
+        const errorEl = document.getElementById("d" + id);
+        if (errorEl) errorEl.remove();
+      } catch (err) {
+        reject(err);
+      }
+    });
+  });
+}
+
+// ── Component ───────────────────────────────────────────────────────────────
 
 interface Props {
   code: string;
 }
 
+// ── Zoom control buttons ────────────────────────────────────────────────────
+
+function ZoomControls({
+  onZoomIn,
+  onZoomOut,
+  onReset,
+  scale,
+}: {
+  onZoomIn: () => void;
+  onZoomOut: () => void;
+  onReset: () => void;
+  scale: number;
+}) {
+  const btnClass =
+    "w-7 h-7 flex items-center justify-center rounded " +
+    "bg-[var(--bg-surface)]/80 hover:bg-[var(--bg-surface)] " +
+    "border border-[var(--border-subtle)] " +
+    "text-[var(--text-secondary)] hover:text-[var(--text-primary)] " +
+    "transition-colors cursor-pointer select-none";
+
+  return (
+    <div
+      className="absolute top-2 right-2 z-10 flex flex-col gap-1"
+      onPointerDown={(e) => e.stopPropagation()}
+    >
+      <button className={btnClass} onClick={onZoomIn} title="Zoom in">
+        <Icon path={mdiMagnifyPlusOutline} size={0.6} />
+      </button>
+      <button className={btnClass} onClick={onZoomOut} title="Zoom out">
+        <Icon path={mdiMagnifyMinusOutline} size={0.6} />
+      </button>
+      <button className={btnClass} onClick={onReset} title="Reset zoom">
+        <Icon path={mdiArrowExpandAll} size={0.6} />
+      </button>
+      {scale !== 1 && (
+        <div className="text-[10px] text-[var(--text-muted)] text-center tabular-nums">
+          {Math.round(scale * 100)}%
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Component ───────────────────────────────────────────────────────────────
+
 export function MermaidBlock({ code }: Props) {
   const reactId = useId();
   const [svg, setSvg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [focused, setFocused] = useState(false);
   const { resolved: theme } = useThemeContext();
   const cancelledRef = useRef(false);
+  const prevCodeRef = useRef<string | null>(null);
+  const prevThemeRef = useRef<string | null>(null);
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const { state: zoom, handlers, zoomIn, zoomOut, reset } = useZoomPan();
 
   useEffect(() => {
+    // Skip re-render if code and theme haven't changed
+    if (prevCodeRef.current === code && prevThemeRef.current === theme && svg) {
+      return;
+    }
+    prevCodeRef.current = code;
+    prevThemeRef.current = theme;
+
     cancelledRef.current = false;
-    setSvg(null);
+    if (!svg) {
+      setSvg(null);
+    }
     setError(null);
 
     const id = `mermaid-${reactId.replace(/:/g, "")}-${mermaidIdCounter++}`;
 
-    (async () => {
-      try {
-        const mermaid = (await import("mermaid")).default;
-        mermaid.initialize({
-          startOnLoad: false,
-          theme: theme === "dark" ? "dark" : "default",
-        });
-        const result = await mermaid.render(id, code);
+    renderMermaid(id, code, theme).then(
+      (result) => {
+        if (!cancelledRef.current) setSvg(result);
+      },
+      (err) => {
         if (!cancelledRef.current) {
-          setSvg(result.svg);
+          const msg = err instanceof Error ? err.message : "Failed to render diagram";
+          console.warn("[MermaidBlock] render failed:", msg, "\nCode:", code);
+          setError(msg);
         }
-      } catch (err) {
-        if (!cancelledRef.current) {
-          setError(err instanceof Error ? err.message : "Failed to render diagram");
-        }
-      }
-    })();
+      },
+    );
 
     return () => {
       cancelledRef.current = true;
     };
   }, [code, theme]);
+
+  // Attach non-passive wheel listener only when focused
+  useEffect(() => {
+    if (!focused) return;
+    const el = viewportRef.current;
+    if (!el) return;
+    const wheelHandler = handlers.onWheel as EventListener;
+    el.addEventListener("wheel", wheelHandler, { passive: false });
+    return () => el.removeEventListener("wheel", wheelHandler);
+  }, [handlers.onWheel, svg, focused]);
+
+  // Click-outside and Escape to deactivate
+  useEffect(() => {
+    if (!focused) return;
+    function onClickOutside(e: MouseEvent) {
+      if (viewportRef.current && !viewportRef.current.contains(e.target as Node)) {
+        setFocused(false);
+      }
+    }
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setFocused(false);
+    }
+    document.addEventListener("mousedown", onClickOutside);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onClickOutside);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [focused]);
 
   if (error) {
     return (
@@ -65,10 +217,54 @@ export function MermaidBlock({ code }: Props) {
     );
   }
 
+  const borderColor = focused
+    ? "border-blue-500/60"
+    : "border-[var(--border-subtle)]";
+
   return (
-    <div
-      className="mermaid-diagram my-2 overflow-x-auto"
-      dangerouslySetInnerHTML={{ __html: svg }}
-    />
+    <div className="mermaid-diagram relative my-2">
+      {/* Viewport: clips zoomed/panned content */}
+      <div
+        ref={viewportRef}
+        className={`relative overflow-hidden rounded-md border ${borderColor} bg-[var(--bg-surface)] transition-colors`}
+        style={{
+          touchAction: focused ? "none" : "auto",
+          cursor: focused ? (zoom.scale > 1 ? "grab" : "default") : "pointer",
+          minHeight: 120,
+        }}
+        onClick={() => { if (!focused) setFocused(true); }}
+        onPointerDown={focused ? handlers.onPointerDown : undefined}
+        onPointerMove={focused ? handlers.onPointerMove : undefined}
+        onPointerUp={focused ? handlers.onPointerUp : undefined}
+        onTouchMove={focused ? handlers.onTouchMove as unknown as React.TouchEventHandler : undefined}
+        onTouchEnd={focused ? handlers.onTouchEnd : undefined}
+        onDoubleClick={focused ? handlers.onDoubleClick : undefined}
+      >
+        {focused && (
+          <ZoomControls
+            onZoomIn={zoomIn}
+            onZoomOut={zoomOut}
+            onReset={reset}
+            scale={zoom.scale}
+          />
+        )}
+        {!focused && (
+          <div className="absolute inset-0 z-10 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity bg-black/10 rounded-md">
+            <span className="text-xs text-[var(--text-secondary)] bg-[var(--bg-surface)]/90 px-2 py-1 rounded shadow">
+              Click to zoom &amp; pan
+            </span>
+          </div>
+        )}
+        {/* Inner wrapper with zoom transform */}
+        <div
+          className="mermaid-diagram-inner origin-top-left"
+          style={{
+            transform: `translate(${zoom.translateX}px, ${zoom.translateY}px) scale(${zoom.scale})`,
+            transformOrigin: "0 0",
+          }}
+          dangerouslySetInnerHTML={{ __html: svg }}
+        />
+      </div>
+    </div>
   );
 }

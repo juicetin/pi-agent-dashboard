@@ -215,6 +215,95 @@ describe("createUiProxy", () => {
     });
   });
 
+  describe("multiselect forwarding", () => {
+    it("should send extension_ui_request for multiselect", () => {
+      setup(false);
+      proxy.wrappedUi.multiselect("Pick files:", ["a.ts", "b.ts", "c.ts"]);
+
+      expect(mockConnection.send).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "extension_ui_request",
+          method: "multiselect",
+          params: { title: "Pick files:", options: ["a.ts", "b.ts", "c.ts"] },
+        }),
+      );
+    });
+
+    it("should resolve with selected values array", async () => {
+      setup(false);
+      const promise = proxy.wrappedUi.multiselect("Pick:", ["A", "B", "C"]);
+
+      const requestId = mockConnection.send.mock.calls[0][0].requestId;
+      proxy.handleResponse({
+        type: "extension_ui_response",
+        sessionId,
+        requestId,
+        result: { values: ["A", "C"] },
+      });
+
+      expect(await promise).toEqual(["A", "C"]);
+    });
+
+    it("should resolve with empty array when cancelled", async () => {
+      setup(false);
+      const promise = proxy.wrappedUi.multiselect("Pick:", ["A", "B"]);
+
+      const requestId = mockConnection.send.mock.calls[0][0].requestId;
+      proxy.handleResponse({
+        type: "extension_ui_response",
+        sessionId,
+        requestId,
+        cancelled: true,
+      });
+
+      expect(await promise).toEqual([]);
+    });
+
+    it("should use TUI input fallback with numbered options when hasUI=true", async () => {
+      mockUi.input.mockResolvedValue("1,3");
+      setup(true);
+      const promise = proxy.wrappedUi.multiselect("Pick:", ["a.ts", "b.ts", "c.ts"]);
+
+      const result = await promise;
+      expect(result).toEqual(["a.ts", "c.ts"]);
+      expect(mockUi.input).toHaveBeenCalledWith(
+        expect.stringContaining("1. a.ts"),
+        expect.any(String),
+      );
+    });
+
+    it("should return empty array when TUI input is empty or cancelled", async () => {
+      mockUi.input.mockResolvedValue(undefined);
+      setup(true);
+      const result = await proxy.wrappedUi.multiselect("Pick:", ["a.ts"]);
+      expect(result).toEqual([]);
+    });
+
+    it("should ignore invalid numbers in TUI input", async () => {
+      mockUi.input.mockResolvedValue("1, 99, abc, 2");
+      setup(true);
+      const result = await proxy.wrappedUi.multiselect("Pick:", ["a.ts", "b.ts", "c.ts"]);
+      expect(result).toEqual(["a.ts", "b.ts"]);
+    });
+
+    it("should only await dashboard in headless mode", async () => {
+      setup(false);
+      const promise = proxy.wrappedUi.multiselect("Pick:", ["A"]);
+
+      expect(mockUi.input).not.toHaveBeenCalled();
+
+      const requestId = mockConnection.send.mock.calls[0][0].requestId;
+      proxy.handleResponse({
+        type: "extension_ui_response",
+        sessionId,
+        requestId,
+        result: { values: ["A"] },
+      });
+
+      expect(await promise).toEqual(["A"]);
+    });
+  });
+
   describe("unknown requestId", () => {
     it("should silently ignore responses with unknown requestId", () => {
       setup(false);

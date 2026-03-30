@@ -56,6 +56,7 @@ export function MobileShell({ depth, listPanel, detailPanel, onBack }: Props) {
         aria-hidden={!showDetail}
       >
         {detailPanel}
+
       </div>
     </div>
   );

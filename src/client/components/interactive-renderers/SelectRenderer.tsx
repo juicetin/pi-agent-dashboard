@@ -2,6 +2,7 @@ import React from "react";
 import Icon from "@mdi/react";
 import { mdiCheckCircle, mdiFormatListBulleted } from "@mdi/js";
 import type { InteractiveRendererProps } from "./types.js";
+import { InlineMarkdown } from "./InlineMarkdown.js";
 
 export function SelectRenderer({ params, status, result, onRespond, onCancel }: InteractiveRendererProps) {
   const title = params.title as string;
@@ -12,7 +13,7 @@ export function SelectRenderer({ params, status, result, onRespond, onCancel }: 
     return (
       <div className="mx-4 my-1 p-2 bg-[var(--bg-hover)] rounded text-xs flex items-center gap-2">
         <Icon path={mdiFormatListBulleted} size={0.55} className="text-[var(--text-secondary)] shrink-0" />
-        <span className="text-[var(--text-secondary)]">{title}</span>
+        <span className="text-[var(--text-secondary)]"><InlineMarkdown content={title} /></span>
         {status === "resolved" && selectedValue && (
           <span className="ml-1 inline-flex items-center gap-0.5 text-green-400">
             <Icon path={mdiCheckCircle} size={0.55} /> {selectedValue}
@@ -29,7 +30,7 @@ export function SelectRenderer({ params, status, result, onRespond, onCancel }: 
     <div className="mx-4 my-2 p-3 bg-[var(--bg-hover)] border border-[var(--border-secondary)] rounded-lg">
       <div className="flex items-center gap-2 mb-2">
         <Icon path={mdiFormatListBulleted} size={0.6} className="text-blue-400 shrink-0" />
-        <span className="text-sm font-medium text-[var(--text-primary)]">{title}</span>
+        <span className="text-sm font-medium text-[var(--text-primary)]"><InlineMarkdown content={title} /></span>
       </div>
       <div className="flex flex-wrap gap-2 ml-6">
         {options.map((option) => (

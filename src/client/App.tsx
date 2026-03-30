@@ -7,6 +7,7 @@ import { ResizableSidebar } from "./components/ResizableSidebar.js";
 import { HamburgerButton, MobileOverlay } from "./components/MobileOverlay.js";
 import { MobileShell } from "./components/MobileShell.js";
 import { useMobile } from "./hooks/useMobile.js";
+import { getMobileDepth } from "./lib/mobile-depth.js";
 import { ChatView } from "./components/ChatView.js";
 import { MarkdownPreviewView } from "./components/MarkdownPreviewView.js";
 import { useOpenSpecReader } from "./hooks/useOpenSpecReader.js";
@@ -728,6 +729,8 @@ export default function App() {
           } : undefined,
           onAttachProposal: (changeName) => handleAttachProposal(selectedId, changeName),
           onDetachProposal: () => handleDetachProposal(selectedId),
+          onSendPrompt: (text) => handleSend(text),
+          onReadArtifact: (changeName, artifactId) => handleReadArtifact(selectedCwd!, changeName, artifactId),
         } : undefined}
       />
       {/* Mobile info strip */}
@@ -855,7 +858,13 @@ export default function App() {
 
   // Mobile: two-step full-screen navigation
   if (isMobile) {
-    const mobileDepth = previewState ? 2 : (selectedId || selectedTerminalId) ? 1 : 0;
+    const mobileDepth = getMobileDepth({
+      selectedId,
+      selectedTerminalId,
+      settingsMatch: !!settingsMatch,
+      tunnelSetupMatch: !!tunnelSetupMatch,
+      hasPreview: !!previewState,
+    });
     return (
       <div className="bg-[var(--bg-primary)] text-[var(--text-primary)]">
         <MobileShell
@@ -874,7 +883,19 @@ export default function App() {
             </div>
           }
           detailPanel={
-            selectedTerminalId ? (
+            settingsMatch ? (
+              <SettingsPanel />
+            ) : tunnelSetupMatch ? (
+              <ZrokInstallGuide onBack={() => navigate("/")} />
+            ) : previewState ? (
+              <OpenSpecPreview
+                cwd={previewState.cwd}
+                changeName={previewState.changeName}
+                initialArtifact={previewState.artifactId}
+                artifacts={previewState.artifacts}
+                onBack={() => setPreviewState(null)}
+              />
+            ) : selectedTerminalId ? (
               <div className="flex-1 flex flex-col min-w-0 h-full">
                 {terminalViews}
               </div>

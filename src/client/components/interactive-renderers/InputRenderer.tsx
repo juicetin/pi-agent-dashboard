@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import Icon from "@mdi/react";
 import { mdiCheckCircle, mdiFormTextbox } from "@mdi/js";
 import type { InteractiveRendererProps } from "./types.js";
+import { InlineMarkdown } from "./InlineMarkdown.js";
 
 export function InputRenderer({ params, status, result, onRespond, onCancel }: InteractiveRendererProps) {
   const title = params.title as string;
@@ -13,7 +14,7 @@ export function InputRenderer({ params, status, result, onRespond, onCancel }: I
     return (
       <div className="mx-4 my-1 p-2 bg-[var(--bg-hover)] rounded text-xs flex items-center gap-2">
         <Icon path={mdiFormTextbox} size={0.55} className="text-[var(--text-secondary)] shrink-0" />
-        <span className="text-[var(--text-secondary)]">{title}</span>
+        <span className="text-[var(--text-secondary)]"><InlineMarkdown content={title} /></span>
         {status === "resolved" && enteredValue !== undefined && (
           <span className="ml-1 inline-flex items-center gap-0.5 text-green-400">
             <Icon path={mdiCheckCircle} size={0.55} /> {enteredValue}
@@ -30,7 +31,7 @@ export function InputRenderer({ params, status, result, onRespond, onCancel }: I
     <div className="mx-4 my-2 p-3 bg-[var(--bg-hover)] border border-[var(--border-secondary)] rounded-lg">
       <div className="flex items-center gap-2 mb-2">
         <Icon path={mdiFormTextbox} size={0.6} className="text-blue-400 shrink-0" />
-        <span className="text-sm font-medium text-[var(--text-primary)]">{title}</span>
+        <span className="text-sm font-medium text-[var(--text-primary)]"><InlineMarkdown content={title} /></span>
       </div>
       <div className="flex gap-2 ml-6">
         <input

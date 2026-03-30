@@ -5,7 +5,7 @@ interface SwipeBackOptions {
   enabled: boolean;
   /** Called when swipe completes */
   onBack: () => void;
-  /** Left-edge activation zone in px (default 20) */
+  /** Left-edge activation zone in px (default 40) */
   edgeZone?: number;
   /** Threshold fraction of screen width to trigger (default 0.4) */
   threshold?: number;
@@ -22,7 +22,7 @@ interface SwipeState {
  * Hook for iOS-style left-edge swipe-back gesture.
  * Returns a ref to attach to the container and the current swipe offset.
  */
-export function useSwipeBack({ enabled, onBack, edgeZone = 20, threshold = 0.4 }: SwipeBackOptions) {
+export function useSwipeBack({ enabled, onBack, edgeZone = 40, threshold = 0.4 }: SwipeBackOptions) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [swipeState, setSwipeState] = useState<SwipeState>({ offset: 0, swiping: false });
 
@@ -39,8 +39,6 @@ export function useSwipeBack({ enabled, onBack, edgeZone = 20, threshold = 0.4 }
 
   useEffect(() => {
     if (!enabled) return;
-    const el = containerRef.current;
-    if (!el) return;
 
     function handleTouchStart(e: TouchEvent) {
       const touch = e.touches[0];
@@ -101,16 +99,16 @@ export function useSwipeBack({ enabled, onBack, edgeZone = 20, threshold = 0.4 }
       }
     }
 
-    el.addEventListener("touchstart", handleTouchStart, { passive: true });
-    el.addEventListener("touchmove", handleTouchMove, { passive: false });
-    el.addEventListener("touchend", handleTouchEnd, { passive: true });
-    el.addEventListener("touchcancel", handleTouchEnd, { passive: true });
+    document.addEventListener("touchstart", handleTouchStart, { passive: true });
+    document.addEventListener("touchmove", handleTouchMove, { passive: false });
+    document.addEventListener("touchend", handleTouchEnd, { passive: true });
+    document.addEventListener("touchcancel", handleTouchEnd, { passive: true });
 
     return () => {
-      el.removeEventListener("touchstart", handleTouchStart);
-      el.removeEventListener("touchmove", handleTouchMove);
-      el.removeEventListener("touchend", handleTouchEnd);
-      el.removeEventListener("touchcancel", handleTouchEnd);
+      document.removeEventListener("touchstart", handleTouchStart);
+      document.removeEventListener("touchmove", handleTouchMove);
+      document.removeEventListener("touchend", handleTouchEnd);
+      document.removeEventListener("touchcancel", handleTouchEnd);
     };
   }, [enabled, edgeZone, threshold]);
 

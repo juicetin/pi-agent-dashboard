@@ -46,22 +46,7 @@ function DarwinGuide() {
         </p>
         <CodeBlock>{`brew install zrok`}</CodeBlock>
       </Section>
-      <Section title="2. Create Account & Enroll">
-        <p className="text-sm text-[var(--text-secondary)] mb-2">
-          Sign up at{" "}
-          <a href="https://myzrok.io" target="_blank" rel="noopener" className="text-blue-400 hover:underline">
-            myzrok.io
-          </a>{" "}
-          to get your invite token, then enroll:
-        </p>
-        <CodeBlock>{`zrok enable <your-token>`}</CodeBlock>
-      </Section>
-      <Section title="3. Verify">
-        <p className="text-sm text-[var(--text-secondary)] mb-2">
-          Check that zrok is working:
-        </p>
-        <CodeBlock>{`zrok version`}</CodeBlock>
-      </Section>
+      <EnrollAndVerify />
     </>
   );
 }
@@ -81,22 +66,7 @@ function LinuxGuide() {
 curl -sSLf https://get.openziti.io/install.bash | sudo bash -s openziti-controller
 sudo apt install zrok`}</CodeBlock>
       </Section>
-      <Section title="2. Create Account & Enroll">
-        <p className="text-sm text-[var(--text-secondary)] mb-2">
-          Sign up at{" "}
-          <a href="https://myzrok.io" target="_blank" rel="noopener" className="text-blue-400 hover:underline">
-            myzrok.io
-          </a>{" "}
-          to get your invite token, then enroll:
-        </p>
-        <CodeBlock>{`zrok enable <your-token>`}</CodeBlock>
-      </Section>
-      <Section title="3. Verify">
-        <p className="text-sm text-[var(--text-secondary)] mb-2">
-          Check that zrok is working:
-        </p>
-        <CodeBlock>{`zrok version`}</CodeBlock>
-      </Section>
+      <EnrollAndVerify />
     </>
   );
 }
@@ -115,6 +85,14 @@ function WindowsGuide() {
         <CodeBlock>{`scoop bucket add openziti https://github.com/openziti/scoop-bucket.git
 scoop install zrok`}</CodeBlock>
       </Section>
+      <EnrollAndVerify />
+    </>
+  );
+}
+
+function EnrollAndVerify() {
+  return (
+    <>
       <Section title="2. Create Account & Enroll">
         <p className="text-sm text-[var(--text-secondary)] mb-2">
           Sign up at{" "}
@@ -124,6 +102,12 @@ scoop install zrok`}</CodeBlock>
           to get your invite token, then enroll:
         </p>
         <CodeBlock>{`zrok enable <your-token>`}</CodeBlock>
+        <p className="text-sm text-[var(--text-tertiary)] mt-2">
+          This stores your API token in zrok's own config directory
+          (<code className="text-xs">~/.zrok2/environment.json</code>).
+          The dashboard reads this file to detect enrollment — no keys are
+          copied into the dashboard config.
+        </p>
       </Section>
       <Section title="3. Verify">
         <p className="text-sm text-[var(--text-secondary)] mb-2">
@@ -179,10 +163,18 @@ export function ZrokInstallGuide({ onBack }: Props) {
           </>
         )}
 
-        <Section title="4. Enable Tunnel in Dashboard">
+        <Section title="4. Restart the Dashboard Server">
           <p className="text-sm text-[var(--text-secondary)] mb-2">
-            After installing and enrolling, enable the tunnel in Dashboard Settings
-            and restart the server. The tunnel URL will appear in the server logs.
+            The tunnel is <strong>enabled by default</strong> (<code className="text-xs">tunnel.enabled: true</code>).
+            After installing and enrolling zrok, restart the dashboard server —
+            it will automatically detect zrok and open a tunnel on startup.
+            The tunnel URL will appear in the server logs.
+          </p>
+          <CodeBlock>{`pi-dashboard stop && pi-dashboard start`}</CodeBlock>
+          <p className="text-sm text-[var(--text-tertiary)] mt-2">
+            To disable auto-tunnel, set <code className="text-xs">tunnel.enabled</code> to{" "}
+            <code className="text-xs">false</code> in Settings or pass{" "}
+            <code className="text-xs">--no-tunnel</code> on the CLI.
           </p>
         </Section>
 

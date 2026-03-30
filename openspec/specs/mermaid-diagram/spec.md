@@ -1,11 +1,11 @@
 ## ADDED Requirements
 
 ### Requirement: Mermaid diagram rendering
-The MermaidBlock component SHALL accept a `code` string prop containing Mermaid diagram syntax, lazy-load the mermaid library via dynamic import, render the diagram to SVG using `mermaid.render()`, and display the resulting SVG inline.
+The MermaidBlock component SHALL accept a `code` string prop containing Mermaid diagram syntax, lazy-load the mermaid library via dynamic import, render the diagram to SVG using `mermaid.render()`, and display the resulting SVG inside a zoomable viewport container that spans the full content area width.
 
 #### Scenario: Valid Mermaid diagram
 - **WHEN** a mermaid code block contains valid Mermaid syntax (e.g., `graph TD; A-->B`)
-- **THEN** the component SHALL render an SVG diagram inline in place of the code block
+- **THEN** the component SHALL render an SVG diagram inside a zoomable viewport container
 
 #### Scenario: Loading state
 - **WHEN** the mermaid library is being loaded via dynamic import
@@ -17,7 +17,7 @@ The MermaidBlock component SHALL accept a `code` string prop containing Mermaid 
 
 #### Scenario: Multiple diagrams on same page
 - **WHEN** multiple mermaid code blocks appear in the same markdown content
-- **THEN** each diagram SHALL render independently with unique IDs and no conflicts
+- **THEN** each diagram SHALL render independently with unique IDs, independent zoom state, and no conflicts
 
 #### Scenario: Component unmounts during render
 - **WHEN** the component unmounts while mermaid.render() is in progress

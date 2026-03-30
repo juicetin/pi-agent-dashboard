@@ -11,8 +11,16 @@ import {
   mdiClose,
   mdiSourceBranch,
   mdiLinkVariant,
+  mdiBookOpenPageVariantOutline,
+  mdiCompassOutline,
+  mdiFastForward,
+  mdiPlayCircleOutline,
+  mdiCheckCircleOutline,
+  mdiArchiveOutline,
+  mdiChevronRight,
 } from "@mdi/js";
 import type { DashboardSession, OpenSpecChange } from "../../shared/types.js";
+import { ChangeState, deriveChangeState } from "../../shared/types.js";
 import type { DetectedEditor } from "../lib/editor-api.js";
 
 interface Props {
@@ -27,6 +35,8 @@ interface Props {
   onOpenEditor?: (editorId: string) => void;
   onAttachProposal?: (changeName: string) => void;
   onDetachProposal?: () => void;
+  onSendPrompt?: (text: string) => void;
+  onReadArtifact?: (changeName: string, artifactId: string) => void;
 }
 
 function MenuRow({ icon, label, onClick, danger }: {
@@ -50,7 +60,7 @@ function MenuRow({ icon, label, onClick, danger }: {
   );
 }
 
-export function MobileActionMenu({ session, editors, openspecChanges, onRename, onHide, onUnhide, onResume, onShutdown, onOpenEditor, onAttachProposal, onDetachProposal }: Props) {
+export function MobileActionMenu({ session, editors, openspecChanges, onRename, onHide, onUnhide, onResume, onShutdown, onOpenEditor, onAttachProposal, onDetachProposal, onSendPrompt, onReadArtifact }: Props) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -150,19 +160,45 @@ export function MobileActionMenu({ session, editors, openspecChanges, onRename, 
             />
           ))}
 
-          {/* OpenSpec attach/detach */}
-          {session.openspecChange && onDetachProposal && (
-            <MenuRow icon={mdiLinkVariant} label={`Detach: ${session.openspecChange}`} onClick={() => act(onDetachProposal)} />
-          )}
-          {!session.openspecChange && onAttachProposal && openspecChanges && openspecChanges.length > 0 && (
-            openspecChanges.map((change) => (
-              <MenuRow
-                key={change.name}
-                icon={mdiLinkVariant}
-                label={`Attach: ${change.name}`}
-                onClick={() => act(() => onAttachProposal(change.name))}
-              />
-            ))
+          {/* OpenSpec commands (when a change is attached) */}
+          {session.attachedProposal && openspecChanges && (() => {
+            const attached = session.attachedProposal;
+            const change = openspecChanges.find((c) => c.name === attached);
+            if (!change) return null;
+            const state = deriveChangeState(change);
+            return (
+              <>
+                <div className="px-4 py-1.5 text-[10px] text-[var(--text-muted)] uppercase tracking-wider border-t border-[var(--border-primary)]">
+                  OpenSpec: {attached}
+                </div>
+                {change.artifacts.length > 0 && onReadArtifact && (
+                  <MenuRow icon={mdiBookOpenPageVariantOutline} label="Read" onClick={() => act(() => onReadArtifact!(change.name, change.artifacts[0].id))} />
+                )}
+                {onSendPrompt && (
+                  <MenuRow icon={mdiCompassOutline} label="Explore" onClick={() => act(() => onSendPrompt(`/skill:openspec-explore ${attached}`))} />
+                )}
+                {state === ChangeState.PLANNING && onSendPrompt && (
+                  <>
+                    <MenuRow icon={mdiChevronRight} label="Continue" onClick={() => act(() => onSendPrompt(`/opsx:continue ${attached}`))} />
+                    <MenuRow icon={mdiFastForward} label="Fast-Forward" onClick={() => act(() => onSendPrompt(`/opsx:ff ${attached}`))} />
+                  </>
+                )}
+                {(state === ChangeState.READY || state === ChangeState.IMPLEMENTING) && onSendPrompt && (
+                  <MenuRow icon={mdiPlayCircleOutline} label="Apply" onClick={() => act(() => onSendPrompt(`/opsx:apply ${attached}`))} />
+                )}
+                {state === ChangeState.COMPLETE && onSendPrompt && (
+                  <>
+                    <MenuRow icon={mdiCheckCircleOutline} label="Verify" onClick={() => act(() => onSendPrompt(`/opsx:verify ${attached}`))} />
+                    <MenuRow icon={mdiArchiveOutline} label="Archive" onClick={() => act(() => onSendPrompt(`/opsx:archive ${attached}`))} />
+                  </>
+                )}
+              </>
+            );
+          })()}
+
+          {/* OpenSpec detach */}
+          {session.attachedProposal && onDetachProposal && (
+            <MenuRow icon={mdiLinkVariant} label={`Detach: ${session.attachedProposal}`} onClick={() => act(onDetachProposal)} />
           )}
 
           {/* Exit */}

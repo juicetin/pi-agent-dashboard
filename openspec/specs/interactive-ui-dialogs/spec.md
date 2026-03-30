@@ -49,12 +49,13 @@ The extension→server protocol SHALL define `ExtensionUiRequestMessage`:
 - `type`: `"extension_ui_request"`
 - `sessionId`: string
 - `requestId`: string (UUID for correlation)
-- `method`: `"confirm" | "select" | "input" | "editor" | "notify"`
+- `method`: `"confirm" | "select" | "multiselect" | "input" | "editor" | "notify"`
 - `params`: method-specific parameters object
 
 The `params` shape per method:
 - **confirm**: `{ title: string, message: string }`
 - **select**: `{ title: string, options: string[] }`
+- **multiselect**: `{ title: string, options: string[] }`
 - **input**: `{ title: string, placeholder?: string }`
 - **editor**: `{ title: string, prefill?: string }`
 - **notify**: `{ message: string, level?: "info" | "warning" | "error" }`
@@ -65,6 +66,10 @@ The `params` shape per method:
 
 #### Scenario: Select request message shape
 - **WHEN** the bridge sends an `extension_ui_request` with `method: "select"`
+- **THEN** `params` SHALL contain `title` (string) and `options` (string array)
+
+#### Scenario: Multiselect request message shape
+- **WHEN** the bridge sends an `extension_ui_request` with `method: "multiselect"`
 - **THEN** `params` SHALL contain `title` (string) and `options` (string array)
 
 #### Scenario: Input request message shape
@@ -137,49 +142,49 @@ The web client SHALL include an interactive renderer registry at `src/client/com
 - **THEN** it SHALL return a `GenericInteractiveRenderer` component
 
 ### Requirement: Confirm renderer
-The `ConfirmRenderer` SHALL display the title, message, and two buttons (Allow/Deny) when pending. When resolved, it SHALL collapse to a single line showing the title and result (✅ Allowed or ❌ Denied).
+The `ConfirmRenderer` SHALL display the title and message as rendered markdown when pending. The title SHALL use inline markdown (no block elements) in both pending and resolved states. The message SHALL use full markdown rendering. When resolved, it SHALL collapse to a single line showing the title (inline markdown) and result (✅ Allowed or ❌ Denied).
 
 #### Scenario: Pending confirm display
-- **WHEN** a confirm request is pending
-- **THEN** the renderer SHALL show the title, message text, and [Allow] / [Deny] buttons
+- **WHEN** a confirm request is pending with title `"Allow **dangerous** operation?"` and message `"This will:\n- Delete files\n- Reset config"`
+- **THEN** the renderer SHALL render the title with bold formatting and the message as a markdown list
 
 #### Scenario: Clicking Allow
 - **WHEN** the user clicks [Allow]
 - **THEN** the renderer SHALL call `onRespond({ confirmed: true })`
 
 #### Scenario: Resolved confirm display
-- **WHEN** a confirm request is resolved with `confirmed: true`
-- **THEN** the renderer SHALL show a compact card with "✅ Allowed"
+- **WHEN** a confirm request is resolved with `confirmed: true` and title `"Allow **dangerous** operation?"`
+- **THEN** the renderer SHALL show a compact card with the title rendered as inline markdown and "✅ Allowed"
 
 ### Requirement: Select renderer
-The `SelectRenderer` SHALL display the title and a list of option buttons when pending. When resolved, it SHALL show the selected value.
+The `SelectRenderer` SHALL display the title as rendered markdown when pending and as inline markdown when resolved. When resolved, it SHALL show the selected value.
 
 #### Scenario: Pending select display
-- **WHEN** a select request is pending with `options: ["A", "B", "C"]`
-- **THEN** the renderer SHALL show the title and a button for each option
+- **WHEN** a select request is pending with title `"Choose a \`format\`"` and `options: ["JSON", "YAML"]`
+- **THEN** the renderer SHALL render the title with code formatting and show a button for each option
 
 #### Scenario: Clicking an option
-- **WHEN** the user clicks option "B"
-- **THEN** the renderer SHALL call `onRespond({ value: "B" })`
+- **WHEN** the user clicks option "JSON"
+- **THEN** the renderer SHALL call `onRespond({ value: "JSON" })`
 
 #### Scenario: Resolved select display
-- **WHEN** a select request is resolved with `value: "B"`
-- **THEN** the renderer SHALL show a compact card with the selected value
+- **WHEN** a select request is resolved with `value: "JSON"` and title containing markdown
+- **THEN** the renderer SHALL show a compact card with the title rendered as inline markdown and the selected value
 
 ### Requirement: Input renderer
-The `InputRenderer` SHALL display the title and a text input field with submit button when pending. When resolved, it SHALL show the entered value.
+The `InputRenderer` SHALL display the title as rendered markdown when pending and as inline markdown when resolved. When resolved, it SHALL show the entered value.
 
 #### Scenario: Pending input display
-- **WHEN** an input request is pending
-- **THEN** the renderer SHALL show the title, a text input (with placeholder if provided), and a [Submit] button
+- **WHEN** an input request is pending with title `"Enter the **project name**"`
+- **THEN** the renderer SHALL render the title with bold formatting and show a text input with submit button
 
 #### Scenario: Submitting input
 - **WHEN** the user types "hello" and clicks [Submit]
 - **THEN** the renderer SHALL call `onRespond({ value: "hello" })`
 
 #### Scenario: Resolved input display
-- **WHEN** an input request is resolved with `value: "hello"`
-- **THEN** the renderer SHALL show a compact card with the entered value
+- **WHEN** an input request is resolved with `value: "hello"` and title containing markdown
+- **THEN** the renderer SHALL show a compact card with the title rendered as inline markdown and the entered value
 
 ### Requirement: Editor renderer
 The `EditorRenderer` SHALL display the title and a textarea (prefilled if `prefill` provided) with submit button when pending. When resolved, it SHALL show a truncated preview of the edited text.
@@ -213,6 +218,17 @@ The `ChatView` SHALL render interactive UI requests as inline cards in the conve
 #### Scenario: Interactive request resolves in chat
 - **WHEN** the user responds to a pending interactive UI card
 - **THEN** both the message entry and the `interactiveRequests` entry SHALL be updated to resolved status with the result
+
+### Requirement: Inline markdown component for interactive renderers
+The interactive renderers SHALL use a shared `InlineMarkdown` component for rendering titles in compact/resolved states. This component SHALL render markdown restricted to inline elements only (`strong`, `em`, `code`, `a`) using `ReactMarkdown` with `allowedElements` and `unwrapDisallowed` to prevent block elements from breaking the single-line layout.
+
+#### Scenario: Inline markdown renders bold and code
+- **WHEN** `InlineMarkdown` receives content `"Allow **dangerous** \`rm -rf\` command?"`
+- **THEN** it SHALL render `dangerous` as bold and `rm -rf` as inline code, without wrapping in `<p>` or other block elements
+
+#### Scenario: Inline markdown strips block elements
+- **WHEN** `InlineMarkdown` receives content containing a markdown list or heading
+- **THEN** it SHALL strip the block elements and render only the text content inline
 
 ### Requirement: Cleanup of ExtensionUI component
 The orphaned `ExtensionUI.tsx` component SHALL be removed. The old `extension_ui_event` message types (`ExtensionUiEventMessage` in protocol.ts, `BrowserExtensionUiEventMessage` in browser-protocol.ts) SHALL be removed and replaced by the new request/response types.

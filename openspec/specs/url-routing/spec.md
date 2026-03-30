@@ -69,3 +69,14 @@ The server SHALL return `index.html` for any GET request that does not match a s
 #### Scenario: Server still serves static files
 - **WHEN** a GET request is made to `/assets/main.js`
 - **THEN** the server responds with the actual static file
+
+### Requirement: Mobile depth includes settings and tunnel routes
+The mobile `MobileShell` depth calculation SHALL treat `/settings` and `/tunnel-setup` as depth-1 routes, alongside `/session/:id` and `/terminal/:id`.
+
+#### Scenario: Settings route sets mobile depth to 1
+- **WHEN** the current URL is `/settings` on a mobile viewport
+- **THEN** `MobileShell` depth SHALL be 1 and the detail panel SHALL display the Settings page
+
+#### Scenario: Tunnel setup route sets mobile depth to 1
+- **WHEN** the current URL is `/tunnel-setup` on a mobile viewport
+- **THEN** `MobileShell` depth SHALL be 1 and the detail panel SHALL display the Zrok Install Guide

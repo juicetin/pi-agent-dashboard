@@ -76,10 +76,17 @@ function InteractiveUiCard({ request, onRespondToUi }: {
   );
 }
 
+/** Check if markdown content contains a mermaid code block */
+function hasMermaid(content: string): boolean {
+  return /```mermaid\b/.test(content);
+}
+
 export function ChatView({ state, toolContext, onCancelPending, onRespondToUi }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const isMobile = useMobile();
   const bubbleMax = isMobile ? "max-w-[95%]" : "max-w-[80%]";
+  /** Force wide when message contains a mermaid diagram */
+  const bubbleWide = isMobile ? "w-[95%]" : "w-[95%]";
 
   useEffect(() => {
     scrollRef.current?.scrollTo(0, scrollRef.current.scrollHeight);
@@ -175,11 +182,12 @@ export function ChatView({ state, toolContext, onCancelPending, onRespondToUi }:
         }
 
         // assistant
+        const bMax = hasMermaid(msg.content) ? bubbleWide : bubbleMax;
         return (
           <div key={msg.id} className="mt-4 mb-4 flex justify-start">
             <MessageBubble
               content={msg.content}
-              className={`bg-[var(--bg-tertiary)] border border-[var(--border-subtle)] rounded-xl shadow-md px-4 py-2 ${bubbleMax}`}
+              className={`bg-[var(--bg-tertiary)] border border-[var(--border-subtle)] rounded-xl shadow-md px-4 py-2 ${bMax}`}
               timestamp={msg.timestamp}
             />
           </div>
@@ -198,7 +206,7 @@ export function ChatView({ state, toolContext, onCancelPending, onRespondToUi }:
       {/* Streaming text */}
       {state.streamingText && (
         <div className="flex justify-start">
-          <div className={`bg-[var(--bg-tertiary)] border border-[var(--border-subtle)] rounded-xl shadow-md px-4 py-2 ${bubbleMax}`}>
+          <div className={`bg-[var(--bg-tertiary)] border border-[var(--border-subtle)] rounded-xl shadow-md px-4 py-2 ${hasMermaid(state.streamingText) ? bubbleWide : bubbleMax}`}>
             <MarkdownContent content={state.streamingText} />
             <span className="inline-block w-1.5 h-4 bg-[var(--bg-surface)] animate-pulse ml-0.5" />
           </div>

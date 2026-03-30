@@ -2,12 +2,14 @@
  * Zrok tunnel integration via `zrok share public` subprocess.
  * Spawns zrok as a long-lived child process that actually proxies traffic.
  * Supports both zrok v1 (~/.zrok) and v2 (~/.zrok2) environments.
+ * Uses reserved shares for persistent URLs across restarts.
  */
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { execSync, spawn, type ChildProcess } from "node:child_process";
 import type { TunnelStatus } from "../shared/rest-api.js";
+import { CONFIG_FILE } from "../shared/config.js";
 
 export type { TunnelStatus };
 
@@ -141,14 +143,60 @@ export function loadZrokEnv(): ZrokEnv | null {
   }
 }
 
+// ── Reserved Share ───────────────────────────────────────────────────
+
+/**
+ * Save the reserved token to config.json so it persists across restarts.
+ */
+function saveReservedToken(token: string): void {
+  try {
+    const raw = fs.existsSync(CONFIG_FILE)
+      ? JSON.parse(fs.readFileSync(CONFIG_FILE, "utf-8"))
+      : {};
+    raw.tunnel = { ...raw.tunnel, reservedToken: token };
+    fs.writeFileSync(CONFIG_FILE, JSON.stringify(raw, null, 2) + "\n");
+  } catch (err: any) {
+    console.warn(`Failed to save reserved token to config: ${err.message}`);
+  }
+}
+
+/**
+ * Create a reserved share via `zrok reserve public`.
+ * Returns the share token or null on failure.
+ */
+function reserveShare(port: number): Promise<string | null> {
+  return new Promise((resolve) => {
+    try {
+      const result = execSync(
+        `zrok reserve public http://localhost:${port} --json-output`,
+        { timeout: 30_000, encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] },
+      );
+      const data = JSON.parse(result.trim());
+      const token = data.token ?? data.share_token ?? data.shareToken;
+      if (token) {
+        console.log(`Reserved zrok share: ${token}`);
+        saveReservedToken(token);
+        return resolve(token);
+      }
+      console.warn("zrok reserve: no token in output", result.trim());
+      resolve(null);
+    } catch (err: any) {
+      console.warn(`zrok reserve failed: ${err.message}`);
+      resolve(null);
+    }
+  });
+}
+
 // ── Subprocess Tunnel ───────────────────────────────────────────────
 
 /**
- * Create a public proxy tunnel by spawning `zrok share public`.
- * Parses the public URL from stdout. Returns URL or null on failure.
+ * Create a tunnel by spawning zrok. Uses reserved shares for persistent URLs.
+ * On first run, reserves a share and saves the token to config.
+ * On subsequent runs, reuses the reserved token.
+ * Returns URL or null on failure.
  */
-export function createTunnel(port: number): Promise<string | null> {
-  return new Promise((resolve) => {
+export function createTunnel(port: number, reservedToken?: string): Promise<string | null> {
+  return new Promise(async (resolve) => {
     if (!detectZrokBinary()) {
       resolve(null);
       return;
@@ -161,10 +209,21 @@ export function createTunnel(port: number): Promise<string | null> {
       return;
     }
 
+    // Try to get or create a reserved token
+    let token = reservedToken;
+    if (!token) {
+      token = await reserveShare(port) ?? undefined;
+    }
+
     let resolved = false;
     let output = "";
 
-    const child = spawn("zrok", ["share", "public", "--headless", `localhost:${port}`], {
+    // Use reserved share if we have a token, otherwise fall back to public
+    const args = token
+      ? ["share", "reserved", token, "--headless", "--override-endpoint", `http://localhost:${port}`]
+      : ["share", "public", "--headless", `http://localhost:${port}`];
+
+    const child = spawn("zrok", args, {
       stdio: ["ignore", "pipe", "pipe"],
       detached: false,
     });
@@ -182,8 +241,8 @@ export function createTunnel(port: number): Promise<string | null> {
 
     const handleOutput = (chunk: Buffer) => {
       output += chunk.toString();
-      // zrok may print the URL to stdout or stderr (as JSON log) — look for https:// URL
-      const urlMatch = output.match(/https?:\/\/[^\s"]+/);
+      // zrok prints the tunnel URL to stdout or stderr — match the public share URL (not localhost)
+      const urlMatch = output.match(/https?:\/\/[^\s"]*\.share\.zrok\.io[^\s"]*/)
       if (urlMatch && !resolved) {
         resolved = true;
         clearTimeout(timeout);
@@ -211,8 +270,14 @@ export function createTunnel(port: number): Promise<string | null> {
       if (!resolved) {
         resolved = true;
         clearTimeout(timeout);
-        console.warn(`zrok process exited before producing URL (code ${code})`);
-        resolve(null);
+        // If reserved share failed, token may be expired — retry with fresh reservation
+        if (token) {
+          console.warn(`Reserved share failed (code ${code}), creating new reservation...`);
+          resolve(createTunnel(port)); // retry without token
+        } else {
+          console.warn(`zrok process exited before producing URL (code ${code})`);
+          resolve(null);
+        }
       } else if (activeProcess === child) {
         // Unexpected exit after successful start
         console.warn(`zrok tunnel process exited unexpectedly (code ${code})`);

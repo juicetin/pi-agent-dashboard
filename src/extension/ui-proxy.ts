@@ -79,6 +79,8 @@ export function createUiProxy(options: UiProxyOptions) {
       switch (method) {
         case "confirm":
           return false;
+        case "multiselect":
+          return [];
         default:
           return undefined;
       }
@@ -92,6 +94,8 @@ export function createUiProxy(options: UiProxyOptions) {
       case "input":
       case "editor":
         return result?.value;
+      case "multiselect":
+        return (result?.values as string[]) ?? [];
       default:
         return result;
     }
@@ -142,6 +146,26 @@ export function createUiProxy(options: UiProxyOptions) {
       if (hasUI && ui.editor) {
         const originalPromise = ui.editor(title, prefill, opts);
         return Promise.race([originalPromise, dashPromise]);
+      }
+      return dashPromise;
+    },
+
+    multiselect: (title: string, selectOptions: string[]): Promise<string[]> => {
+      const params = { title, options: selectOptions };
+      const requestId = sendRequest("multiselect", params);
+      const dashPromise = createDashboardPromise<string[]>(requestId, "multiselect", params);
+
+      if (hasUI) {
+        const numbered = selectOptions.map((o, i) => `${i + 1}. ${o}`).join("\n");
+        const tuiPromise = ui.input(`${title}\n${numbered}`, "e.g. 1,3").then((raw) => {
+          if (!raw) return [] as string[];
+          return raw
+            .split(",")
+            .map((s) => parseInt(s.trim(), 10))
+            .filter((n) => !isNaN(n) && n >= 1 && n <= selectOptions.length)
+            .map((n) => selectOptions[n - 1]);
+        });
+        return Promise.race([tuiPromise, dashPromise]);
       }
       return dashPromise;
     },

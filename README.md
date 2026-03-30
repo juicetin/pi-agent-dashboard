@@ -70,7 +70,7 @@ See [docs/architecture.md](docs/architecture.md) for detailed data flows, reconn
 | Tool | Purpose | When needed |
 |------|---------|-------------|
 | **tmux** | Spawn new pi sessions from the browser in a tmux window | When `spawnStrategy` is `"tmux"` |
-| **[zrok](https://zrok.io/)** | Expose dashboard over the internet via tunnel (runs `zrok share public` subprocess) | When `tunnel.enabled` is `true` (default) |
+| **[zrok](https://zrok.io/)** | Expose dashboard over the internet via tunnel (auto-connects on server start). Install with `brew install zrok` (macOS) and run `zrok enable <token>` to enroll — the dashboard reads zrok's own config (`~/.zrok2/environment.json`), no keys are stored in the dashboard. Uses reserved shares for persistent URLs across restarts. | When `tunnel.enabled` is `true` (default) |
 
 ## Getting Started
 
@@ -127,7 +127,7 @@ Config file: **`~/.pi/dashboard/config.json`** (auto-created with defaults on fi
   "autoShutdown": true,
   "shutdownIdleSeconds": 300,
   "spawnStrategy": "headless",
-  "tunnel": { "enabled": true },
+  "tunnel": { "enabled": true, "reservedToken": "auto-created-on-first-run" },
   "devBuildOnReload": false
 }
 ```
@@ -168,7 +168,7 @@ Add an `auth` section to enable OAuth2 authentication for external (tunnel) acce
 
 **Supported providers:** `github`, `google`, `keycloak`, `oidc` (generic OIDC with `issuerUrl`).
 
-**Callback URL:** Register `https://<tunnel-url>/auth/callback/<provider>` in your OAuth provider settings. For stable URLs, use zrok reserved shares.
+**Callback URL:** Register `https://<tunnel-url>/auth/callback/<provider>` in your OAuth provider settings. The tunnel URL is stable across restarts (reserved shares are auto-created).
 
 **Settings UI:** Click the ⚙ gear icon in the sidebar header to open the Settings panel, where all config fields (including auth) can be edited from the browser.
 
@@ -395,7 +395,7 @@ src/
 │   ├── session-order-manager.ts # Per-cwd session ordering
 │   ├── process-manager.ts # tmux/headless session spawning
 │   ├── editor-registry.ts # Available editor detection
-│   ├── tunnel.ts          # Zrok tunnel via subprocess (binary detection, PID tracking, stale cleanup)
+│   ├── tunnel.ts          # Zrok tunnel with reserved shares for persistent URLs, binary detection, PID tracking
 │   ├── server-pid.ts      # PID file for daemon management
 │   └── json-store.ts      # Atomic JSON file helpers
 └── client/           # React web client

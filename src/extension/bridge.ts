@@ -24,6 +24,7 @@ import { expandPromptTemplateFromDisk } from "./prompt-expander.js";
 import { detectOpenSpecActivity } from "./openspec-activity-detector.js";
 import type { OpenSpecPhase } from "../shared/types.js";
 import { createUiProxy } from "./ui-proxy.js";
+import { registerAskUserTool } from "./ask-user-tool.js";
 
 const HEARTBEAT_INTERVAL = 15_000;
 const GIT_POLL_INTERVAL = 30_000;
@@ -59,6 +60,8 @@ function filterHiddenCommands(commands: any[]): any[] {
 }
 
 function initBridge(pi: ExtensionAPI) {
+  registerAskUserTool(pi);
+
   const prev = getBridgeState();
   prev.cleanup?.();
   prev.cleanup = undefined;

@@ -200,17 +200,22 @@ Precedence: CLI flags → environment variables → config file (`~/.pi/dashboar
 | `shutdownIdleSeconds` | 300 | Idle timeout before auto-shutdown |
 | `spawnStrategy` | `"headless"` | How to spawn new sessions: `"headless"` or `"tmux"` |
 | `tunnel.enabled` | true | Enable zrok tunnel for remote access |
+| `tunnel.reservedToken` | _(auto)_ | Reserved zrok share token for persistent URL (auto-created on first run) |
 
 ### Tunnel Lifecycle
 
-When `tunnel.enabled` is true and the server starts:
+The tunnel is **enabled by default** (`tunnel.enabled: true`). When the server starts:
 
 1. **Binary detection** — `detectZrokBinary()` checks if `zrok` is on PATH via `which`/`where`
-2. **Stale cleanup** — `cleanupStaleZrok()` reads `~/.pi/dashboard/zrok.pid`, kills orphaned zrok processes from previous crashes
-3. **Subprocess spawn** — `createTunnel(port)` spawns `zrok share public --headless localhost:{port}` as a child process
-4. **URL parsing** — The public URL is parsed from stdout (30s timeout)
-5. **PID tracking** — The subprocess PID is written to `~/.pi/dashboard/zrok.pid`
-6. **Shutdown** — `deleteTunnel()` kills the subprocess and removes the PID file
+2. **Environment check** — `loadZrokEnv()` reads zrok's own config (`~/.zrok2/environment.json` or `~/.zrok/environment.json`) to verify enrollment. The dashboard never stores zrok API keys — they live entirely in zrok's config directory, created by `zrok enable <token>`.
+3. **Stale cleanup** — `cleanupStaleZrok()` reads `~/.pi/dashboard/zrok.pid`, kills orphaned zrok processes from previous crashes
+4. **Reserved share** — If `tunnel.reservedToken` is not set, `zrok reserve public` is called to create a persistent share token. The token is saved to config so the URL stays the same across restarts. If a saved token fails (e.g., expired), a new reservation is created automatically.
+5. **Subprocess spawn** — `createTunnel(port, reservedToken?)` spawns `zrok share reserved <token> --headless` (or `zrok share public --headless` as fallback) as a child process
+6. **URL parsing** — The public URL is parsed from stdout/stderr (30s timeout)
+7. **PID tracking** — The subprocess PID is written to `~/.pi/dashboard/zrok.pid`
+8. **Shutdown** — `deleteTunnel()` kills the subprocess and removes the PID file. The reserved token is preserved for next restart.
+
+To disable: set `tunnel.enabled` to `false` in `~/.pi/dashboard/config.json` or pass `--no-tunnel` on the CLI.
 
 The client can query `GET /api/tunnel-status` which returns `{ status: "active"|"inactive"|"unavailable", url?, serverOs }`.
 If zrok is not installed, the sidebar tunnel button navigates to `/tunnel-setup` which shows an OS-specific installation guide.

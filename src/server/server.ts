@@ -39,6 +39,7 @@ export interface ServerConfig {
   autoShutdown: boolean;
   shutdownIdleSeconds: number;
   tunnel: boolean;
+  tunnelReservedToken?: string;
   authConfig?: AuthConfig;
 }
 
@@ -139,7 +140,7 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
       browserGateway.broadcastSessionUpdated(sessionId, {
         status: "ended",
         endedAt: session.endedAt,
-        currentTool: undefined,
+        currentTool: null,
       });
     }
   };
@@ -721,7 +722,7 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
         const hasZrok = detectZrokBinary();
         if (hasZrok) {
           cleanupStaleZrok();
-          const tunnelUrl = await createTunnel(config.port);
+          const tunnelUrl = await createTunnel(config.port, config.tunnelReservedToken);
           if (tunnelUrl) {
             console.log(`🌐 Tunnel: ${tunnelUrl}`);
           }

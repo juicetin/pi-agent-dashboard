@@ -31,7 +31,7 @@ export interface DashboardConfig {
   autoShutdown: boolean;
   shutdownIdleSeconds: number;
   spawnStrategy: SpawnStrategy;
-  tunnel: { enabled: boolean };
+  tunnel: { enabled: boolean; reservedToken?: string };
   devBuildOnReload: boolean;
   auth?: AuthConfig;
 }
@@ -107,6 +107,7 @@ export function loadConfig(): DashboardConfig {
       spawnStrategy,
       tunnel: {
         enabled: parsed.tunnel?.enabled ?? defaults.tunnel.enabled,
+        ...(parsed.tunnel?.reservedToken ? { reservedToken: parsed.tunnel.reservedToken } : {}),
       },
       devBuildOnReload: parsed.devBuildOnReload ?? defaults.devBuildOnReload,
       auth: parseAuthConfig(parsed.auth),

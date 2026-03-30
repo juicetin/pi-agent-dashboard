@@ -46,7 +46,7 @@ pi-dashboard --dev   # Start with Vite proxy
 | `src/extension/git-info.ts` | Git branch/remote/PR detection (polled every 30s) |
 | `src/extension/git-link-builder.ts` | Git remote URL parsing and platform-specific links |
 | `src/extension/ui-proxy.ts` | Proxies ctx.ui dialogs to dashboard (confirm/select/input/editor/notify) |
-| `.pi/extensions/ask-user.ts` | LLM-callable `ask_user` tool for interactive questions via dashboard UI |
+| `src/extension/ask-user-tool.ts` | `ask_user` tool registration (bundled in bridge, auto-registered with collision avoidance) |
 | `src/extension/openspec-activity-detector.ts` | Detects OpenSpec activity from tool events |
 | `src/shared/openspec-poller.ts` | OpenSpec CLI polling (shared, used by server DirectoryService) |
 | `src/shared/state-replay.ts` | Synthesizes events from pi entries (shared, used by server + bridge) |
@@ -85,7 +85,7 @@ pi-dashboard --dev   # Start with Vite proxy
 | `src/server/terminal-manager.ts` | PTY lifecycle, ring buffer, spawn/attach/kill terminals |
 | `src/server/terminal-gateway.ts` | Binary WebSocket upgrade handler for `/ws/terminal/:id` |
 | `scripts/fix-pty-permissions.cjs` | Postinstall: fix node-pty spawn-helper execute permissions |
-| `src/server/tunnel.ts` | Zrok tunnel via `zrok share public` subprocess with binary detection, PID tracking, stale cleanup |
+| `src/server/tunnel.ts` | Zrok tunnel with reserved shares for persistent URLs, binary detection, PID tracking, stale cleanup |
 | `src/client/components/TunnelButton.tsx` | Sidebar tunnel status button — copies URL when active, navigates to setup guide when unavailable |
 | `src/client/components/QrCodeDialog.tsx` | QR code dialog showing tunnel URL as scannable QR code with copy button |
 | `src/client/hooks/useTunnelStatus.ts` | Tunnel status polling hook (fetch on mount + 30s interval) |
@@ -97,11 +97,18 @@ pi-dashboard --dev   # Start with Vite proxy
 | `scripts/reload-all.sh` | Build bridge + reload all pi sessions |
 | `src/client/components/MarkdownPreviewView.tsx` | Generic reusable markdown preview with back button, tabs, loading/error states |
 | `src/client/hooks/useOpenSpecReader.ts` | Maps OpenSpec artifacts to file paths, fetches content, concatenates specs |
-| `src/client/components/interactive-renderers/` | Registry + renderers for interactive UI dialogs (confirm, select, input, editor, notify) |
+| `src/client/components/interactive-renderers/` | Registry + renderers for interactive UI dialogs (confirm, select, multiselect, input, editor, notify) |
 | `src/shared/terminal-types.ts` | TerminalSession type and control messages |
 | `src/client/components/TerminalView.tsx` | xterm.js terminal emulator wrapper with keep-alive |
 | `src/client/components/TerminalCard.tsx` | Sidebar card for terminal sessions (cyan accent) |
 | `src/client/App.tsx` | React app with WebSocket integration |
+| `src/client/components/MobileShell.tsx` | Two-panel mobile shell with slide transitions and swipe-back |
+| `src/client/components/MobileActionMenu.tsx` | Kebab menu for session actions on mobile (includes OpenSpec commands) |
+| `src/client/components/MobileOverlay.tsx` | Hamburger button and sidebar overlay for mobile |
+| `src/client/components/SessionHeader.tsx` | Session header with MobileAttachButton and MobileHeader for mobile |
+| `src/client/hooks/useSwipeBack.ts` | iOS-style left-edge swipe-back gesture (40px edge zone, document-level listeners) |
+| `src/client/lib/mobile-depth.ts` | Pure function computing MobileShell depth from route state |
+| `src/client/hooks/useZoomPan.ts` | Reusable zoom/pan hook (wheel, drag, pinch, buttons) |
 | `src/client/lib/event-reducer.ts` | Event-sourced state reducer |
 | `src/client/lib/truncate-path.ts` | Middle-truncation utility for filesystem paths |
 | `src/server/resolve-path.ts` | Safe realpath resolution (symlink handling) |

@@ -4,21 +4,23 @@
  */
 import type { DashboardEvent, DashboardSession } from "../shared/types.js";
 
+// Use null (not undefined) for fields that must be cleared — undefined is
+// dropped during JSON serialisation so the browser would keep the stale value.
 type SessionUpdates = Partial<Pick<DashboardSession, "status" | "currentTool" | "model" | "thinkingLevel">>;
 
 export function extractSessionUpdates(event: DashboardEvent): SessionUpdates | null {
   switch (event.eventType) {
     case "agent_start":
-      return { status: "streaming", currentTool: undefined };
+      return { status: "streaming", currentTool: null as any };
 
     case "agent_end":
-      return { status: "idle", currentTool: undefined };
+      return { status: "idle", currentTool: null as any };
 
     case "tool_execution_start":
-      return { currentTool: (event.data.toolName as string) ?? undefined };
+      return { currentTool: (event.data.toolName as string) ?? null };
 
     case "tool_execution_end":
-      return { currentTool: undefined };
+      return { currentTool: null as any };
 
     case "model_select": {
       const model = event.data.model as { provider?: string; id?: string } | undefined;

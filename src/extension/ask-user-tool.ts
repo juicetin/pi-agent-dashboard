@@ -1,30 +1,44 @@
 /**
- * Tool that lets the LLM ask the user interactive questions via dashboard UI.
- * Uses the `input` event to intercept the /ask command since dashboard-sent
- * messages bypass registerCommand.
+ * Registers the ask_user tool in the bridge extension.
+ *
+ * Collision strategy:
+ * - PI_DASHBOARD_SPAWNED=1: Always register (override existing) — dashboard is primary UI
+ * - No env var: Only register if no existing ask_user tool found
  */
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { StringEnum } from "@mariozechner/pi-ai";
 
-export default function (pi: ExtensionAPI) {
+export function registerAskUserTool(pi: ExtensionAPI): void {
+  const dashboardSpawned = !!process.env.PI_DASHBOARD_SPAWNED;
+
+  if (!dashboardSpawned) {
+    const existing = pi.getAllTools().find((t) => t.name === "ask_user");
+    if (existing) return;
+  }
+
   pi.registerTool({
     name: "ask_user",
     label: "Ask User",
-    description: "Ask the user a question interactively. Use this when you need clarification, confirmation, or a choice from the user before proceeding.",
-    promptSnippet: "Ask the user interactive questions (confirm, select, or free text input)",
+    description:
+      "Ask the user a question interactively. Use this when you need clarification, confirmation, or a choice from the user before proceeding.",
+    promptSnippet:
+      "Ask the user interactive questions (confirm, select, multiselect, or free text input)",
     promptGuidelines: [
       "When you need to ask the user a question, ALWAYS use the ask_user tool instead of writing the question as plain text.",
-      "Use method 'confirm' for yes/no questions, 'select' when offering specific choices, and 'input' for open-ended questions.",
+      "Use method 'confirm' for yes/no questions, 'select' when offering specific choices, 'multiselect' when the user should pick multiple items from a list, and 'input' for open-ended questions.",
       "This applies to all workflows including OpenSpec, planning, and any situation where you need user input before proceeding.",
     ],
     parameters: Type.Object({
-      method: StringEnum(["confirm", "select", "input"] as const, {
-        description: "Type of question: confirm (yes/no), select (pick from options), input (free text)",
+      method: StringEnum(["confirm", "select", "multiselect", "input"] as const, {
+        description:
+          "Type of question: confirm (yes/no), select (pick from options), multiselect (pick multiple), input (free text)",
       }),
       title: Type.String({ description: "The question to ask" }),
       message: Type.Optional(Type.String({ description: "Additional context (for confirm)" })),
-      options: Type.Optional(Type.Array(Type.String(), { description: "Options to choose from (for select)" })),
+      options: Type.Optional(
+        Type.Array(Type.String(), { description: "Options to choose from (for select)" }),
+      ),
       placeholder: Type.Optional(Type.String({ description: "Placeholder text (for input)" })),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
@@ -36,6 +50,9 @@ export default function (pi: ExtensionAPI) {
           break;
         case "select":
           result = await ctx.ui.select(params.title, params.options ?? []);
+          break;
+        case "multiselect":
+          result = await (ctx.ui as any).multiselect(params.title, params.options ?? []);
           break;
         case "input":
           result = await ctx.ui.input(params.title, params.placeholder);

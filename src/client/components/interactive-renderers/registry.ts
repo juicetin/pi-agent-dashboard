@@ -3,6 +3,7 @@ import { ConfirmRenderer } from "./ConfirmRenderer.js";
 import { SelectRenderer } from "./SelectRenderer.js";
 import { InputRenderer } from "./InputRenderer.js";
 import { EditorRenderer } from "./EditorRenderer.js";
+import { MultiselectRenderer } from "./MultiselectRenderer.js";
 import { NotifyRenderer } from "./NotifyRenderer.js";
 import { GenericInteractiveRenderer } from "./GenericInteractiveRenderer.js";
 
@@ -11,6 +12,7 @@ const renderers = new Map<string, InteractiveRenderer>([
   ["select", SelectRenderer],
   ["input", InputRenderer],
   ["editor", EditorRenderer],
+  ["multiselect", MultiselectRenderer],
   ["notify", NotifyRenderer],
 ]);
 

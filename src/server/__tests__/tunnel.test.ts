@@ -3,7 +3,14 @@ import fs from "node:fs";
 import os from "node:os";
 
 vi.mock("node:fs");
-vi.mock("node:os");
+vi.mock("node:os", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:os")>();
+  return {
+    ...actual,
+    default: { ...actual.default, homedir: vi.fn(() => "/home/testuser") },
+    homedir: vi.fn(() => "/home/testuser"),
+  };
+});
 
 import {
   loadZrokEnv,

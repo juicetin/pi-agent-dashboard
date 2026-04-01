@@ -203,9 +203,39 @@ function initBridge(pi: ExtensionAPI) {
       }
     },
     sessionPrompt: (text) => {
-      // pi.sendUserMessage calls session.prompt() with expandPromptTemplates: false,
-      // which skips command/skill expansion. To work around this, we expand prompt
-      // templates ourselves by reading the template file and sending the expanded content.
+      // For slash commands, try to execute via pi-flows events first (flow:run),
+      // then fall back to sendUserMessage for non-flow commands.
+      // pi.sendUserMessage() uses expandPromptTemplates: false which skips
+      // command execution — but built-in commands (/compact, /skill:, etc.)
+      // are handled by the bridge's command handler before reaching here.
+      // Only extension-registered commands (like pi-flows) need this workaround.
+      if (text.startsWith("/") && pi.events) {
+        const cmdText = text.slice(1);
+        const spaceIdx = cmdText.indexOf(" ");
+        const cmdName = spaceIdx === -1 ? cmdText : cmdText.slice(0, spaceIdx);
+        const cmdArgs = spaceIdx === -1 ? "" : cmdText.slice(spaceIdx + 1);
+
+        // Check if this is a pi-flows flow command by seeing if flow:run can handle it
+        // pi-flows listens for flow:run and executes the named flow
+        const flowCommands = pi.getCommands().filter((c: any) => c.source === "extension");
+        const isFlowCmd = flowCommands.some((c: any) => c.name === cmdName);
+        if (isFlowCmd) {
+          // For flows, emit flow:run event. For flows with task, we need to
+          // pass the task — but flow:run only takes flowName. So we send as
+          // a user message which triggers the flow's task_required prompt.
+          // Actually use sendUserMessage with the slash — the flow command
+          // will be picked up IF we can get expandPromptTemplates: true.
+          // Since we can't, use pi-flows' flow:run for no-task flows.
+          if (!cmdArgs.trim()) {
+            pi.events.emit("flow:run", { flowName: cmdName });
+          } else {
+            // Flow with task arg: we must execute the command handler.
+            // Emit a custom event that our bridge registered command can handle.
+            pi.events.emit("flow:run", { flowName: cmdName, task: cmdArgs });
+          }
+          return;
+        }
+      }
       const expanded = expandPromptTemplateFromDisk(text, process.cwd());
       pi.sendUserMessage(expanded);
     },
@@ -425,6 +455,8 @@ function initBridge(pi: ExtensionAPI) {
     // Register ask_user at runtime (not at load time) to avoid static
     // tool-name conflicts with other extensions like pi-flows.
     registerAskUserTool(pi);
+
+
 
     // Set up UI proxy to forward dialogs to dashboard.
     // For dashboard-spawned sessions (tmux or headless), skip the TUI race —

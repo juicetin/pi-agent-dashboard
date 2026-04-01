@@ -80,7 +80,7 @@ const defaultProps = {
 describe("SessionOpenSpecActions", () => {
   // --- Combo box ---
 
-  it("shows combo box when no proposal attached", () => {
+  it("shows attach button when no proposal attached", () => {
     render(
       <SessionOpenSpecActions
         session={makeSession()}
@@ -88,21 +88,21 @@ describe("SessionOpenSpecActions", () => {
         {...defaultProps}
       />,
     );
-    const combo = screen.getByTestId("attach-combo") as HTMLSelectElement;
-    expect(combo).toBeTruthy();
-    expect(combo.options.length).toBe(3); // placeholder + 2 changes
+    const btn = screen.getByTestId("attach-combo") as HTMLButtonElement;
+    expect(btn).toBeTruthy();
+    expect(btn.textContent).toBe("Attach change...");
   });
 
-  it("combo box is disabled when no changes", () => {
+  it("attach button is disabled when no changes", () => {
     render(
       <SessionOpenSpecActions session={makeSession()} changes={[]} {...defaultProps} />,
     );
-    const combo = screen.getByTestId("attach-combo") as HTMLSelectElement;
-    expect(combo.disabled).toBe(true);
-    expect(combo.options[0].text).toBe("No changes");
+    const btn = screen.getByTestId("attach-combo") as HTMLButtonElement;
+    expect(btn.disabled).toBe(true);
+    expect(btn.textContent).toBe("No changes");
   });
 
-  it("sorts in-progress before complete in combo", () => {
+  it("opens searchable dialog when attach button clicked", () => {
     render(
       <SessionOpenSpecActions
         session={makeSession()}
@@ -110,12 +110,13 @@ describe("SessionOpenSpecActions", () => {
         {...defaultProps}
       />,
     );
-    const combo = screen.getByTestId("attach-combo") as HTMLSelectElement;
-    expect(combo.options[1].value).toBe("add-auth");
-    expect(combo.options[2].value).toBe("fix-bug");
+    fireEvent.click(screen.getByTestId("attach-combo"));
+    // Dialog should be open with change names visible
+    expect(screen.getByText("add-auth")).toBeTruthy();
+    expect(screen.getByText("fix-bug")).toBeTruthy();
   });
 
-  it("calls onAttach when change selected", () => {
+  it("calls onAttach when change selected from dialog", () => {
     const onAttach = vi.fn();
     render(
       <SessionOpenSpecActions
@@ -125,7 +126,8 @@ describe("SessionOpenSpecActions", () => {
         onAttach={onAttach}
       />,
     );
-    fireEvent.change(screen.getByTestId("attach-combo"), { target: { value: "add-auth" } });
+    fireEvent.click(screen.getByTestId("attach-combo"));
+    fireEvent.click(screen.getByText("add-auth"));
     expect(onAttach).toHaveBeenCalledWith("add-auth");
   });
 

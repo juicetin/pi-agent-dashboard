@@ -14,38 +14,38 @@ describe("QrCodeDialog", () => {
   const url = "https://abc123.share.zrok.io";
 
   it("renders the tunnel URL", () => {
-    render(<QrCodeDialog url={url} onClose={() => {}} />);
+    render(<QrCodeDialog url={url} connected={true} onClose={() => {}} />);
     expect(screen.getByTestId("qr-url").textContent).toBe(url);
   });
 
   it("renders a canvas for the QR code", () => {
-    render(<QrCodeDialog url={url} onClose={() => {}} />);
+    render(<QrCodeDialog url={url} connected={true} onClose={() => {}} />);
     expect(screen.getByTestId("qr-canvas")).toBeDefined();
   });
 
   it("calls onClose when close button clicked", () => {
     const onClose = vi.fn();
-    render(<QrCodeDialog url={url} onClose={onClose} />);
+    render(<QrCodeDialog url={url} connected={true} onClose={onClose} />);
     fireEvent.click(screen.getByTestId("qr-dialog-close"));
     expect(onClose).toHaveBeenCalled();
   });
 
   it("calls onClose when backdrop clicked", () => {
     const onClose = vi.fn();
-    render(<QrCodeDialog url={url} onClose={onClose} />);
+    render(<QrCodeDialog url={url} connected={true} onClose={onClose} />);
     fireEvent.click(screen.getByTestId("qr-dialog-backdrop"));
     expect(onClose).toHaveBeenCalled();
   });
 
   it("calls onClose on Escape key", () => {
     const onClose = vi.fn();
-    render(<QrCodeDialog url={url} onClose={onClose} />);
+    render(<QrCodeDialog url={url} connected={true} onClose={onClose} />);
     fireEvent.keyDown(window, { key: "Escape" });
     expect(onClose).toHaveBeenCalled();
   });
 
   it("renders a copy button", () => {
-    render(<QrCodeDialog url={url} onClose={() => {}} />);
+    render(<QrCodeDialog url={url} connected={true} onClose={() => {}} />);
     expect(screen.getByTestId("qr-copy-btn")).toBeDefined();
   });
 });

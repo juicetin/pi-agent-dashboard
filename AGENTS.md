@@ -57,7 +57,7 @@ pi-dashboard --dev   # Start with Vite proxy
 | `src/server/memory-event-store.ts` | In-memory event buffer with LRU eviction |
 | `src/server/memory-session-manager.ts` | Pure in-memory session registry |
 | `src/client/components/FolderOpenSpecSection.tsx` | Folder-level OpenSpec UI: collapsible change list, refresh, bulk archive |
-| `src/client/components/SessionOpenSpecActions.tsx` | Session-level OpenSpec: attach combo box, action buttons, detach |
+| `src/client/components/SessionOpenSpecActions.tsx` | Session-level OpenSpec: searchable attach dialog, action buttons, detach |
 | `src/client/components/DialogPortal.tsx` | Portal wrapper rendering dialogs at document.body with scroll lock |
 | `src/client/components/PinDirectoryDialog.tsx` | Dialog to pin a directory (wraps PathPicker) |
 | `src/client/components/PathPicker.tsx` | Reusable keyboard-first path picker with typeahead directory list |
@@ -74,7 +74,7 @@ pi-dashboard --dev   # Start with Vite proxy
 | `src/server/json-store.ts` | Atomic JSON file read/write helpers |
 | `src/server/process-manager.ts` | Session spawning via tmux or headless mode |
 | `src/server/editor-registry.ts` | Detects available editors (running processes + CLI) |
-| `src/server/event-status-extraction.ts` | Extracts session status/tool updates from events |
+| `src/server/event-status-extraction.ts` | Extracts session status/tool updates from events (incl. flow metadata) |
 | `src/server/headless-pid-registry.ts` | Maps headless child PIDs to session IDs |
 | `src/server/auth.ts` | OAuth2 authentication: provider registry, JWT helpers, user allowlist |
 | `src/server/auth-plugin.ts` | Fastify plugin: auth routes, onRequest hook, WS upgrade validation |
@@ -107,14 +107,23 @@ pi-dashboard --dev   # Start with Vite proxy
 | `src/client/components/MobileShell.tsx` | Two-panel mobile shell with slide transitions and swipe-back |
 | `src/client/components/MobileActionMenu.tsx` | Kebab menu for session actions on mobile (includes OpenSpec commands) |
 | `src/client/components/MobileOverlay.tsx` | Hamburger button and sidebar overlay for mobile |
-| `src/client/components/SessionHeader.tsx` | Session header with MobileAttachButton and MobileHeader for mobile |
+| `src/client/components/SessionHeader.tsx` | Session header with OpenSpec attach/detach, flow launcher, MobileAttachButton |
 | `src/client/hooks/useSwipeBack.ts` | iOS-style left-edge swipe-back gesture (40px edge zone, document-level listeners) |
 | `src/client/components/ChatView.tsx` | Chat message view with scroll-lock: pauses auto-scroll when user scrolls up, floating scroll-to-bottom button |
 | `src/client/lib/mobile-depth.ts` | Pure function computing MobileShell depth from route state |
 | `src/client/hooks/useZoomPan.ts` | Reusable zoom/pan hook (wheel, drag, pinch, buttons) |
-| `src/client/lib/event-reducer.ts` | Event-sourced state reducer |
+| `src/client/lib/event-reducer.ts` | Event-sourced state reducer (incl. flow state machine) |
 | `src/client/lib/truncate-path.ts` | Middle-truncation utility for filesystem paths |
 | `src/server/resolve-path.ts` | Safe realpath resolution (symlink handling) |
+| `src/client/components/FlowDashboard.tsx` | Sticky flow card grid above ChatView with abort/auto controls, mobile collapse |
+| `src/client/components/FlowAgentCard.tsx` | Individual agent card: status, tools, tokens, duration, loop badge |
+| `src/client/components/FlowAgentDetail.tsx` | Full content-area agent detail: tool history, assistant text, thinking |
+| `src/client/components/FlowSummary.tsx` | Post-completion summary: per-agent status, file counts, dismiss |
+| `src/client/components/FlowActivityBadge.tsx` | Session card badge showing flow name and agent progress |
+| `src/client/components/FlowLaunchDialog.tsx` | Task input dialog for launching a flow |
+| `src/client/components/SessionFlowActions.tsx` | Session card flow launcher: searchable picker + new flow button |
+| `src/client/components/SearchableSelectDialog.tsx` | Shared searchable select dialog (keyboard nav, filtering, badges) |
+| `src/client/lib/flow-commands.ts` | Heuristic detection of launchable flow commands from commands list |
 | `.pi/skills/spec-coherence-check/SKILL.md` | Skill: sweep proposals for staleness, conflicts, obsolescence against codebase |
 | `.pi/skills/spec-coherence-check/references/proposal-queue-schema.md` | JSON schema for `.pi/proposal-queue.json` |
 | `.pi/skills/code-review/SKILL.md` | Skill: comprehensive code review with severity labels, four-phase process, language-specific guides |

@@ -3,10 +3,12 @@ import type { SpawnSyncReturns } from "node:child_process";
 
 // We need to mock spawnSync before importing the module under test
 const mockSpawnSync = vi.fn<(...args: any[]) => any>();
+const mockExecFile = vi.fn<(...args: any[]) => any>();
 vi.mock("node:child_process", () => ({
   spawnSync: mockSpawnSync,
+  execFile: mockExecFile,
   // re-export defaults that node:child_process has
-  default: { spawnSync: mockSpawnSync },
+  default: { spawnSync: mockSpawnSync, execFile: mockExecFile },
 }));
 
 // Import after mock is set up

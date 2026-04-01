@@ -51,7 +51,7 @@ export function SearchableSelectDialog({
   // Scroll selected item into view
   useEffect(() => {
     const el = listRef.current?.children[selectedIndex] as HTMLElement | undefined;
-    el?.scrollIntoView({ block: "nearest" });
+    el?.scrollIntoView?.({ block: "nearest" });
   }, [selectedIndex]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {

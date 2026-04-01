@@ -103,6 +103,32 @@ TypeScript type definitions shared across all components:
    - Plain text → `pi.sendUserMessage()` (default)
 5. Pi processes the command, events flow back via event flow
 
+### Flow Dashboard Data Flow (pi-flows → browser)
+pi-flows runs multi-agent workflows in-process. Subagent sessions use `SessionManager.inMemory()` and don't bootstrap the bridge, so flow data must be explicitly forwarded by the parent session's bridge.
+
+1. pi-flows `EventEmitObserver` emits `flow:*` events on `pi.events` (all 10 `FlowObserver` callbacks)
+2. Bridge extension listens to `flow:*` events and forwards as `event_forward` messages with `flow_*` event types
+3. Server stores events, extracts flow metadata to `DashboardSession` fields (`activeFlowName`, `flowAgentsDone`, `flowAgentsTotal`, `flowStatus`)
+4. Browser event reducer builds client-side `FlowState` (agents map, tool history, detail entries)
+5. React renders `FlowDashboard` (sticky card grid above ChatView), `FlowAgentDetail` (replaces chat), `FlowSummary` (post-completion)
+
+**Flow controls (browser → pi-flows):**
+- Abort: browser sends `flow_control { action: "abort" }` → server → bridge → `pi.events.emit("flow:abort")` → `flowManager.abort()`
+- Autonomous toggle: browser sends `flow_control { action: "toggle_autonomous" }` → same path → `setAutonomousMode()`
+
+**Fork decisions and subagent ask_user:**
+- Already work through existing UI proxy — `TuiFlowIOAdapter` calls `ctx.ui.select/confirm/input` which the bridge wraps and races between TUI and dashboard
+
+**Flow launcher:**
+- Available flows detected from session commands list (heuristic: `source: "extension"`, excluding management commands)
+- Launch dispatched as `send_prompt` with `/<flow-name> <task>`
+- Commands list auto-refreshed on `flow:rediscover` and `flow:complete` events
+
+**pi-flows local patches required** (upstream report prepared):
+- `EventEmitObserver`: 5 missing methods added (flow-started, agent-started, agent-complete, assistant-text, thinking-text)
+- `index.ts`: `flow:abort` and `flow:toggle-autonomous` event listeners added
+- `flow-tui.ts`: `autonomousMode` included in `flow:flow-started` event data
+
 ### Auto-Resume on Prompt
 When a user sends a prompt to an ended session, the server automatically resumes it:
 1. Server detects `send_prompt` for a session with `status === "ended"` and a valid `sessionFile`

@@ -18,6 +18,8 @@ A web-based dashboard for monitoring and interacting with [pi](https://github.co
 - **Extension UI forwarding** — Interactive dialogs (confirm/select/input) survive page refresh and server restart
 - **On-demand session loading** — Browse historical sessions with lazy-loaded content from pi session files
 - **Integrated terminal** — Full browser-based terminal emulator (xterm.js + node-pty) with ANSI color support, scrollback, and keep-alive
+- **pi-flows integration** — Live flow execution dashboard with agent cards, detail views, summary, abort/auto controls. Launch flows and create new ones from the dashboard. Fork decisions and subagent dialogs forwarded via existing UI proxy.
+- **Searchable select dialogs** — Keyboard-navigable picker with real-time filtering for OpenSpec changes and flow commands
 
 ## Architecture
 

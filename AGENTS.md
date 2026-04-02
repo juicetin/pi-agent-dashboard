@@ -145,7 +145,7 @@ npm run reload:check    # Type-check first, then reload
 ```
 
 ### After server changes (`src/server/`, `src/shared/`)
-Restart the dashboard server. The server runs TypeScript directly via tsx, so no separate build step is needed — just restart:
+Restart the dashboard server. The server runs TypeScript directly via jiti (pi's TypeScript loader), so no separate build step is needed — just restart:
 ```bash
 # Production mode
 pi-dashboard stop && pi-dashboard start

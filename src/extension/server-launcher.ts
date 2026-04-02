@@ -7,6 +7,7 @@ import { spawn } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { DashboardConfig } from "../shared/config.js";
+import { resolveJitiImport } from "../shared/resolve-jiti.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -42,10 +43,10 @@ export async function launchServer(config: DashboardConfig): Promise<LaunchResul
   const args = buildSpawnArgs(config);
 
   try {
-    // Spawn server in foreground mode using node --import tsx.
+    // Spawn server using pi's jiti TypeScript loader (resolved to absolute path).
     // The server writes its own PID file on startup, so
     // `pi-dashboard status` can detect it.
-    const child = spawn(process.execPath, ["--import", "tsx", cliPath, ...args], {
+    const child = spawn(process.execPath, ["--import", resolveJitiImport(), cliPath, ...args], {
       detached: true,
       stdio: "ignore",
       env: { ...process.env },

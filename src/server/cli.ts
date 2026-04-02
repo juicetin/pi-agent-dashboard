@@ -1,4 +1,3 @@
-#!/usr/bin/env node --import tsx
 /**
  * PI Dashboard Server CLI
  *
@@ -21,6 +20,7 @@ import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { readPid, isProcessAlive, removePid, isServerRunning } from "./server-pid.js";
 import { isPortOpen } from "../extension/server-probe.js";
+import { resolveJitiImport } from "../shared/resolve-jiti.js";
 
 const SUBCOMMANDS = ["start", "stop", "restart", "status"] as const;
 type Subcommand = (typeof SUBCOMMANDS)[number];
@@ -123,7 +123,7 @@ async function cmdStart(config: ServerConfig): Promise<void> {
   if (config.dev) args.push("--dev");
   if (!config.tunnel) args.push("--no-tunnel");
 
-  const child = spawn(process.execPath, ["--import", "tsx", cliPath, ...args], {
+  const child = spawn(process.execPath, ["--import", resolveJitiImport(), cliPath, ...args], {
     detached: true,
     stdio: "ignore",
     env: { ...process.env },

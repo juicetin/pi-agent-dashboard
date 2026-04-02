@@ -63,3 +63,11 @@ describe("parseArgs", () => {
     expect(result.flags.port).toBe(3000);
   });
 });
+
+describe("daemon spawn jiti resolution", () => {
+  it("resolveJitiImport throws outside of pi context", async () => {
+    // In test context (no pi/jiti loader), peer deps aren't resolvable
+    const { resolveJitiImport } = await import("../../shared/resolve-jiti.js");
+    expect(() => resolveJitiImport()).toThrow("Cannot resolve jiti");
+  });
+});

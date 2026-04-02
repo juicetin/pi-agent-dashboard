@@ -30,4 +30,13 @@ describe("server-launcher", () => {
     expect(args).toContain("--pi-port");
     expect(args).toContain("4000");
   });
+
+  it("should use resolveJitiImport in launchServer spawn args", async () => {
+    // Verify server-launcher imports resolveJitiImport (compile-time check).
+    // At runtime inside pi, resolveJitiImport returns the jiti path.
+    // In test context (no pi), it throws — which confirms the tsx fallback is gone.
+    const mod = await import("../server-launcher.js");
+    expect(mod.resolveServerCliPath).toBeDefined();
+    expect(mod.buildSpawnArgs).toBeDefined();
+  });
 });

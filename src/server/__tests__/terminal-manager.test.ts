@@ -112,10 +112,10 @@ describe("TerminalManager", () => {
   });
 
   describe("kill", () => {
-    it("sends SIGTERM to PTY", () => {
+    it("sends SIGHUP to PTY (bash on Linux ignores SIGTERM)", () => {
       const session = manager.spawn("/tmp");
       manager.kill(session.id);
-      expect(mockPtyKill).toHaveBeenCalledWith("SIGTERM");
+      expect(mockPtyKill).toHaveBeenCalledWith("SIGHUP");
     });
 
     it("throws for unknown ID", () => {

@@ -193,8 +193,19 @@ export function createTerminalManager(options?: TerminalManagerOptions): Termina
   function kill(id: string): void {
     const entry = entries.get(id);
     if (!entry) throw new Error(`Terminal ${id} not found`);
-    entry.pty.kill("SIGTERM");
-    // onExit handler will do cleanup
+    // Interactive shells (e.g. bash on Linux) ignore SIGTERM.
+    // Use SIGHUP which shells honor, then escalate to SIGKILL.
+    entry.pty.kill("SIGHUP");
+    const escalation = setTimeout(() => {
+      if (entries.has(id)) {
+        try { entry.pty.kill("SIGKILL"); } catch {}
+      }
+    }, 1000);
+    // Clear escalation timeout if the process exits promptly
+    const dispose = entry.pty.onExit(() => {
+      clearTimeout(escalation);
+      dispose.dispose();
+    });
   }
 
   function get(id: string): TerminalSession | undefined {

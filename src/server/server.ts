@@ -30,6 +30,7 @@ import { readConfigRedacted, writeConfigPartial } from "./config-api.js";
 import { spawn } from "node:child_process";
 import { isGitRepo, listBranches, checkoutBranch, gitInit, stashPop } from "./git-operations.js";
 import fs from "node:fs/promises";
+import os from "node:os";
 import { registerAuthPlugin, validateWsUpgrade, isBypassedHost } from "./auth-plugin.js";
 import type { AuthConfig } from "../shared/config.js";
 
@@ -711,6 +712,72 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
       }
 
       return { success: true, restartRequired: result.restartRequired };
+    },
+  );
+
+  // LLM Provider endpoints (read/write ~/.pi/agent/providers.json)
+  const PROVIDERS_PATH = path.join(os.homedir(), ".pi", "agent", "providers.json");
+
+  fastify.get(
+    "/api/providers",
+    { preHandler: localhostGuard },
+    async () => {
+      try {
+        const raw = await fs.readFile(PROVIDERS_PATH, "utf-8");
+        const config = JSON.parse(raw);
+        // Redact API keys that are literal values (not env var references)
+        const providers: Record<string, any> = {};
+        for (const [name, entry] of Object.entries(config.providers || {}) as [string, any][]) {
+          providers[name] = {
+            ...entry,
+            apiKey: entry.apiKey?.startsWith("$") ? entry.apiKey : "***",
+          };
+        }
+        return { success: true, providers };
+      } catch {
+        return { success: true, providers: {} };
+      }
+    },
+  );
+
+  fastify.put(
+    "/api/providers",
+    { preHandler: localhostGuard },
+    async (request, reply) => {
+      const body = request.body as { providers: Record<string, any> };
+      if (!body?.providers || typeof body.providers !== "object") {
+        return reply.code(400).send({ success: false, error: "Invalid body: expected { providers: {...} }" });
+      }
+      try {
+        // Read existing file to preserve roles and other fields
+        let existing: Record<string, any> = {};
+        try {
+          const raw = await fs.readFile(PROVIDERS_PATH, "utf-8");
+          existing = JSON.parse(raw);
+        } catch { /* start fresh */ }
+
+        // Preserve redacted API keys from existing config
+        const merged: Record<string, any> = {};
+        for (const [name, entry] of Object.entries(body.providers)) {
+          merged[name] = { ...entry };
+          if (entry.apiKey === "***" && existing.providers?.[name]?.apiKey) {
+            merged[name].apiKey = existing.providers[name].apiKey;
+          }
+        }
+
+        existing.providers = merged;
+        await fs.mkdir(path.dirname(PROVIDERS_PATH), { recursive: true });
+        await fs.writeFile(PROVIDERS_PATH, JSON.stringify(existing, null, 2));
+
+        // Tell all connected pi sessions to reload so they pick up new providers
+        for (const sessionId of piGateway.getConnectedSessionIds()) {
+          piGateway.sendToSession(sessionId, { type: "request_reload", sessionId });
+        }
+
+        return { success: true };
+      } catch (err: any) {
+        return reply.code(500).send({ success: false, error: err.message });
+      }
     },
   );
 

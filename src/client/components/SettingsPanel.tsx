@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { Icon } from "@mdi/react";
-import { mdiArrowLeft, mdiContentSave, mdiAlert } from "@mdi/js";
+import { mdiArrowLeft, mdiContentSave, mdiAlert, mdiPlus, mdiDelete } from "@mdi/js";
 import { useLocation } from "wouter";
 
 interface ProviderConfig {
@@ -8,6 +8,14 @@ interface ProviderConfig {
   clientSecret: string;
   issuerUrl?: string;
   name?: string;
+}
+
+interface LlmProvider {
+  name: string;
+  baseUrl: string;
+  apiKey: string;
+  api: string;
+  isNew?: boolean; // true for newly added providers (name is editable)
 }
 
 interface AuthConfig {
@@ -43,17 +51,33 @@ export function SettingsPanel() {
   const [, navigate] = useLocation();
   const [config, setConfig] = useState<Config | null>(null);
   const [original, setOriginal] = useState<Config | null>(null);
+  const [llmProviders, setLlmProviders] = useState<LlmProvider[]>([]);
+  const [originalLlmProviders, setOriginalLlmProviders] = useState<LlmProvider[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error" | "warn"; text: string } | null>(null);
 
   useEffect(() => {
-    fetch("/api/config")
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.success) {
-          setConfig(data.data);
-          setOriginal(JSON.parse(JSON.stringify(data.data)));
+    Promise.all([
+      fetch("/api/config").then((res) => res.json()),
+      fetch("/api/providers").then((res) => res.json()),
+    ])
+      .then(([configData, providersData]) => {
+        if (configData.success) {
+          setConfig(configData.data);
+          setOriginal(JSON.parse(JSON.stringify(configData.data)));
+        }
+        if (providersData.success && providersData.providers) {
+          const list: LlmProvider[] = Object.entries(providersData.providers).map(
+            ([name, entry]: [string, any]) => ({
+              name,
+              baseUrl: entry.baseUrl || "",
+              apiKey: entry.apiKey || "",
+              api: entry.api || "openai-completions",
+            })
+          );
+          setLlmProviders(list);
+          setOriginalLlmProviders(JSON.parse(JSON.stringify(list)));
         }
       })
       .catch(() => setMessage({ type: "error", text: "Failed to load settings" }))
@@ -81,35 +105,74 @@ export function SettingsPanel() {
       partial.auth = config.auth || null;
     }
 
-    if (Object.keys(partial).length === 0) {
+    // Check if LLM providers changed
+    const llmChanged = JSON.stringify(llmProviders) !== JSON.stringify(originalLlmProviders);
+
+    if (Object.keys(partial).length === 0 && !llmChanged) {
       setMessage({ type: "warn", text: "No changes to save" });
       setSaving(false);
       return;
     }
 
     try {
-      const res = await fetch("/api/config", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(partial),
-      });
-      const data = await res.json();
-      if (data.success) {
-        setOriginal(JSON.parse(JSON.stringify(config)));
-        if (data.restartRequired) {
-          setMessage({ type: "warn", text: "Saved. Some changes require a server restart to take effect." });
-        } else {
-          setMessage({ type: "success", text: "Settings saved" });
+      let restartRequired = false;
+
+      // Save config changes
+      if (Object.keys(partial).length > 0) {
+        const res = await fetch("/api/config", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(partial),
+        });
+        const data = await res.json();
+        if (!data.success) {
+          setMessage({ type: "error", text: data.error || "Failed to save config" });
+          setSaving(false);
+          return;
         }
+        restartRequired = data.restartRequired;
+        setOriginal(JSON.parse(JSON.stringify(config)));
+      }
+
+      // Save LLM providers
+      if (llmChanged) {
+        const validProviders = llmProviders.filter((p) => p.name.trim() !== "");
+        const providersObj: Record<string, any> = {};
+        for (const p of validProviders) {
+          providersObj[p.name] = {
+            baseUrl: p.baseUrl,
+            apiKey: p.apiKey,
+            api: p.api,
+          };
+        }
+        const res = await fetch("/api/providers", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ providers: providersObj }),
+        });
+        const data = await res.json();
+        if (!data.success) {
+          setMessage({ type: "error", text: data.error || "Failed to save providers" });
+          setSaving(false);
+          return;
+        }
+        // Update state: strip isNew flag, update original
+        const saved = validProviders.map(({ isNew, ...rest }) => rest);
+        setLlmProviders(saved);
+        setOriginalLlmProviders(JSON.parse(JSON.stringify(saved)));
+      }
+
+      if (restartRequired) {
+        setMessage({ type: "warn", text: "Saved. Some changes require a server restart to take effect." });
       } else {
-        setMessage({ type: "error", text: data.error || "Failed to save" });
+        setMessage({ type: "success", text: "Settings saved" });
       }
     } catch {
       setMessage({ type: "error", text: "Failed to save settings" });
     } finally {
       setSaving(false);
     }
-  }, [config, original]);
+  }, [config, original, llmProviders, originalLlmProviders]);
 
   if (loading) {
     return (
@@ -205,6 +268,32 @@ export function SettingsPanel() {
         {/* Tunnel */}
         <Section title="Tunnel">
           <ToggleField label="Enable Zrok Tunnel" value={config.tunnel.enabled} onChange={(v) => update((c) => { c.tunnel.enabled = v; })} />
+        </Section>
+
+        {/* LLM Providers */}
+        <Section title="LLM Providers">
+          <p className="text-xs text-[var(--text-tertiary)] mb-3">
+            Register custom OpenAI-compatible API endpoints for model access.
+          </p>
+          {llmProviders.map((provider, index) => (
+            <LlmProviderCard
+              key={`${provider.name}-${index}`}
+              provider={provider}
+              onChange={(updated) => {
+                setLlmProviders((prev) => prev.map((p, i) => (i === index ? updated : p)));
+              }}
+              onRemove={() => {
+                setLlmProviders((prev) => prev.filter((_, i) => i !== index));
+              }}
+            />
+          ))}
+          <button
+            onClick={() => setLlmProviders((prev) => [...prev, { name: "", baseUrl: "", apiKey: "", api: "openai-completions", isNew: true }])}
+            className="flex items-center gap-1.5 text-sm text-[var(--accent-blue)] hover:text-blue-400 mt-1"
+          >
+            <Icon path={mdiPlus} size={0.6} />
+            Add Provider
+          </button>
         </Section>
 
         {/* Authentication */}
@@ -331,7 +420,7 @@ function ToggleField({ label, value, onChange }: { label: string; value: boolean
         onClick={() => onChange(!value)}
         className={`relative w-10 h-5 rounded-full transition-colors ${value ? "bg-blue-600" : "bg-[var(--bg-tertiary)]"}`}
       >
-        <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${value ? "translate-x-5" : "translate-x-0.5"}`} />
+        <span className={`absolute left-0.5 top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${value ? "translate-x-5" : "translate-x-0"}`} />
       </button>
     </div>
   );
@@ -418,6 +507,70 @@ function TextField({ label, value, onChange, type = "text", placeholder }: {
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
       />
+    </div>
+  );
+}
+
+const API_TYPE_OPTIONS = [
+  { value: "openai-completions", label: "OpenAI Completions" },
+  { value: "anthropic", label: "Anthropic" },
+];
+
+function LlmProviderCard({ provider, onChange, onRemove }: {
+  provider: LlmProvider;
+  onChange: (p: LlmProvider) => void;
+  onRemove: () => void;
+}) {
+  return (
+    <div className="border border-[var(--border-secondary)] rounded p-3 mb-2">
+      <div className="flex items-center justify-between mb-2">
+        {provider.isNew ? (
+          <input
+            type="text"
+            className="bg-[var(--bg-secondary)] border border-[var(--border-secondary)] rounded px-2 py-0.5 text-sm font-medium text-[var(--text-primary)] w-48"
+            placeholder="Provider name"
+            value={provider.name}
+            onChange={(e) => onChange({ ...provider, name: e.target.value })}
+            autoFocus
+          />
+        ) : (
+          <span className="text-sm font-medium text-[var(--text-primary)]">{provider.name}</span>
+        )}
+        <button
+          onClick={onRemove}
+          className="text-xs px-2 py-0.5 rounded bg-red-600/20 text-red-400 hover:bg-red-600/30 flex items-center gap-1"
+        >
+          <Icon path={mdiDelete} size={0.45} />
+          Remove
+        </button>
+      </div>
+      <div className="space-y-2">
+        <TextField
+          label="Base URL"
+          value={provider.baseUrl}
+          onChange={(v) => onChange({ ...provider, baseUrl: v })}
+          placeholder="https://api.example.com/v1"
+        />
+        <TextField
+          label="API Key"
+          value={provider.apiKey}
+          onChange={(v) => onChange({ ...provider, apiKey: v })}
+          type="password"
+          placeholder="sk-... or $ENV_VAR_NAME"
+        />
+        <div>
+          <label className="block text-xs text-[var(--text-tertiary)] mb-0.5">API Type</label>
+          <select
+            className="w-full bg-[var(--bg-secondary)] border border-[var(--border-secondary)] rounded px-2 py-1 text-sm text-[var(--text-primary)]"
+            value={provider.api}
+            onChange={(e) => onChange({ ...provider, api: e.target.value })}
+          >
+            {API_TYPE_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+        </div>
+      </div>
     </div>
   );
 }

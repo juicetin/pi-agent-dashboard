@@ -25,6 +25,7 @@ import { detectOpenSpecActivity } from "./openspec-activity-detector.js";
 import type { OpenSpecPhase } from "../shared/types.js";
 import { createUiProxy } from "./ui-proxy.js";
 import { registerAskUserTool } from "./ask-user-tool.js";
+import { activate as activateProviderRegister, onProviderChanged } from "./provider-register.js";
 import type { FlowInfo } from "../shared/types.js";
 
 const HEARTBEAT_INTERVAL = 15_000;
@@ -50,6 +51,9 @@ function getBridgeState(): BridgeState {
 
 export default function (pi: ExtensionAPI) {
   try {
+    // Activate provider management before bridge init so providers are
+    // registered before session_start fires and models_list is sent.
+    activateProviderRegister(pi);
     initBridge(pi);
   } catch (err) {
     // Never crash the host pi agent — dashboard is non-essential
@@ -763,6 +767,19 @@ function initBridge(pi: ExtensionAPI) {
     await new Promise((resolve) => setTimeout(resolve, 100));
     connection.disconnect();
   }));
+
+  // Re-send models list when custom providers finish async discovery
+  onProviderChanged(() => {
+    if (cachedModelRegistry && sessionReady) {
+      try {
+        const models = cachedModelRegistry.getAvailable().map((m: any) => ({
+          provider: m.provider,
+          id: m.id,
+        }));
+        connection.send({ type: "models_list", sessionId, models });
+      } catch { /* ignore */ }
+    }
+  });
 
   // Register cleanup for /reload — saves state to globalThis and tears down resources
   const state = getBridgeState();

@@ -168,8 +168,8 @@ export function createCommandHandler(
     async handle(msg: ServerToExtensionMessage): Promise<ExtensionToServerMessage | undefined> {
       const sessionId = getSessionId();
 
-      // Ignore messages for other sessions
-      if (msg.sessionId !== sessionId) {
+      // Ignore messages for other sessions (skip session-less messages like heartbeat_ack)
+      if (msg.sessionId !== undefined && msg.sessionId !== sessionId) {
         console.error(`[dashboard] Ignoring message type=${msg.type} for session ${msg.sessionId}, current session is ${sessionId}`);
         return undefined;
       }

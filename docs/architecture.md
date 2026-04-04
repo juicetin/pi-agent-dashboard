@@ -40,7 +40,7 @@ A global pi extension that runs in every pi session. It:
 A Node.js HTTP + WebSocket server that:
 - Accepts connections from bridge extensions (Pi Gateway, port 9999)
 - Accepts connections from web browsers (Browser Gateway, port 8000)
-- Stores events in an in-memory buffer with LRU eviction (max 100 sessions, 200 events per session)
+- Stores events in an in-memory buffer with LRU eviction (max 100 sessions, 5000 events per session)
 - Truncates large event payloads (tool results, file content, thinking blocks) to bound memory
 - Applies WebSocket backpressure on browser connections (drops messages when send buffer > 4MB)
 - Manages sessions in a pure in-memory registry (populated from bridge connections and direct disk discovery)
@@ -281,7 +281,7 @@ When pi continues a session via `--session <file>`, it reuses the same JSONL fil
 When a browser subscribes to a session whose events have been evicted from memory:
 1. Server sends empty `event_replay` with `isLast: false` to indicate loading
 2. Server's DirectoryService loads the session file directly via `SessionManager.open(sessionFile).getBranch()`
-3. Entries are converted via `replayEntriesAsEvents()` and stored in the event buffer (truncated, capped at 200/session)
+3. Entries are converted via `replayEntriesAsEvents()` and stored in the event buffer (truncated, capped at 5000/session)
 4. Server sends `event_replay` in async batches with backpressure to all waiting browsers
 5. If the session file is missing or corrupt, server sends `dataUnavailable: true`
 6. Concurrent loads for the same session are deduplicated

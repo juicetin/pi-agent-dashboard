@@ -36,7 +36,7 @@ export interface MemoryLimitsConfig {
 }
 
 export const DEFAULT_MEMORY_LIMITS: MemoryLimitsConfig = {
-  maxEventsPerSession: 200,
+  maxEventsPerSession: 5000,
   maxStringFieldSize: 4000,
   maxWsBufferBytes: 4 * 1024 * 1024,
 };

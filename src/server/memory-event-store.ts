@@ -31,7 +31,7 @@ interface SessionBuffer {
 }
 
 export const DEFAULT_MAX_CACHED_SESSIONS = 100;
-export const DEFAULT_MAX_EVENTS_PER_SESSION = 200;
+export const DEFAULT_MAX_EVENTS_PER_SESSION = 5000;
 
 /** Default max size for any string field within event data */
 const DEFAULT_MAX_STRING_SIZE = 4_000;

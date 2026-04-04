@@ -154,4 +154,37 @@ export function registerSystemRoutes(
       return { ok: true };
     },
   );
+
+  // Restart endpoint — flush state, schedule a self-restart, then exit
+  fastify.post(
+    "/api/restart",
+    { preHandler: localhostGuard },
+    async () => {
+      metaPersistence.flushAll();
+      preferencesStore.flush();
+
+      // Spawn a helper script that waits for the old server to exit, then starts a new one
+      const cliPath = process.argv[1]; // path to cli.ts (how this process was started)
+      if (!cliPath) return { ok: false, error: "Cannot determine CLI path" };
+
+      // Find the TypeScript loader from process.execArgv (--import <loader>)
+      const importIdx = process.execArgv.indexOf("--import");
+      const loaderArgs = importIdx >= 0 ? ["--import", process.execArgv[importIdx + 1]] : [];
+
+      const args = ["start"];
+      if (config.dev) args.push("--dev");
+
+      // Use shell to wait for port to free, then start
+      const script = `sleep 1; ${JSON.stringify(process.execPath)} ${loaderArgs.map(a => JSON.stringify(a)).join(" ")} ${JSON.stringify(cliPath)} ${args.join(" ")}`;
+      const child = spawn("sh", ["-c", script], {
+        detached: true,
+        stdio: "ignore",
+        env: { ...process.env },
+      });
+      child.unref();
+
+      setTimeout(() => process.exit(0), 200);
+      return { ok: true };
+    },
+  );
 }

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { Icon } from "@mdi/react";
-import { mdiArrowLeft, mdiContentSave, mdiAlert, mdiPlus, mdiDelete } from "@mdi/js";
+import { mdiArrowLeft, mdiContentSave, mdiAlert, mdiPlus, mdiDelete, mdiRestart } from "@mdi/js";
 import { useLocation } from "wouter";
 
 interface ProviderConfig {
@@ -62,6 +62,7 @@ export function SettingsPanel() {
   const [originalLlmProviders, setOriginalLlmProviders] = useState<LlmProvider[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [restarting, setRestarting] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error" | "warn"; text: string } | null>(null);
 
   useEffect(() => {
@@ -236,8 +237,32 @@ export function SettingsPanel() {
         <h1 className="text-lg font-bold text-[var(--text-primary)]">Settings</h1>
         <div className="flex-1" />
         <button
+          onClick={async () => {
+            setRestarting(true);
+            setMessage(null);
+            try {
+              const res = await fetch("/api/restart", { method: "POST" });
+              const data = await res.json();
+              if (data.ok) {
+                setMessage({ type: "success", text: "Server restarting…" });
+              } else {
+                setMessage({ type: "error", text: data.error || "Restart failed" });
+                setRestarting(false);
+              }
+            } catch {
+              setMessage({ type: "warn", text: "Server shutting down…" });
+            }
+          }}
+          disabled={restarting || saving}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-[var(--bg-tertiary)] hover:bg-[var(--bg-secondary)] text-[var(--text-secondary)] text-sm font-medium disabled:opacity-50 border border-[var(--border-secondary)]"
+          title="Restart server"
+        >
+          <Icon path={mdiRestart} size={0.6} />
+          {restarting ? "Restarting…" : "Restart"}
+        </button>
+        <button
           onClick={handleSave}
-          disabled={saving}
+          disabled={saving || restarting}
           data-testid="save-btn"
           className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium disabled:opacity-50"
         >

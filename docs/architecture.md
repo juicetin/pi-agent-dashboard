@@ -25,10 +25,11 @@ A global pi extension that runs in every pi session. It:
 - Forwards all pi events to the dashboard server via WebSocket
 - Relays commands from the dashboard back to pi
 - Handles reconnection with exponential backoff and event buffering
-- Sends heartbeats every 15s; server responds with `heartbeat_ack`
+- Sends heartbeats every 15s with process metrics (CPU%, RSS, heap, event loop max delay, load average); server responds with `heartbeat_ack`
 - Server liveness watchdog: forces reconnect if no message received for 60s
-- Server-side WS ping/pong (60s interval) detects dead TCP connections; any received message resets the alive flag
+- Server-side WS ping/pong (60s interval) detects dead TCP connections; requires 2 consecutive missed pongs before killing (tolerates long-running bash commands that block the event loop)
 - Detects OpenSpec activity (phase/change) from tool events
+- **Duplicate bridge prevention**: Uses `process`-level shared state (not `globalThis`) with a monotonic generation counter. When the extension is loaded multiple times (e.g., local + global npm package), only the latest instance's event handlers are active — stale listeners bail out immediately. All previous connections and timers are tracked and cleaned up on re-init.
 - Proxies `ctx.ui` dialog methods (confirm, select, input, editor) to the dashboard via `ui-proxy.ts`
   - TUI sessions: races terminal dialog against dashboard response (first wins)
   - Race cancellation: when dashboard wins, TUI dialog is aborted via `AbortSignal`; when TUI wins, dashboard dialog is dismissed via `extension_ui_dismiss` message
@@ -277,6 +278,11 @@ Without the `session_state_reset` message, replayed events would duplicate exist
 ### Session File Deduplication
 When pi continues a session via `--session <file>`, it reuses the same JSONL file but may create a new session ID. The server detects this: when a new session registers with a `sessionFile` already associated with another session, the old session's `sessionFile` is cleared. This prevents the Resume button from loading the wrong conversation.
 
+### Ghost Session Cleanup
+When the bridge extension is loaded multiple times (e.g., local project + global npm package), duplicate connections can create "ghost" sessions — active sessions with no sessionFile and no events. The server detects and removes these:
+- **Pi gateway**: When a `session_register` changes the connection's session ID, the old session is cleaned up if it has `source: "unknown"` or no `sessionFile`
+- **Event wiring**: When `session_register` arrives, any active sessions in the same cwd that have no sessionFile, no events, aren't connected, and were created within 30s are removed as ghosts
+
 ### On-Demand Session Loading (Server-Side)
 When a browser subscribes to a session whose events have been evicted from memory:
 1. Server sends empty `event_replay` with `isLast: false` to indicate loading
@@ -352,6 +358,26 @@ The dashboard is installable as a Progressive Web App on mobile devices:
 
 Both the server CLI and bridge extension read from `~/.pi/dashboard/config.json` via a shared module (`src/shared/config.ts`). On first access, the config file is auto-created with defaults.
 
+### Dev Mode with Production Fallback
+
+When started with `--dev`, the server proxies client requests to the Vite dev server for HMR. If Vite is not running, it falls back to serving the production build from `dist/client/`. This means:
+- `pi-dashboard start --dev` **always works** — no 502 errors
+- If Vite is running → hot module replacement, fast iteration
+- If Vite is not running → serves last production build silently
+- Vite can be started/stopped independently without restarting the dashboard
+
+### Graceful Restart
+
+The `POST /api/restart` endpoint and `pi-dashboard restart` command perform fault-tolerant restarts:
+1. Flush all pending state (meta persistence, preferences)
+2. Spawn new server process
+3. Wait for old server's port to become free (up to 10s)
+4. Start new server with the same (or overridden) flags
+5. Verify health via `/api/health` (up to 10s)
+6. `pi-dashboard stop` also kills any stale processes holding the port (via `lsof`)
+
+The restart endpoint accepts `{ dev: boolean }` to switch between dev/production mode.
+
 ### Auto-Start Flow
 
 When `autoStart` is `true` (default), the bridge extension automatically starts the dashboard server:
@@ -382,6 +408,28 @@ silently  pass --port & --pi-port
 ```
 
 The server is spawned detached (`child_process.spawn` with `detached: true`, stdout/stderr redirected to `~/.pi/dashboard/server.log`), so it outlives the pi session. If multiple pi sessions start simultaneously, duplicate spawn attempts fail harmlessly with EADDRINUSE. After a failed launch, the bridge re-probes the port — if another agent started the server concurrently, the warning is suppressed. The auto-start logic is extracted into `server-auto-start.ts` for testability.
+
+## Provider Authentication
+
+The dashboard supports browser-based authentication with pi's LLM providers, enabling login from phones, tablets, or remote tunnel access without needing terminal access.
+
+### Flow
+
+1. **Settings UI** shows OAuth providers (Anthropic, Codex, GitHub Copilot, Gemini CLI, Antigravity) and API key providers
+2. **Auth-code flow** (Anthropic, Codex, Gemini, Antigravity): browser opens popup → provider consent → callback HTML relays code via `postMessage`/`BroadcastChannel`/`localStorage` → server exchanges code for tokens using PKCE
+3. **Device-code flow** (GitHub Copilot): server requests device code → UI shows user code + verification URL → server polls until authorized
+4. **API key flow**: user pastes key in Settings → saved directly
+5. All credentials written to `~/.pi/agent/auth.json` with lockfile + atomic write (`0600` permissions)
+6. Server broadcasts `credentials_updated` to all connected bridges → bridges call `authStorage.reload()` so running pi sessions pick up new tokens immediately
+
+### Key Files
+
+| File | Purpose |
+|------|--------|
+| `src/server/provider-auth-handlers.ts` | Per-provider OAuth logic (PKCE, token exchange, project discovery) |
+| `src/server/provider-auth-storage.ts` | auth.json read/write with file locking |
+| `src/server/routes/provider-auth-routes.ts` | REST API for authorize, exchange, callback, device-code, API keys |
+| `src/client/components/ProviderAuthSection.tsx` | Settings UI component |
 
 ## Terminal Emulator
 

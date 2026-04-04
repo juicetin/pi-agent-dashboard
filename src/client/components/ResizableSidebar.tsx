@@ -9,33 +9,22 @@ interface Props {
 }
 
 const COLLAPSED_WIDTH = 28;
-const DOUBLE_CLICK_MS = 300;
 
 export function ResizableSidebar({ sidebar, children }: Props) {
   const { width, collapsed, setWidth, toggleCollapse } = sidebar;
   const dragging = useRef(false);
-  const lastClick = useRef(0);
   const sidebarRef = useRef<HTMLDivElement>(null);
 
-  // Drag-to-resize handlers
+  // Drag-to-resize handler (collapse button handles toggle separately)
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
-      // Double-click detection
-      const now = Date.now();
-      if (now - lastClick.current < DOUBLE_CLICK_MS) {
-        toggleCollapse();
-        lastClick.current = 0;
-        return;
-      }
-      lastClick.current = now;
-
       if (collapsed) return;
       e.preventDefault();
       dragging.current = true;
       document.body.style.cursor = "col-resize";
       document.body.style.userSelect = "none";
     },
-    [collapsed, toggleCollapse],
+    [collapsed],
   );
 
   useEffect(() => {
@@ -67,16 +56,16 @@ export function ResizableSidebar({ sidebar, children }: Props) {
   if (collapsed) {
     return (
       <div
-        className="flex flex-col items-center border-r border-[var(--border-primary)] bg-[var(--bg-primary)] flex-shrink-0"
+        className="relative border-r border-[var(--border-primary)] bg-[var(--bg-primary)] flex-shrink-0"
         style={{ width: COLLAPSED_WIDTH }}
       >
         <button
           onClick={toggleCollapse}
-          className="mt-3 text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]"
+          className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 z-10 w-5 h-8 flex items-center justify-center rounded-full bg-[var(--bg-tertiary)] border border-[var(--border-secondary)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-surface)] shadow-md transition-colors cursor-pointer"
           title="Expand sidebar"
           data-testid="sidebar-expand"
         >
-          <Icon path={mdiChevronRight} size={0.7} />
+          <Icon path={mdiChevronRight} size={0.55} />
         </button>
       </div>
     );
@@ -98,6 +87,16 @@ export function ResizableSidebar({ sidebar, children }: Props) {
         className="w-1 cursor-col-resize hover:bg-blue-500/30 active:bg-blue-500/50 flex-shrink-0"
         data-testid="drag-handle"
       />
+      {/* Collapse button — floats on the sidebar edge */}
+      <button
+        onClick={toggleCollapse}
+        onMouseDown={(e) => e.stopPropagation()}
+        className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 z-10 w-5 h-8 flex items-center justify-center rounded-full bg-[var(--bg-tertiary)] border border-[var(--border-secondary)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-surface)] shadow-md transition-colors cursor-pointer"
+        title="Collapse sidebar"
+        data-testid="sidebar-collapse"
+      >
+        <Icon path={mdiChevronLeft} size={0.55} />
+      </button>
     </div>
   );
 }

@@ -22,6 +22,15 @@ function cacheKey(code: string, theme: string): string {
 function sanitizeMermaidCode(raw: string): string {
   let code = raw.trim();
 
+  // Decode HTML entities — react-markdown/rehype may encode special chars
+  // inside code blocks (e.g. --> becomes --&gt;)
+  code = code
+    .replace(/&gt;/g, ">")
+    .replace(/&lt;/g, "<")
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'");
+
   // Remove common leading indentation (dedent) — mermaid is whitespace-sensitive
   const lines = code.split("\n");
   const nonEmptyLines = lines.filter((l) => l.trim().length > 0);
@@ -72,11 +81,24 @@ async function renderMermaid(
       try {
         const mermaid = (await import("mermaid")).default;
         if (lastInitTheme !== theme) {
+          const fontFamily = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
           mermaid.initialize({
             startOnLoad: false,
             theme: theme === "dark" ? "dark" : "default",
             suppressErrorRendering: true,
+            fontFamily,
+            fontSize: 16,
+            themeVariables: { fontFamily, fontSize: "16px" },
+            flowchart: { useMaxWidth: true, htmlLabels: true },
+            sequence: {
+              useMaxWidth: true,
+              actorFontFamily: fontFamily,
+              messageFontFamily: fontFamily,
+              noteFontFamily: fontFamily,
+            },
+            gantt: { useMaxWidth: true },
           });
+          _svgCache.clear();
           lastInitTheme = theme;
         }
         const sanitized = sanitizeMermaidCode(code);
@@ -229,7 +251,7 @@ export const MermaidBlock = React.memo(function MermaidBlock({ code }: Props) {
     return (
       <div className="rounded-md overflow-hidden mb-2">
         <div className="text-xs text-red-400 px-3 py-1.5 bg-red-900/20">
-          Failed to render Mermaid diagram
+          Failed to render Mermaid diagram: {error}
         </div>
         <pre className="bg-[var(--bg-code)] rounded-b-md p-4 overflow-x-auto text-sm">
           <code>{code}</code>

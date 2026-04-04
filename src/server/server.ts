@@ -5,6 +5,7 @@ import Fastify from "fastify";
 import fastifyStatic from "@fastify/static";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { existsSync } from "node:fs";
 import { createMemoryEventStore, type EventStore } from "./memory-event-store.js";
 import { createMemorySessionManager, type SessionManager } from "./memory-session-manager.js";
 import { createPiGateway, type PiGateway } from "./pi-gateway.js";
@@ -33,6 +34,7 @@ import { registerGitRoutes } from "./routes/git-routes.js";
 import { registerFileRoutes } from "./routes/file-routes.js";
 import { registerOpenSpecRoutes } from "./routes/openspec-routes.js";
 import { registerSystemRoutes } from "./routes/system-routes.js";
+import { registerProviderAuthRoutes } from "./routes/provider-auth-routes.js";
 
 export interface ServerConfig {
   port: number;
@@ -204,50 +206,77 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
   registerFileRoutes(fastify, { sessionManager, preferencesStore });
   registerOpenSpecRoutes(fastify, { sessionManager, preferencesStore, directoryService });
   registerSystemRoutes(fastify, { sessionManager, preferencesStore, metaPersistence, config });
+  registerProviderAuthRoutes(fastify, { piGateway });
 
   // Serve static files / SPA fallback
-  if (config.dev) {
-    // Dev mode: proxy SPA routes to Vite dev server
-    // Detect which port Vite is running on (tries 3000 first, then common fallbacks)
-    let vitePort = 3000;
-    for (const port of [3000, 5173, 5174]) {
-      try {
-        const res = await fetch(`http://localhost:${port}/`);
-        if (res.ok) { vitePort = port; break; }
-      } catch { /* not listening */ }
-    }
+  const __dirname = path.dirname(fileURLToPath(import.meta.url));
+  const clientDir = path.join(__dirname, "../../dist/client");
+  const hasProductionBuild = existsSync(path.join(clientDir, "index.html"));
 
-    fastify.setNotFoundHandler(async (request, reply) => {
-      try {
-        const viteUrl = `http://localhost:${vitePort}${request.url}`;
-        const res = await fetch(viteUrl);
-        // Forward content-type and status from Vite
-        const contentType = res.headers.get("content-type");
-        if (contentType) reply.header("Content-Type", contentType);
-        reply.code(res.status);
-        return reply.send(Buffer.from(await res.arrayBuffer()));
-      } catch {
-        return reply.code(502).send({ error: "Vite dev server not reachable" });
-      }
-    });
-  } else {
-    const __dirname = path.dirname(fileURLToPath(import.meta.url));
-    const clientDir = path.join(__dirname, "../../dist/client");
+  // Register static file serving for production build.
+  // Always enabled — in dev mode, Vite handles most requests via the
+  // not-found proxy, but asset files (JS/CSS with hashed names) must be
+  // served directly when Vite is not running (production fallback).
+  if (hasProductionBuild) {
     await fastify.register(fastifyStatic, {
       root: clientDir,
       prefix: "/",
       setHeaders: (res, filePath) => {
-        // No-cache for HTML (so browser always gets latest asset references)
         if (filePath.endsWith(".html")) {
           res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
         }
       },
     });
+  }
 
-    // SPA fallback: serve index.html for client-side routes
+  if (config.dev) {
+    // Dev mode: proxy to Vite dev server, fall back to production build
+    const VITE_PORTS = [3000, 5173, 5174];
+    let vitePort = 0;
+
+    async function detectVitePort(): Promise<number> {
+      for (const port of VITE_PORTS) {
+        try {
+          const res = await fetch(`http://localhost:${port}/`, { signal: AbortSignal.timeout(500) });
+          if (res.ok) return port;
+        } catch { /* not listening */ }
+      }
+      return 0;
+    }
+
+    vitePort = await detectVitePort();
+
+    fastify.setNotFoundHandler(async (request, reply) => {
+      // Try Vite proxy first
+      if (!vitePort) vitePort = await detectVitePort();
+      if (vitePort) {
+        try {
+          const viteUrl = `http://localhost:${vitePort}${request.url}`;
+          const res = await fetch(viteUrl);
+          const contentType = res.headers.get("content-type");
+          if (contentType) reply.header("Content-Type", contentType);
+          reply.code(res.status);
+          return reply.send(Buffer.from(await res.arrayBuffer()));
+        } catch {
+          vitePort = 0; // Vite stopped — re-probe next time
+        }
+      }
+      // Fallback: serve production build if available
+      if (hasProductionBuild) {
+        reply.header("Cache-Control", "no-cache, no-store, must-revalidate");
+        return reply.sendFile("index.html");
+      }
+      return reply.code(502).send({ error: "Neither Vite dev server nor production build available" });
+    });
+  } else if (hasProductionBuild) {
+    // Production mode: SPA fallback
     fastify.setNotFoundHandler(async (_request, reply) => {
       reply.header("Cache-Control", "no-cache, no-store, must-revalidate");
       return reply.sendFile("index.html");
+    });
+  } else {
+    fastify.setNotFoundHandler(async (_request, reply) => {
+      return reply.code(500).send({ error: "No client build found. Run `npm run build` first." });
     });
   }
 

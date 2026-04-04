@@ -48,6 +48,7 @@ pi-dashboard --dev   # Start with Vite proxy
 | `src/extension/dev-build.ts` | Dev build-on-reload helper (client build + server shutdown) |
 | `src/extension/server-auto-start.ts` | Extracted auto-start logic with retry-probe for concurrent launches |
 | `src/shared/session-meta.ts` | Session metadata sidecar (.meta.json) read/write helpers |
+| `src/extension/process-metrics.ts` | Lightweight CPU/memory/event-loop metrics collector for heartbeats |
 | `src/extension/git-info.ts` | Git branch/remote/PR detection (polled every 30s) |
 | `src/extension/git-link-builder.ts` | Git remote URL parsing and platform-specific links |
 | `src/server/git-operations.ts` | Server-side git commands: branch listing, checkout, init, stash pop |
@@ -105,6 +106,10 @@ pi-dashboard --dev   # Start with Vite proxy
 | `src/server/event-status-extraction.ts` | Extracts session status/tool updates from events (incl. flow metadata) |
 | `src/server/headless-pid-registry.ts` | Maps headless child PIDs to session IDs |
 | `src/server/auth.ts` | OAuth2 authentication: provider registry, JWT helpers, user allowlist |
+| `src/server/provider-auth-handlers.ts` | Pi provider OAuth handlers (Anthropic, Codex, GitHub Copilot, Gemini CLI, Antigravity) |
+| `src/server/provider-auth-storage.ts` | Read/write ~/.pi/agent/auth.json with lockfile for pi provider credentials |
+| `src/server/routes/provider-auth-routes.ts` | REST routes: provider OAuth authorize/exchange/callback, device-code, API key CRUD |
+| `src/client/components/ProviderAuthSection.tsx` | Settings section: OAuth login buttons, device-code modal, API key inputs |
 | `src/server/auth-plugin.ts` | Fastify plugin: auth routes, onRequest hook, WS upgrade validation |
 | `src/server/config-api.ts` | Config REST API: read (redacted), write (partial merge), secret preservation |
 | `src/client/components/SettingsPanel.tsx` | Settings UI: all dashboard config fields, grouped form, save to server |
@@ -175,6 +180,8 @@ pi-dashboard --dev   # Start with Vite proxy
 | `.pi/skills/spec-coherence-check/references/proposal-queue-schema.md` | JSON schema for `.pi/proposal-queue.json` |
 | `.pi/skills/code-review/SKILL.md` | Skill: comprehensive code review with severity labels, four-phase process, language-specific guides |
 | `.pi/skills/code-review/references/` | On-demand language guides (React, TypeScript, Vue, Rust, Go, Java, Python, C/C++, CSS, Qt) + architecture/performance/security reviews |
+| `.pi/skills/nano-banana-imagegen/SKILL.md` | Skill: AI image generation/editing via Google Gemini (nano-banana CLI) |
+| `.pi/skills/nano-banana-imagegen/references/` | Prompting guide, example prompts (headers, icons, illustrations, photography) |
 
 ## Build & Restart Workflow
 
@@ -190,10 +197,15 @@ npm run reload:check    # Type-check first, then reload
 ### After server changes (`src/server/`, `src/shared/`)
 Restart the dashboard server. The server runs TypeScript directly via jiti (pi's TypeScript loader), so no separate build step is needed — just restart:
 ```bash
-# Production mode
-pi-dashboard stop && pi-dashboard start
+# Graceful restart via API (preserves current dev/prod mode)
+curl -X POST http://localhost:8000/api/restart
 
-# Dev mode (with Vite proxy)
+# Or via CLI
+pi-dashboard restart              # production mode
+pi-dashboard restart --dev        # dev mode
+
+# Manual stop + start
+pi-dashboard stop && pi-dashboard start
 pi-dashboard stop && pi-dashboard start --dev
 ```
 
@@ -202,22 +214,34 @@ pi-dashboard stop && pi-dashboard start --dev
 - **Production mode**: Rebuild the client and restart the server:
   ```bash
   npm run build
-  pi-dashboard stop && pi-dashboard start
+  curl -X POST http://localhost:8000/api/restart
   ```
 
 ### After OpenSpec apply finishes (full rebuild)
 When an openspec-apply-change skill completes implementation, do a full rebuild and restart:
 ```bash
-# Production mode
 npm run build
-pi-dashboard stop && pi-dashboard start
-npm run reload
-
-# Dev mode
-pi-dashboard stop && pi-dashboard start --dev
+curl -X POST http://localhost:8000/api/restart
 npm run reload
 ```
-Check which mode is running: if the Vite dev server is active on port 3000/5173 (`lsof -i :3000 -i :5173`), use dev mode. Otherwise use production mode.
+
+### Check current mode
+```bash
+curl -s http://localhost:8000/api/health | jq .mode
+# Returns "dev" or "production"
+```
+
+### Dev mode with production fallback
+In `--dev` mode, the server proxies to Vite for HMR. If Vite is not running, it **automatically falls back** to serving the production build from `dist/client/`. This means `pi-dashboard start --dev` always works — no 502 errors.
+
+### Fault-tolerant restart
+- `POST /api/restart` waits for the old server to exit, starts a new one, and verifies health
+- `POST /api/restart` with body `{"dev": true}` or `{"dev": false}` switches modes
+- `pi-dashboard stop` kills stale processes holding the ports (via `lsof`), not just the PID file
+
+## OpenSpec Conventions
+
+When creating OpenSpec change artifacts, always place them at `openspec/changes/<name>/` — never nest under subdirectories like `active/` or `archive/`. Prefer using `openspec change new <name>` CLI to scaffold the directory structure correctly.
 
 ## Diagram Style
 

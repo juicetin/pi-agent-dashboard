@@ -128,11 +128,11 @@ describe("Session lifecycle logging", () => {
     }));
     await delay(100);
 
-    // Pause socket to prevent pong
+    // Pause socket to prevent pong — need 2 missed pings before kill
     (ws as any)._socket?.pause();
-    await delay(200 * 3);
+    await delay(200 * 4);
 
     const logs = errorSpy.mock.calls.map((c) => c[0]);
-    expect(logs).toContainEqual(expect.stringContaining("[gateway] connection dead (ping timeout): log-ping"));
+    expect(logs).toContainEqual(expect.stringContaining("[gateway] connection dead (ping timeout, 2 misses): log-ping"));
   }, 10000);
 });

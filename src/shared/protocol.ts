@@ -25,9 +25,26 @@ export interface SessionUnregisterMessage {
   sessionId: string;
 }
 
+export interface ProcessMetrics {
+  /** RSS in bytes */
+  rss: number;
+  /** Heap used in bytes */
+  heapUsed: number;
+  /** Heap total in bytes */
+  heapTotal: number;
+  /** CPU usage percent since last heartbeat (0-100+) */
+  cpuPercent: number;
+  /** Event loop max delay in ms since last heartbeat */
+  eventLoopMaxMs?: number;
+  /** System load average (1 min) */
+  loadAvg1m: number;
+}
+
 export interface SessionHeartbeatMessage {
   type: "session_heartbeat";
   sessionId: string;
+  /** Process metrics from the pi agent process */
+  metrics?: ProcessMetrics;
 }
 
 export interface EventForwardMessage {
@@ -237,6 +254,10 @@ export interface RequestFlowsRefreshMessage {
   sessionId: string;
 }
 
+export interface CredentialsUpdatedMessage {
+  type: "credentials_updated";
+}
+
 export interface ExtensionUiResponseMessage {
   type: "extension_ui_response";
   sessionId: string;
@@ -260,4 +281,5 @@ export type ServerToExtensionMessage =
   | ShutdownExtensionMessage
   | FlowControlExtensionMessage
   | HeartbeatAckMessage
-  | RequestFlowsRefreshMessage;
+  | RequestFlowsRefreshMessage
+  | CredentialsUpdatedMessage;

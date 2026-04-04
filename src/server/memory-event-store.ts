@@ -62,6 +62,11 @@ function truncateStrings(obj: unknown, maxSize: number, depth = 0): unknown {
     let changed = false;
     const result: Record<string, unknown> = {};
     for (const [key, val] of Object.entries(obj)) {
+      // Preserve base64 image data — skip truncation when sibling mimeType exists
+      if (key === "data" && typeof val === "string" && "mimeType" in obj) {
+        result[key] = val;
+        continue;
+      }
       // Skip 'thinking' blocks entirely — large and not shown in chat
       if (key === "thinking" && typeof val === "string" && val.length > maxSize) {
         result[key] = (val as string).slice(0, 500) + "\n…[truncated]";

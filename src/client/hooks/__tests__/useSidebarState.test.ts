@@ -72,6 +72,10 @@ describe("useSidebarState", () => {
     expect(localStorage.getItem(COLLAPSED_KEY)).toBe("false");
   });
 
+  it("DEFAULT_WIDTH equals MAX_WIDTH", () => {
+    expect(DEFAULT_WIDTH).toBe(MAX_WIDTH);
+  });
+
   it("handles invalid localStorage values gracefully", () => {
     localStorage.setItem(WIDTH_KEY, "not-a-number");
     localStorage.setItem(COLLAPSED_KEY, "garbage");

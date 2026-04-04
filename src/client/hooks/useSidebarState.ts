@@ -2,7 +2,7 @@ import { useState, useCallback } from "react";
 
 const WIDTH_KEY = "dashboard:sidebar-width";
 const COLLAPSED_KEY = "dashboard:sidebar-collapsed";
-const DEFAULT_WIDTH = 256;
+const DEFAULT_WIDTH = 500;
 const MIN_WIDTH = 180;
 const MAX_WIDTH = 500;
 

@@ -134,12 +134,30 @@ export function registerSystemRoutes(
     return { ok: true };
   });
 
-  // Health endpoint
+  // Health endpoint — includes server + agent process metrics
   fastify.get("/api/health", async () => {
+    const mem = process.memoryUsage();
+    const activeSessions = sessionManager.listActive();
+    const agentMetrics = activeSessions
+      .filter(s => s.processMetrics)
+      .map(s => ({
+        sessionId: s.id,
+        cwd: s.cwd,
+        ...s.processMetrics,
+      }));
     return {
       ok: true,
       pid: process.pid,
       uptime: Math.floor((Date.now() - serverStartTime) / 1000),
+      mode: config.dev ? "dev" : "production",
+      server: {
+        rss: mem.rss,
+        heapUsed: mem.heapUsed,
+        heapTotal: mem.heapTotal,
+        activeSessions: activeSessions.length,
+        totalSessions: sessionManager.listAll().length,
+      },
+      agents: agentMetrics,
     };
   });
 
@@ -155,27 +173,49 @@ export function registerSystemRoutes(
     },
   );
 
-  // Restart endpoint — flush state, schedule a self-restart, then exit
-  fastify.post(
+  // Restart endpoint — flush state, spawn new server, then exit
+  fastify.post<{ Body: { dev?: boolean } }>(
     "/api/restart",
     { preHandler: localhostGuard },
-    async () => {
+    async (request) => {
       metaPersistence.flushAll();
       preferencesStore.flush();
 
-      // Spawn a helper script that waits for the old server to exit, then starts a new one
-      const cliPath = process.argv[1]; // path to cli.ts (how this process was started)
+      const cliPath = process.argv[1];
       if (!cliPath) return { ok: false, error: "Cannot determine CLI path" };
 
       // Find the TypeScript loader from process.execArgv (--import <loader>)
       const importIdx = process.execArgv.indexOf("--import");
       const loaderArgs = importIdx >= 0 ? ["--import", process.execArgv[importIdx + 1]] : [];
 
+      // Allow overriding dev mode via request body
+      const useDev = request.body?.dev ?? config.dev;
       const args = ["start"];
-      if (config.dev) args.push("--dev");
+      if (useDev) args.push("--dev");
 
-      // Use shell to wait for port to free, then start
-      const script = `sleep 1; ${JSON.stringify(process.execPath)} ${loaderArgs.map(a => JSON.stringify(a)).join(" ")} ${JSON.stringify(cliPath)} ${args.join(" ")}`;
+      // Spawn a shell script that:
+      // 1. Waits for the old server's port to be free (up to 10s)
+      // 2. Starts the new server
+      // 3. Verifies health (up to 10s)
+      // 4. If health check fails, logs error
+      const port = config.port;
+      const nodeCmd = `${JSON.stringify(process.execPath)} ${loaderArgs.map(a => JSON.stringify(a)).join(" ")} ${JSON.stringify(cliPath)} ${args.join(" ")}`;
+      const script = [
+        // Wait for port to be free
+        `for i in $(seq 1 20); do`,
+        `  lsof -i :${port} -sTCP:LISTEN >/dev/null 2>&1 || break`,
+        `  sleep 0.5`,
+        `done`,
+        // Start new server
+        nodeCmd,
+        // Verify health
+        `for i in $(seq 1 20); do`,
+        `  curl -sf http://localhost:${port}/api/health >/dev/null 2>&1 && exit 0`,
+        `  sleep 0.5`,
+        `done`,
+        `echo "[dashboard] Restart health check failed" >&2`,
+      ].join("\n");
+
       const child = spawn("sh", ["-c", script], {
         detached: true,
         stdio: "ignore",

@@ -44,6 +44,17 @@ export interface DashboardSession {
   flowAgentsTotal?: number;
   /** Flow execution status */
   flowStatus?: FlowStatus;
+  /** Latest process metrics from the pi agent */
+  processMetrics?: {
+    rss: number;
+    heapUsed: number;
+    heapTotal: number;
+    cpuPercent: number;
+    eventLoopMaxMs?: number;
+    loadAvg1m: number;
+    /** Timestamp when metrics were last received */
+    updatedAt: number;
+  };
 }
 
 /** An event forwarded from a pi session */

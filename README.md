@@ -21,6 +21,7 @@ A web-based dashboard for monitoring and interacting with [pi](https://github.co
 - **Integrated terminal** — Full browser-based terminal emulator (xterm.js + node-pty) with ANSI color support, scrollback, and keep-alive
 - **pi-flows integration** — Live flow execution dashboard with agent cards, detail views, summary, abort/auto controls. Launch flows and create new ones from the dashboard. Fork decisions and subagent dialogs forwarded via existing UI proxy.
 - **Searchable select dialogs** — Keyboard-navigable picker with real-time filtering for OpenSpec changes and flow commands
+- **Browser-based provider auth** — Sign in to Anthropic, OpenAI Codex, GitHub Copilot, Gemini CLI, and Antigravity directly from Settings. Enter API keys for other providers. Credentials saved to `~/.pi/agent/auth.json` and live-synced to running sessions.
 
 ## Architecture
 
@@ -269,13 +270,43 @@ npx tsx src/server/cli.ts --dev   # proxy to Vite dev server
 ### Daemon mode
 
 ```bash
-pi-dashboard start      # Start as background daemon
-pi-dashboard stop       # Stop running daemon
-pi-dashboard restart    # Restart daemon
-pi-dashboard status     # Show daemon status
+pi-dashboard start           # Start as background daemon (production)
+pi-dashboard start --dev     # Start in dev mode (proxy to Vite, fallback to production build)
+pi-dashboard stop            # Stop running daemon (also kills stale port holders)
+pi-dashboard restart         # Restart daemon (production)
+pi-dashboard restart --dev   # Restart in dev mode
+pi-dashboard status          # Show daemon status
 ```
 
 Daemon stdout/stderr is logged to `~/.pi/dashboard/server.log` for crash diagnosis.
+
+### Graceful restart via API
+
+Restart without CLI — useful from scripts, other sessions, or the dashboard skill:
+
+```bash
+# Restart in same mode (preserves current dev/prod)
+curl -X POST http://localhost:8000/api/restart
+
+# Switch to dev mode
+curl -X POST http://localhost:8000/api/restart -H 'Content-Type: application/json' -d '{"dev":true}'
+
+# Switch to production mode
+curl -X POST http://localhost:8000/api/restart -H 'Content-Type: application/json' -d '{"dev":false}'
+
+# Check current mode
+curl -s http://localhost:8000/api/health | jq .mode
+```
+
+The restart endpoint waits for the old server to exit, starts the new one, and verifies health. If the new server fails to start, the error is logged to `server.log`.
+
+### Dev mode with production fallback
+
+When started with `--dev`, the server proxies client requests to the Vite dev server for HMR. If Vite is **not running**, the server automatically falls back to serving the production build from `dist/client/`. This means:
+
+- `pi-dashboard start --dev` **always works** — no 502 errors
+- Start/stop Vite independently without restarting the dashboard
+- Seamless transition: start Vite later and refresh the browser to get HMR
 
 ### Session spawning
 
@@ -371,22 +402,22 @@ The `pi-dashboard` command is available globally when the package is installed. 
 ```bash
 # After client changes (production mode)
 npm run build
-pi-dashboard stop && pi-dashboard start
+curl -X POST http://localhost:8000/api/restart
 
 # After server changes (runs TypeScript directly, no build needed)
-pi-dashboard stop && pi-dashboard start
+curl -X POST http://localhost:8000/api/restart
 
 # After bridge extension changes
 npm run reload          # Reload all connected pi sessions
 
 # Full rebuild (e.g., after pulling updates)
 npm run build
-pi-dashboard stop && pi-dashboard start
+curl -X POST http://localhost:8000/api/restart
 npm run reload
 
-# Dev mode variant (with Vite proxy)
-pi-dashboard stop && pi-dashboard start --dev
-npm run reload
+# Switch between dev and production mode
+curl -X POST http://localhost:8000/api/restart -H 'Content-Type: application/json' -d '{"dev":true}'
+curl -X POST http://localhost:8000/api/restart -H 'Content-Type: application/json' -d '{"dev":false}'
 ```
 
 ### Project Structure
@@ -436,6 +467,22 @@ src/
     ├── lib/               # Event reducer, command filter
     └── components/        # UI components
 ```
+
+## Monitoring
+
+The health endpoint provides server and agent process metrics:
+
+```bash
+curl -s http://localhost:8000/api/health | jq
+```
+
+Returns:
+- `mode` — `"dev"` or `"production"`
+- `server.rss`, `server.heapUsed`, `server.heapTotal` — server memory
+- `server.activeSessions`, `server.totalSessions` — session counts
+- `agents[]` — per-agent metrics (CPU%, RSS, heap, event loop max delay, system load)
+
+Agent metrics are collected every 15s via heartbeats and include `eventLoopMaxMs` — useful for diagnosing connection drops during long-running operations.
 
 ## Extension UI Events
 

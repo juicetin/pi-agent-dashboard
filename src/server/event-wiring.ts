@@ -152,6 +152,27 @@ export function wireEvents(deps: EventWiringDeps): void {
         }
       }
 
+      // Dedup: clean up ghost sessions in the same cwd that were auto-created
+      // by duplicate bridge connections (e.g. extension loaded twice).
+      // A ghost is active, has no sessionFile, no events, is not connected
+      // to the pi-gateway, and was created very recently.
+      const now = Date.now();
+      for (const other of sessionManager.listAll()) {
+        if (
+          other.id !== sessionId &&
+          other.cwd === msg.cwd &&
+          other.status !== "ended" &&
+          !other.sessionFile &&
+          !piGateway.isSessionConnected(other.id) &&
+          !eventStore.hasEvents(other.id) &&
+          Math.abs(now - other.startedAt) < 30_000
+        ) {
+          console.error(`[event-wiring] Cleaning up ghost session ${other.id} (dup of ${sessionId} in ${msg.cwd})`);
+          sessionManager.unregister(other.id);
+          browserGateway.broadcastSessionRemoved(other.id);
+        }
+      }
+
       browserGateway.headlessPidRegistry.linkSession(sessionId, msg.cwd);
 
       const isNewSession = !knownSessionIds.has(sessionId);

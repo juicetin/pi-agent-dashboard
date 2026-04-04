@@ -147,3 +147,32 @@ export interface GitStashPopResult {
 }
 
 export type GitStashPopResponse = ApiResponse<GitStashPopResult>;
+
+// ── Provider Auth ─────────────────────────────────────────────────────────
+
+export interface ProviderAuthInfo {
+  id: string;
+  name: string;
+  flowType: "auth_code" | "device_code";
+}
+
+export interface ProviderAuthStatus {
+  id: string;
+  name: string;
+  flowType: "auth_code" | "device_code" | "api_key";
+  authenticated: boolean;
+  expires?: number;
+}
+
+export interface AuthorizeResponse {
+  flowId: string;
+  authUrl: string;
+}
+
+export interface DeviceCodeResponse {
+  flowId: string;
+  userCode: string;
+  verificationUri: string;
+  expiresIn: number;
+  interval: number;
+}

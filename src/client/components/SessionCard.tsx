@@ -326,9 +326,9 @@ export function SessionCard({
     return (
       <li
         onClick={() => onSelect(session.id)}
-        className={`px-4 py-3 cursor-pointer rounded-xl shadow-md shadow-[var(--shadow-card)] border border-[var(--border-subtle)] hover:shadow-lg transition-all duration-200 bg-[var(--bg-tertiary)] ${
-          isHidden ? "opacity-40" : ""
-        } ${getCardPulseClass(session)}`}
+        className={`px-4 py-3 cursor-pointer rounded-xl shadow-md shadow-[var(--shadow-card)] border hover:shadow-lg transition-all duration-200 ${
+          isSelected ? "border-blue-500/60 bg-blue-500/5 ring-1 ring-blue-500/30" : "border-[var(--border-subtle)] bg-[var(--bg-tertiary)]"
+        } ${isHidden ? "opacity-40" : ""} ${getCardPulseClass(session)}`}
       >
         {/* Line 1: status dot + name + age */}
         <div className="flex items-center gap-2">
@@ -395,8 +395,8 @@ export function SessionCard({
   return (
     <li
       onClick={() => onSelect(session.id)}
-      className={`px-3 py-2.5 cursor-pointer rounded-xl shadow-md shadow-[var(--shadow-card)] border border-[var(--border-subtle)] hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200 bg-[var(--bg-tertiary)] ${
-        isSelected ? "border-l-2 border-l-blue-500/40" : ""
+      className={`px-3 py-2.5 cursor-pointer rounded-xl shadow-md shadow-[var(--shadow-card)] border hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200 ${
+        isSelected ? "border-blue-500/60 bg-blue-500/5 ring-1 ring-blue-500/30" : "border-[var(--border-subtle)] bg-[var(--bg-tertiary)]"
       } ${isHidden ? "opacity-40" : ""} ${getCardPulseClass(session)}`}
     >
       <div className="flex gap-2">

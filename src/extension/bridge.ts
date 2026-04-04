@@ -25,6 +25,7 @@ import { createUiProxy } from "./ui-proxy.js";
 import { registerAskUserTool } from "./ask-user-tool.js";
 import { activate as activateProviderRegister, onProviderChanged } from "./provider-register.js";
 import type { FlowInfo } from "../shared/types.js";
+import { startMetricsMonitor, stopMetricsMonitor, collectMetrics } from "./process-metrics.js";
 import type { BridgeContext } from "./bridge-context.js";
 import { filterHiddenCommands, extractFirstMessage, getCurrentModelString } from "./bridge-context.js";
 import { sendStateSync as _sendStateSync, replaySessionEntries as _replaySessionEntries, handleSessionChange as _handleSessionChange } from "./session-sync.js";
@@ -36,7 +37,8 @@ const GIT_POLL_INTERVAL = 30_000;
 
 
 
-// Use globalThis to survive jiti module cache invalidation on /reload
+// Use `process` (not `globalThis`) to survive jiti module cache invalidation
+// AND to share state across isolated extension contexts (vm sandboxes).
 const BRIDGE_KEY = "__pi_dashboard_bridge__";
 interface BridgeState {
   cleanup?: () => void;
@@ -44,12 +46,18 @@ interface BridgeState {
   ctx?: any;
   modelRegistry?: any;
   hasUI?: boolean;
+  /** Monotonic generation counter — stale listeners bail out when mismatched */
+  generation?: number;
+  /** All connection instances from any bridge incarnation (for cleanup) */
+  connections?: ConnectionManager[];
+  /** All interval timers from any bridge incarnation (for cleanup) */
+  timers?: ReturnType<typeof setInterval>[];
 }
 function getBridgeState(): BridgeState {
-  if (!(globalThis as any)[BRIDGE_KEY]) {
-    (globalThis as any)[BRIDGE_KEY] = {};
+  if (!(process as any)[BRIDGE_KEY]) {
+    (process as any)[BRIDGE_KEY] = {};
   }
-  return (globalThis as any)[BRIDGE_KEY];
+  return (process as any)[BRIDGE_KEY];
 }
 
 export default function (pi: ExtensionAPI) {
@@ -73,6 +81,30 @@ function initBridge(pi: ExtensionAPI) {
   const prev = getBridgeState();
   prev.cleanup?.();
   prev.cleanup = undefined;
+
+  // Disconnect ALL orphaned connections from previous bridge incarnations
+  if (prev.connections) {
+    for (const conn of prev.connections) {
+      conn.disconnect();
+    }
+  }
+  prev.connections = [];
+  // Clear ALL orphaned timers
+  if (prev.timers) {
+    for (const t of prev.timers) {
+      clearInterval(t);
+    }
+  }
+  prev.timers = [];
+
+  // Bump generation so stale listeners from previous initBridge calls bail out
+  const generation = (prev.generation ?? 0) + 1;
+  prev.generation = generation;
+  /** Return true if this bridge instance is still the active one */
+  function isActive(): boolean {
+    return getBridgeState().generation === generation;
+  }
+
   let sessionId: string = prev.sessionId ?? crypto.randomUUID();
   let sessionReady = false; // true after session_start has run
   let lastSessionFile: string | undefined;
@@ -135,10 +167,16 @@ function initBridge(pi: ExtensionAPI) {
   const connection = new ConnectionManager({
     url: dashboardUrl,
     onMessage: safe(async (data: unknown) => {
+      if (!isActive()) return; // Stale listener guard
       const msg = data as ServerToExtensionMessage;
       // Route UI responses to the proxy
       if (msg.type === "extension_ui_response" && uiProxy) {
         uiProxy.handleResponse(msg);
+        return;
+      }
+      // Reload auth credentials when dashboard notifies of changes
+      if (msg.type === "credentials_updated") {
+        try { cachedModelRegistry?.authStorage?.reload?.(); } catch { /* ignore */ }
         return;
       }
       // Route flow control messages to pi-flows via pi.events
@@ -159,6 +197,7 @@ function initBridge(pi: ExtensionAPI) {
       }
     }),
     onReconnect: safe(() => {
+      if (!isActive()) return; // Stale listener guard
       sendStateSync();
       replaySessionEntries();
       connection.send({ type: "replay_complete", sessionId });
@@ -166,6 +205,9 @@ function initBridge(pi: ExtensionAPI) {
       uiProxy?.resendPending();
     }),
   });
+
+  // Track connection so future bridge incarnations can disconnect it
+  getBridgeState().connections!.push(connection);
 
   const commandHandler = createCommandHandler(pi, () => sessionId, {
     getModelRegistry: () => cachedModelRegistry,
@@ -331,6 +373,8 @@ function initBridge(pi: ExtensionAPI) {
 
   for (const eventType of eventTypes) {
     pi.on(eventType as any, safe(async (event: any, ctx: any) => {
+      // Bail out if a newer bridge instance has taken over
+      if (!isActive()) return;
       // Always keep latest context for abort/shutdown
       cachedCtx = ctx;
       // Don't send events before session_start has established the correct session ID
@@ -387,6 +431,8 @@ function initBridge(pi: ExtensionAPI) {
   }
 
   pi.on("session_start", safe(async (_event: any, ctx: any) => {
+    // Bail out if a newer bridge instance has taken over
+    if (!isActive()) return;
     const newSessionId = ctx.sessionManager.getSessionId();
 
     cachedHasUI = ctx.hasUI;
@@ -495,20 +541,26 @@ function initBridge(pi: ExtensionAPI) {
     // Send initial git info
     sendGitInfoIfChanged(ctx.cwd);
 
-    // Start heartbeat
+    // Start metrics monitor and heartbeat
+    startMetricsMonitor();
     heartbeatTimer = setInterval(() => {
+      if (!isActive()) return;
       connection.send({
         type: "session_heartbeat",
         sessionId,
+        metrics: collectMetrics(),
       });
     }, HEARTBEAT_INTERVAL);
+    getBridgeState().timers!.push(heartbeatTimer);
 
     // Start git info + name/model polling
     gitPollTimer = setInterval(() => {
+      if (!isActive()) return;
       sendGitInfoIfChanged(ctx.cwd);
       sendSessionNameIfChanged();
       sendModelUpdateIfChanged();
     }, GIT_POLL_INTERVAL);
+    getBridgeState().timers!.push(gitPollTimer);
 
     // Register flow event listeners (pi-flows emits these via pi.events)
     registerFlowEventListeners(syncBc(), () => sessionReady, getFlowsList);
@@ -528,16 +580,19 @@ function initBridge(pi: ExtensionAPI) {
   }
 
   pi.on("session_switch" as any, safe(async (_event: any, ctx: any) => {
+    if (!isActive()) return;
     cachedCtx = ctx;
     handleSessionChange(ctx);
   }));
 
   pi.on("session_fork" as any, safe(async (_event: any, ctx: any) => {
+    if (!isActive()) return;
     cachedCtx = ctx;
     handleSessionChange(ctx);
   }));
 
   pi.on("turn_end", safe(async (event: any, ctx: any) => {
+    if (!isActive()) return;
     cachedCtx = ctx;
     if (!sessionReady) return;
 
@@ -571,6 +626,8 @@ function initBridge(pi: ExtensionAPI) {
   }));
 
   pi.on("session_shutdown", safe(async () => {
+    if (!isActive()) return;
+    stopMetricsMonitor();
     if (heartbeatTimer) {
       clearInterval(heartbeatTimer);
       heartbeatTimer = null;
@@ -591,6 +648,7 @@ function initBridge(pi: ExtensionAPI) {
 
   // Re-send models list when custom providers finish async discovery
   onProviderChanged(() => {
+    if (!isActive()) return;
     if (cachedModelRegistry && sessionReady) {
       try {
         const models = cachedModelRegistry.getAvailable().map((m: any) => ({

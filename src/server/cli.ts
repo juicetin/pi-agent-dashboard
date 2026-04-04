@@ -183,38 +183,60 @@ async function cmdStart(config: ServerConfig): Promise<void> {
 /**
  * Stop the running server daemon.
  */
-async function cmdStop(): Promise<void> {
-  const pid = readPid();
-
-  if (pid === null) {
-    console.log("Dashboard server is not running");
-    return;
-  }
-
-  if (!isProcessAlive(pid)) {
-    removePid();
-    console.log("Dashboard server is not running (cleaned up stale PID file)");
-    return;
-  }
-
-  // Send SIGTERM and wait for process to exit
-  process.kill(pid, "SIGTERM");
-
+/** Kill a process by PID, wait for exit, force-kill if needed. */
+async function killProcess(pid: number, label: string): Promise<boolean> {
+  if (!isProcessAlive(pid)) return false;
+  try { process.kill(pid, "SIGTERM"); } catch { return false; }
   const deadline = Date.now() + 5000;
   while (Date.now() < deadline) {
     await new Promise((r) => setTimeout(r, 200));
     if (!isProcessAlive(pid)) {
-      console.log("Dashboard server stopped");
-      return;
+      console.log(`${label} stopped (pid ${pid})`);
+      return true;
+    }
+  }
+  try { process.kill(pid, "SIGKILL"); } catch { /* already dead */ }
+  console.log(`${label} stopped (forced, pid ${pid})`);
+  return true;
+}
+
+/** Find PIDs holding a port via lsof (macOS/Linux). */
+function findPortHolders(port: number): number[] {
+  try {
+    const { execSync } = require("node:child_process");
+    const output = execSync(`lsof -t -i :${port} -sTCP:LISTEN 2>/dev/null`, { encoding: "utf-8" });
+    return output.trim().split("\n").map(Number).filter(n => n > 0 && n !== process.pid);
+  } catch { return []; }
+}
+
+async function cmdStop(): Promise<void> {
+  const config = loadConfig();
+  const pid = readPid();
+  let stopped = false;
+
+  // Try PID file first
+  if (pid !== null) {
+    if (isProcessAlive(pid)) {
+      stopped = await killProcess(pid, "Dashboard server");
+    } else {
+      console.log("Dashboard server is not running (cleaned up stale PID file)");
+    }
+    removePid();
+  }
+
+  // Safety net: kill any process still holding our ports
+  for (const port of [config.port, config.piPort]) {
+    for (const holder of findPortHolders(port)) {
+      if (holder !== pid) {
+        console.log(`Killing stale process ${holder} on port ${port}`);
+        await killProcess(holder, `Stale process on port ${port}`);
+      }
     }
   }
 
-  // Force kill if still alive
-  try {
-    process.kill(pid, "SIGKILL");
-  } catch { /* already dead */ }
-  removePid();
-  console.log("Dashboard server stopped (forced)");
+  if (!stopped && pid === null) {
+    console.log("Dashboard server is not running");
+  }
 }
 
 /**

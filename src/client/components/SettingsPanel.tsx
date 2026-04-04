@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import { Icon } from "@mdi/react";
 import { mdiArrowLeft, mdiContentSave, mdiAlert, mdiPlus, mdiDelete, mdiRestart } from "@mdi/js";
 import { useLocation } from "wouter";
+import { ProviderAuthSection } from "./ProviderAuthSection.js";
 
 interface ProviderConfig {
   clientId: string;
@@ -64,6 +65,7 @@ export function SettingsPanel() {
   const [saving, setSaving] = useState(false);
   const [restarting, setRestarting] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error" | "warn"; text: string } | null>(null);
+  const [activeTab, setActiveTab] = useState("general");
 
   useEffect(() => {
     const configPromise = fetch("/api/config").then((res) => res.json());
@@ -223,10 +225,17 @@ export function SettingsPanel() {
     return config.auth;
   };
 
+  const tabs = [
+    { id: "general", label: "General" },
+    { id: "providers", label: "Providers" },
+    { id: "security", label: "Security" },
+    { id: "advanced", label: "Advanced" },
+  ];
+
   return (
-    <div className="flex-1 flex flex-col min-w-0 h-full overflow-y-auto">
+    <div className="flex-1 flex flex-col min-w-0 h-full">
       {/* Header */}
-      <div className="flex items-center gap-3 p-4 border-b border-[var(--border-primary)]">
+      <div data-testid="settings-header" className="flex items-center gap-3 p-4 border-b border-[var(--border-primary)] shrink-0">
         <button
           onClick={() => navigate("/")}
           className="text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
@@ -274,9 +283,29 @@ export function SettingsPanel() {
         </button>
       </div>
 
+      {/* Tab Bar */}
+      <div data-testid="settings-tab-bar" className="flex gap-0 border-b border-[var(--border-primary)] shrink-0 px-4">
+        {tabs.map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            className={`px-4 py-2 text-sm font-medium transition-colors relative ${
+              activeTab === tab.id
+                ? "text-[var(--text-primary)]"
+                : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+            }`}
+          >
+            {tab.label}
+            {activeTab === tab.id && (
+              <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-500" />
+            )}
+          </button>
+        ))}
+      </div>
+
       {/* Message */}
       {message && (
-        <div className={`px-4 py-2 text-sm ${
+        <div className={`px-4 py-2 text-sm shrink-0 ${
           message.type === "success" ? "bg-green-600/20 text-green-400" :
           message.type === "warn" ? "bg-amber-600/20 text-amber-400" :
           "bg-red-600/20 text-red-400"
@@ -286,172 +315,194 @@ export function SettingsPanel() {
         </div>
       )}
 
-      <div className="p-4 space-y-6 max-w-2xl">
-        {/* Server */}
-        <Section title="Server">
-          <NumberField label="HTTP Port" value={config.port} onChange={(v) => update((c) => { c.port = v; })} />
-          <NumberField label="Pi Gateway Port" value={config.piPort} onChange={(v) => update((c) => { c.piPort = v; })} />
-          <ToggleField label="Auto Shutdown" value={config.autoShutdown} onChange={(v) => update((c) => { c.autoShutdown = v; })} />
-          {config.autoShutdown && (
-            <NumberField label="Idle Seconds Before Shutdown" value={config.shutdownIdleSeconds} onChange={(v) => update((c) => { c.shutdownIdleSeconds = v; })} />
+      {/* Tab Content */}
+      <div data-testid="settings-content" className="flex-1 overflow-y-auto">
+        <div className="p-4 space-y-6 max-w-2xl">
+
+          {/* General Tab */}
+          {activeTab === "general" && (
+            <>
+              <Section title="Server">
+                <NumberField label="HTTP Port" value={config.port} onChange={(v) => update((c) => { c.port = v; })} />
+                <NumberField label="Pi Gateway Port" value={config.piPort} onChange={(v) => update((c) => { c.piPort = v; })} />
+                <ToggleField label="Auto Shutdown" value={config.autoShutdown} onChange={(v) => update((c) => { c.autoShutdown = v; })} />
+                {config.autoShutdown && (
+                  <NumberField label="Idle Seconds Before Shutdown" value={config.shutdownIdleSeconds} onChange={(v) => update((c) => { c.shutdownIdleSeconds = v; })} />
+                )}
+              </Section>
+
+              <Section title="Sessions">
+                <SelectField
+                  label="Spawn Strategy"
+                  value={config.spawnStrategy}
+                  options={[{ value: "headless", label: "Headless" }, { value: "tmux", label: "Tmux" }]}
+                  onChange={(v) => update((c) => { c.spawnStrategy = v; })}
+                />
+              </Section>
+
+              <Section title="Tunnel">
+                <ToggleField label="Enable Zrok Tunnel" value={config.tunnel.enabled} onChange={(v) => update((c) => { c.tunnel.enabled = v; })} />
+              </Section>
+
+              <Section title="Developer">
+                <ToggleField label="Dev Build on Reload" value={config.devBuildOnReload} onChange={(v) => update((c) => { c.devBuildOnReload = v; })} />
+              </Section>
+            </>
           )}
-        </Section>
 
-        {/* Sessions */}
-        <Section title="Sessions">
-          <SelectField
-            label="Spawn Strategy"
-            value={config.spawnStrategy}
-            options={[{ value: "headless", label: "Headless" }, { value: "tmux", label: "Tmux" }]}
-            onChange={(v) => update((c) => { c.spawnStrategy = v; })}
-          />
-        </Section>
+          {/* Providers Tab */}
+          {activeTab === "providers" && (
+            <>
+              <Section title="Provider Authentication">
+                <ProviderAuthSection />
+              </Section>
 
-        {/* Tunnel */}
-        <Section title="Tunnel">
-          <ToggleField label="Enable Zrok Tunnel" value={config.tunnel.enabled} onChange={(v) => update((c) => { c.tunnel.enabled = v; })} />
-        </Section>
+              <Section title="LLM Providers">
+                <p className="text-xs text-[var(--text-tertiary)] mb-3">
+                  Register custom OpenAI-compatible API endpoints for model access.
+                </p>
+                {llmProviders.map((provider, index) => (
+                  <LlmProviderCard
+                    key={`${provider.name}-${index}`}
+                    provider={provider}
+                    onChange={(updated) => {
+                      setLlmProviders((prev) => prev.map((p, i) => (i === index ? updated : p)));
+                    }}
+                    onRemove={() => {
+                      setLlmProviders((prev) => prev.filter((_, i) => i !== index));
+                    }}
+                  />
+                ))}
+                <button
+                  onClick={() => setLlmProviders((prev) => [...prev, { name: "", baseUrl: "", apiKey: "", api: "openai-completions", isNew: true }])}
+                  className="flex items-center gap-1.5 text-sm text-[var(--accent-blue)] hover:text-blue-400 mt-1"
+                >
+                  <Icon path={mdiPlus} size={0.6} />
+                  Add Provider
+                </button>
+              </Section>
+            </>
+          )}
 
-        {/* LLM Providers */}
-        <Section title="LLM Providers">
-          <p className="text-xs text-[var(--text-tertiary)] mb-3">
-            Register custom OpenAI-compatible API endpoints for model access.
-          </p>
-          {llmProviders.map((provider, index) => (
-            <LlmProviderCard
-              key={`${provider.name}-${index}`}
-              provider={provider}
-              onChange={(updated) => {
-                setLlmProviders((prev) => prev.map((p, i) => (i === index ? updated : p)));
-              }}
-              onRemove={() => {
-                setLlmProviders((prev) => prev.filter((_, i) => i !== index));
-              }}
-            />
-          ))}
-          <button
-            onClick={() => setLlmProviders((prev) => [...prev, { name: "", baseUrl: "", apiKey: "", api: "openai-completions", isNew: true }])}
-            className="flex items-center gap-1.5 text-sm text-[var(--accent-blue)] hover:text-blue-400 mt-1"
-          >
-            <Icon path={mdiPlus} size={0.6} />
-            Add Provider
-          </button>
-        </Section>
+          {/* Security Tab */}
+          {activeTab === "security" && (
+            <>
+              <Section title="Authentication">
+                <p className="text-xs text-[var(--text-tertiary)] mb-3">
+                  Configure OAuth providers to protect external (tunnel) access. Localhost is always open.
+                </p>
+                {["github", "google", "keycloak", "oidc"].map((key) => (
+                  <ProviderSection
+                    key={key}
+                    providerKey={key}
+                    provider={config.auth?.providers[key]}
+                    onChange={(p) => update((c) => {
+                      if (!c.auth) c.auth = { secret: "", providers: {}, allowedUsers: [] };
+                      if (p) {
+                        c.auth.providers[key] = p;
+                      } else {
+                        delete c.auth.providers[key];
+                      }
+                    })}
+                  />
+                ))}
+                <div className="mt-3">
+                  <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">
+                    Allowed Users <span className="text-[var(--text-tertiary)]">(one per line: username, email, or *@domain)</span>
+                  </label>
+                  <textarea
+                    className="w-full bg-[var(--bg-secondary)] border border-[var(--border-secondary)] rounded px-2 py-1.5 text-sm text-[var(--text-primary)] font-mono resize-y"
+                    rows={3}
+                    placeholder={"octocat\nuser@example.com\n*@company.com"}
+                    value={(config.auth?.allowedUsers || []).join("\n")}
+                    onChange={(e) => {
+                      const users = e.target.value.split("\n").map((s) => s.trim()).filter(Boolean);
+                      update((c) => {
+                        if (!c.auth) c.auth = { secret: "", providers: {}, allowedUsers: [] };
+                        c.auth.allowedUsers = users;
+                      });
+                    }}
+                  />
+                </div>
+                <div className="mt-3">
+                  <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">
+                    Bypass URL Prefixes <span className="text-[var(--text-tertiary)]">(one per line — requests to these paths skip auth)</span>
+                  </label>
+                  <textarea
+                    className="w-full bg-[var(--bg-secondary)] border border-[var(--border-secondary)] rounded px-2 py-1.5 text-sm text-[var(--text-primary)] font-mono resize-y"
+                    rows={2}
+                    data-testid="bypass-urls-textarea"
+                    placeholder={"/webhooks/\n/metrics"}
+                    value={(config.auth?.bypassUrls || []).join("\n")}
+                    onChange={(e) => {
+                      const urls = e.target.value.split("\n").map((s) => s.trim()).filter(Boolean);
+                      update((c) => {
+                        if (!c.auth) c.auth = { secret: "", providers: {} };
+                        c.auth.bypassUrls = urls;
+                      });
+                    }}
+                  />
+                </div>
+                <div className="mt-3">
+                  <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">
+                    Trusted Hosts <span className="text-[var(--text-tertiary)]">(one per line — requests from these IPs/hosts skip auth. Supports exact IP, wildcards like 10.0.0.*, CIDR like 192.168.1.0/24)</span>
+                  </label>
+                  <textarea
+                    className="w-full bg-[var(--bg-secondary)] border border-[var(--border-secondary)] rounded px-2 py-1.5 text-sm text-[var(--text-primary)] font-mono resize-y"
+                    rows={2}
+                    data-testid="bypass-hosts-textarea"
+                    placeholder={"10.0.0.*\n192.168.1.0/24"}
+                    value={(config.auth?.bypassHosts || []).join("\n")}
+                    onChange={(e) => {
+                      const hosts = e.target.value.split("\n").map((s) => s.trim()).filter(Boolean);
+                      update((c) => {
+                        if (!c.auth) c.auth = { secret: "", providers: {} };
+                        c.auth.bypassHosts = hosts;
+                      });
+                    }}
+                  />
+                </div>
+              </Section>
+            </>
+          )}
 
-        {/* Authentication */}
-        <Section title="Authentication">
-          <p className="text-xs text-[var(--text-tertiary)] mb-3">
-            Configure OAuth providers to protect external (tunnel) access. Localhost is always open.
-          </p>
-          {["github", "google", "keycloak", "oidc"].map((key) => (
-            <ProviderSection
-              key={key}
-              providerKey={key}
-              provider={config.auth?.providers[key]}
-              onChange={(p) => update((c) => {
-                if (!c.auth) c.auth = { secret: "", providers: {}, allowedUsers: [] };
-                if (p) {
-                  c.auth.providers[key] = p;
-                } else {
-                  delete c.auth.providers[key];
-                }
-              })}
-            />
-          ))}
-          <div className="mt-3">
-            <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">
-              Allowed Users <span className="text-[var(--text-tertiary)]">(one per line: username, email, or *@domain)</span>
-            </label>
-            <textarea
-              className="w-full bg-[var(--bg-secondary)] border border-[var(--border-secondary)] rounded px-2 py-1.5 text-sm text-[var(--text-primary)] font-mono resize-y"
-              rows={3}
-              placeholder={"octocat\nuser@example.com\n*@company.com"}
-              value={(config.auth?.allowedUsers || []).join("\n")}
-              onChange={(e) => {
-                const users = e.target.value.split("\n").map((s) => s.trim()).filter(Boolean);
-                update((c) => {
-                  if (!c.auth) c.auth = { secret: "", providers: {}, allowedUsers: [] };
-                  c.auth.allowedUsers = users;
-                });
-              }}
-            />
-          </div>
-          <div className="mt-3">
-            <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">
-              Bypass URL Prefixes <span className="text-[var(--text-tertiary)]">(one per line — requests to these paths skip auth)</span>
-            </label>
-            <textarea
-              className="w-full bg-[var(--bg-secondary)] border border-[var(--border-secondary)] rounded px-2 py-1.5 text-sm text-[var(--text-primary)] font-mono resize-y"
-              rows={2}
-              data-testid="bypass-urls-textarea"
-              placeholder={"/webhooks/\n/metrics"}
-              value={(config.auth?.bypassUrls || []).join("\n")}
-              onChange={(e) => {
-                const urls = e.target.value.split("\n").map((s) => s.trim()).filter(Boolean);
-                update((c) => {
-                  if (!c.auth) c.auth = { secret: "", providers: {} };
-                  c.auth.bypassUrls = urls;
-                });
-              }}
-            />
-          </div>
-          <div className="mt-3">
-            <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">
-              Trusted Hosts <span className="text-[var(--text-tertiary)]">(one per line — requests from these IPs/hosts skip auth. Supports exact IP, wildcards like 10.0.0.*, CIDR like 192.168.1.0/24)</span>
-            </label>
-            <textarea
-              className="w-full bg-[var(--bg-secondary)] border border-[var(--border-secondary)] rounded px-2 py-1.5 text-sm text-[var(--text-primary)] font-mono resize-y"
-              rows={2}
-              data-testid="bypass-hosts-textarea"
-              placeholder={"10.0.0.*\n192.168.1.0/24"}
-              value={(config.auth?.bypassHosts || []).join("\n")}
-              onChange={(e) => {
-                const hosts = e.target.value.split("\n").map((s) => s.trim()).filter(Boolean);
-                update((c) => {
-                  if (!c.auth) c.auth = { secret: "", providers: {} };
-                  c.auth.bypassHosts = hosts;
-                });
-              }}
-            />
-          </div>
-        </Section>
+          {/* Advanced Tab */}
+          {activeTab === "advanced" && (
+            <>
+              <Section title="Memory Limits">
+                <p className="text-xs text-[var(--text-tertiary)] mb-2">
+                  Controls for bounding server memory usage. Set to 0 to disable a limit.
+                  Requires server restart.
+                </p>
+                <NumberField
+                  label="Max Events Per Session"
+                  value={config.memoryLimits?.maxEventsPerSession ?? 200}
+                  onChange={(v) => update((c) => {
+                    if (!c.memoryLimits) c.memoryLimits = { maxEventsPerSession: 200, maxStringFieldSize: 4000, maxWsBufferBytes: 4194304 };
+                    c.memoryLimits.maxEventsPerSession = v;
+                  })}
+                />
+                <NumberField
+                  label="Max String Truncation (chars)"
+                  value={config.memoryLimits?.maxStringFieldSize ?? 4000}
+                  onChange={(v) => update((c) => {
+                    if (!c.memoryLimits) c.memoryLimits = { maxEventsPerSession: 200, maxStringFieldSize: 4000, maxWsBufferBytes: 4194304 };
+                    c.memoryLimits.maxStringFieldSize = v;
+                  })}
+                />
+                <NumberField
+                  label="Max WebSocket Buffer (bytes)"
+                  value={config.memoryLimits?.maxWsBufferBytes ?? 4194304}
+                  onChange={(v) => update((c) => {
+                    if (!c.memoryLimits) c.memoryLimits = { maxEventsPerSession: 200, maxStringFieldSize: 4000, maxWsBufferBytes: 4194304 };
+                    c.memoryLimits.maxWsBufferBytes = v;
+                  })}
+                />
+              </Section>
+            </>
+          )}
 
-        {/* Memory Limits */}
-        <Section title="Memory Limits">
-          <p className="text-xs text-[var(--text-tertiary)] mb-2">
-            Controls for bounding server memory usage. Set to 0 to disable a limit.
-            Requires server restart.
-          </p>
-          <NumberField
-            label="Max Events Per Session"
-            value={config.memoryLimits?.maxEventsPerSession ?? 200}
-            onChange={(v) => update((c) => {
-              if (!c.memoryLimits) c.memoryLimits = { maxEventsPerSession: 200, maxStringFieldSize: 4000, maxWsBufferBytes: 4194304 };
-              c.memoryLimits.maxEventsPerSession = v;
-            })}
-          />
-          <NumberField
-            label="Max String Truncation (chars)"
-            value={config.memoryLimits?.maxStringFieldSize ?? 4000}
-            onChange={(v) => update((c) => {
-              if (!c.memoryLimits) c.memoryLimits = { maxEventsPerSession: 200, maxStringFieldSize: 4000, maxWsBufferBytes: 4194304 };
-              c.memoryLimits.maxStringFieldSize = v;
-            })}
-          />
-          <NumberField
-            label="Max WebSocket Buffer (bytes)"
-            value={config.memoryLimits?.maxWsBufferBytes ?? 4194304}
-            onChange={(v) => update((c) => {
-              if (!c.memoryLimits) c.memoryLimits = { maxEventsPerSession: 200, maxStringFieldSize: 4000, maxWsBufferBytes: 4194304 };
-              c.memoryLimits.maxWsBufferBytes = v;
-            })}
-          />
-        </Section>
-
-        {/* Developer */}
-        <Section title="Developer">
-          <ToggleField label="Dev Build on Reload" value={config.devBuildOnReload} onChange={(v) => update((c) => { c.devBuildOnReload = v; })} />
-        </Section>
+        </div>
       </div>
     </div>
   );

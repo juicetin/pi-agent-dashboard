@@ -18,6 +18,7 @@ export interface PiGateway {
   start(port: number): void;
   stop(): void;
   sendToSession(sessionId: string, msg: ServerToExtensionMessage): boolean;
+  broadcast(msg: ServerToExtensionMessage): void;
   connectionCount(): number;
   findSessionByCwd(cwd: string): string | undefined;
   getConnectedSessionIds(): string[];
@@ -40,8 +41,8 @@ export function createPiGateway(
 
   // Map sessionId → WebSocket
   const connections = new Map<string, WebSocket>();
-  // Track connection liveness for WS ping/pong
-  const aliveFlags = new Map<WebSocket, boolean>();
+  // Track connection liveness for WS ping/pong (miss counter: kill after 2 consecutive misses)
+  const aliveMisses = new Map<WebSocket, number>();
   // Map sessionId → heartbeat timeout
   const heartbeatTimers = new Map<string, ReturnType<typeof setTimeout>>();
   // Map sessionId → { setAt: timestamp, sleepRetried: boolean } for sleep detection
@@ -125,16 +126,20 @@ export function createPiGateway(
     start(port: number) {
       wss = new WebSocketServer({ port });
 
-      // WS-level ping/pong: detect dead connections
+      // WS-level ping/pong: detect dead connections.
+      // Require 2 consecutive missed pongs before killing — a single miss
+      // can happen when the pi agent blocks the event loop running a
+      // long bash command (e.g. test suite).
+      const PING_MISS_THRESHOLD = 2;
       if (pingMs > 0) pingTimer = setInterval(() => {
         if (!wss) return;
         for (const client of wss.clients) {
-          if (aliveFlags.get(client) === false) {
-            // No pong since last ping — connection is dead
-            // Find the session ID for logging
+          const misses = aliveMisses.get(client) ?? 0;
+          if (misses >= PING_MISS_THRESHOLD) {
+            // No pong for multiple intervals — connection is dead
             for (const [sid, ws] of connections) {
               if (ws === client) {
-                console.error(`[gateway] connection dead (ping timeout): ${sid}`);
+                console.error(`[gateway] connection dead (ping timeout, ${misses} misses): ${sid}`);
                 sessionManager.unregister(sid);
                 connections.delete(sid);
                 const timer = heartbeatTimers.get(sid);
@@ -145,23 +150,23 @@ export function createPiGateway(
               }
             }
             client.terminate();
-            aliveFlags.delete(client);
+            aliveMisses.delete(client);
             checkEmpty();
             continue;
           }
-          aliveFlags.set(client, false);
+          aliveMisses.set(client, misses + 1);
           client.ping();
         }
       }, pingMs);
 
       wss.on("connection", (ws) => {
         let currentSessionId: string | null = null;
-        aliveFlags.set(ws, true);
-        ws.on("pong", () => { aliveFlags.set(ws, true); });
+        aliveMisses.set(ws, 0);
+        ws.on("pong", () => { aliveMisses.set(ws, 0); });
 
         ws.on("message", (raw) => {
           // Any received message proves the connection is alive
-          aliveFlags.set(ws, true);
+          aliveMisses.set(ws, 0);
           try {
             const msg = JSON.parse(raw.toString()) as ExtensionToServerMessage;
 
@@ -187,7 +192,9 @@ export function createPiGateway(
               // If session ID changed (e.g., after /reload), clean up the old placeholder
               if (currentSessionId && currentSessionId !== msg.sessionId) {
                 const oldSession = sessionManager.get(currentSessionId);
-                if (oldSession && oldSession.source === "unknown") {
+                // Clean up if it's an auto-created placeholder (source unknown)
+                // or a ghost session (no sessionFile, created by duplicate bridge)
+                if (oldSession && (oldSession.source === "unknown" || !oldSession.sessionFile)) {
                   sessionManager.unregister(currentSessionId);
                   connections.delete(currentSessionId);
                 }
@@ -214,6 +221,12 @@ export function createPiGateway(
 
             if (msg.type === "session_heartbeat" && msg.sessionId) {
               resetHeartbeat(msg.sessionId);
+              // Store process metrics on the session if provided
+              if (msg.metrics) {
+                sessionManager.update(msg.sessionId, {
+                  processMetrics: { ...msg.metrics, updatedAt: Date.now() },
+                });
+              }
               // Respond with ack so the bridge can track server liveness
               if (ws.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify({ type: "heartbeat_ack" }));
@@ -280,7 +293,7 @@ export function createPiGateway(
             // This handles temporary disconnects
             onDisconnect?.(currentSessionId);
           }
-          aliveFlags.delete(ws);
+          aliveMisses.delete(ws);
         });
       });
     },
@@ -295,7 +308,7 @@ export function createPiGateway(
       }
       heartbeatTimers.clear();
       heartbeatMeta.clear();
-      aliveFlags.clear();
+      aliveMisses.clear();
       // Forcibly terminate all extension connections
       for (const ws of connections.values()) {
         ws.terminate();
@@ -312,6 +325,15 @@ export function createPiGateway(
         return true;
       }
       return false;
+    },
+
+    broadcast(msg: ServerToExtensionMessage): void {
+      const payload = JSON.stringify(msg);
+      for (const ws of connections.values()) {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(payload);
+        }
+      }
     },
 
     connectionCount(): number {

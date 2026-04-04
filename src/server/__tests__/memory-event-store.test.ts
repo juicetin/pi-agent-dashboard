@@ -146,6 +146,72 @@ describe("memory-event-store", () => {
     });
   });
 
+  describe("image data preservation", () => {
+    it("preserves base64 image data when sibling mimeType exists", () => {
+      // maxStringFieldSize = 100 so normal strings get truncated
+      const store = createMemoryEventStore(neverPinned, 100, 5000, 100);
+      const longBase64 = "A".repeat(500);
+      const event: DashboardEvent = {
+        eventType: "message_start",
+        timestamp: Date.now(),
+        data: {
+          message: {
+            role: "user",
+            content: [
+              { type: "image", data: longBase64, mimeType: "image/png" },
+            ],
+          },
+        },
+      };
+      store.insertEvent("s1", event);
+      const stored = store.getEvent("s1", 1);
+      const content = (stored as any).data.message.content[0];
+      expect(content.data).toBe(longBase64);
+      expect(content.data).toHaveLength(500);
+    });
+
+    it("still truncates data field without mimeType sibling", () => {
+      const store = createMemoryEventStore(neverPinned, 100, 5000, 100);
+      const longString = "B".repeat(500);
+      const event: DashboardEvent = {
+        eventType: "test",
+        timestamp: Date.now(),
+        data: { payload: { data: longString } },
+      };
+      store.insertEvent("s1", event);
+      const stored = store.getEvent("s1", 1);
+      const val = (stored as any).data.payload.data as string;
+      expect(val.length).toBeLessThan(500);
+      expect(val).toContain("truncated");
+    });
+
+    it("truncates other fields alongside preserved image data", () => {
+      const store = createMemoryEventStore(neverPinned, 100, 5000, 100);
+      const longBase64 = "C".repeat(500);
+      const longThinking = "D".repeat(5000);
+      const event: DashboardEvent = {
+        eventType: "message_start",
+        timestamp: Date.now(),
+        data: {
+          message: {
+            role: "user",
+            content: [
+              { type: "image", data: longBase64, mimeType: "image/png" },
+            ],
+          },
+          thinking: longThinking,
+        },
+      };
+      store.insertEvent("s1", event);
+      const stored = store.getEvent("s1", 1);
+      const content = (stored as any).data.message.content[0];
+      expect(content.data).toBe(longBase64); // preserved
+      const thinking = (stored as any).data.thinking as string;
+      expect(thinking).toContain("truncated"); // truncated
+      expect(thinking.length).toBeLessThan(longThinking.length); // shorter than original
+    });
+  });
+
   it("trims oldest events when per-session limit exceeded", () => {
     const store = createMemoryEventStore(neverPinned, 100, 3);
     store.insertEvent("s1", makeEvent("a"));

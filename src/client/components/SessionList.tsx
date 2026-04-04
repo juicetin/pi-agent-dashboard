@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useLocation } from "wouter";
 import { Icon } from "@mdi/react";
-import { mdiChevronRight, mdiChevronDown, mdiChevronLeft, mdiPlus, mdiPin, mdiPinOff, mdiConsoleLine, mdiCog, mdiPuzzleOutline, mdiFileDocumentOutline } from "@mdi/js";
+import { mdiChevronRight, mdiChevronDown, mdiPlus, mdiPin, mdiFolder, mdiFolderOpen, mdiConsoleLine, mdiCog, mdiPuzzleOutline, mdiFileDocumentOutline } from "@mdi/js";
 import { DndContext, closestCenter, PointerSensor, TouchSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy, arrayMove } from "@dnd-kit/sortable";
 import { SortableSessionCard } from "./SortableSessionCard.js";
@@ -295,25 +295,20 @@ export function SessionList({ sessions, selectedId, onSelect, contextUsageMap, o
               <Icon path={isCollapsed ? mdiChevronRight : mdiChevronDown} size={0.6} />
             </span>
             <span className="text-xs font-medium text-[var(--text-secondary)] truncate flex items-center gap-1">
-              {isPinned ? <Icon path={mdiPin} size={0.5} className="text-yellow-400 shrink-0" /> : "📁"} {dirName}
+              <Icon path={isCollapsed ? mdiFolder : mdiFolderOpen} size={0.5} className="shrink-0" /> {dirName}
             </span>
             <span className="text-[10px] text-[var(--text-muted)]">({group.sessions.length + (terminalsByCwd.get(group.cwd)?.length ?? 0)})</span>
-            {/* Pin/Unpin button */}
-            {isPinned ? (
+            {/* Pin/Unpin toggle */}
+            {(isPinned || onPinDirectory) && (
               <button
-                onClick={(e) => { e.stopPropagation(); onUnpinDirectory?.(group.cwd); }}
-                className="ml-auto px-1 py-0.5 rounded text-[var(--text-tertiary)] hover:text-yellow-400"
-                title="Unpin directory"
-                data-testid="unpin-dir-btn"
-              >
-                <Icon path={mdiPinOff} size={0.55} />
-              </button>
-            ) : onPinDirectory && (
-              <button
-                onClick={(e) => { e.stopPropagation(); onPinDirectory(group.cwd); }}
-                className="ml-auto px-1 py-0.5 rounded text-[var(--text-muted)] hover:text-yellow-400"
-                title="Pin directory"
-                data-testid="pin-dir-btn"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (isPinned) onUnpinDirectory?.(group.cwd);
+                  else onPinDirectory?.(group.cwd);
+                }}
+                className={`ml-auto px-1 py-0.5 rounded ${isPinned ? "text-yellow-400 hover:text-yellow-300" : "text-[var(--text-muted)] hover:text-yellow-400"}`}
+                title={isPinned ? "Unpin directory" : "Pin directory"}
+                data-testid={isPinned ? "unpin-dir-btn" : "pin-dir-btn"}
               >
                 <Icon path={mdiPin} size={0.55} />
               </button>
@@ -498,16 +493,7 @@ export function SessionList({ sessions, selectedId, onSelect, contextUsageMap, o
                 📌+
               </button>
             )}
-            {onCollapseSidebar && (
-              <button
-                onClick={onCollapseSidebar}
-                className="text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
-                title="Collapse sidebar"
-                data-testid="sidebar-collapse"
-              >
-                <Icon path={mdiChevronLeft} size={0.6} />
-              </button>
-            )}
+
             <InstallButton canInstall={installPrompt.canInstall} isInstalled={installPrompt.isInstalled} prompt={installPrompt.prompt} />
             <TunnelButton />
             <button

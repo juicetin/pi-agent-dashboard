@@ -8,8 +8,8 @@ import { extractStatsFromEvents } from "../event-status-extraction.js";
 import type { StoredEvent } from "../memory-event-store.js";
 
 const REPLAY_BATCH_SIZE = 50;
-/** Max events to replay per session subscription (limits memory spikes) */
-const MAX_REPLAY_EVENTS = 500;
+/** Max events to replay per session subscription (0 = unlimited) */
+const MAX_REPLAY_EVENTS = 0;
 /** Max buffered bytes before pausing replay sends (1MB) */
 const BACKPRESSURE_THRESHOLD = 1_024 * 1_024;
 
@@ -60,8 +60,7 @@ export function handleSubscribe(
 
   if (eventStore.hasEvents(msg.sessionId)) {
     let events = eventStore.getEvents(msg.sessionId, (msg.lastSeq ?? 0) + 1);
-    // Limit replay size to avoid memory spikes from serializing too many events
-    if (events.length > MAX_REPLAY_EVENTS) {
+    if (MAX_REPLAY_EVENTS > 0 && events.length > MAX_REPLAY_EVENTS) {
       events = events.slice(events.length - MAX_REPLAY_EVENTS);
     }
     sendEventBatches(ws, msg.sessionId, events, sendTo).then(() => {
@@ -86,7 +85,7 @@ export function handleSubscribe(
           sessionManager.update(msg.sessionId, metaUpdates);
           broadcast({ type: "session_updated", sessionId: msg.sessionId, updates: metaUpdates });
           let stored = eventStore.getEvents(msg.sessionId, 1);
-          if (stored.length > MAX_REPLAY_EVENTS) {
+          if (MAX_REPLAY_EVENTS > 0 && stored.length > MAX_REPLAY_EVENTS) {
             stored = stored.slice(stored.length - MAX_REPLAY_EVENTS);
           }
           const subscribers = getSubscribers(msg.sessionId);

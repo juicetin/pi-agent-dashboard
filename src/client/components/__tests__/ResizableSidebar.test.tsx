@@ -47,17 +47,14 @@ describe("ResizableSidebar", () => {
     expect(screen.getByTestId("sidebar-expand")).toBeTruthy();
   });
 
-  it("calls toggleCollapse when drag handle is clicked twice rapidly", () => {
+  it("calls toggleCollapse when collapse button clicked", () => {
     const sidebar = makeSidebar();
     render(
       <ResizableSidebar sidebar={sidebar}>
         <div>Content</div>
       </ResizableSidebar>,
     );
-    const handle = screen.getByTestId("drag-handle");
-    // The component uses custom double-click detection via two mouseDown events within 300ms
-    fireEvent.mouseDown(handle);
-    fireEvent.mouseDown(handle);
+    fireEvent.click(screen.getByTestId("sidebar-collapse"));
     expect(sidebar.toggleCollapse).toHaveBeenCalledOnce();
   });
 
@@ -85,23 +82,17 @@ describe("ResizableSidebar", () => {
     expect(sidebar.setWidth).toHaveBeenCalledWith(400);
   });
 
-  it("toggles collapse on double-click of drag handle", () => {
+  it("collapse button does not trigger drag", () => {
     const sidebar = makeSidebar();
     render(
       <ResizableSidebar sidebar={sidebar}>
         <div>Content</div>
       </ResizableSidebar>,
     );
-    const handle = screen.getByTestId("drag-handle");
-
-    // Simulate double-click (two fast clicks)
-    const now = Date.now();
-    vi.spyOn(Date, "now").mockReturnValueOnce(now).mockReturnValueOnce(now + 100);
-
-    fireEvent.mouseDown(handle);
-    fireEvent.mouseDown(handle);
-
-    expect(sidebar.toggleCollapse).toHaveBeenCalledOnce();
+    // Clicking the collapse button should not start a drag
+    fireEvent.mouseDown(screen.getByTestId("sidebar-collapse"));
+    fireEvent.mouseUp(document, { clientX: 400 });
+    expect(sidebar.setWidth).not.toHaveBeenCalled();
   });
 
   it("renders drag handle", () => {

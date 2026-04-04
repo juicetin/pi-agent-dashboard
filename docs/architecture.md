@@ -264,9 +264,9 @@ When a bridge extension reconnects (e.g., after `npm run reload` or network reco
 2. Server marks the session as "replaying" and clears the in-memory event store
 3. Server broadcasts `session_state_reset` to all browser subscribers of that session
 4. Browser resets accumulated state to initial (clearing messages, tool calls, stats)
-5. Bridge replays full session history as individual `event_forward` messages
+5. Bridge replays full session history as individual `event_forward` messages (stored but not broadcast)
 6. Bridge sends `replay_complete` to signal replay is done
-7. Server clears the replaying flag and broadcasts the final accumulated session status
+7. Server clears the replaying flag, broadcasts the final accumulated session status, and sends all stored events as an `event_replay` batch to browser subscribers
 8. Browser rebuilds state cleanly from the replayed events
 
 Without the `session_state_reset` message, replayed events would duplicate existing messages in the browser's accumulated state.
@@ -289,7 +289,7 @@ When a browser subscribes to a session whose events have been evicted from memor
 When a session sends `flows_list`, the server notifies other sessions in the same cwd to rediscover flows. To prevent infinite loops (A→refresh B→B sends flows→refresh A→...), a per-session 5-second cooldown (`recentFlowsRefresh` set) suppresses duplicate refresh requests.
 
 ### Event Broadcast During Replay
-During bridge session replay (while `replayingSessions` set contains the session), `event_forward` messages are stored but NOT broadcast to browser subscribers. The browser receives events through its own subscription replay path instead. This prevents double-sending and reduces memory pressure from serializing events twice.
+During bridge session replay (while `replayingSessions` set contains the session), `event_forward` messages are stored but NOT broadcast individually to browser subscribers. Instead, when `replay_complete` arrives (or the 5s safety timeout fires), the server sends all accumulated events as a single `event_replay` batch to subscribers. This prevents per-event serialization overhead during replay while still delivering the full history to browsers.
 
 ## Persistence
 

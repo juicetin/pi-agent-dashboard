@@ -101,6 +101,16 @@ export function wireEvents(deps: EventWiringDeps): void {
           currentTool: session.currentTool ?? null,
         });
       }
+      // Send replayed events to browser subscribers (they were suppressed during replay)
+      const storedEvents = eventStore.getEvents(sessionId, 1);
+      if (storedEvents.length > 0) {
+        browserGateway.sendToSubscribers(sessionId, {
+          type: "event_replay",
+          sessionId,
+          events: storedEvents.map((e) => ({ seq: e.seq, event: e.event })),
+          isLast: true,
+        } as any);
+      }
     }
 
     if (msg.type === "session_register") {
@@ -114,6 +124,16 @@ export function wireEvents(deps: EventWiringDeps): void {
               status: session.status,
               currentTool: session.currentTool ?? null,
             });
+          }
+          // Send any accumulated events to browser subscribers
+          const fallbackEvents = eventStore.getEvents(sessionId, 1);
+          if (fallbackEvents.length > 0) {
+            browserGateway.sendToSubscribers(sessionId, {
+              type: "event_replay",
+              sessionId,
+              events: fallbackEvents.map((e) => ({ seq: e.seq, event: e.event })),
+              isLast: true,
+            } as any);
           }
         }
       }, 5_000);

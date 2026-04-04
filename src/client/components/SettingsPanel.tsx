@@ -109,6 +109,11 @@ export function SettingsPanel() {
     if (config.tunnel.enabled !== original.tunnel.enabled) partial.tunnel = { enabled: config.tunnel.enabled };
     if (config.devBuildOnReload !== original.devBuildOnReload) partial.devBuildOnReload = config.devBuildOnReload;
 
+    // Memory limits diff
+    if (JSON.stringify(config.memoryLimits) !== JSON.stringify(original.memoryLimits)) {
+      partial.memoryLimits = config.memoryLimits;
+    }
+
     // Auth diff
     if (JSON.stringify(config.auth) !== JSON.stringify(original.auth)) {
       partial.auth = config.auth || null;

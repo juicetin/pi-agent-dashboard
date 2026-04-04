@@ -38,6 +38,15 @@ export function createUiProxy(options: UiProxyOptions) {
   const { ui, hasUI, getSessionId, send } = options;
   const pending = new Map<string, PendingRequest>();
 
+  // Capture original method references BEFORE ctx.ui is patched in-place.
+  // Without this, the proxy's call to ui.notify() would recurse into itself
+  // because bridge.ts overwrites ctx.ui.notify with the proxy's own method.
+  const originalConfirm = ui.confirm.bind(ui);
+  const originalSelect = ui.select.bind(ui);
+  const originalInput = ui.input.bind(ui);
+  const originalEditor = ui.editor?.bind(ui);
+  const originalNotify = ui.notify.bind(ui);
+
   function generateRequestId(): string {
     return crypto.randomUUID();
   }
@@ -143,7 +152,7 @@ export function createUiProxy(options: UiProxyOptions) {
       if (hasUI && !inProxy) {
         const ac = new AbortController();
         inProxy = true;
-        const originalPromise = ui.confirm(title, message, { ...opts, signal: ac.signal }).finally(() => { inProxy = false; });
+        const originalPromise = originalConfirm(title, message, { ...opts, signal: ac.signal }).finally(() => { inProxy = false; });
         return raceWithCancellation(requestId, originalPromise, dashPromise, ac);
       }
       return dashPromise;
@@ -157,7 +166,7 @@ export function createUiProxy(options: UiProxyOptions) {
       if (hasUI && !inProxy) {
         const ac = new AbortController();
         inProxy = true;
-        const originalPromise = ui.select(title, selectOptions, { ...opts, signal: ac.signal }).finally(() => { inProxy = false; });
+        const originalPromise = originalSelect(title, selectOptions, { ...opts, signal: ac.signal }).finally(() => { inProxy = false; });
         return raceWithCancellation(requestId, originalPromise, dashPromise, ac);
       }
       return dashPromise;
@@ -171,7 +180,7 @@ export function createUiProxy(options: UiProxyOptions) {
       if (hasUI && !inProxy) {
         const ac = new AbortController();
         inProxy = true;
-        const originalPromise = ui.input(title, placeholder, { ...opts, signal: ac.signal }).finally(() => { inProxy = false; });
+        const originalPromise = originalInput(title, placeholder, { ...opts, signal: ac.signal }).finally(() => { inProxy = false; });
         return raceWithCancellation(requestId, originalPromise, dashPromise, ac);
       }
       return dashPromise;
@@ -182,10 +191,10 @@ export function createUiProxy(options: UiProxyOptions) {
       const requestId = sendRequest("editor", params);
       const dashPromise = createDashboardPromise<string | undefined>(requestId, "editor", params);
 
-      if (hasUI && !inProxy && ui.editor) {
+      if (hasUI && !inProxy && originalEditor) {
         const ac = new AbortController();
         inProxy = true;
-        const originalPromise = ui.editor(title, prefill, { ...opts, signal: ac.signal }).finally(() => { inProxy = false; });
+        const originalPromise = originalEditor(title, prefill, { ...opts, signal: ac.signal }).finally(() => { inProxy = false; });
         return raceWithCancellation(requestId, originalPromise, dashPromise, ac);
       }
       return dashPromise;
@@ -200,7 +209,7 @@ export function createUiProxy(options: UiProxyOptions) {
         const ac = new AbortController();
         inProxy = true;
         const numbered = selectOptions.map((o, i) => `${i + 1}. ${o}`).join("\n");
-        const tuiPromise = ui.input(`${title}\n${numbered}`, "e.g. 1,3", { signal: ac.signal }).then((raw) => {
+        const tuiPromise = originalInput(`${title}\n${numbered}`, "e.g. 1,3", { signal: ac.signal }).then((raw) => {
           if (!raw) return [] as string[];
           return raw
             .split(",")
@@ -214,7 +223,7 @@ export function createUiProxy(options: UiProxyOptions) {
     },
 
     notify: (message: string, type?: string): void => {
-      ui.notify(message, type);
+      originalNotify(message, type);
       sendRequest("notify", { message, level: type });
     },
   };

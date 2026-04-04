@@ -64,10 +64,9 @@ export type ParsedPrompt =
 
 /** pi-flows management commands with known event mappings.
  *  These are dispatched via pi.events instead of flow:run.
- *
- *  Note: flows:new is NOT here because pi-flows' flows:new-request handler
- *  requires lastCtx which is null after reload in headless sessions.
- *  Instead, flows:new falls through to sendUserMessage → input interceptor. */
+ *  Flow management commands (flows:new, flows:edit, flows:delete) are
+ *  handled in bridge.ts sessionPrompt callback which passes cachedCtx
+ *  as fallback context for headless sessions. */
 const MANAGEMENT_COMMAND_EVENTS: Record<string, {
   event: string;
   dataFn: (args: string) => Record<string, unknown>;
@@ -345,6 +344,16 @@ export function createCommandHandler(
         case "request_state_sync":
           // State sync is handled by the bridge on reconnect
           return undefined;
+
+        case "request_flows_refresh": {
+          // Re-query pi-flows and send updated list
+          if (options?.eventSink) {
+            const probe: any = {};
+            try { pi.events?.emit("flow:list-flows", probe); } catch { /* ignore */ }
+            options.eventSink({ type: "flows_list", sessionId, flows: probe.flows ?? [] });
+          }
+          return undefined;
+        }
 
         case "list_sessions": {
           try {

@@ -1,6 +1,14 @@
 import React from "react";
-import Ansi from "ansi-to-react";
+import AnsiImport from "ansi-to-react";
 import type { ToolRendererProps } from "./types.js";
+
+// Handle CJS interop: ansi-to-react may resolve as {default: fn} in production builds
+const Ansi: React.ComponentType<{children: string}> =
+  typeof AnsiImport === "function"
+    ? AnsiImport
+    : typeof (AnsiImport as any)?.default === "function"
+      ? (AnsiImport as any).default
+      : (({ children }: { children: string }) => <>{children}</>) as any;
 
 export function BashToolRenderer({ args, status, result }: ToolRendererProps) {
   const command = args?.command as string | undefined;
@@ -21,7 +29,7 @@ export function BashToolRenderer({ args, status, result }: ToolRendererProps) {
       {result && (
         <div className="max-h-80 overflow-auto rounded bg-[var(--bg-code)] p-2">
           <pre className="whitespace-pre-wrap text-xs font-mono">
-            <Ansi>{result}</Ansi>
+            <Ansi>{String(result)}</Ansi>
           </pre>
         </div>
       )}

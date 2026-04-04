@@ -4,6 +4,7 @@ import { mdiLoading, mdiCheck, mdiAlertCircle, mdiChevronRight, mdiChevronDown }
 import { getToolRenderer, type ToolContext } from "./tool-renderers/index.js";
 import { useMobile } from "../hooks/useMobile.js";
 import { ElapsedBadge } from "./ElapsedBadge.js";
+import { ErrorBoundary } from "./ErrorBoundary.js";
 
 interface Props {
   toolName: string;
@@ -60,13 +61,15 @@ export function ToolCallStep({ toolName, toolCallId, args, status, result, conte
       </button>
       {expanded && (
         <div className="mt-1 ml-4 p-2 bg-[var(--bg-secondary)] rounded-xl shadow-md border border-[var(--border-subtle)] text-xs text-[var(--text-secondary)] overflow-x-auto">
-          <Renderer
-            toolName={toolName}
-            args={args}
-            status={status}
-            result={result}
-            context={context}
-          />
+          <ErrorBoundary>
+            <Renderer
+              toolName={toolName}
+              args={args}
+              status={status}
+              result={result}
+              context={context}
+            />
+          </ErrorBoundary>
         </div>
       )}
     </div>

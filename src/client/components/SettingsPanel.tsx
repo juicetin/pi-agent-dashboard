@@ -58,16 +58,18 @@ export function SettingsPanel() {
   const [message, setMessage] = useState<{ type: "success" | "error" | "warn"; text: string } | null>(null);
 
   useEffect(() => {
-    Promise.all([
-      fetch("/api/config").then((res) => res.json()),
-      fetch("/api/providers").then((res) => res.json()),
-    ])
+    const configPromise = fetch("/api/config").then((res) => res.json());
+    const providersPromise = fetch("/api/providers")
+      .then((res) => (res.ok ? res.json() : null))
+      .catch(() => null);
+
+    Promise.all([configPromise, providersPromise])
       .then(([configData, providersData]) => {
         if (configData.success) {
           setConfig(configData.data);
           setOriginal(JSON.parse(JSON.stringify(configData.data)));
         }
-        if (providersData.success && providersData.providers) {
+        if (providersData?.success && providersData.providers) {
           const list: LlmProvider[] = Object.entries(providersData.providers).map(
             ([name, entry]: [string, any]) => ({
               name,

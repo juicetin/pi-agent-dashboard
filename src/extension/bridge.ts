@@ -57,6 +57,7 @@ export default function (pi: ExtensionAPI) {
     // Activate provider management before bridge init so providers are
     // registered before session_start fires and models_list is sent.
     activateProviderRegister(pi);
+
     initBridge(pi);
   } catch (err) {
     // Never crash the host pi agent — dashboard is non-essential
@@ -220,17 +221,19 @@ function initBridge(pi: ExtensionAPI) {
         const cmdName = spaceIdx === -1 ? cmdText : cmdText.slice(0, spaceIdx);
         const cmdArgs = spaceIdx === -1 ? "" : cmdText.slice(spaceIdx + 1);
 
-        // Route flow management commands via direct event emission
+        // Route flow management commands via direct event emission.
+        // Pass cachedCtx as fallback context for pi-flows handlers
+        // where lastCtx may not yet be set.
         if (cmdName === "flows:new") {
-          pi.events.emit("flows:new-request", { description: cmdArgs.trim() });
+          pi.events.emit("flows:new-request", { description: cmdArgs.trim(), ctx: cachedCtx });
           return;
         }
         if (cmdName === "flows:edit") {
-          pi.events.emit("flows:edit-request", { flowName: cmdArgs.trim() });
+          pi.events.emit("flows:edit-request", { flowName: cmdArgs.trim(), ctx: cachedCtx });
           return;
         }
         if (cmdName === "flows:delete") {
-          pi.events.emit("flow:delete-request", { flowName: cmdArgs.trim() });
+          pi.events.emit("flow:delete-request", { flowName: cmdArgs.trim(), ctx: cachedCtx });
           return;
         }
 

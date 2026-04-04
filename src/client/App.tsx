@@ -34,8 +34,11 @@ import { useEditors } from "./lib/use-editors.js";
 import { useContentViews } from "./hooks/useContentViews.js";
 import { useSessionActions } from "./hooks/useSessionActions.js";
 import { useOpenSpecActions } from "./hooks/useOpenSpecActions.js";
-import type { DashboardSession, CommandInfo, FlowInfo, FileEntry, OpenSpecData, ModelInfo } from "../shared/types.js";
+import type { DashboardSession, CommandInfo, FlowInfo, FileEntry, OpenSpecData, ModelInfo, ImageContent } from "../shared/types.js";
+import { SearchableSelectDialog, type SelectOption } from "./components/SearchableSelectDialog.js";
+import { FlowLaunchDialog } from "./components/FlowLaunchDialog.js";
 import type { TerminalSession } from "../shared/terminal-types.js";
+import { ErrorBoundary } from "./components/ErrorBoundary.js";
 import type { ServerToBrowserMessage } from "../shared/browser-protocol.js";
 import type { ToolContext } from "./components/tool-renderers/index.js";
 import type { ContextUsageInfo } from "./components/SessionList.js";
@@ -236,6 +239,25 @@ export default function App() {
     handleListFiles,
   } = sessionActions;
 
+  // Flow picker state (for /flows command intercept)
+  const [flowPickerOpen, setFlowPickerOpen] = useState(false);
+  const [flowNewOpen, setFlowNewOpen] = useState(false);
+  const [flowLaunchTarget, setFlowLaunchTarget] = useState<FlowInfo | null>(null);
+
+  // Wrap handleSend to intercept /flows commands
+  const wrappedHandleSend = useCallback((text: string, images?: ImageContent[]) => {
+    const trimmed = text.trim();
+    if (trimmed === "/flows") {
+      setFlowPickerOpen(true);
+      return;
+    }
+    if (trimmed === "/flows:new") {
+      setFlowNewOpen(true);
+      return;
+    }
+    handleSend(text, images);
+  }, [handleSend]);
+
   const openspecActions = useOpenSpecActions({ send, openspecMap, setPreviewState });
   const {
     handleOpenSpecRefresh, handleBulkArchive, handleReadArtifact,
@@ -344,12 +366,12 @@ export default function App() {
           } : undefined,
           onAttachProposal: (changeName) => handleAttachProposal(selectedId, changeName),
           onDetachProposal: () => handleDetachProposal(selectedId),
-          onSendPrompt: (text) => handleSend(text),
+          onSendPrompt: (text) => wrappedHandleSend(text),
           onReadArtifact: (changeName, artifactId) => handleReadArtifact(selectedCwd!, changeName, artifactId),
         } : undefined}
         commands={selectedCommands}
         flows={selectedFlows}
-        onSendPrompt={handleSend}
+        onSendPrompt={wrappedHandleSend}
         openspecChanges={selectedCwd ? openspecMap.get(selectedCwd)?.changes : undefined}
         onAttachProposal={(changeName) => handleAttachProposal(selectedId, changeName)}
         onDetachProposal={() => handleDetachProposal(selectedId)}
@@ -495,7 +517,16 @@ export default function App() {
               />
             </div>
           )}
-          <ChatView state={selectedState} toolContext={toolContext} onCancelPending={handleCancelPending} onRespondToUi={handleRespondToUi} />
+          <ErrorBoundary fallback={
+            <div className="flex-1 flex items-center justify-center p-8">
+              <div className="text-center space-y-2">
+                <div className="text-red-400 text-sm">Chat view encountered an error</div>
+                <button onClick={() => window.location.reload()} className="text-xs text-blue-400 hover:underline">Reload page</button>
+              </div>
+            </div>
+          }>
+            <ChatView state={selectedState} toolContext={toolContext} onCancelPending={handleCancelPending} onRespondToUi={handleRespondToUi} />
+          </ErrorBoundary>
           <StatusBar
             model={selectedState.model ?? selectedSession?.model}
             models={modelsMap.get(selectedId)}
@@ -517,7 +548,7 @@ export default function App() {
           />
           <CommandInput
             commands={selectedCommands}
-            onSend={handleSend}
+            onSend={wrappedHandleSend}
             onListFiles={handleListFiles}
             fileResults={fileResults}
             disabled={false}
@@ -526,6 +557,65 @@ export default function App() {
             pendingPrompt={!!selectedState.pendingPrompt}
             onCancelPending={handleCancelPending}
           />
+          {flowPickerOpen && (() => {
+            const hasFlowsNew = selectedCommands.some(c => c.name === "flows:new");
+            const flowOptions: SelectOption[] = [
+              ...(hasFlowsNew ? [{ value: "__new__", label: "+ New Flow", description: "Design a new flow with the Flow Architect" }] : []),
+              ...selectedFlows.map((f) => ({
+                value: f.name,
+                label: f.name,
+                description: f.description,
+              })),
+            ];
+            return (
+              <SearchableSelectDialog
+                title="Flows"
+                options={flowOptions}
+                placeholder="Search flows..."
+                emptyMessage="No flows available"
+                onSelect={(value) => {
+                  setFlowPickerOpen(false);
+                  if (value === "__new__") {
+                    setFlowNewOpen(true);
+                  } else {
+                    const flow = selectedFlows.find(f => f.name === value);
+                    if (flow) {
+                      if (flow.taskRequired) {
+                        setFlowLaunchTarget(flow);
+                      } else {
+                        handleSend(`/${flow.name}`);
+                      }
+                    }
+                  }
+                }}
+                onCancel={() => setFlowPickerOpen(false)}
+              />
+            );
+          })()}
+          {flowNewOpen && (
+            <FlowLaunchDialog
+              flowName="flows:new"
+              description="Design a new flow with the Flow Architect"
+              onSubmit={(task) => {
+                const prompt = task ? `/flows:new ${task}` : `/flows:new`;
+                handleSend(prompt);
+                setFlowNewOpen(false);
+              }}
+              onCancel={() => setFlowNewOpen(false)}
+            />
+          )}
+          {flowLaunchTarget && (
+            <FlowLaunchDialog
+              flowName={flowLaunchTarget.name}
+              description={flowLaunchTarget.description}
+              onSubmit={(task) => {
+                const prompt = task ? `/${flowLaunchTarget.name} ${task}` : `/${flowLaunchTarget.name}`;
+                handleSend(prompt);
+                setFlowLaunchTarget(null);
+              }}
+              onCancel={() => setFlowLaunchTarget(null)}
+            />
+          )}
         </>
       )}
     </div>

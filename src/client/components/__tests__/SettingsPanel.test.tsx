@@ -29,6 +29,7 @@ describe("SettingsPanel", () => {
 
   it("should load and display config on mount", async () => {
     global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
       json: () => Promise.resolve({ success: true, data: mockConfig }),
     });
 
@@ -52,6 +53,7 @@ describe("SettingsPanel", () => {
 
   it("should show 'No changes' when saving without modifications", async () => {
     global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
       json: () => Promise.resolve({ success: true, data: mockConfig }),
     });
 
@@ -77,6 +79,7 @@ describe("SettingsPanel", () => {
       },
     };
     global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
       json: () => Promise.resolve({ success: true, data: configWithAuth }),
     });
 
@@ -99,14 +102,16 @@ describe("SettingsPanel", () => {
       },
     };
     let savedBody: any;
-    let callCount = 0;
-    global.fetch = vi.fn().mockImplementation((_url: string, options?: any) => {
-      callCount++;
-      if (callCount === 1) {
+    global.fetch = vi.fn().mockImplementation((url: string, options?: any) => {
+      if (url === "/api/config" && options?.method === "PUT") {
+        savedBody = JSON.parse(options.body);
+        return Promise.resolve({ json: () => Promise.resolve({ success: true }) });
+      }
+      if (url === "/api/config") {
         return Promise.resolve({ json: () => Promise.resolve({ success: true, data: configWithAuth }) });
       }
-      savedBody = JSON.parse(options.body);
-      return Promise.resolve({ json: () => Promise.resolve({ success: true }) });
+      // /api/providers
+      return Promise.resolve({ ok: false, json: () => Promise.resolve(null) });
     });
 
     render(<SettingsPanel />);
@@ -122,17 +127,18 @@ describe("SettingsPanel", () => {
   });
 
   it("should show restart required message when port changes", async () => {
-    let callCount = 0;
-    global.fetch = vi.fn().mockImplementation(() => {
-      callCount++;
-      if (callCount === 1) {
+    global.fetch = vi.fn().mockImplementation((url: string, options?: any) => {
+      if (url === "/api/config" && options?.method === "PUT") {
+        return Promise.resolve({
+          json: () => Promise.resolve({ success: true, restartRequired: true }),
+        });
+      }
+      if (url === "/api/config") {
         return Promise.resolve({
           json: () => Promise.resolve({ success: true, data: mockConfig }),
         });
       }
-      return Promise.resolve({
-        json: () => Promise.resolve({ success: true, restartRequired: true }),
-      });
+      return Promise.resolve({ ok: false, json: () => Promise.resolve(null) });
     });
 
     render(<SettingsPanel />);

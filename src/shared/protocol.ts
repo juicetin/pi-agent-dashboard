@@ -232,6 +232,11 @@ export interface HeartbeatAckMessage {
   type: "heartbeat_ack";
 }
 
+export interface RequestFlowsRefreshMessage {
+  type: "request_flows_refresh";
+  sessionId: string;
+}
+
 export interface ExtensionUiResponseMessage {
   type: "extension_ui_response";
   sessionId: string;
@@ -254,4 +259,5 @@ export type ServerToExtensionMessage =
   | SetModelMessage
   | ShutdownExtensionMessage
   | FlowControlExtensionMessage
-  | HeartbeatAckMessage;
+  | HeartbeatAckMessage
+  | RequestFlowsRefreshMessage;

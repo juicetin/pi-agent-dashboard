@@ -275,6 +275,8 @@ pi-dashboard restart    # Restart daemon
 pi-dashboard status     # Show daemon status
 ```
 
+Daemon stdout/stderr is logged to `~/.pi/dashboard/server.log` for crash diagnosis.
+
 ### Session spawning
 
 The dashboard can spawn new pi sessions from the browser. Two strategies are available:
@@ -416,7 +418,7 @@ src/
 │   ├── server.ts          # HTTP + WebSocket server
 │   ├── pi-gateway.ts      # Extension WebSocket gateway
 │   ├── browser-gateway.ts # Browser WebSocket gateway
-│   ├── memory-event-store.ts    # In-memory event buffer (LRU)
+│   ├── memory-event-store.ts    # In-memory event buffer (LRU, per-session cap, truncation)
 │   ├── memory-session-manager.ts # In-memory session registry
 │   ├── state-store.ts   # User prefs: hidden sessions, pinned dirs, session order
 │   ├── state-store.ts     # JSON-backed user preferences

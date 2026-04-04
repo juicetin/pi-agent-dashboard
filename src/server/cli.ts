@@ -20,6 +20,7 @@ import { loadConfig, ensureConfig } from "../shared/config.js";
 import { spawn } from "node:child_process";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
+import fs from "node:fs";
 import path from "node:path";
 import { readPid, isProcessAlive, removePid, isServerRunning } from "./server-pid.js";
 import { isPortOpen } from "../extension/server-probe.js";
@@ -131,13 +132,26 @@ async function cmdStart(config: ServerConfig): Promise<void> {
     tsLoader = resolveJitiImport();
   } catch {
     // Fallback to tsx when jiti is not available (e.g. running outside pi)
-    const tsxMain = createRequire(cliPath).resolve("tsx");
-    tsLoader = path.join(path.dirname(tsxMain), "esm", "index.mjs");
+    try {
+      const tsxMain = createRequire(cliPath).resolve("tsx");
+      tsLoader = path.join(path.dirname(tsxMain), "esm", "index.mjs");
+    } catch {
+      console.error(
+        "[pi-dashboard] Cannot find TypeScript loader. " +
+        "Install tsx (`npm install`) or run inside a pi session."
+      );
+      process.exit(1);
+    }
   }
+
+  // Redirect daemon stdout/stderr to a log file for crash diagnosis
+  const logDir = path.join(process.env.HOME ?? "~", ".pi", "dashboard");
+  fs.mkdirSync(logDir, { recursive: true });
+  const logFd = fs.openSync(path.join(logDir, "server.log"), "w");
 
   const child = spawn(process.execPath, ["--import", tsLoader, cliPath, ...args], {
     detached: true,
-    stdio: "ignore",
+    stdio: ["ignore", logFd, logFd],
     env: { ...process.env },
   });
   child.unref();
@@ -158,6 +172,7 @@ async function cmdStart(config: ServerConfig): Promise<void> {
     console.log(`Dashboard server started (pid ${pid ?? child.pid}) at http://localhost:${config.port}`);
   } else {
     console.error("Failed to start dashboard server (timed out after 5s)");
+    console.error(`Check logs at ${path.join(logDir, "server.log")}`);
     process.exit(1);
   }
 }

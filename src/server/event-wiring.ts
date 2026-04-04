@@ -64,11 +64,17 @@ export function wireEvents(deps: EventWiringDeps): void {
 
   // Track sessions replaying history — suppress status broadcasts to avoid card flicker
   const replayingSessions = new Set<string>();
+  // Debounce flows refresh to prevent infinite loop between sessions in same cwd
+  const recentFlowsRefresh = new Set<string>();
 
   piGateway.onEvent = (sessionId, msg) => {
     if (msg.type === "event_forward") {
       const seq = eventStore.insertEvent(sessionId, msg.event);
-      browserGateway.broadcastEvent(sessionId, seq, msg.event);
+      // Skip broadcasting during replay — browser gets events via subscribe replay
+      if (!replayingSessions.has(sessionId)) {
+        const storedEvent = eventStore.getEvent(sessionId, seq) ?? msg.event;
+        browserGateway.broadcastEvent(sessionId, seq, storedEvent);
+      }
 
       const updates = extractSessionUpdates(msg.event);
       if (updates) {
@@ -227,6 +233,23 @@ export function wireEvents(deps: EventWiringDeps): void {
         sessionId,
         flows: msg.flows,
       });
+
+      // Tell other connected sessions in the same cwd to rediscover flows
+      // (debounced to avoid infinite loop: A→refresh B→B sends flows→refresh A→...)
+      if (!recentFlowsRefresh.has(sessionId)) {
+        recentFlowsRefresh.add(sessionId);
+        setTimeout(() => recentFlowsRefresh.delete(sessionId), 5_000);
+        const session = sessionManager.get(sessionId);
+        if (session) {
+          for (const sid of piGateway.getConnectedSessionIds()) {
+            if (sid === sessionId || recentFlowsRefresh.has(sid)) continue;
+            const other = sessionManager.get(sid);
+            if (other && other.cwd === session.cwd) {
+              piGateway.sendToSession(sid, { type: "request_flows_refresh", sessionId: sid });
+            }
+          }
+        }
+      }
     }
 
     if (msg.type === "git_info_update") {

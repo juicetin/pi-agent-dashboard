@@ -126,8 +126,13 @@ export function createBrowserGateway(
     return result;
   }
 
+  /** Max buffered bytes per browser WebSocket before dropping messages */
+  const MAX_WS_BUFFER = 4 * 1024 * 1024; // 4MB
+
   function sendTo(ws: WebSocket, msg: ServerToBrowserMessage) {
     if (ws.readyState === WebSocket.OPEN) {
+      // Drop messages if the send buffer is full (browser not consuming)
+      if (ws.bufferedAmount > MAX_WS_BUFFER) return;
       ws.send(JSON.stringify(msg));
     }
   }
@@ -138,7 +143,11 @@ export function createBrowserGateway(
     }
   }
 
-  wss.on("connection", (ws) => {
+  wss.on("connection", (ws, req) => {
+    const remoteAddr = req?.socket?.remoteAddress ?? 'unknown';
+    const origin = req?.headers?.origin ?? 'no-origin';
+    const ua = req?.headers?.['user-agent'] ?? 'no-ua';
+    console.error(`[browser-gw] browser client connected from ${remoteAddr} origin=${origin} ua=${ua.slice(0, 80)} (total: ${subscriptions.size + 1})`);
     const subs = new Set<string>();
     subscriptions.set(ws, subs);
 
@@ -287,6 +296,7 @@ export function createBrowserGateway(
     });
 
     ws.on("close", () => {
+      console.error(`[browser-gw] browser client disconnected (remaining: ${subscriptions.size - 1})`);
       subscriptions.delete(ws);
     });
   });

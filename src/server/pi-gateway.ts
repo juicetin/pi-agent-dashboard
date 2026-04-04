@@ -6,8 +6,8 @@ import type { ExtensionToServerMessage, ServerToExtensionMessage } from "../shar
 import type { DashboardSession } from "../shared/types.js";
 import type { SessionManager } from "./memory-session-manager.js";
 
-export const HEARTBEAT_TIMEOUT = 45_000;
-export const WS_PING_INTERVAL = 30_000;
+export const HEARTBEAT_TIMEOUT = 90_000;
+export const WS_PING_INTERVAL = 60_000;
 
 export interface PiGatewayOptions {
   heartbeatTimeout?: number;
@@ -20,6 +20,7 @@ export interface PiGateway {
   sendToSession(sessionId: string, msg: ServerToExtensionMessage): boolean;
   connectionCount(): number;
   findSessionByCwd(cwd: string): string | undefined;
+  getConnectedSessionIds(): string[];
   isSessionConnected(sessionId: string): boolean;
   onEvent?: (sessionId: string, msg: ExtensionToServerMessage) => void;
   onEmpty?: () => void;
@@ -159,6 +160,8 @@ export function createPiGateway(
         ws.on("pong", () => { aliveFlags.set(ws, true); });
 
         ws.on("message", (raw) => {
+          // Any received message proves the connection is alive
+          aliveFlags.set(ws, true);
           try {
             const msg = JSON.parse(raw.toString()) as ExtensionToServerMessage;
 
@@ -329,6 +332,12 @@ export function createPiGateway(
         }
       }
       return undefined;
+    },
+
+    getConnectedSessionIds(): string[] {
+      return [...connections.keys()].filter(
+        (sid) => connections.get(sid)?.readyState === WebSocket.OPEN,
+      );
     },
   };
 }

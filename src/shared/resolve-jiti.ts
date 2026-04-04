@@ -36,9 +36,8 @@ export function resolveJitiImport(): string {
     } catch { /* fall through */ }
   }
 
-  console.error(
-    "[pi-dashboard] Cannot find pi's TypeScript loader (jiti). " +
+  throw new Error(
+    "Cannot find pi's TypeScript loader (jiti). " +
     "Is @mariozechner/pi-coding-agent or @oh-my-pi/pi-coding-agent installed?"
   );
-  throw new Error("Cannot resolve jiti TypeScript loader from pi");
 }

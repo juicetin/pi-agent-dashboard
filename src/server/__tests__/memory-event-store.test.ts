@@ -145,4 +145,18 @@ describe("memory-event-store", () => {
       expect(store.hasEvents("s2")).toBe(false);
     });
   });
+
+  it("trims oldest events when per-session limit exceeded", () => {
+    const store = createMemoryEventStore(neverPinned, 100, 3);
+    store.insertEvent("s1", makeEvent("a"));
+    store.insertEvent("s1", makeEvent("b"));
+    store.insertEvent("s1", makeEvent("c"));
+    store.insertEvent("s1", makeEvent("d"));
+
+    const events = store.getEvents("s1", 1);
+    expect(events).toHaveLength(3);
+    // Oldest event (seq 1) should be trimmed
+    expect(events[0].seq).toBe(2);
+    expect(events[2].seq).toBe(4);
+  });
 });

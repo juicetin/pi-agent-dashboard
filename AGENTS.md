@@ -66,18 +66,18 @@ pi-dashboard --dev   # Start with Vite proxy
 | `src/server/routes/file-routes.ts` | REST routes: file read, browse, readme, pinned-dirs |
 | `src/server/routes/openspec-routes.ts` | REST routes: openspec-archive, pi-resources, pi-resource-file |
 | `src/server/routes/system-routes.ts` | REST routes: config, health, shutdown, tunnel, editors |
-| `src/server/event-wiring.ts` | Pi gateway → browser gateway event forwarding (incl. replay status suppression) |
+| `src/server/event-wiring.ts` | Pi gateway → browser gateway event forwarding (replay suppression, flows refresh dedup) |
 | `src/server/idle-timer.ts` | Auto-shutdown idle timer with sleep-wake resilience |
 | `src/server/session-bootstrap.ts` | Startup session discovery and OpenSpec polling init |
 | `src/server/pi-gateway.ts` | Extension WebSocket gateway (port 9999) |
 | `src/server/browser-gateway.ts` | Browser WebSocket gateway (dispatches to handler modules) |
 | `src/server/browser-handlers/handler-context.ts` | Shared context type for browser message handlers |
-| `src/server/browser-handlers/subscription-handler.ts` | Subscribe/unsubscribe with event replay and lazy loading |
+| `src/server/browser-handlers/subscription-handler.ts` | Subscribe/unsubscribe with async batched replay, backpressure, lazy loading |
 | `src/server/browser-handlers/session-action-handler.ts` | Send prompt, abort, resume, spawn, shutdown, flow control |
 | `src/server/browser-handlers/session-meta-handler.ts` | Rename, hide, unhide, attach/detach proposal, fetch, list |
 | `src/server/browser-handlers/terminal-handler.ts` | Create, kill, rename terminals |
 | `src/server/browser-handlers/directory-handler.ts` | Pin/unpin dirs, reorder, openspec refresh, pi-gateway forwards |
-| `src/server/memory-event-store.ts` | In-memory event buffer with LRU eviction |
+| `src/server/memory-event-store.ts` | In-memory event buffer with LRU eviction, per-session cap, payload truncation |
 | `src/server/memory-session-manager.ts` | Pure in-memory session registry |
 | `src/client/components/FolderOpenSpecSection.tsx` | Folder-level OpenSpec UI: collapsible change list, refresh, bulk archive, archive button |
 | `src/client/components/ArchiveBrowserView.tsx` | Searchable archive browser: date-grouped list, two-level nav to artifact reader |

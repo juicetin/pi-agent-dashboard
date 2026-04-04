@@ -31,10 +31,66 @@ interface SessionBuffer {
 }
 
 export const DEFAULT_MAX_CACHED_SESSIONS = 100;
+export const DEFAULT_MAX_EVENTS_PER_SESSION = 200;
+
+/** Max size for any string field within event data */
+const MAX_STRING_SIZE = 4_000;
+/** Max total serialized size for an individual event's data */
+const MAX_EVENT_DATA_SIZE = 20_000;
+
+/**
+ * Recursively truncate large string fields in an object.
+ * Returns a new object if any truncation occurred, otherwise the original.
+ */
+function truncateStrings(obj: unknown, depth = 0): unknown {
+  if (depth > 4) return obj;
+  if (typeof obj === "string") {
+    return obj.length > MAX_STRING_SIZE ? obj.slice(0, MAX_STRING_SIZE) + "\n…[truncated]" : obj;
+  }
+  if (Array.isArray(obj)) {
+    // Skip large arrays (e.g., edits arrays)
+    if (obj.length > 20) return "[array truncated]";
+    let changed = false;
+    const result = obj.map((item) => {
+      const t = truncateStrings(item, depth + 1);
+      if (t !== item) changed = true;
+      return t;
+    });
+    return changed ? result : obj;
+  }
+  if (obj && typeof obj === "object") {
+    let changed = false;
+    const result: Record<string, unknown> = {};
+    for (const [key, val] of Object.entries(obj)) {
+      // Skip 'thinking' blocks entirely — large and not shown in chat
+      if (key === "thinking" && typeof val === "string" && val.length > MAX_STRING_SIZE) {
+        result[key] = (val as string).slice(0, 500) + "\n…[truncated]";
+        changed = true;
+        continue;
+      }
+      const t = truncateStrings(val, depth + 1);
+      if (t !== val) changed = true;
+      result[key] = t;
+    }
+    return changed ? result : obj;
+  }
+  return obj;
+}
+
+/**
+ * Truncate large event data to bound memory usage per event.
+ */
+function truncateEventData(event: DashboardEvent): DashboardEvent {
+  const data = event.data;
+  if (!data || typeof data !== "object") return event;
+  const truncated = truncateStrings(data) as Record<string, unknown>;
+  return truncated !== data ? { ...event, data: truncated } : event;
+}
 
 export function createMemoryEventStore(
   isSessionPinned: (sessionId: string) => boolean,
   maxCachedSessions: number = DEFAULT_MAX_CACHED_SESSIONS,
+  maxEventsPerSession: number = DEFAULT_MAX_EVENTS_PER_SESSION,
 ): EventStore {
   const buffers = new Map<string, SessionBuffer>();
 
@@ -73,7 +129,12 @@ export function createMemoryEventStore(
     insertEvent(sessionId: string, event: DashboardEvent): number {
       const buf = getOrCreate(sessionId);
       const seq = buf.nextSeq++;
-      buf.events.push({ seq, event });
+      buf.events.push({ seq, event: truncateEventData(event) });
+      // Trim oldest events when over the per-session limit
+      if (buf.events.length > maxEventsPerSession) {
+        const excess = buf.events.length - maxEventsPerSession;
+        buf.events.splice(0, excess);
+      }
       evictIfNeeded();
       return seq;
     },

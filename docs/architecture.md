@@ -27,7 +27,7 @@ A global pi extension that runs in every pi session. It:
 - Handles reconnection with exponential backoff and event buffering
 - Sends heartbeats every 15s; server responds with `heartbeat_ack`
 - Server liveness watchdog: forces reconnect if no message received for 60s
-- Server-side WS ping/pong (30s interval) detects dead TCP connections within one cycle
+- Server-side WS ping/pong (60s interval) detects dead TCP connections; any received message resets the alive flag
 - Detects OpenSpec activity (phase/change) from tool events
 - Proxies `ctx.ui` dialog methods (confirm, select, input, editor) to the dashboard via `ui-proxy.ts`
   - TUI sessions: races terminal dialog against dashboard response (first wins)
@@ -40,7 +40,9 @@ A global pi extension that runs in every pi session. It:
 A Node.js HTTP + WebSocket server that:
 - Accepts connections from bridge extensions (Pi Gateway, port 9999)
 - Accepts connections from web browsers (Browser Gateway, port 8000)
-- Stores events in an in-memory buffer with LRU eviction (max 100 sessions)
+- Stores events in an in-memory buffer with LRU eviction (max 100 sessions, 200 events per session)
+- Truncates large event payloads (tool results, file content, thinking blocks) to bound memory
+- Applies WebSocket backpressure on browser connections (drops messages when send buffer > 4MB)
 - Manages sessions in a pure in-memory registry (populated from bridge connections and direct disk discovery)
 - Persists global preferences (pinned directories, session order) in `~/.pi/dashboard/preferences.json`
 - Discovers historical sessions directly from disk via `SessionManager.list()` (DirectoryService)
@@ -253,7 +255,7 @@ The web client includes a Settings panel (gear icon in sidebar header → `/sett
 
 ### Reconnection Flow
 1. Browser reconnects with `subscribe` message including `lastSeq`
-2. Server replays missed events from in-memory buffer in batches of 200
+2. Server replays missed events from in-memory buffer in async batches of 50 with backpressure handling
 3. Browser's event reducer processes replay, rebuilding state
 
 ### Bridge Reconnection (State Reset)
@@ -278,10 +280,16 @@ When pi continues a session via `--session <file>`, it reuses the same JSONL fil
 When a browser subscribes to a session whose events have been evicted from memory:
 1. Server sends empty `event_replay` with `isLast: false` to indicate loading
 2. Server's DirectoryService loads the session file directly via `SessionManager.open(sessionFile).getBranch()`
-3. Entries are converted via `replayEntriesAsEvents()` and stored in the event buffer
-4. Server sends `event_replay` batch to all waiting browsers
+3. Entries are converted via `replayEntriesAsEvents()` and stored in the event buffer (truncated, capped at 200/session)
+4. Server sends `event_replay` in async batches with backpressure to all waiting browsers
 5. If the session file is missing or corrupt, server sends `dataUnavailable: true`
 6. Concurrent loads for the same session are deduplicated
+
+### Flows Refresh Deduplication
+When a session sends `flows_list`, the server notifies other sessions in the same cwd to rediscover flows. To prevent infinite loops (A→refresh B→B sends flows→refresh A→...), a per-session 5-second cooldown (`recentFlowsRefresh` set) suppresses duplicate refresh requests.
+
+### Event Broadcast During Replay
+During bridge session replay (while `replayingSessions` set contains the session), `event_forward` messages are stored but NOT broadcast to browser subscribers. The browser receives events through its own subscription replay path instead. This prevents double-sending and reduces memory pressure from serializing events twice.
 
 ## Persistence
 
@@ -372,7 +380,7 @@ silently  pass --port & --pi-port
             connect
 ```
 
-The server is spawned detached (`child_process.spawn` with `detached: true`, `stdio: 'ignore'`, `unref()`), so it outlives the pi session. If multiple pi sessions start simultaneously, duplicate spawn attempts fail harmlessly with EADDRINUSE. After a failed launch, the bridge re-probes the port — if another agent started the server concurrently, the warning is suppressed. The auto-start logic is extracted into `server-auto-start.ts` for testability.
+The server is spawned detached (`child_process.spawn` with `detached: true`, stdout/stderr redirected to `~/.pi/dashboard/server.log`), so it outlives the pi session. If multiple pi sessions start simultaneously, duplicate spawn attempts fail harmlessly with EADDRINUSE. After a failed launch, the bridge re-probes the port — if another agent started the server concurrently, the warning is suppressed. The auto-start logic is extracted into `server-auto-start.ts` for testability.
 
 ## Terminal Emulator
 

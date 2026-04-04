@@ -101,7 +101,9 @@ export function wireEvents(deps: EventWiringDeps): void {
           currentTool: session.currentTool ?? null,
         });
       }
-      // Send replayed events to browser subscribers (they were suppressed during replay)
+      // Send replayed events to browser subscribers.
+      // During replay, event_forward messages were stored but not broadcast.
+      // Subscribers who received session_state_reset need the events to rebuild chat.
       const storedEvents = eventStore.getEvents(sessionId, 1);
       if (storedEvents.length > 0) {
         browserGateway.sendToSubscribers(sessionId, {

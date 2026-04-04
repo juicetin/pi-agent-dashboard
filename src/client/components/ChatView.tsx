@@ -14,6 +14,7 @@ import { useMobile } from "../hooks/useMobile.js";
 import { getInteractiveRenderer } from "./interactive-renderers/registry.js";
 
 interface Props {
+  sessionId?: string;
   state: SessionState;
   toolContext: ToolContext;
   onCancelPending?: () => void;
@@ -83,10 +84,11 @@ function hasMermaid(content: string): boolean {
 
 const SCROLL_THRESHOLD = 50;
 
-export function ChatView({ state, toolContext, onCancelPending, onRespondToUi }: Props) {
+export function ChatView({ sessionId, state, toolContext, onCancelPending, onRespondToUi }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const isNearBottom = useRef(true);
   const [showScrollButton, setShowScrollButton] = useState(false);
+  const prevSessionRef = useRef(sessionId);
   const isMobile = useMobile();
   const bubbleMax = isMobile ? "max-w-[95%]" : "max-w-[80%]";
   /** Force wide when message contains a mermaid diagram */
@@ -108,9 +110,26 @@ export function ChatView({ state, toolContext, onCancelPending, onRespondToUi }:
     setShowScrollButton(false);
   }, []);
 
+  // Scroll to bottom on session switch
+  useEffect(() => {
+    if (sessionId !== prevSessionRef.current) {
+      prevSessionRef.current = sessionId;
+      isNearBottom.current = true;
+      setShowScrollButton(false);
+      // Use rAF to ensure DOM has rendered the new session's content
+      requestAnimationFrame(() => {
+        scrollRef.current?.scrollTo(0, scrollRef.current!.scrollHeight);
+      });
+    }
+  }, [sessionId]);
+
+  // Auto-scroll on new content when near bottom
   useEffect(() => {
     if (isNearBottom.current) {
-      scrollRef.current?.scrollTo(0, scrollRef.current.scrollHeight);
+      // Use rAF to scroll after DOM update
+      requestAnimationFrame(() => {
+        scrollRef.current?.scrollTo(0, scrollRef.current!.scrollHeight);
+      });
     }
   }, [state.messages.length, state.streamingText, state.pendingPrompt]);
 

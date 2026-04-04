@@ -525,7 +525,7 @@ export default function App() {
               </div>
             </div>
           }>
-            <ChatView state={selectedState} toolContext={toolContext} onCancelPending={handleCancelPending} onRespondToUi={handleRespondToUi} />
+            <ChatView sessionId={selectedId} state={selectedState} toolContext={toolContext} onCancelPending={handleCancelPending} onRespondToUi={handleRespondToUi} />
           </ErrorBoundary>
           <StatusBar
             model={selectedState.model ?? selectedSession?.model}

@@ -75,18 +75,51 @@ export function createPiGateway(
         // send heartbeats, but the connection itself is alive. Reschedule.
         const ws = connections.get(sessionId);
         if (ws && ws.readyState === WebSocket.OPEN) {
+          console.error(`[gateway] heartbeat timeout but WS still OPEN for ${sessionId}, rescheduling`);
           resetHeartbeat(sessionId);
           return;
         }
-
+        // Session status check: if the session is still streaming/active
+        // (not manually ended), give it more time to reconnect.
+        // Forked child processes (vitest) can kill the WS connection by
+        // inheriting and closing the FD, but the bridge will reconnect
+        // once the event loop is free.
+        const session = sessionManager.get(sessionId);
         const meta = heartbeatMeta.get(sessionId);
-        const elapsed = Date.now() - (meta?.setAt ?? now);
+        if (session && session.status !== "ended" && !meta?.sleepRetried) {
+          console.error(`[gateway] heartbeat timeout but session ${sessionId} still active, giving reconnect grace period`);
+          if (meta) {
+            meta.sleepRetried = true;
+            meta.setAt = Date.now();
+          }
+          heartbeatTimers.set(
+            sessionId,
+            setTimeout(() => {
+              const ws2 = connections.get(sessionId);
+              if (ws2 && ws2.readyState === WebSocket.OPEN) {
+                resetHeartbeat(sessionId);
+                return;
+              }
+              console.error(`[gateway] session timed out: ${sessionId} (reconnect grace period expired)`);
+              sessionManager.unregister(sessionId);
+              connections.delete(sessionId);
+              heartbeatTimers.delete(sessionId);
+              heartbeatMeta.delete(sessionId);
+              checkEmpty();
+            }, hbTimeout),
+          );
+          return;
+        }
+        console.error(`[gateway] heartbeat timeout, WS state=${ws?.readyState} for ${sessionId}`);
+
+        const meta2 = heartbeatMeta.get(sessionId);
+        const elapsed = Date.now() - (meta2?.setAt ?? now);
 
         // Detect sleep: elapsed >> expected means system was suspended
-        if (meta && !meta.sleepRetried && elapsed > hbTimeout * 2) {
+        if (meta2 && !meta2.sleepRetried && elapsed > hbTimeout * 2) {
           // Give one more cycle for the extension to reconnect
-          meta.sleepRetried = true;
-          meta.setAt = Date.now();
+          meta2.sleepRetried = true;
+          meta2.setAt = Date.now();
           heartbeatTimers.set(
             sessionId,
             setTimeout(() => {
@@ -155,13 +188,17 @@ export function createPiGateway(
             // If the socket is writable, the connection is physically intact —
             // the bridge is just too busy to process pong frames.
             const socket = (client as any)._socket;
-            if (socket && !socket.destroyed && socket.writable) {
+            const socketAlive = socket && !socket.destroyed && socket.writable;
+            if (socketAlive) {
               // TCP alive but no pong — bridge is busy. Reset counter, keep alive.
+              console.error(`[gateway] ping: ${misses} misses but TCP alive, keeping session (socket.destroyed=${socket?.destroyed} writable=${socket?.writable})`);
               aliveMisses.set(client, 0);
               client.ping();
               continue;
             }
             // TCP is dead — clean up
+            console.error(`[gateway] ping: TCP dead (socket=${!!socket} destroyed=${socket?.destroyed} writable=${socket?.writable})`);
+            
             for (const [sid, ws] of connections) {
               if (ws === client) {
                 console.error(`[gateway] connection dead (ping timeout, ${misses} misses): ${sid}`);
@@ -277,27 +314,6 @@ export function createPiGateway(
                 const updates: Partial<typeof session> = { model: msg.model };
                 if (msg.thinkingLevel !== undefined) {
                   updates.thinkingLevel = msg.thinkingLevel;
-                }
-                sessionManager.update(msg.sessionId, updates);
-              }
-            }
-
-            // session_history_sync removed — server discovers sessions via DirectoryService
-
-            if (msg.type === "stats_update") {
-              const session = sessionManager.get(msg.sessionId);
-              if (session) {
-                const updates: Partial<DashboardSession> = {
-                  tokensIn: (session.tokensIn ?? 0) + (msg.stats.tokensIn ?? 0),
-                  tokensOut: (session.tokensOut ?? 0) + (msg.stats.tokensOut ?? 0),
-                  cacheRead: (session.cacheRead ?? 0) + (msg.stats.turnUsage?.cacheRead ?? 0),
-                  cacheWrite: (session.cacheWrite ?? 0) + (msg.stats.turnUsage?.cacheWrite ?? 0),
-                  cost: (session.cost ?? 0) + (msg.stats.cost ?? 0),
-                };
-                // Store context usage on the session for persistence
-                if (msg.stats.contextUsage) {
-                  updates.contextTokens = msg.stats.contextUsage.tokens;
-                  updates.contextWindow = msg.stats.contextUsage.contextWindow;
                 }
                 sessionManager.update(msg.sessionId, updates);
               }

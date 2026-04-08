@@ -12,7 +12,7 @@ export interface ChatImage {
 
 export interface ChatMessage {
   id: string;
-  role: "user" | "assistant" | "toolResult" | "thinking" | "bashOutput" | "commandFeedback" | "interactiveUi" | "turnSeparator";
+  role: "user" | "assistant" | "toolResult" | "thinking" | "bashOutput" | "commandFeedback" | "interactiveUi" | "turnSeparator" | "rawEvent";
   content: string;
   images?: ChatImage[];
   toolName?: string;
@@ -26,6 +26,10 @@ export interface ChatMessage {
   startedAt?: number;
   /** Duration in ms (set when complete) */
   duration?: number;
+  /** Turn index for scroll-to-turn navigation */
+  turnIndex?: number;
+  /** Structured metadata from tool (e.g. AgentDetails from pi-subagents) */
+  toolDetails?: Record<string, unknown>;
 }
 
 export interface ToolCallState {
@@ -41,6 +45,8 @@ export interface TurnStat {
   output: number;
   cacheRead: number;
   cacheWrite: number;
+  /** Index into user messages for click-to-scroll (-1 if no user message for this turn) */
+  turnIndex: number;
 }
 
 const MAX_TURN_STATS = 50;
@@ -56,6 +62,18 @@ export interface InteractiveUiRequest {
   params: Record<string, unknown>;
   status: "pending" | "resolved" | "cancelled" | "dismissed";
   result?: unknown;
+}
+
+export interface SubagentState {
+  id: string;
+  type: string;
+  description: string;
+  status: "created" | "running" | "completed" | "failed";
+  result?: string;
+  error?: string;
+  durationMs?: number;
+  tokens?: { input: number; output: number; total: number };
+  toolUses?: number;
 }
 
 export interface SessionState {
@@ -82,6 +100,10 @@ export interface SessionState {
   flowState: FlowState | null;
   /** Whether any Write/Edit tool calls have been seen (for Changed Files button) */
   hasFileChanges: boolean;
+  /** Active subagents from @tintinweb/pi-subagents */
+  subagents: Map<string, SubagentState>;
+  /** Total turn count (for turnIndex assignment and sliding window offset) */
+  turnCount: number;
 }
 
 export function createInitialState(): SessionState {
@@ -101,6 +123,8 @@ export function createInitialState(): SessionState {
     interactiveRequests: [],
     flowState: null,
     hasFileChanges: false,
+    subagents: new Map(),
+    turnCount: 0,
   };
 }
 
@@ -425,15 +449,35 @@ export function reduceEvent(state: SessionState, event: DashboardEvent): Session
 
     case "tool_execution_update": {
       const toolCallId = data.toolCallId as string;
-      const partialResult = data.partialResult as string | undefined;
+      const partialResult = data.partialResult;
       if (partialResult) {
         const idx = next.messages.findLastIndex((m) => m.toolCallId === toolCallId);
         if (idx !== -1) {
           next.messages = [...next.messages];
-          next.messages[idx] = {
-            ...next.messages[idx],
-            result: truncateLines(partialResult, 30),
-          };
+          // Structured partialResult (e.g. Agent tool sends { content, details })
+          if (typeof partialResult === "object" && partialResult !== null) {
+            const structured = partialResult as Record<string, unknown>;
+            const details = structured.details as Record<string, unknown> | undefined;
+            // Extract text from content array or stringify
+            let text: string | undefined;
+            const content = structured.content;
+            if (Array.isArray(content) && content.length > 0 && content[0]?.text) {
+              text = content[0].text as string;
+            } else if (content != null) {
+              text = String(content);
+            }
+            next.messages[idx] = {
+              ...next.messages[idx],
+              ...(text != null ? { result: truncateLines(text, 30) } : {}),
+              ...(details ? { toolDetails: details } : {}),
+            };
+          } else {
+            // Plain string partialResult (standard tools)
+            next.messages[idx] = {
+              ...next.messages[idx],
+              result: truncateLines(partialResult as string, 30),
+            };
+          }
         }
       }
       break;
@@ -459,12 +503,27 @@ export function reduceEvent(state: SessionState, event: DashboardEvent): Session
         const result = data.result as string | undefined;
         const msgStartedAt = next.messages[idx].startedAt;
         next.messages = [...next.messages];
+        // Extract tool details (e.g. AgentDetails from replayed sessions)
+        const endDetails = data.details as Record<string, unknown> | undefined;
+        // For live events (no endDetails), update existing toolDetails.status
+        // so renderers (e.g. AgentToolRenderer) see the final status
+        const isError = data.isError as boolean;
+        let mergedDetails: Record<string, unknown> | undefined;
+        if (endDetails) {
+          mergedDetails = endDetails;
+        } else if (next.messages[idx].toolDetails) {
+          mergedDetails = {
+            ...next.messages[idx].toolDetails,
+            status: isError ? "error" : "completed",
+          };
+        }
         next.messages[idx] = {
           ...next.messages[idx],
-          toolStatus: (data.isError as boolean) ? "error" : "complete",
+          toolStatus: isError ? "error" : "complete",
           result: result ? truncateLines(result, 30) : next.messages[idx].result,
           duration: msgStartedAt ? event.timestamp - msgStartedAt : undefined,
           ...(images ? { images } : {}),
+          ...(mergedDetails ? { toolDetails: mergedDetails } : {}),
         };
       }
       break;
@@ -482,11 +541,22 @@ export function reduceEvent(state: SessionState, event: DashboardEvent): Session
       // Extract per-turn usage and accumulate cache stats
       const turnUsage = data.turnUsage as Record<string, number> | undefined;
       if (turnUsage) {
+        // Assign turnIndex to the last user message for scroll-to-turn navigation
+        const lastUserIdx = next.messages.findLastIndex((m) => m.role === "user");
+        let assignedTurnIndex = -1;
+        if (lastUserIdx !== -1 && next.messages[lastUserIdx].turnIndex === undefined) {
+          assignedTurnIndex = next.turnCount;
+          next.messages = [...next.messages];
+          next.messages[lastUserIdx] = { ...next.messages[lastUserIdx], turnIndex: next.turnCount };
+          next.turnCount += 1;
+        }
+
         const turnStat: TurnStat = {
           input: turnUsage.input ?? 0,
           output: turnUsage.output ?? 0,
           cacheRead: turnUsage.cacheRead ?? 0,
           cacheWrite: turnUsage.cacheWrite ?? 0,
+          turnIndex: assignedTurnIndex,
         };
         next.turnStats = [...next.turnStats, turnStat].slice(-MAX_TURN_STATS);
         next.cacheRead += turnStat.cacheRead;
@@ -563,10 +633,59 @@ export function reduceEvent(state: SessionState, event: DashboardEvent): Session
       break;
     }
 
+    case "subagent_created": {
+      const id = data.id as string;
+      next.subagents = new Map(next.subagents);
+      next.subagents.set(id, {
+        id,
+        type: data.type as string ?? "unknown",
+        description: data.description as string ?? "",
+        status: "created",
+      });
+      break;
+    }
+
+    case "subagent_started": {
+      const id = data.id as string;
+      next.subagents = new Map(next.subagents);
+      const existing = next.subagents.get(id);
+      next.subagents.set(id, {
+        ...(existing ?? { id, type: data.type as string ?? "unknown", description: data.description as string ?? "" }),
+        status: "running",
+      });
+      break;
+    }
+
+    case "subagent_completed":
+    case "subagent_failed": {
+      const id = data.id as string;
+      next.subagents = new Map(next.subagents);
+      const existing = next.subagents.get(id);
+      next.subagents.set(id, {
+        ...(existing ?? { id, type: data.type as string ?? "unknown", description: data.description as string ?? "" }),
+        status: event.eventType === "subagent_completed" ? "completed" : "failed",
+        result: data.result as string | undefined,
+        error: data.error as string | undefined,
+        durationMs: data.durationMs as number | undefined,
+        tokens: data.tokens as SubagentState["tokens"],
+        toolUses: data.toolUses as number | undefined,
+      });
+      break;
+    }
+
     default: {
       // Delegate flow events to flow reducer
       if (isFlowEvent(event.eventType)) {
         next.flowState = reduceFlowEvent(next.flowState, event);
+      } else {
+        // Unknown event type — render as expandable raw JSON
+        next.messages = [...next.messages, {
+          id: `raw-${event.eventType}-${event.timestamp}-${next.messages.length}`,
+          role: "rawEvent" as const,
+          content: JSON.stringify(event.data, null, 2),
+          timestamp: event.timestamp,
+          toolName: event.eventType,
+        }];
       }
       break;
     }

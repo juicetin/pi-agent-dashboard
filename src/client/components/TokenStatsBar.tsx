@@ -10,6 +10,7 @@ interface Props {
   cacheRead: number;
   cacheWrite: number;
   cost: number;
+  onTurnClick?: (turnIndex: number) => void;
 }
 
 function formatTokens(n: number): string {
@@ -18,9 +19,14 @@ function formatTokens(n: number): string {
   return String(n);
 }
 
-export function TokenStatsBar({ turnStats, contextUsage, tokensIn, tokensOut, cacheRead, cacheWrite, cost }: Props) {
-  const maxTokens = turnStats.reduce(
-    (max, t) => Math.max(max, t.input + t.output),
+export function TokenStatsBar({ turnStats, contextUsage, tokensIn, tokensOut, cacheRead, cacheWrite, cost, onTurnClick }: Props) {
+  // Independent normalization per half
+  const maxInput = turnStats.reduce(
+    (max, t) => Math.max(max, t.input + t.cacheRead),
+    0
+  );
+  const maxOutput = turnStats.reduce(
+    (max, t) => Math.max(max, t.output),
     0
   );
 
@@ -29,7 +35,6 @@ export function TokenStatsBar({ turnStats, contextUsage, tokensIn, tokensOut, ca
       ? (contextUsage.tokens / contextUsage.contextWindow) * 100
       : null;
 
-  // Compute gradient color based on context usage percentage
   const gradientColor = contextPercent != null ? contextGradientColor(contextPercent) : null;
 
   // Latest turn for context bar segment proportions
@@ -39,42 +44,89 @@ export function TokenStatsBar({ turnStats, contextUsage, tokensIn, tokensOut, ca
     : 0;
 
   return (
-    <div className="px-4 py-2 border-b border-[var(--border-primary)] space-y-1.5">
-      {/* Per-turn bar chart */}
+    <div className="px-3 py-1.5 border-b border-[var(--border-primary)] space-y-1">
+      {/* Main row: chart left, stats right */}
       {turnStats.length > 0 && (
-        <div className="flex items-end gap-px h-8">
-          {turnStats.map((turn, i) => {
-            const total = turn.input + turn.output;
-            const scale = maxTokens > 0 ? total / maxTokens : 0;
-            const height = Math.max(scale * 100, 4); // min 4% so bars are visible
-            const inputPct = total > 0 ? (turn.input / total) * 100 : 0;
-            const outputPct = total > 0 ? (turn.output / total) * 100 : 0;
+        <div className="flex gap-3">
+          {/* Stats panel on the left */}
+          <div className="flex flex-col justify-center text-[9px] text-[var(--text-tertiary)] leading-tight whitespace-nowrap" data-testid="stats-panel">
+            <div><span className="text-blue-500">●</span> ↓{formatTokens(maxInput)}</div>
+            <div><span className="text-purple-500">●</span> ↑{formatTokens(maxOutput)}</div>
+            <div className="flex gap-1.5">
+              <span>↓{formatTokens(tokensIn + cacheRead)}</span>
+              <span>↑{formatTokens(tokensOut)}</span>
+            </div>
+            <div className="flex gap-1.5">
+              {cacheRead > 0 && <span>R{formatTokens(cacheRead)}</span>}
+              {cacheWrite > 0 && <span>W{formatTokens(cacheWrite)}</span>}
+              {cost > 0 && <span>${cost.toFixed(2)}</span>}
+            </div>
+          </div>
 
-            return (
-              <div
-                key={i}
-                className="flex-1 flex flex-col justify-end min-w-[3px] max-w-[12px]"
-                style={{ height: "100%" }}
-                title={`In: ${formatTokens(turn.input)} Out: ${formatTokens(turn.output)}`}
-              >
-                <div
-                  className="w-full flex flex-col overflow-hidden rounded-sm"
-                  style={{ height: `${height}%` }}
-                >
-                  <div className="bg-blue-500" style={{ height: `${inputPct}%` }} />
-                  <div className="bg-purple-500" style={{ height: `${outputPct}%` }} />
-                </div>
-              </div>
-            );
-          })}
+          {/* Butterfly chart */}
+          <div className="flex-1 min-w-0">
+            <div className="flex gap-px" data-testid="butterfly-chart">
+              {turnStats.map((turn, i) => {
+                const inputScale = maxInput > 0 ? (turn.input + turn.cacheRead) / maxInput : 0;
+                const inputHeight = Math.max(inputScale * 100, 4);
+
+                const outputScale = maxOutput > 0 ? turn.output / maxOutput : 0;
+                const outputHeight = Math.max(outputScale * 100, 4);
+
+                // When fewer than 50 bars, cap width so bars don't get too wide
+                const barMaxWidth = turnStats.length < 50 ? `${100 / 50}%` : undefined;
+                return (
+                  <div
+                    key={i}
+                    className={`flex flex-col flex-1 min-w-[2px]${onTurnClick && turn.turnIndex >= 0 ? " cursor-pointer" : ""}`}
+                    style={{ height: "100%", maxWidth: barMaxWidth }}
+                    title={`In: ${formatTokens(turn.input + turn.cacheRead)} Out: ${formatTokens(turn.output)}`}
+                    onClick={onTurnClick && turn.turnIndex >= 0 ? () => onTurnClick(turn.turnIndex) : undefined}
+                  >
+                    {/* Input half — grows upward */}
+                    <div className="h-[13px] flex flex-col justify-end">
+                      <div
+                        className="w-full overflow-hidden rounded-t-sm bg-blue-500"
+                        style={{ height: `${inputHeight}%` }}
+                      />
+                    </div>
+
+                    {/* Center axis */}
+                    <div className="h-px bg-[var(--border-subtle)] flex-shrink-0" />
+
+                    {/* Output half — grows downward */}
+                    <div className="h-[13px] flex flex-col justify-start">
+                      <div
+                        className="w-full overflow-hidden rounded-b-sm bg-purple-500"
+                        style={{ height: `${outputHeight}%` }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+
+        </div>
+      )}
+
+      {/* Fallback stats when no turns */}
+      {turnStats.length === 0 && (tokensIn > 0 || tokensOut > 0 || cost > 0) && (
+        <div className="flex items-center gap-3 text-[10px] text-[var(--text-tertiary)]">
+          <span>↓{formatTokens(tokensIn + cacheRead)}</span>
+          <span>↑{formatTokens(tokensOut)}</span>
+          {cacheRead > 0 && <span>R{formatTokens(cacheRead)}</span>}
+          {cacheWrite > 0 && <span>W{formatTokens(cacheWrite)}</span>}
+          {cost > 0 && <span>${cost.toFixed(2)}</span>}
         </div>
       )}
 
       {/* Context window stacked progress bar */}
       {contextUsage && contextUsage.contextWindow > 0 && (
-        <div className="flex items-center gap-2 text-[10px] text-[var(--text-tertiary)]">
+        <div className="flex items-center gap-2 text-[9px] text-[var(--text-tertiary)]">
           <span>{contextUsage.tokens != null ? formatTokens(contextUsage.tokens) : "—"}</span>
-          <div className="flex-1 h-2 bg-[var(--bg-tertiary)] rounded-full overflow-hidden flex" data-testid="context-bar">
+          <div className="flex-1 h-1.5 bg-[var(--bg-tertiary)] rounded-full overflow-hidden flex" data-testid="context-bar">
             {contextPercent != null && latestTurn && latestTotal > 0 ? (
               <>
                 {latestTurn.cacheRead > 0 && (
@@ -110,29 +162,6 @@ export function TokenStatsBar({ turnStats, contextUsage, tokensIn, tokensOut, ca
           <span>{formatTokens(contextUsage.contextWindow)}</span>
         </div>
       )}
-
-      {/* Bar chart legend */}
-      {turnStats.length > 0 && (
-        <div className="flex items-center gap-3 text-[10px] text-[var(--text-tertiary)]">
-          <span className="inline-flex items-center gap-1">
-            <span className="w-2 h-2 rounded-sm bg-blue-500 inline-block" />
-            input
-          </span>
-          <span className="inline-flex items-center gap-1">
-            <span className="w-2 h-2 rounded-sm bg-purple-500 inline-block" />
-            output
-          </span>
-        </div>
-      )}
-
-      {/* Token counters — cumulative, matching pi CLI format */}
-      <div className="flex items-center gap-3 text-xs text-[var(--text-tertiary)] flex-wrap">
-        <span>↑{formatTokens(tokensOut)}</span>
-        <span>↓{formatTokens(tokensIn)}</span>
-        {cacheRead > 0 && <span>R{formatTokens(cacheRead)}</span>}
-        {cacheWrite > 0 && <span>W{formatTokens(cacheWrite)}</span>}
-        {cost > 0 && <span>${cost.toFixed(4)}</span>}
-      </div>
     </div>
   );
 }

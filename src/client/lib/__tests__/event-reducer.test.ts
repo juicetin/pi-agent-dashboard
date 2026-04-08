@@ -263,6 +263,55 @@ describe("eventReducer", () => {
     expect(lines.length).toBeLessThanOrEqual(30);
   });
 
+  it("should extract toolDetails from structured partialResult object", () => {
+    const state = applyEvents([
+      {
+        eventType: "tool_execution_start",
+        timestamp: Date.now(),
+        data: { toolCallId: "tc1", toolName: "Agent", args: { prompt: "Fix bug", subagent_type: "Explore" } },
+      },
+      {
+        eventType: "tool_execution_update",
+        timestamp: Date.now(),
+        data: {
+          toolCallId: "tc1",
+          toolName: "Agent",
+          partialResult: {
+            content: [{ type: "text", text: "3 tool uses..." }],
+            details: { displayName: "Explore", status: "running", toolUses: 3, durationMs: 5000 },
+          },
+        },
+      },
+    ]);
+
+    expect(state.messages).toHaveLength(1);
+    expect(state.messages[0].result).toBe("3 tool uses...");
+    expect(state.messages[0].toolDetails).toEqual({
+      displayName: "Explore",
+      status: "running",
+      toolUses: 3,
+      durationMs: 5000,
+    });
+  });
+
+  it("should handle string partialResult unchanged", () => {
+    const state = applyEvents([
+      {
+        eventType: "tool_execution_start",
+        timestamp: Date.now(),
+        data: { toolCallId: "tc1", toolName: "bash", args: { command: "ls" } },
+      },
+      {
+        eventType: "tool_execution_update",
+        timestamp: Date.now(),
+        data: { toolCallId: "tc1", toolName: "bash", partialResult: "output line" },
+      },
+    ]);
+
+    expect(state.messages[0].result).toBe("output line");
+    expect(state.messages[0].toolDetails).toBeUndefined();
+  });
+
   it("should set status to idle on agent_end", () => {
     const state = applyEvents([
       { eventType: "agent_start", timestamp: Date.now(), data: {} },
@@ -362,7 +411,7 @@ describe("eventReducer", () => {
     ]);
 
     expect(state.turnStats).toHaveLength(1);
-    expect(state.turnStats[0]).toEqual({
+    expect(state.turnStats[0]).toMatchObject({
       input: 1000,
       output: 500,
       cacheRead: 200,
@@ -1201,5 +1250,511 @@ describe("command_feedback events", () => {
       ]);
       expect(state.thinkingStartedAt).toBeUndefined();
     });
+  });
+
+  describe("unknown / raw events", () => {
+    it("should render unknown event types as rawEvent messages", () => {
+      const state = applyEvents([
+        {
+          eventType: "some_extension_event",
+          timestamp: 1000,
+          data: { foo: "bar", count: 42 },
+        },
+      ]);
+      expect(state.messages).toHaveLength(1);
+      expect(state.messages[0].role).toBe("rawEvent");
+      expect(state.messages[0].toolName).toBe("some_extension_event");
+      expect(JSON.parse(state.messages[0].content)).toEqual({ foo: "bar", count: 42 });
+    });
+
+    it("should not create rawEvent for known event types", () => {
+      const state = applyEvents([
+        {
+          eventType: "turn_end",
+          timestamp: 1000,
+          data: {},
+        },
+      ]);
+      // turn_end is handled but doesn't produce a message
+      expect(state.messages.filter(m => m.role === "rawEvent")).toHaveLength(0);
+    });
+  });
+
+  describe("Agent tool calls", () => {
+    it("should track Agent tool_execution_start with subagent args", () => {
+      const state = applyEvents([
+        {
+          eventType: "tool_execution_start",
+          timestamp: 1000,
+          data: {
+            toolCallId: "agent-1",
+            toolName: "Agent",
+            args: { prompt: "Explore the codebase", subagent_type: "Explore", description: "Codebase exploration" },
+          },
+        },
+      ]);
+
+      expect(state.messages).toHaveLength(1);
+      expect(state.messages[0].toolName).toBe("Agent");
+      expect(state.messages[0].toolCallId).toBe("agent-1");
+      expect(state.messages[0].toolStatus).toBe("running");
+      expect(state.messages[0].args).toEqual({
+        prompt: "Explore the codebase",
+        subagent_type: "Explore",
+        description: "Codebase exploration",
+      });
+      expect(state.currentTool).toBe("Agent");
+    });
+
+    it("should update Agent tool with structured partialResult (details + content)", () => {
+      const state = applyEvents([
+        {
+          eventType: "tool_execution_start",
+          timestamp: 1000,
+          data: { toolCallId: "agent-1", toolName: "Agent", args: { prompt: "Fix it" } },
+        },
+        {
+          eventType: "tool_execution_update",
+          timestamp: 2000,
+          data: {
+            toolCallId: "agent-1",
+            toolName: "Agent",
+            partialResult: {
+              content: [{ type: "text", text: "Investigating files..." }],
+              details: { displayName: "Explore", status: "running", toolUses: 2, durationMs: 1000 },
+            },
+          },
+        },
+      ]);
+
+      expect(state.messages).toHaveLength(1);
+      expect(state.messages[0].result).toBe("Investigating files...");
+      expect(state.messages[0].toolDetails).toEqual({
+        displayName: "Explore",
+        status: "running",
+        toolUses: 2,
+        durationMs: 1000,
+      });
+    });
+
+    it("should complete Agent tool with duration", () => {
+      const state = applyEvents([
+        {
+          eventType: "tool_execution_start",
+          timestamp: 1000,
+          data: { toolCallId: "agent-1", toolName: "Agent", args: { prompt: "Plan changes" } },
+        },
+        {
+          eventType: "tool_execution_end",
+          timestamp: 5000,
+          data: {
+            toolCallId: "agent-1",
+            toolName: "Agent",
+            result: "Done: 3 files analyzed",
+            isError: false,
+          },
+        },
+      ]);
+
+      expect(state.messages).toHaveLength(1);
+      expect(state.messages[0].toolStatus).toBe("complete");
+      expect(state.messages[0].result).toBe("Done: 3 files analyzed");
+      expect(state.messages[0].duration).toBe(4000);
+      expect(state.currentTool).toBeUndefined();
+    });
+
+    it("should update toolDetails.status to completed when tool_execution_end has no details (live events)", () => {
+      const state = applyEvents([
+        {
+          eventType: "tool_execution_start",
+          timestamp: 1000,
+          data: { toolCallId: "agent-1", toolName: "Agent", args: { prompt: "Explore" } },
+        },
+        {
+          eventType: "tool_execution_update",
+          timestamp: 2000,
+          data: {
+            toolCallId: "agent-1",
+            toolName: "Agent",
+            partialResult: {
+              content: [{ type: "text", text: "Working..." }],
+              details: { displayName: "Explore", status: "running", toolUses: 1, durationMs: 1000 },
+            },
+          },
+        },
+        {
+          eventType: "tool_execution_end",
+          timestamp: 5000,
+          data: {
+            toolCallId: "agent-1",
+            toolName: "Agent",
+            result: "Done",
+            isError: false,
+            // No details field — this is what pi core sends for live events
+          },
+        },
+      ]);
+
+      expect(state.messages).toHaveLength(1);
+      expect(state.messages[0].toolStatus).toBe("complete");
+      // toolDetails.status should be updated to "completed", not stuck on "running"
+      expect(state.messages[0].toolDetails?.status).toBe("completed");
+    });
+
+    it("should update toolDetails.status to error when tool_execution_end has isError and no details", () => {
+      const state = applyEvents([
+        {
+          eventType: "tool_execution_start",
+          timestamp: 1000,
+          data: { toolCallId: "agent-1", toolName: "Agent", args: { prompt: "Explore" } },
+        },
+        {
+          eventType: "tool_execution_update",
+          timestamp: 2000,
+          data: {
+            toolCallId: "agent-1",
+            toolName: "Agent",
+            partialResult: {
+              content: [{ type: "text", text: "Working..." }],
+              details: { displayName: "Explore", status: "running", toolUses: 1 },
+            },
+          },
+        },
+        {
+          eventType: "tool_execution_end",
+          timestamp: 5000,
+          data: {
+            toolCallId: "agent-1",
+            toolName: "Agent",
+            result: "Error occurred",
+            isError: true,
+          },
+        },
+      ]);
+
+      expect(state.messages[0].toolStatus).toBe("error");
+      expect(state.messages[0].toolDetails?.status).toBe("error");
+    });
+
+    it("should handle Agent tool error", () => {
+      const state = applyEvents([
+        {
+          eventType: "tool_execution_start",
+          timestamp: 1000,
+          data: { toolCallId: "agent-1", toolName: "Agent", args: { prompt: "Do something" } },
+        },
+        {
+          eventType: "tool_execution_end",
+          timestamp: 3000,
+          data: {
+            toolCallId: "agent-1",
+            toolName: "Agent",
+            result: "Agent failed: timeout",
+            isError: true,
+          },
+        },
+      ]);
+
+      expect(state.messages).toHaveLength(1);
+      expect(state.messages[0].toolStatus).toBe("error");
+      expect(state.messages[0].result).toBe("Agent failed: timeout");
+    });
+
+    it("should handle multiple sequential Agent calls", () => {
+      const state = applyEvents([
+        {
+          eventType: "tool_execution_start",
+          timestamp: 1000,
+          data: { toolCallId: "agent-1", toolName: "Agent", args: { prompt: "Explore" } },
+        },
+        {
+          eventType: "tool_execution_end",
+          timestamp: 2000,
+          data: { toolCallId: "agent-1", toolName: "Agent", result: "Done", isError: false },
+        },
+        {
+          eventType: "tool_execution_start",
+          timestamp: 3000,
+          data: { toolCallId: "agent-2", toolName: "Agent", args: { prompt: "Implement" } },
+        },
+        {
+          eventType: "tool_execution_end",
+          timestamp: 4000,
+          data: { toolCallId: "agent-2", toolName: "Agent", result: "Implemented", isError: false },
+        },
+      ]);
+
+      const agentMessages = state.messages.filter(m => m.toolName === "Agent");
+      expect(agentMessages).toHaveLength(2);
+      expect(agentMessages[0].toolCallId).toBe("agent-1");
+      expect(agentMessages[1].toolCallId).toBe("agent-2");
+      expect(agentMessages.every(m => m.toolStatus === "complete")).toBe(true);
+    });
+  });
+
+  describe("subagent lifecycle events", () => {
+    it("should track subagent_created", () => {
+      const state = applyEvents([
+        {
+          eventType: "subagent_created",
+          timestamp: 1000,
+          data: { id: "sub-1", type: "Explore", description: "Search codebase" },
+        },
+      ]);
+
+      expect(state.subagents.size).toBe(1);
+      const sub = state.subagents.get("sub-1")!;
+      expect(sub.id).toBe("sub-1");
+      expect(sub.type).toBe("Explore");
+      expect(sub.description).toBe("Search codebase");
+      expect(sub.status).toBe("created");
+    });
+
+    it("should transition subagent to running on subagent_started", () => {
+      const state = applyEvents([
+        {
+          eventType: "subagent_created",
+          timestamp: 1000,
+          data: { id: "sub-1", type: "Explore", description: "Search codebase" },
+        },
+        {
+          eventType: "subagent_started",
+          timestamp: 2000,
+          data: { id: "sub-1" },
+        },
+      ]);
+
+      expect(state.subagents.get("sub-1")!.status).toBe("running");
+      // Preserves original fields
+      expect(state.subagents.get("sub-1")!.type).toBe("Explore");
+      expect(state.subagents.get("sub-1")!.description).toBe("Search codebase");
+    });
+
+    it("should handle subagent_started without prior created event", () => {
+      const state = applyEvents([
+        {
+          eventType: "subagent_started",
+          timestamp: 1000,
+          data: { id: "sub-1", type: "Plan", description: "Plan architecture" },
+        },
+      ]);
+
+      const sub = state.subagents.get("sub-1")!;
+      expect(sub.status).toBe("running");
+      expect(sub.type).toBe("Plan");
+    });
+
+    it("should mark subagent as completed with result metadata", () => {
+      const state = applyEvents([
+        {
+          eventType: "subagent_created",
+          timestamp: 1000,
+          data: { id: "sub-1", type: "Explore", description: "Search" },
+        },
+        {
+          eventType: "subagent_started",
+          timestamp: 2000,
+          data: { id: "sub-1" },
+        },
+        {
+          eventType: "subagent_completed",
+          timestamp: 5000,
+          data: {
+            id: "sub-1",
+            result: "Found 5 relevant files",
+            durationMs: 3000,
+            tokens: { input: 1000, output: 500, total: 1500 },
+            toolUses: 4,
+          },
+        },
+      ]);
+
+      const sub = state.subagents.get("sub-1")!;
+      expect(sub.status).toBe("completed");
+      expect(sub.result).toBe("Found 5 relevant files");
+      expect(sub.durationMs).toBe(3000);
+      expect(sub.tokens).toEqual({ input: 1000, output: 500, total: 1500 });
+      expect(sub.toolUses).toBe(4);
+    });
+
+    it("should mark subagent as failed with error", () => {
+      const state = applyEvents([
+        {
+          eventType: "subagent_created",
+          timestamp: 1000,
+          data: { id: "sub-1", type: "general-purpose", description: "Fix bug" },
+        },
+        {
+          eventType: "subagent_started",
+          timestamp: 2000,
+          data: { id: "sub-1" },
+        },
+        {
+          eventType: "subagent_failed",
+          timestamp: 4000,
+          data: {
+            id: "sub-1",
+            error: "Max turns exceeded",
+            durationMs: 2000,
+          },
+        },
+      ]);
+
+      const sub = state.subagents.get("sub-1")!;
+      expect(sub.status).toBe("failed");
+      expect(sub.error).toBe("Max turns exceeded");
+      expect(sub.durationMs).toBe(2000);
+    });
+
+    it("should track multiple concurrent subagents", () => {
+      const state = applyEvents([
+        {
+          eventType: "subagent_created",
+          timestamp: 1000,
+          data: { id: "sub-1", type: "Explore", description: "Search files" },
+        },
+        {
+          eventType: "subagent_created",
+          timestamp: 1000,
+          data: { id: "sub-2", type: "Plan", description: "Plan changes" },
+        },
+        {
+          eventType: "subagent_started",
+          timestamp: 1500,
+          data: { id: "sub-1" },
+        },
+        {
+          eventType: "subagent_started",
+          timestamp: 1500,
+          data: { id: "sub-2" },
+        },
+        {
+          eventType: "subagent_completed",
+          timestamp: 3000,
+          data: { id: "sub-1", result: "Done exploring", durationMs: 1500 },
+        },
+        {
+          eventType: "subagent_failed",
+          timestamp: 4000,
+          data: { id: "sub-2", error: "Timeout", durationMs: 2500 },
+        },
+      ]);
+
+      expect(state.subagents.size).toBe(2);
+      expect(state.subagents.get("sub-1")!.status).toBe("completed");
+      expect(state.subagents.get("sub-2")!.status).toBe("failed");
+    });
+
+    it("should default type and description when missing", () => {
+      const state = applyEvents([
+        {
+          eventType: "subagent_created",
+          timestamp: 1000,
+          data: { id: "sub-1" },
+        },
+      ]);
+
+      const sub = state.subagents.get("sub-1")!;
+      expect(sub.type).toBe("unknown");
+      expect(sub.description).toBe("");
+    });
+  });
+});
+
+describe("turnIndex tracking", () => {
+  it("should assign turnIndex to last user message on stats_update with turnUsage", () => {
+    const state = applyEvents([
+      {
+        eventType: "message_start",
+        timestamp: 1000,
+        data: { message: { role: "user", content: [{ type: "text", text: "Hello" }] } },
+      },
+      {
+        eventType: "stats_update",
+        timestamp: 2000,
+        data: {
+          tokensIn: 100,
+          tokensOut: 50,
+          cost: 0.001,
+          turnUsage: { input: 100, output: 50, cacheRead: 0, cacheWrite: 0 },
+        },
+      },
+    ]);
+
+    expect(state.messages[0].turnIndex).toBe(0);
+    expect(state.turnCount).toBe(1);
+  });
+
+  it("should increment turnIndex across multiple turns", () => {
+    const state = applyEvents([
+      {
+        eventType: "message_start",
+        timestamp: 1000,
+        data: { message: { role: "user", content: [{ type: "text", text: "Turn 1" }] } },
+      },
+      {
+        eventType: "stats_update",
+        timestamp: 2000,
+        data: { tokensIn: 100, tokensOut: 50, cost: 0.001, turnUsage: { input: 100, output: 50, cacheRead: 0, cacheWrite: 0 } },
+      },
+      {
+        eventType: "message_start",
+        timestamp: 3000,
+        data: { message: { role: "user", content: [{ type: "text", text: "Turn 2" }] } },
+      },
+      {
+        eventType: "stats_update",
+        timestamp: 4000,
+        data: { tokensIn: 200, tokensOut: 80, cost: 0.002, turnUsage: { input: 200, output: 80, cacheRead: 0, cacheWrite: 0 } },
+      },
+    ]);
+
+    const userMsgs = state.messages.filter((m) => m.role === "user");
+    expect(userMsgs[0].turnIndex).toBe(0);
+    expect(userMsgs[1].turnIndex).toBe(1);
+    expect(state.turnCount).toBe(2);
+  });
+
+  it("should not assign turnIndex on stats_update without turnUsage", () => {
+    const state = applyEvents([
+      {
+        eventType: "message_start",
+        timestamp: 1000,
+        data: { message: { role: "user", content: [{ type: "text", text: "Hello" }] } },
+      },
+      {
+        eventType: "stats_update",
+        timestamp: 2000,
+        data: { tokensIn: 100, tokensOut: 50, cost: 0.001 },
+      },
+    ]);
+
+    expect(state.messages[0].turnIndex).toBeUndefined();
+    expect(state.turnCount).toBe(0);
+  });
+
+  it("should not double-assign turnIndex to already-indexed user message", () => {
+    // Two stats_update for the same turn should not change the index
+    const state = applyEvents([
+      {
+        eventType: "message_start",
+        timestamp: 1000,
+        data: { message: { role: "user", content: [{ type: "text", text: "Hello" }] } },
+      },
+      {
+        eventType: "stats_update",
+        timestamp: 2000,
+        data: { tokensIn: 100, tokensOut: 50, cost: 0.001, turnUsage: { input: 100, output: 50, cacheRead: 0, cacheWrite: 0 } },
+      },
+      {
+        eventType: "stats_update",
+        timestamp: 3000,
+        data: { tokensIn: 100, tokensOut: 50, cost: 0.001, turnUsage: { input: 100, output: 50, cacheRead: 0, cacheWrite: 0 } },
+      },
+    ]);
+
+    // First stats_update assigns turnIndex 0, second sees it's already set and skips
+    expect(state.messages[0].turnIndex).toBe(0);
+    expect(state.turnCount).toBe(1);
   });
 });

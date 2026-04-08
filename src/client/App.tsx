@@ -8,7 +8,7 @@ import { HamburgerButton, MobileOverlay } from "./components/MobileOverlay.js";
 import { MobileShell } from "./components/MobileShell.js";
 import { useMobile } from "./hooks/useMobile.js";
 import { getMobileDepth } from "./lib/mobile-depth.js";
-import { ChatView } from "./components/ChatView.js";
+import { ChatView, type ChatViewHandle } from "./components/ChatView.js";
 import { FlowDashboard } from "./components/FlowDashboard.js";
 import { FlowAgentDetail } from "./components/FlowAgentDetail.js";
 import { MarkdownPreviewView } from "./components/MarkdownPreviewView.js";
@@ -19,6 +19,7 @@ import { useOpenSpecReader } from "./hooks/useOpenSpecReader.js";
 import type { OpenSpecArtifact } from "../shared/types.js";
 import { SessionHeader } from "./components/SessionHeader.js";
 import { TokenStatsBar } from "./components/TokenStatsBar.js";
+
 import { CommandInput } from "./components/CommandInput.js";
 import { StatusBar } from "./components/StatusBar.js";
 import { LandingPage } from "./components/LandingPage.js";
@@ -95,6 +96,7 @@ export default function App() {
   const folderTermCwd = folderTermMatch ? decodeFolderPath(folderTermParams?.encodedCwd ?? "") : null;
   const folderEditorCwd = folderEditorMatch ? decodeFolderPath(folderEditorParams?.encodedCwd ?? "") : null;
   const sidebar = useSidebarState();
+  const chatViewRef = useRef<ChatViewHandle>(null);
   const isMobile = useMobile();
   const installPrompt = useInstallPrompt();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -117,6 +119,7 @@ export default function App() {
   const [editorStatuses, setEditorStatuses] = useState<Map<string, { id: string; status: EditorInstanceStatus }>>(new Map());
   const [editorAvailable, setEditorAvailable] = useState<boolean | undefined>(undefined);
   const subscribedRef = useRef(new Set<string>());
+  const maxSeqMapRef = useRef(new Map<string, number>());
   const [flowDetailAgent, setFlowDetailAgent] = useState<string | null>(null);
   const [previewState, setPreviewState] = useState<{
     cwd: string;
@@ -152,7 +155,7 @@ export default function App() {
 
   const handleMessage = useMessageHandler(
     { setSessions, setSessionStates, setSessionCommands, setSessionFlows, setFileResults, setOpenspecMap, setModelsMap, setSpawnResult, setSessionOrderMap, setPinnedDirectories, setTerminals, setEditorStatuses },
-    { send, navigate, clearSpawningCwd, spawningCwdsRef, subscribedRef, pendingTerminalCwdRef },
+    { send, navigate, clearSpawningCwd, spawningCwdsRef, subscribedRef, pendingTerminalCwdRef, maxSeqMapRef },
   );
 
   useEffect(() => {
@@ -216,7 +219,7 @@ export default function App() {
     // clears subscribedRef, and adding `status` here re-triggers the effect).
     if (selectedId && !subscribedRef.current.has(selectedId) && status === "connected") {
       subscribedRef.current.add(selectedId);
-      send({ type: "subscribe", sessionId: selectedId, lastSeq: 0 });
+      send({ type: "subscribe", sessionId: selectedId, lastSeq: maxSeqMapRef.current.get(selectedId) ?? 0 });
     }
   }, [selectedId, send, status]);
 
@@ -264,7 +267,7 @@ export default function App() {
     clearSpawningCwd, spawnTimeoutsRef, pendingTerminalCwdRef, terminals,
   });
   const {
-    handleAbort, handleCancelPending, handleRespondToUi, handleSend,
+    handleAbort, handleForceKill, handleCancelPending, handleRespondToUi, handleSend,
     handleSelect, handleRenameSession, handleShutdownSession,
     handleSendPromptToSession, handleResumeSession, handleSpawnSession,
     handleHideSession, handleUnhideSession,
@@ -411,6 +414,7 @@ export default function App() {
               next.set(selectedId, createInitialState());
               return next;
             });
+            maxSeqMapRef.current.set(selectedId, 0);
             subscribedRef.current.delete(selectedId);
             subscribedRef.current.add(selectedId);
             send({ type: "subscribe", sessionId: selectedId, lastSeq: 0 });
@@ -430,6 +434,7 @@ export default function App() {
             next.set(selectedId, createInitialState());
             return next;
           });
+          maxSeqMapRef.current.set(selectedId, 0);
           subscribedRef.current.delete(selectedId);
           subscribedRef.current.add(selectedId);
           send({ type: "subscribe", sessionId: selectedId, lastSeq: 0 });
@@ -481,6 +486,7 @@ export default function App() {
           cacheRead={selectedState.cacheRead}
           cacheWrite={selectedState.cacheWrite}
           cost={selectedState.cost}
+          onTurnClick={(turnIndex) => chatViewRef.current?.scrollToTurn(turnIndex)}
         />
       )}
       {archiveBrowserCwd ? (
@@ -582,7 +588,7 @@ export default function App() {
               </div>
             </div>
           }>
-            <ChatView sessionId={selectedId} state={selectedState} toolContext={toolContext} onCancelPending={handleCancelPending} onRespondToUi={handleRespondToUi} />
+            <ChatView ref={chatViewRef} sessionId={selectedId} state={selectedState} toolContext={toolContext} onCancelPending={handleCancelPending} onRespondToUi={handleRespondToUi} onAbort={handleAbort} onForceKill={handleForceKill} />
           </ErrorBoundary>
           <StatusBar
             model={selectedState.model ?? selectedSession?.model}
@@ -611,6 +617,7 @@ export default function App() {
             disabled={false}
             sessionStatus={selectedState.status}
             onAbort={handleAbort}
+            onForceKill={handleForceKill}
             pendingPrompt={!!selectedState.pendingPrompt}
             onCancelPending={handleCancelPending}
           />

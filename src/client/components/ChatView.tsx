@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useCallback, useState } from "react";
+import React, { useRef, useEffect, useCallback, useState, useMemo, forwardRef, useImperativeHandle } from "react";
 import { Icon } from "@mdi/react";
 import { mdiContentCopy, mdiTextBox, mdiLoading, mdiChevronDown } from "@mdi/js";
 import type { SessionState, ChatImage, InteractiveUiRequest } from "../lib/event-reducer.js";
@@ -9,9 +9,14 @@ import { ToolCallStep } from "./ToolCallStep.js";
 import { ThinkingBlock } from "./ThinkingBlock.js";
 import { BashOutputCard } from "./BashOutputCard.js";
 import { CommandFeedbackCard } from "./CommandFeedbackCard.js";
+import { RawEventCard } from "./RawEventCard.js";
 import { formatMessageTime } from "../lib/format.js";
 import { useMobile } from "../hooks/useMobile.js";
+import { isDebugTool } from "../hooks/useDebugToolsVisible.js";
 import { getInteractiveRenderer } from "./interactive-renderers/registry.js";
+import { groupConsecutiveToolCalls, type ChatItem, type ToolCallGroup } from "../lib/group-tool-calls.js";
+import { CollapsedToolGroup } from "./CollapsedToolGroup.js";
+import { ImageLightbox } from "./ImageLightbox.js";
 
 interface Props {
   sessionId?: string;
@@ -19,20 +24,32 @@ interface Props {
   toolContext: ToolContext;
   onCancelPending?: () => void;
   onRespondToUi?: (requestId: string, result?: unknown, cancelled?: boolean) => void;
+  onAbort?: () => void;
+  onForceKill?: () => void;
 }
 
 function ImageAttachments({ images }: { images: ChatImage[] }) {
+  const [lightboxSrc, setLightboxSrc] = useState<{ src: string; alt: string } | null>(null);
   return (
-    <div className="flex gap-2 flex-wrap mb-2">
-      {images.map((img, i) => (
-        <img
-          key={i}
-          src={`data:${img.mimeType};base64,${img.data}`}
-          alt={`Attachment ${i + 1}`}
-          className="max-w-[300px] max-h-[300px] rounded border border-white/20 object-contain"
-        />
-      ))}
-    </div>
+    <>
+      <div className="flex gap-2 flex-wrap mb-2">
+        {images.map((img, i) => {
+          const src = `data:${img.mimeType};base64,${img.data}`;
+          return (
+            <img
+              key={i}
+              src={src}
+              alt={`Attachment ${i + 1}`}
+              className="max-w-[300px] max-h-[300px] rounded border border-white/20 object-contain cursor-pointer"
+              onClick={() => setLightboxSrc({ src, alt: `Attachment ${i + 1}` })}
+            />
+          );
+        })}
+      </div>
+      {lightboxSrc && (
+        <ImageLightbox src={lightboxSrc.src} alt={lightboxSrc.alt} onClose={() => setLightboxSrc(null)} />
+      )}
+    </>
   );
 }
 
@@ -87,10 +104,18 @@ const SCROLL_THRESHOLD = 50;
 // Per-session scroll state, persisted across session switches
 const scrollStateMap = new Map<string, { scrollTop: number; nearBottom: boolean }>();
 
-export function ChatView({ sessionId, state, toolContext, onCancelPending, onRespondToUi }: Props) {
+export interface ChatViewHandle {
+  scrollToTurn: (turnIndex: number) => void;
+}
+
+export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView({ sessionId, state, toolContext, onCancelPending, onRespondToUi, onAbort, onForceKill }, ref) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const isNearBottom = useRef(true);
+  const programmaticScroll = useRef(false);
   const [showScrollButton, setShowScrollButton] = useState(false);
+  const [showDebugTools] = useState(() => {
+    try { return localStorage.getItem("show-debug-tools") === "true"; } catch { return false; }
+  });
   const prevSessionRef = useRef(sessionId);
   const isMobile = useMobile();
   const bubbleMax = isMobile ? "max-w-[95%]" : "max-w-[80%]";
@@ -153,26 +178,61 @@ export function ChatView({ sessionId, state, toolContext, onCancelPending, onRes
     }
   }, [sessionId]);
 
-  // Auto-scroll on new content when near bottom
+  // Auto-scroll on new content when near bottom (skip during programmatic scroll)
   useEffect(() => {
-    if (isNearBottom.current) {
+    if (isNearBottom.current && !programmaticScroll.current) {
       requestAnimationFrame(() => {
         scrollRef.current?.scrollTo(0, scrollRef.current!.scrollHeight);
       });
     }
   }, [state.messages.length, state.streamingText, state.pendingPrompt]);
 
+  // Group consecutive repeated tool calls for cleaner display
+  const filteredMessages = useMemo(() => {
+    if (showDebugTools) return state.messages;
+    return state.messages.filter((m) => m.role !== "toolResult" || !isDebugTool(m.toolName ?? ""));
+  }, [state.messages, showDebugTools]);
+  const groupedMessages = useMemo(() => groupConsecutiveToolCalls(filteredMessages), [filteredMessages]);
+
+  useImperativeHandle(ref, () => ({
+    scrollToTurn(turnIndex: number) {
+      const container = scrollRef.current;
+      if (!container) return;
+      const el = container.querySelector(`[data-turn="${turnIndex}"]`) as HTMLElement | null;
+      if (!el) return;
+      // Suppress auto-scroll during programmatic navigation
+      programmaticScroll.current = true;
+      isNearBottom.current = false;
+      setShowScrollButton(true);
+      // Use getBoundingClientRect for reliable position calculation
+      const containerRect = container.getBoundingClientRect();
+      const elRect = el.getBoundingClientRect();
+      const targetTop = container.scrollTop + (elRect.top - containerRect.top);
+      container.scrollTo({ top: targetTop, behavior: "instant" });
+      // Re-enable auto-scroll after a delay
+      setTimeout(() => { programmaticScroll.current = false; }, 200);
+    },
+  }), []);
+
   return (
     <div className="flex-1 relative overflow-hidden">
     <div ref={scrollRef} onScroll={handleScroll} className={`h-full overflow-y-auto ${isMobile ? "p-2" : "p-4"} space-y-1`}>
-      {state.messages.map((msg) => {
+      {groupedMessages.map((item, idx) => {
+        // Collapsed group of repeated tool calls
+        if ((item as ToolCallGroup).type === "group") {
+          const group = item as ToolCallGroup;
+          return <CollapsedToolGroup key={`group-${idx}`} group={group} toolContext={toolContext} />;
+        }
+
+        const msg = item as import("../lib/event-reducer.js").ChatMessage;
+
         if (msg.role === "turnSeparator") {
           return <div key={msg.id} className="mx-4 my-2 border-t border-[var(--border-subtle)]" />;
         }
 
         if (msg.role === "user") {
           return (
-            <div key={msg.id} className="mt-4 mb-4 flex justify-end">
+            <div key={msg.id} className="mt-4 mb-4 flex justify-end" {...(msg.turnIndex != null ? { "data-turn": msg.turnIndex } : {})}>
               <div className={`bg-blue-500/10 border border-blue-500/20 border-l-2 border-l-blue-400 rounded-xl shadow-md px-4 py-2 ${bubbleMax}`}>
                 {msg.images && msg.images.length > 0 && (
                   <ImageAttachments images={msg.images} />
@@ -201,6 +261,7 @@ export function ChatView({ sessionId, state, toolContext, onCancelPending, onRes
         }
 
         if (msg.role === "toolResult") {
+          if (!showDebugTools && isDebugTool(msg.toolName ?? "")) return null;
           return (
             <ToolCallStep
               key={msg.id}
@@ -213,6 +274,9 @@ export function ChatView({ sessionId, state, toolContext, onCancelPending, onRes
               context={toolContext}
               startedAt={msg.startedAt}
               duration={msg.duration}
+              toolDetails={msg.toolDetails}
+              onAbort={msg.toolStatus === "running" ? onAbort : undefined}
+              onForceKill={msg.toolStatus === "running" ? onForceKill : undefined}
             />
           );
         }
@@ -257,6 +321,18 @@ export function ChatView({ sessionId, state, toolContext, onCancelPending, onRes
               key={msg.id}
               request={request}
               onRespondToUi={onRespondToUi}
+            />
+          );
+        }
+
+        if (msg.role === "rawEvent") {
+          if (!showDebugTools) return null;
+          return (
+            <RawEventCard
+              key={msg.id}
+              eventType={msg.toolName ?? "unknown"}
+              content={msg.content}
+              timestamp={msg.timestamp}
             />
           );
         }
@@ -329,4 +405,4 @@ export function ChatView({ sessionId, state, toolContext, onCancelPending, onRes
     )}
     </div>
   );
-}
+});

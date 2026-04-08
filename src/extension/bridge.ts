@@ -420,6 +420,17 @@ function initBridge(pi: ExtensionAPI) {
         }
       }
 
+      // For message_start and message_end, enrich with entryId (current leaf)
+      if (eventType === "message_start" || eventType === "message_end") {
+        const entryId = ctx.sessionManager?.getLeafId?.();
+        if (entryId) {
+          const enriched = { ...event, entryId };
+          const msg = mapEventToProtocol(sessionId, enriched);
+          connection.send(msg);
+          return;
+        }
+      }
+
       const msg = mapEventToProtocol(sessionId, event);
       connection.send(msg);
     }));

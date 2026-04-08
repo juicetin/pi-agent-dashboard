@@ -30,6 +30,8 @@ export interface ChatMessage {
   turnIndex?: number;
   /** Structured metadata from tool (e.g. AgentDetails from pi-subagents) */
   toolDetails?: Record<string, unknown>;
+  /** Session entry ID (for fork-from-message) */
+  entryId?: string;
 }
 
 export interface ToolCallState {
@@ -322,6 +324,7 @@ export function reduceEvent(state: SessionState, event: DashboardEvent): Session
             content: text,
             images,
             timestamp: event.timestamp,
+            entryId: data.entryId as string | undefined,
           },
         ];
       }
@@ -388,6 +391,7 @@ export function reduceEvent(state: SessionState, event: DashboardEvent): Session
               role: "assistant",
               content: next.streamingText,
               timestamp: event.timestamp,
+              entryId: data.entryId as string | undefined,
             },
           ];
           next.streamingText = "";

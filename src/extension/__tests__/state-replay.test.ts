@@ -243,6 +243,46 @@ describe("replayEntriesAsEvents", () => {
     ]);
   });
 
+  it("should include entryId in message_start event for user messages", () => {
+    const entries = [
+      {
+        type: "message",
+        id: "user-entry-abc",
+        parentId: null,
+        timestamp: "2025-01-01T00:00:00Z",
+        message: {
+          role: "user",
+          content: [{ type: "text", text: "Hello" }],
+        },
+      },
+    ];
+
+    const events = replayEntriesAsEvents("sess-1", entries);
+    expect(events).toHaveLength(1);
+    expect(events[0].event.eventType).toBe("message_start");
+    expect((events[0].event.data as any).entryId).toBe("user-entry-abc");
+  });
+
+  it("should include entryId in message_end event for assistant messages", () => {
+    const entries = [
+      {
+        type: "message",
+        id: "assistant-entry-def",
+        parentId: null,
+        timestamp: "2025-01-01T00:00:00Z",
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "Hi there" }],
+        },
+      },
+    ];
+
+    const events = replayEntriesAsEvents("sess-1", entries);
+    const endEvent = events.find(e => e.event.eventType === "message_end");
+    expect(endEvent).toBeDefined();
+    expect((endEvent!.event.data as any).entryId).toBe("assistant-entry-def");
+  });
+
   it("should extract image blocks from toolResult into images field", () => {
     const entries = [
       {

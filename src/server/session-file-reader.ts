@@ -3,7 +3,9 @@
  * Reads pi session files without requiring @mariozechner/pi-coding-agent.
  * Falls back to linear entry order (no tree branching support).
  */
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { randomUUID } from "node:crypto";
 
 export interface SessionEntry {
   type: string;
@@ -72,4 +74,62 @@ export function loadSessionEntries(filePath: string): SessionEntry[] {
 
   // Fallback: return all entries except header in order
   return entries.filter(e => e.type !== "session");
+}
+
+/**
+ * Create a new session file containing only the path from root to the given entry.
+ * This is used for "fork from message" — the new file is then passed to `pi --fork`.
+ * Returns the path of the new session file, or throws if entryId is not found.
+ */
+export function createBranchedSessionFile(sessionFilePath: string, targetEntryId: string): string {
+  if (!existsSync(sessionFilePath)) {
+    throw new Error(`Session file not found: ${sessionFilePath}`);
+  }
+
+  const content = readFileSync(sessionFilePath, "utf-8");
+  const allLines: string[] = content.trim().split("\n").filter(l => l.trim());
+  const allEntries: SessionEntry[] = [];
+  for (const line of allLines) {
+    try { allEntries.push(JSON.parse(line)); } catch { /* skip */ }
+  }
+
+  if (allEntries.length === 0) throw new Error("Empty session file");
+
+  const header = allEntries[0];
+  if (header.type !== "session") throw new Error("Invalid session file: missing header");
+
+  // Build index
+  const byId = new Map<string, SessionEntry>();
+  for (const entry of allEntries) {
+    if (entry.type === "session") continue;
+    if (entry.id) byId.set(entry.id, entry);
+  }
+
+  if (!byId.has(targetEntryId)) {
+    throw new Error(`Entry ID not found in session: ${targetEntryId}`);
+  }
+
+  // Walk from target to root
+  const branch: SessionEntry[] = [];
+  let current = byId.get(targetEntryId);
+  while (current) {
+    branch.unshift(current);
+    current = current.parentId ? byId.get(current.parentId) : undefined;
+  }
+
+  // Write new session file: header + branch entries (with linearized parentId chain)
+  const newHeader = { ...header, id: randomUUID(), parentSession: sessionFilePath };
+  const lines: string[] = [JSON.stringify(newHeader)];
+  for (let i = 0; i < branch.length; i++) {
+    const entry = { ...branch[i], parentId: i === 0 ? null : branch[i - 1].id };
+    lines.push(JSON.stringify(entry));
+  }
+
+  // Write to same directory as original session
+  const dir = dirname(sessionFilePath);
+  mkdirSync(dir, { recursive: true });
+  const newPath = join(dir, `${newHeader.id}.jsonl`);
+  writeFileSync(newPath, lines.join("\n") + "\n", "utf-8");
+
+  return newPath;
 }

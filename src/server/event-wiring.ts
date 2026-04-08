@@ -93,7 +93,8 @@ export function wireEvents(deps: EventWiringDeps): void {
       }
 
       // Server-side OpenSpec activity detection from forwarded events
-      if (msg.event.eventType === "tool_execution_start") {
+      // Skip during replay — replayed events from a forked session would set stale phase/change
+      if (msg.event.eventType === "tool_execution_start" && !replayingSessions.has(sessionId)) {
         const detected = detectOpenSpecActivity(
           msg.event.data.toolName as string,
           msg.event.data.args as Record<string, unknown> | undefined,
@@ -137,7 +138,7 @@ export function wireEvents(deps: EventWiringDeps): void {
           }
         }
       }
-      if (msg.event.eventType === "agent_end") {
+      if (msg.event.eventType === "agent_end" && !replayingSessions.has(sessionId)) {
         const session = sessionManager.get(sessionId);
         if (session?.openspecPhase || session?.openspecChange) {
           const clearUpdates: Partial<DashboardSession> = {
@@ -145,9 +146,7 @@ export function wireEvents(deps: EventWiringDeps): void {
             openspecChange: null as any,
           };
           sessionManager.update(sessionId, clearUpdates);
-          if (!replayingSessions.has(sessionId)) {
-            browserGateway.broadcastSessionUpdated(sessionId, clearUpdates);
-          }
+          browserGateway.broadcastSessionUpdated(sessionId, clearUpdates);
         }
       }
 
@@ -192,12 +191,23 @@ export function wireEvents(deps: EventWiringDeps): void {
 
     if (msg.type === "replay_complete") {
       replayingSessions.delete(sessionId);
+      // Clear any stale OpenSpec activity state that may have leaked
+      // (e.g. from events forwarded before the replay flag was set)
+      const preSession = sessionManager.get(sessionId);
+      if (preSession?.openspecPhase || preSession?.openspecChange) {
+        sessionManager.update(sessionId, {
+          openspecPhase: null as any,
+          openspecChange: null as any,
+        });
+      }
       // Broadcast the final accumulated status after replay
       const session = sessionManager.get(sessionId);
       if (session) {
         browserGateway.broadcastSessionUpdated(sessionId, {
           status: session.status,
           currentTool: session.currentTool ?? null,
+          openspecPhase: null,
+          openspecChange: null,
         });
       }
       // Send replayed events to browser subscribers.
@@ -302,16 +312,15 @@ export function wireEvents(deps: EventWiringDeps): void {
       }
 
       const forkParent = pendingForkRegistry.consumeFork(msg.cwd);
-      sessionOrderManager.insert(msg.cwd, sessionId, forkParent ?? undefined);
+      sessionOrderManager.insert(msg.cwd, sessionId);
 
       if (forkParent) {
         const session = sessionManager.get(sessionId);
         if (session && !session.attachedProposal) {
-          const donor = sessionManager.listAll().find(
-            (s) => s.id !== sessionId && s.cwd === msg.cwd && s.status === "ended" && s.attachedProposal,
-          );
-          if (donor?.attachedProposal) {
-            sessionManager.update(sessionId, { attachedProposal: donor.attachedProposal });
+          // Use the actual parent session's proposal, not any random ended session
+          const parent = sessionManager.get(forkParent);
+          if (parent?.attachedProposal) {
+            sessionManager.update(sessionId, { attachedProposal: parent.attachedProposal });
           }
         }
       }

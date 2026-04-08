@@ -1757,4 +1757,43 @@ describe("turnIndex tracking", () => {
     expect(state.messages[0].turnIndex).toBe(0);
     expect(state.turnCount).toBe(1);
   });
+
+  it("should store entryId on user message from message_start", () => {
+    const state = applyEvents([
+      {
+        eventType: "message_start",
+        timestamp: 1000,
+        data: { message: { role: "user", content: [{ type: "text", text: "Hi" }] }, entryId: "entry-u1" },
+      },
+    ]);
+    expect(state.messages[0].entryId).toBe("entry-u1");
+  });
+
+  it("should store entryId on assistant message from message_end", () => {
+    const state = applyEvents([
+      {
+        eventType: "message_update",
+        timestamp: 1000,
+        data: { type: "message_update", message: { role: "assistant", content: [{ type: "text", text: "Hello" }] } },
+      },
+      {
+        eventType: "message_end",
+        timestamp: 2000,
+        data: { message: { role: "assistant" }, entryId: "entry-a1" },
+      },
+    ]);
+    const assistant = state.messages.find(m => m.role === "assistant");
+    expect(assistant?.entryId).toBe("entry-a1");
+  });
+
+  it("should leave entryId undefined when not present in event data", () => {
+    const state = applyEvents([
+      {
+        eventType: "message_start",
+        timestamp: 1000,
+        data: { message: { role: "user", content: [{ type: "text", text: "Hi" }] } },
+      },
+    ]);
+    expect(state.messages[0].entryId).toBeUndefined();
+  });
 });

@@ -109,14 +109,14 @@ export function useSessionActions(deps: SessionActionDeps) {
     send({ type: "send_prompt", sessionId, text });
   }, [send]);
 
-  const handleResumeSession = useCallback((sessionId: string, mode: "continue" | "fork") => {
+  const handleResumeSession = useCallback((sessionId: string, mode: "continue" | "fork", entryId?: string) => {
     setSessions((prev) => {
       const next = new Map(prev);
       const existing = next.get(sessionId);
       if (existing) next.set(sessionId, { ...existing, resuming: true });
       return next;
     });
-    send({ type: "resume_session", sessionId, mode });
+    send({ type: "resume_session", sessionId, mode, ...(entryId ? { entryId } : {}) });
   }, [send, setSessions]);
 
   const handleSpawnSession = useCallback((cwd: string) => {

@@ -35,7 +35,7 @@ export function replayEntriesAsEvents(
       const msg = entry.message;
 
       if (msg.role === "user") {
-        messages.push(makeEvent(sessionId, "message_start", ts, { message: msg }));
+        messages.push(makeEvent(sessionId, "message_start", ts, { message: msg, entryId: entry.id }));
       }
 
       if (msg.role === "assistant") {
@@ -55,7 +55,7 @@ export function replayEntriesAsEvents(
         }
         // Emit message_update (sets streamingText) then message_end (finalizes)
         messages.push(makeEvent(sessionId, "message_update", ts, { message: msg }));
-        messages.push(makeEvent(sessionId, "message_end", ts, { message: msg }));
+        messages.push(makeEvent(sessionId, "message_end", ts, { message: msg, entryId: entry.id }));
 
         // Emit stats_update if usage data is present
         const usage = msg.usage as Record<string, unknown> | undefined;

@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useCallback, useState, useMemo, forwardRef, useImperativeHandle } from "react";
 import { Icon } from "@mdi/react";
-import { mdiContentCopy, mdiTextBox, mdiLoading, mdiChevronDown } from "@mdi/js";
+import { mdiContentCopy, mdiTextBox, mdiLoading, mdiChevronDown, mdiSourceFork } from "@mdi/js";
 import type { SessionState, ChatImage, InteractiveUiRequest } from "../lib/event-reducer.js";
 import type { ToolContext } from "./tool-renderers/index.js";
 import { MarkdownContent } from "./MarkdownContent.js";
@@ -26,6 +26,7 @@ interface Props {
   onRespondToUi?: (requestId: string, result?: unknown, cancelled?: boolean) => void;
   onAbort?: () => void;
   onForceKill?: () => void;
+  onForkFromMessage?: (entryId: string) => void;
 }
 
 function ImageAttachments({ images }: { images: ChatImage[] }) {
@@ -53,7 +54,7 @@ function ImageAttachments({ images }: { images: ChatImage[] }) {
   );
 }
 
-function MessageBubble({ content, className, timestamp }: { content: string; className: string; timestamp?: number }) {
+function MessageBubble({ content, className, timestamp, entryId, onFork }: { content: string; className: string; timestamp?: number; entryId?: string; onFork?: (entryId: string) => void }) {
   const contentRef = useRef<HTMLDivElement>(null);
 
   const getPlainText = useCallback(() => {
@@ -71,6 +72,15 @@ function MessageBubble({ content, className, timestamp }: { content: string; cla
         )}
         <CopyButton text={content} icon={<Icon path={mdiContentCopy} size={0.6} />} title="Copy as Markdown" />
         <CopyButton text={getPlainText()} icon={<Icon path={mdiTextBox} size={0.6} />} title="Copy as plain text" />
+        {entryId && onFork && (
+          <button
+            onClick={() => onFork(entryId)}
+            title="Fork from here"
+            className="p-0.5 rounded hover:bg-[var(--bg-secondary)] text-[var(--text-secondary)]"
+          >
+            <Icon path={mdiSourceFork} size={0.6} />
+          </button>
+        )}
       </div>
     </div>
   );
@@ -108,7 +118,7 @@ export interface ChatViewHandle {
   scrollToTurn: (turnIndex: number) => void;
 }
 
-export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView({ sessionId, state, toolContext, onCancelPending, onRespondToUi, onAbort, onForceKill }, ref) {
+export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView({ sessionId, state, toolContext, onCancelPending, onRespondToUi, onAbort, onForceKill, onForkFromMessage }, ref) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const isNearBottom = useRef(true);
   const programmaticScroll = useRef(false);
@@ -242,6 +252,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView({ se
                     content={msg.content}
                     className=""
                     timestamp={msg.timestamp}
+                    entryId={msg.entryId}
+                    onFork={onForkFromMessage}
                   />
                 )}
               </div>
@@ -345,6 +357,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView({ se
               content={msg.content}
               className={`bg-[var(--bg-tertiary)] border border-[var(--border-subtle)] rounded-xl shadow-md px-4 py-2 ${bMax}`}
               timestamp={msg.timestamp}
+              entryId={msg.entryId}
+              onFork={onForkFromMessage}
             />
           </div>
         );

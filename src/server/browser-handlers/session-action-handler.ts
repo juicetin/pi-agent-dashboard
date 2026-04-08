@@ -5,6 +5,7 @@ import type { BrowserToServerMessage } from "../../shared/browser-protocol.js";
 import type { BrowserHandlerContext } from "./handler-context.js";
 import { spawnPiSession } from "../process-manager.js";
 import { loadConfig } from "../../shared/config.js";
+import { createBranchedSessionFile } from "../session-file-reader.js";
 import { execSync } from "node:child_process";
 
 function killHeadlessBySessionId(sessionId: string): boolean {
@@ -107,9 +108,21 @@ export async function handleResumeSession(
   if (msg.mode === "fork" && pendingForkRegistry) {
     pendingForkRegistry.recordFork(session.cwd, msg.sessionId);
   }
+
+  // For fork-from-message: create a pruned session file first
+  let forkSessionFile = session.sessionFile;
+  if (msg.mode === "fork" && msg.entryId) {
+    try {
+      forkSessionFile = createBranchedSessionFile(session.sessionFile, msg.entryId);
+    } catch (err: any) {
+      sendTo(ws, { type: "resume_result", sessionId: msg.sessionId, success: false, message: `Fork from entry failed: ${err.message}` });
+      return;
+    }
+  }
+
   const resumeConfig = loadConfig();
   const result = await spawnPiSession(session.cwd, {
-    sessionFile: session.sessionFile,
+    sessionFile: forkSessionFile,
     mode: msg.mode,
     strategy: resumeConfig.spawnStrategy,
   });

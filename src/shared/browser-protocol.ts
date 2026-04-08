@@ -303,6 +303,8 @@ export interface ResumeSessionBrowserMessage {
   type: "resume_session";
   sessionId: string;
   mode: "continue" | "fork";
+  /** When forking, optionally fork from a specific session entry instead of the latest */
+  entryId?: string;
 }
 
 export interface HideSessionBrowserMessage {

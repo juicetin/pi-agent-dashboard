@@ -707,7 +707,13 @@ function TextField({ label, value, onChange, type = "text", placeholder }: {
 
 const API_TYPE_OPTIONS = [
   { value: "openai-completions", label: "OpenAI Completions" },
-  { value: "anthropic", label: "Anthropic" },
+  { value: "openai-responses", label: "OpenAI Responses" },
+  { value: "anthropic-messages", label: "Anthropic Messages" },
+  { value: "azure-openai-responses", label: "Azure OpenAI" },
+  { value: "mistral-conversations", label: "Mistral" },
+  { value: "bedrock-converse-stream", label: "AWS Bedrock" },
+  { value: "google-generative-ai", label: "Google Gemini" },
+  { value: "google-vertex", label: "Google Vertex AI" },
 ];
 
 // ─── Global Packages Section ──────────────────────────────────────────────────

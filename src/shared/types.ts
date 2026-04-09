@@ -269,6 +269,8 @@ export interface FlowState {
   flowSource?: string;
   /** Ordered map — insertion order matches step order from flow config */
   agents: Map<string, FlowAgentState>;
+  /** Flow-ref steps from the flow configuration (subflows) */
+  flowRefSteps?: Array<{ id: string; label: string; blockedBy: string[] }>;
   /** Set after flow_complete event */
   flowResult?: Record<string, unknown>;
 
@@ -294,6 +296,8 @@ export interface ArchitectAgentEntry {
   type: "built-in" | "local" | "custom";
   status: "pending" | "creating" | "done" | "error";
   statusText?: string;
+  /** Raw markdown source from agent_write (only for custom agents) */
+  source?: string;
 }
 
 /** Step in the designed flow DAG */
@@ -301,6 +305,8 @@ export interface ArchitectDagStep {
   id: string;
   agentName?: string;
   blockedBy: string[];
+  /** Step type — "flow-ref" for subflow references */
+  stepType?: "agent" | "flow-ref";
 }
 
 /** Parsed flow metadata from architect preview */
@@ -324,6 +330,10 @@ export interface ArchitectState {
   phase: ArchitectPhase;
   architectMode: "new" | "edit";
   flowName: string;
+  /** Resolved model ID (e.g., "anthropic/claude-opus-4-6") */
+  resolvedModel?: string;
+  /** Model alias (e.g., "@planning") */
+  modelAlias?: string;
   agents: ArchitectAgentEntry[];
   dagSteps: ArchitectDagStep[];
   parsedFlows: ArchitectParsedFlow[];

@@ -107,6 +107,24 @@ describe("architect-reducer state transitions", () => {
     expect(state).toBeNull();
   });
 
+  it("architect_started captures resolvedModel and modelAlias", () => {
+    let state = reduceArchitectEvent(null, makeEvent("architect_context_generating", { mode: "new" }));
+    state = reduceArchitectEvent(state, makeEvent("architect_started", {
+      mode: "new",
+      iteration: 1,
+      resolvedModel: "anthropic/claude-opus-4-6",
+      modelAlias: "@planning",
+    }));
+    expect(state!.resolvedModel).toBe("anthropic/claude-opus-4-6");
+    expect(state!.modelAlias).toBe("@planning");
+  });
+
+  it("architect_started without model fields leaves them undefined", () => {
+    const state = reduceArchitectEvent(null, makeEvent("architect_started", { mode: "new", iteration: 1 }));
+    expect(state!.resolvedModel).toBeUndefined();
+    expect(state!.modelAlias).toBeUndefined();
+  });
+
   it("architect_started without prior context_generating creates fresh state", () => {
     const state = reduceArchitectEvent(null, makeEvent("architect_started", { mode: "edit", iteration: 1 }));
     expect(state).not.toBeNull();

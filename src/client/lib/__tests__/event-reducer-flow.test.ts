@@ -168,60 +168,31 @@ describe("event-reducer flow events", () => {
   });
 });
 
-describe("architect prompt suppression", () => {
-  it("suppresses extension_ui_request when architectState has matching pendingPrompt", () => {
+describe("prompt bus — no suppression needed", () => {
+  // The PromptBus ensures each prompt is sent to the dashboard exactly once
+  // with the correct component. Client-side suppression logic has been removed.
+
+  it("allows all prompts through (no architect suppression)", () => {
     let state = createInitialState();
-    // Set up architect state with pending prompt
     let archState = reduceArchitectEvent(null, makeEvent("architect_started", { mode: "new", iteration: 1 }));
-    archState = reduceArchitectEvent(archState, makeEvent("architect_prompt_request", {
-      id: "prompt-1",
-      promptType: "select",
-      question: "What would you like to do?",
-      options: ["Save", "Replan", "Cancel"],
-    }));
     state = { ...state, architectState: archState };
 
-    // Try to add an interactive request with the same title
+    // All prompt types are allowed through — the bus prevents duplicates server-side
     const next = addInteractiveRequest(state, "req-1", "select", {
       title: "What would you like to do?",
       options: ["Save", "Replan", "Cancel"],
     });
-    // Should be suppressed — no new interactive request added
-    expect(next.interactiveRequests).toHaveLength(0);
-  });
-
-  it("suppresses select prompts during architect preview phase (phase-based)", () => {
-    let state = createInitialState();
-    // Architect in preview phase, no pendingPrompt set yet (old wiring)
-    let archState = reduceArchitectEvent(null, makeEvent("architect_started", { mode: "new", iteration: 1 }));
-    archState = reduceArchitectEvent(archState, makeEvent("architect_preview", {
-      parsedFlows: [{ name: "test", steps: [] }],
-    }));
-    state = { ...state, architectState: archState };
-    expect(state.architectState!.phase).toBe("preview");
-    expect(state.architectState!.pendingPrompt).toBeNull();
-
-    // Select prompt arrives via ui-proxy — should be suppressed by phase
-    const next = addInteractiveRequest(state, "req-2", "select", {
-      title: "Save this flow?",
-      options: ["Save", "Cancel"],
-    });
-    expect(next.interactiveRequests).toHaveLength(0);
-  });
-
-  it("does NOT suppress input prompts during architect designing phase", () => {
-    let state = createInitialState();
-    let archState = reduceArchitectEvent(null, makeEvent("architect_started", { mode: "new", iteration: 1 }));
-    state = { ...state, architectState: archState };
-
-    // Input prompts during designing are NOT suppressed (only select/confirm)
-    const next = addInteractiveRequest(state, "req-3", "input", {
-      title: "Enter description",
-    });
     expect(next.interactiveRequests).toHaveLength(1);
   });
 
-  it("does NOT suppress when no architectState or no pendingPrompt", () => {
+  it("deduplicates by requestId", () => {
+    let state = createInitialState();
+    state = addInteractiveRequest(state, "req-1", "select", { title: "Pick:" });
+    state = addInteractiveRequest(state, "req-1", "select", { title: "Pick:" });
+    expect(state.interactiveRequests).toHaveLength(1);
+  });
+
+  it("allows prompts without architectState", () => {
     const state = createInitialState();
     const next = addInteractiveRequest(state, "req-3", "select", {
       title: "What would you like to do?",

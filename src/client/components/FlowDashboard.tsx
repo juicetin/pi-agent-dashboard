@@ -8,21 +8,32 @@ import { FlowSummary } from "./FlowSummary.js";
 import { useMobile } from "../hooks/useMobile.js";
 
 /** Map FlowState agents to FlowGraphStep array.
- *  blockedBy contains step IDs, but graph nodes use agent names — translate. */
+ *  blockedBy contains step IDs, but graph nodes use agent names — translate.
+ *  Also includes flow-ref steps (subflows) if present. */
 function agentsToGraphSteps(flowState: FlowState): FlowGraphStep[] {
   // Build stepId → agentName lookup
   const stepToAgent = new Map<string, string>();
   for (const agent of flowState.agents.values()) {
     if (agent.stepId) stepToAgent.set(agent.stepId, agent.agentName);
   }
-  return Array.from(flowState.agents.values()).map(agent => ({
+  const agentSteps: FlowGraphStep[] = Array.from(flowState.agents.values()).map(agent => ({
     id: agent.agentName,
     label: agent.label || agent.agentName,
     status: agent.status,
     blockedBy: agent.blockedBy
       .map(depId => stepToAgent.get(depId) || depId)
-      .filter(name => flowState.agents.has(name)),
+      .filter(name => flowState.agents.has(name) || flowState.flowRefSteps?.some(r => r.id === name)),
   }));
+  // Add flow-ref steps (subflows) with dashed border style
+  const flowRefSteps: FlowGraphStep[] = (flowState.flowRefSteps || []).map(ref => ({
+    id: ref.id,
+    label: ref.label,
+    status: "pending" as const,
+    blockedBy: ref.blockedBy
+      .map(depId => stepToAgent.get(depId) || depId),
+    type: "flow-ref" as const,
+  }));
+  return [...agentSteps, ...flowRefSteps];
 }
 
 export function FlowDashboard({

@@ -12,6 +12,7 @@ function architectStepsToGraphSteps(state: ArchitectState): FlowGraphStep[] {
     label: step.agentName || step.id,
     status: "pending" as const,
     blockedBy: step.blockedBy,
+    type: step.stepType === "flow-ref" ? "flow-ref" as const : "agent" as const,
   }));
 }
 
@@ -282,6 +283,68 @@ function ArchitectPromptInline({
   }
 }
 
+// ── Collapsible section component ─────────────────────────────────
+
+function AccordionSection({
+  title,
+  badge,
+  expanded,
+  onToggle,
+  maxHeight = 200,
+  children,
+}: {
+  title: string;
+  badge?: React.ReactNode;
+  expanded: boolean;
+  onToggle: () => void;
+  maxHeight?: number;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="border border-[var(--border-subtle)] rounded mt-1.5">
+      <div
+        className="flex items-center gap-1.5 px-2 py-1 cursor-pointer hover:bg-[var(--bg-tertiary)] transition-colors"
+        onClick={onToggle}
+      >
+        <Icon path={expanded ? mdiChevronDown : mdiChevronRight} size={0.5} className="text-[var(--text-muted)] shrink-0" />
+        <span className="text-[11px] font-medium text-[var(--text-secondary)] truncate">{title}</span>
+        {badge && <span className="ml-auto shrink-0">{badge}</span>}
+      </div>
+      {expanded && (
+        <div className="px-2 pb-2 overflow-y-auto" style={{ maxHeight }}>
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Agent chip component ─────────────────────────────────────────
+
+function AgentChip({ agent }: { agent: import("../../shared/types.js").ArchitectAgentEntry }) {
+  const [expanded, setExpanded] = useState(false);
+  const icon = agent.status === "done" ? "✓" : agent.status === "creating" ? "…" : agent.status === "error" ? "✗" : "○";
+  const color = agent.status === "done" ? "text-green-400" : agent.status === "creating" ? "text-yellow-400" : agent.status === "error" ? "text-red-400" : "text-[var(--text-muted)]";
+
+  return (
+    <div>
+      <span
+        onClick={() => agent.source && setExpanded(!expanded)}
+        className={`inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded border border-[var(--border-subtle)] ${agent.source ? "cursor-pointer hover:bg-[var(--bg-tertiary)]" : ""}`}
+      >
+        <span className={color}>{icon}</span>
+        <span className="text-[var(--text-primary)]">{agent.name}</span>
+        {agent.source && <span className="text-[var(--text-muted)]">{expanded ? "▾" : "▸"}</span>}
+      </span>
+      {expanded && agent.source && (
+        <pre className="text-[10px] text-[var(--text-secondary)] mt-1 overflow-x-auto max-h-40 overflow-y-auto whitespace-pre-wrap break-words bg-[var(--bg-tertiary)] rounded p-2 border border-[var(--border-subtle)]">
+          {agent.source}
+        </pre>
+      )}
+    </div>
+  );
+}
+
 // ── Card (shown in the sticky header bar) ─────────────────────────
 
 export function FlowArchitect({
@@ -300,6 +363,25 @@ export function FlowArchitect({
   const [collapsed, setCollapsed] = useState(false);
   const isActive = state.phase === "context" || state.phase === "designing";
   const isPreview = state.phase === "preview";
+
+  // Accordion section states — flow expanded during preview, process during designing
+  const [flowExpanded, setFlowExpanded] = useState(isPreview);
+  const [agentsExpanded, setAgentsExpanded] = useState(false);
+  const [processExpanded, setProcessExpanded] = useState(isActive);
+
+  // Sync defaults when phase changes
+  React.useEffect(() => {
+    if (isPreview) {
+      setFlowExpanded(true);
+      setProcessExpanded(false);
+    } else if (isActive) {
+      setProcessExpanded(true);
+    }
+  }, [state.phase]);
+
+  const customAgents = state.agents.filter(a => a.type === "custom");
+  const customDoneCount = customAgents.filter(a => a.status === "done").length;
+  const firstFlow = state.parsedFlows[0];
 
   return (
     <div className="bg-[var(--bg-secondary)] border-b border-[var(--border-subtle)] px-3 py-2">
@@ -321,6 +403,16 @@ export function FlowArchitect({
              ""}
           </span>
         </span>
+
+        {/* Model + alias */}
+        {state.resolvedModel && (
+          <span className="text-[10px] text-[var(--text-muted)] shrink-0">
+            {state.resolvedModel.split("/").pop()}
+            {state.modelAlias?.startsWith("@") && (
+              <span className="text-[var(--text-tertiary)] ml-0.5">{state.modelAlias}</span>
+            )}
+          </span>
+        )}
 
         {/* Iteration badge */}
         {state.iteration > 1 && (
@@ -350,73 +442,91 @@ export function FlowArchitect({
         )}
       </div>
 
-      {/* DAG graph + Architect card — collapsible */}
+      {/* Accordion sections — collapsible */}
       <div className={`group-collapse ${collapsed ? "collapsed" : "expanded"}`}>
         <div>
+          {/* Section 1: Designed Flow (primary) */}
           {state.dagSteps.length > 0 && (
-            <div className="mb-2">
-              <FlowGraph
-                steps={architectStepsToGraphSteps(state)}
-                onGraphClick={onViewYaml}
-              />
-            </div>
+            <AccordionSection
+              title="Designed Flow"
+              badge={firstFlow && (
+                <span className="text-[10px] text-[var(--text-muted)]">
+                  {firstFlow.steps.length} steps · max {firstFlow.maxConcurrent}
+                </span>
+              )}
+              expanded={flowExpanded}
+              onToggle={() => setFlowExpanded(!flowExpanded)}
+              maxHeight={180}
+            >
+              <div
+                onClick={onViewYaml}
+                style={{ cursor: onViewYaml ? "pointer" : "default" }}
+              >
+                <FlowGraph
+                  steps={architectStepsToGraphSteps(state)}
+                  onGraphClick={onViewYaml}
+                />
+              </div>
+            </AccordionSection>
           )}
 
-          {/* Architect card — clickable for detail view */}
-          <div
-            className="grid gap-2"
-            style={{ gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))" }}
-          >
-            <div
-              onClick={onClick}
-              className={`rounded-lg border p-2.5 cursor-pointer transition-all duration-150 hover:shadow-md
-                ${isActive ? "border-purple-500/30 bg-[var(--bg-tertiary)]" : "border-[var(--border-subtle)] bg-[var(--bg-tertiary)]"}
-              `}
-            >
-              {/* Card header: spinner + name */}
-              <div className="flex items-center gap-1.5">
-                {isActive ? (
-                  <Icon path={mdiLoading} size={0.55} className="text-purple-400 animate-spin shrink-0" />
-                ) : isPreview ? (
-                  <span className="text-green-400 text-sm">✓</span>
-                ) : (
-                  <span className="text-[var(--text-tertiary)] text-sm">○</span>
-                )}
-                <span className="text-sm font-medium text-[var(--text-primary)] truncate flex-1">
-                  flow-architect
+          {/* Section 2: Created Agents (secondary) */}
+          {customAgents.length > 0 && (
+            <AccordionSection
+              title="Created Agents"
+              badge={
+                <span className="text-[10px] text-[var(--text-muted)]">
+                  new: {customDoneCount}
                 </span>
+              }
+              expanded={agentsExpanded}
+              onToggle={() => setAgentsExpanded(!agentsExpanded)}
+              maxHeight={200}
+            >
+              <div className="flex flex-wrap gap-1.5">
+                {customAgents.map(agent => (
+                  <AgentChip key={agent.name} agent={agent} />
+                ))}
               </div>
+            </AccordionSection>
+          )}
 
-              {/* Role / status subtitle */}
-              <div className="text-[11px] text-[var(--text-tertiary)] mt-0.5 truncate">
-                {state.phase === "context" ? "Analyzing conversation..." :
-                 state.phase === "designing" ? (state.catalogSummary || "Designing flow...") :
-                 state.phase === "preview" ? `${state.dagSteps.length} steps designed` :
-                 ""}
-              </div>
-
-              {/* Agent summary line */}
-              <div className="text-[11px] text-[var(--text-muted)] mt-0.5 truncate">
-                {state.agents.length > 0 && (
-                  <span>{state.agents.filter(a => a.status === "done").length}/{state.agents.length} agents</span>
-                )}
-              </div>
-
-              {/* Recent tools (rolling window, same as FlowAgentCard) */}
-              <div className="mt-1 space-y-0">
+          {/* Section 3: Architect Process (tertiary) — clickable for full detail */}
+          <AccordionSection
+            title="Architect Process"
+            badge={state.lastToolCall && (
+              <span className="text-[10px] text-[var(--text-tertiary)] truncate max-w-[200px] inline-block">
+                {state.lastToolCall.toolName}
+              </span>
+            )}
+            expanded={processExpanded}
+            onToggle={() => setProcessExpanded(!processExpanded)}
+            maxHeight={200}
+          >
+            <div>
+              {/* Summary info */}
+              {state.catalogSummary && (
+                <div className="text-[10px] text-[var(--text-muted)] mb-1">{state.catalogSummary}</div>
+              )}
+              {/* Recent tool calls */}
+              <div className="space-y-0">
                 {state.recentTools.map((tool, i) => (
                   <div key={i} className="text-[10px] text-[var(--text-tertiary)] truncate">
                     {i === state.recentTools.length - 1 ? "▸" : "·"} {tool.toolName} {tool.inputPreview}
                   </div>
                 ))}
-                {/* Pad to 3 lines for consistent height */}
-                {Array.from({ length: Math.max(0, 3 - state.recentTools.length) }).map((_, i) => (
-                  <div key={`pad-${i}`} className="text-[10px]">&nbsp;</div>
-                ))}
               </div>
+              {/* Link to full detail view */}
+              {onClick && (
+                <div
+                  onClick={onClick}
+                  className="text-[10px] text-purple-400 mt-1.5 cursor-pointer hover:underline"
+                >
+                  View full detail →
+                </div>
+              )}
             </div>
-
-          </div>
+          </AccordionSection>
         </div>
       </div>
 

@@ -474,25 +474,19 @@ export function wireEvents(deps: EventWiringDeps): void {
       browserGateway.broadcastSessionUpdated(sessionId, modelUpdates);
     }
 
-    if (msg.type === "extension_ui_request") {
-      const tracked = browserGateway.trackUiRequest(sessionId, msg.requestId, msg.method, msg.params);
-      if (tracked !== false) {
-        browserGateway.sendToSubscribers(sessionId, {
-          type: "extension_ui_request",
-          sessionId,
-          requestId: msg.requestId,
-          method: msg.method,
-          params: msg.params,
-        });
-      }
+    // Legacy extension_ui_request/dismiss removed — replaced by PromptBus protocol.
+
+    // ── PromptBus protocol messages (extension → browser) ──
+    if ((msg as any).type === "prompt_request") {
+      browserGateway.sendToSubscribers(sessionId, msg as any);
     }
 
-    if (msg.type === "extension_ui_dismiss") {
-      browserGateway.sendToSubscribers(sessionId, {
-        type: "ui_dismiss",
-        sessionId,
-        requestId: msg.requestId,
-      });
+    if ((msg as any).type === "prompt_dismiss") {
+      browserGateway.sendToSubscribers(sessionId, msg as any);
+    }
+
+    if ((msg as any).type === "prompt_cancel") {
+      browserGateway.sendToSubscribers(sessionId, msg as any);
     }
 
     if (msg.type === "session_name_update") {

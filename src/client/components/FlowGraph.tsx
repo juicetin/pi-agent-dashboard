@@ -7,12 +7,15 @@ export interface FlowGraphStep {
   label: string;
   status: "pending" | "running" | "complete" | "error" | "blocked";
   blockedBy: string[];
+  /** Step type — "flow-ref" nodes render with dashed border */
+  type?: "agent" | "flow-ref";
 }
 
 interface PositionedNode {
   id: string;
   label: string;
   status: FlowGraphStep["status"];
+  type?: "agent" | "flow-ref";
   x: number;
   y: number;
   width: number;
@@ -103,6 +106,7 @@ export function computeLayout(steps: FlowGraphStep[]): LayoutResult {
       id: step.id,
       label: step.label,
       status: step.status,
+      type: step.type,
       x: n.x - NODE_WIDTH / 2,
       y: n.y - NODE_HEIGHT / 2,
       width: NODE_WIDTH,
@@ -179,11 +183,18 @@ export function FlowGraph({
 
   if (!layout || layout.nodes.length === 0) return null;
 
+  // Fixed-scale: use actual pixel dimensions, wrap in scrollable container
+  const svgWidth = Math.max(layout.width, 150);
+  const svgHeight = Math.max(layout.height, 50);
+
   return (
+    <div
+      className="flow-dag-graph-container overflow-auto"
+      style={{ maxHeight: 140 }}
+    >
     <svg
-      width="100%"
-      viewBox={`0 0 ${layout.width} ${layout.height}`}
-      preserveAspectRatio="xMidYMid meet"
+      width={svgWidth}
+      height={svgHeight}
       className="flow-dag-graph"
       onClick={(e) => {
         // Only fire onGraphClick if clicking the background (not a node)
@@ -191,7 +202,7 @@ export function FlowGraph({
           onGraphClick?.();
         }
       }}
-      style={{ cursor: onGraphClick ? "pointer" : "default", maxHeight: 120 }}
+      style={{ cursor: onGraphClick ? "pointer" : "default", display: "block", margin: svgWidth < 300 ? "0 auto" : undefined }}
     >
       <defs>
         {["#444", "#666", "#22c55e", "#eab308", "#ef4444"].map((color) => (
@@ -231,6 +242,7 @@ export function FlowGraph({
       {layout.nodes.map((node) => {
         const style = STATUS_COLORS[node.status] || STATUS_COLORS.pending;
         const isRunning = node.status === "running";
+        const isFlowRef = node.type === "flow-ref";
         // Shrink font to fit: available width = node width - left/right padding
         const availW = node.width - 16;
         const naturalW = node.label.length * FONT_SIZE * 0.6;
@@ -256,6 +268,7 @@ export function FlowGraph({
               fill={style.fill}
               stroke={style.border}
               strokeWidth={1.5}
+              strokeDasharray={isFlowRef ? "4 3" : "none"}
             />
             <text
               x={node.x + node.width / 2}
@@ -272,5 +285,6 @@ export function FlowGraph({
         );
       })}
     </svg>
+    </div>
   );
 }

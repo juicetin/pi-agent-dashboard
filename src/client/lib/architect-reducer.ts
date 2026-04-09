@@ -128,6 +128,8 @@ export function reduceArchitectEvent(
     case "architect_started": {
       const mode = (data.mode as "new" | "edit") || "new";
       const iteration = (data.iteration as number) || 1;
+      const resolvedModel = data.resolvedModel as string | undefined;
+      const modelAlias = data.modelAlias as string | undefined;
       // If we already have state (from context_generating), just update phase
       if (state) {
         return {
@@ -135,6 +137,8 @@ export function reduceArchitectEvent(
           phase: "designing",
           architectMode: mode,
           iteration,
+          resolvedModel,
+          modelAlias,
           pendingPrompt: null,
         };
       }
@@ -142,6 +146,8 @@ export function reduceArchitectEvent(
         phase: "designing",
         architectMode: mode,
         flowName: "",
+        resolvedModel,
+        modelAlias,
         agents: [],
         dagSteps: [],
         parsedFlows: [],
@@ -177,14 +183,16 @@ export function reduceArchitectEvent(
 
         case "agent_write": {
           const name = input ? extractAgentName(input) : "unknown";
+          const source = input ? String(input.content || "") : "";
           const agents = [...next.agents];
           const existing = agents.find(a => a.name === name);
           if (existing) {
             existing.type = "custom";
             existing.status = "creating";
             existing.statusText = "Writing…";
+            if (source) existing.source = source;
           } else {
-            agents.push({ name, type: "custom", status: "creating", statusText: "Writing…" });
+            agents.push({ name, type: "custom", status: "creating", statusText: "Writing…", ...(source ? { source } : {}) });
           }
           next.agents = agents;
           break;

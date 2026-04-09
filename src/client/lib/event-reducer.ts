@@ -205,23 +205,10 @@ export function addInteractiveRequest(
   method: string,
   params: Record<string, unknown>,
 ): SessionState {
-  // Suppress prompts that belong in the architect widget bar.
-  // Match by pendingPrompt question (exact match) OR by architect being in
-  // preview/designing phase with a select/confirm prompt (those are always architect prompts).
-  if (state.architectState) {
-    const arch = state.architectState;
-    const requestTitle = String(params.title || "");
-    // Exact match: pendingPrompt question matches the incoming request title
-    if (arch.pendingPrompt && requestTitle && requestTitle === arch.pendingPrompt.question) {
-      return state;
-    }
-    // Phase-based: suppress select/confirm prompts while architect is active
-    // (preview phase shows Save/Replan/Cancel; designing may show retry prompts)
-    if ((arch.phase === "preview" || arch.phase === "designing") &&
-        (method === "select" || method === "confirm")) {
-      return state;
-    }
-  }
+  // Architect suppression logic REMOVED — the PromptBus now ensures each prompt
+  // is sent to the dashboard exactly once, with the correct component.
+  // No more client-side guessing about which prompts to suppress.
+
   // Deduplicate by requestId (re-sent on reconnect) or by content
   // (recursive proxy generates multiple requestIds for the same dialog)
   if (state.interactiveRequests.some((r) =>

@@ -307,6 +307,12 @@ export function createBrowserGateway(
             break;
           }
 
+          case "prompt_response": {
+            // Route PromptBus response from browser to extension
+            ctx.piGateway.sendToSession((msg as any).sessionId, msg as any);
+            break;
+          }
+
           case "flow_management": {
             ctx.piGateway.sendToSession(msg.sessionId, {
               type: "flow_management",
@@ -319,13 +325,8 @@ export function createBrowserGateway(
             break;
           }
           case "architect_prompt_response": {
-            ctx.piGateway.sendToSession(msg.sessionId, {
-              type: "architect_prompt_response",
-              sessionId: msg.sessionId,
-              promptId: msg.promptId,
-              answer: msg.answer,
-              cancelled: msg.cancelled,
-            });
+            // Legacy: now handled by prompt_response via PromptBus.
+            // Keep case to avoid "unhandled message" warnings from old clients.
             break;
           }
           case "role_set": {

@@ -2,8 +2,9 @@
  * Event reducer: builds session UI state from a stream of events.
  * (state, event) → new state
  */
-import type { DashboardEvent, FlowState } from "../../shared/types.js";
+import type { DashboardEvent, FlowState, ArchitectState } from "../../shared/types.js";
 import { isFlowEvent, reduceFlowEvent } from "./flow-reducer.js";
+import { isArchitectEvent, reduceArchitectEvent } from "./architect-reducer.js";
 
 export interface ChatImage {
   data: string;
@@ -100,6 +101,7 @@ export interface SessionState {
   pendingPrompt?: PendingPrompt;
   interactiveRequests: InteractiveUiRequest[];
   flowState: FlowState | null;
+  architectState: ArchitectState | null;
   /** Whether any Write/Edit tool calls have been seen (for Changed Files button) */
   hasFileChanges: boolean;
   /** Active subagents from @tintinweb/pi-subagents */
@@ -124,6 +126,7 @@ export function createInitialState(): SessionState {
     turnStats: [],
     interactiveRequests: [],
     flowState: null,
+    architectState: null,
     hasFileChanges: false,
     subagents: new Map(),
     turnCount: 0,
@@ -202,6 +205,23 @@ export function addInteractiveRequest(
   method: string,
   params: Record<string, unknown>,
 ): SessionState {
+  // Suppress prompts that belong in the architect widget bar.
+  // Match by pendingPrompt question (exact match) OR by architect being in
+  // preview/designing phase with a select/confirm prompt (those are always architect prompts).
+  if (state.architectState) {
+    const arch = state.architectState;
+    const requestTitle = String(params.title || "");
+    // Exact match: pendingPrompt question matches the incoming request title
+    if (arch.pendingPrompt && requestTitle && requestTitle === arch.pendingPrompt.question) {
+      return state;
+    }
+    // Phase-based: suppress select/confirm prompts while architect is active
+    // (preview phase shows Save/Replan/Cancel; designing may show retry prompts)
+    if ((arch.phase === "preview" || arch.phase === "designing") &&
+        (method === "select" || method === "confirm")) {
+      return state;
+    }
+  }
   // Deduplicate by requestId (re-sent on reconnect) or by content
   // (recursive proxy generates multiple requestIds for the same dialog)
   if (state.interactiveRequests.some((r) =>
@@ -690,6 +710,10 @@ export function reduceEvent(state: SessionState, event: DashboardEvent): Session
           timestamp: event.timestamp,
           toolName: event.eventType,
         }];
+      }
+      // Delegate architect events to architect reducer
+      if (isArchitectEvent(event.eventType)) {
+        next.architectState = reduceArchitectEvent(next.architectState, event);
       }
       break;
     }

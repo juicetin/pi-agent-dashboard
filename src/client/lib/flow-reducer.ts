@@ -77,6 +77,7 @@ export function reduceFlowEvent(
         task: (data.task as string) || "",
         status: "running",
         autonomousMode: (data.autonomousMode as boolean) || false,
+        flowSource: (data.source as string) || undefined,
         agents,
       };
     }
@@ -238,6 +239,19 @@ export function reduceFlowEvent(
         status: status as FlowState["status"],
         flowResult: data as Record<string, unknown>,
       };
+    }
+
+    case "flow_summary_ready": {
+      if (!flowState) return null;
+      return {
+        ...flowState,
+        nextStep: (data.nextStep as string | null) ?? null,
+        summaryStats: data.stats as FlowState["summaryStats"],
+      };
+    }
+
+    case "flow_summary_dismissed": {
+      return null;
     }
 
     default:

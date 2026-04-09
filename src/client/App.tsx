@@ -9,8 +9,10 @@ import { MobileShell } from "./components/MobileShell.js";
 import { useMobile } from "./hooks/useMobile.js";
 import { getMobileDepth } from "./lib/mobile-depth.js";
 import { ChatView, type ChatViewHandle } from "./components/ChatView.js";
+import { ConfirmDialog } from "./components/ConfirmDialog.js";
 import { FlowDashboard } from "./components/FlowDashboard.js";
 import { FlowAgentDetail } from "./components/FlowAgentDetail.js";
+import { FlowArchitect, FlowArchitectDetail } from "./components/FlowArchitect.js";
 import { MarkdownPreviewView } from "./components/MarkdownPreviewView.js";
 import { PiResourcesView } from "./components/PiResourcesView.js";
 import { SpecsBrowserView } from "./components/SpecsBrowserView.js";
@@ -38,7 +40,7 @@ import { useEditors } from "./lib/use-editors.js";
 import { useContentViews } from "./hooks/useContentViews.js";
 import { useSessionActions } from "./hooks/useSessionActions.js";
 import { useOpenSpecActions } from "./hooks/useOpenSpecActions.js";
-import type { DashboardSession, CommandInfo, FlowInfo, FileEntry, OpenSpecData, ModelInfo, ImageContent } from "../shared/types.js";
+import type { DashboardSession, CommandInfo, FlowInfo, FileEntry, OpenSpecData, ModelInfo, RoleInfo, ImageContent } from "../shared/types.js";
 import { SearchableSelectDialog, type SelectOption } from "./components/SearchableSelectDialog.js";
 import { FlowLaunchDialog } from "./components/FlowLaunchDialog.js";
 import type { TerminalSession } from "../shared/terminal-types.js";
@@ -107,6 +109,7 @@ export default function App() {
   const [fileResults, setFileResults] = useState<{ query: string; files: FileEntry[] } | null>(null);
   const [openspecMap, setOpenspecMap] = useState<Map<string, OpenSpecData>>(new Map());
   const [modelsMap, setModelsMap] = useState<Map<string, ModelInfo[]>>(new Map());
+  const [rolesMap, setRolesMap] = useState<Map<string, RoleInfo>>(new Map());
   const [spawnResult, setSpawnResult] = useState<{ success: boolean; message: string } | null>(null);
   const [spawningCwds, setSpawningCwds] = useState<Set<string>>(new Set());
   const spawningCwdsRef = useRef<Set<string>>(spawningCwds);
@@ -121,6 +124,7 @@ export default function App() {
   const subscribedRef = useRef(new Set<string>());
   const maxSeqMapRef = useRef(new Map<string, number>());
   const [flowDetailAgent, setFlowDetailAgent] = useState<string | null>(null);
+  const [architectDetailOpen, setArchitectDetailOpen] = useState(false);
   const [previewState, setPreviewState] = useState<{
     cwd: string;
     changeName: string;
@@ -130,6 +134,7 @@ export default function App() {
   const [specsBrowserCwd, setSpecsBrowserCwd] = useState<string | null>(null);
   const [archiveBrowserCwd, setArchiveBrowserCwd] = useState<string | null>(null);
   const [diffViewSessionId, setDiffViewSessionId] = useState<string | null>(null);
+  const [flowYamlPreview, setFlowYamlPreview] = useState<{ content: string; title: string } | null>(null);
   const {
     piResourcesState, setPiResourcesState,
     piResourceFilePreview, setPiResourceFilePreview,
@@ -154,7 +159,7 @@ export default function App() {
   }, []);
 
   const handleMessage = useMessageHandler(
-    { setSessions, setSessionStates, setSessionCommands, setSessionFlows, setFileResults, setOpenspecMap, setModelsMap, setSpawnResult, setSessionOrderMap, setPinnedDirectories, setTerminals, setEditorStatuses },
+    { setSessions, setSessionStates, setSessionCommands, setSessionFlows, setFileResults, setOpenspecMap, setModelsMap, setRolesMap, setSpawnResult, setSessionOrderMap, setPinnedDirectories, setTerminals, setEditorStatuses },
     { send, navigate, clearSpawningCwd, spawningCwdsRef, subscribedRef, pendingTerminalCwdRef, maxSeqMapRef },
   );
 
@@ -212,6 +217,7 @@ export default function App() {
       setSpecsBrowserCwd(null);
       setArchiveBrowserCwd(null);
       setDiffViewSessionId(null);
+      setFlowYamlPreview(null);
       prevSelectedRef.current = selectedId;
     }
     // Lazy subscribe: load events for ended sessions when first selected.
@@ -267,7 +273,7 @@ export default function App() {
     clearSpawningCwd, spawnTimeoutsRef, pendingTerminalCwdRef, terminals,
   });
   const {
-    handleAbort, handleForceKill, handleCancelPending, handleRespondToUi, handleSend,
+    handleAbort, handleForceKill, handleCancelPending, handleRespondToUi, handleFlowAction, handleSend,
     handleSelect, handleRenameSession, handleShutdownSession,
     handleSendPromptToSession, handleResumeSession, handleSpawnSession,
     handleHideSession, handleUnhideSession,
@@ -278,6 +284,10 @@ export default function App() {
   // Flow picker state (for /flows command intercept)
   const [flowPickerOpen, setFlowPickerOpen] = useState(false);
   const [flowNewOpen, setFlowNewOpen] = useState(false);
+  const [flowEditPickerOpen, setFlowEditPickerOpen] = useState(false);
+  const [flowEditFlowName, setFlowEditFlowName] = useState<string | null>(null);
+  const [flowDeletePickerOpen, setFlowDeletePickerOpen] = useState(false);
+  const [flowDeleteFlowName, setFlowDeleteFlowName] = useState<string | null>(null);
   const [flowLaunchTarget, setFlowLaunchTarget] = useState<FlowInfo | null>(null);
 
   // Wrap handleSend to intercept /flows commands
@@ -300,6 +310,35 @@ export default function App() {
     handleAttachProposal, handleDetachProposal,
   } = openspecActions;
 
+  // Flow YAML viewer helpers
+  const openFlowYaml = useCallback(async (sessionId: string) => {
+    const state = sessionStates.get(sessionId);
+    if (!state) return;
+    // Architect: use stored YAML content
+    if (state.architectState?.flowYamlContent) {
+      setFlowYamlPreview({
+        content: "```yaml\n" + state.architectState.flowYamlContent + "\n```",
+        title: state.architectState.flowName || "Flow YAML",
+      });
+      return;
+    }
+    // Execution: fetch via /api/file
+    const flowSource = state.flowState?.flowSource;
+    const session = sessions.get(sessionId);
+    if (flowSource && session?.cwd) {
+      try {
+        const res = await fetch(`/api/file?cwd=${encodeURIComponent(session.cwd)}&path=${encodeURIComponent(flowSource)}`);
+        const body = await res.json();
+        if (body.success && body.data?.content) {
+          setFlowYamlPreview({
+            content: "```yaml\n" + body.data.content + "\n```",
+            title: state.flowState?.flowName || "Flow YAML",
+          });
+        }
+      } catch { /* ignore fetch errors */ }
+    }
+  }, [sessionStates, sessions]);
+
   const sessionList = (
     <SessionList
       sessions={Array.from(sessions.values())}
@@ -318,6 +357,7 @@ export default function App() {
         send({ type: "reorder_sessions", cwd, sessionIds });
       }}
       onSendPrompt={handleSendPromptToSession}
+      onFlowAction={handleFlowAction}
       onOpenSpecRefresh={handleOpenSpecRefresh}
       onBulkArchive={handleBulkArchive}
       onReadArtifact={handleReadArtifact}
@@ -529,15 +569,50 @@ export default function App() {
           artifacts={previewState.artifacts}
           onBack={() => setPreviewState(null)}
         />
+      ) : flowYamlPreview ? (
+        <MarkdownPreviewView
+          title={flowYamlPreview.title}
+          content={flowYamlPreview.content}
+          onBack={() => setFlowYamlPreview(null)}
+        />
       ) : diffViewSessionId ? (
         <FileDiffView
           sessionId={diffViewSessionId}
           onBack={() => setDiffViewSessionId(null)}
         />
+      ) : architectDetailOpen && selectedState.architectState ? (
+        <>
+          {selectedState.architectState && (
+            <div className="sticky top-0 z-10">
+              <FlowArchitect
+                state={selectedState.architectState}
+                onAbort={() => selectedId && send({ type: "flow_control" as any, sessionId: selectedId, action: "abort" })}
+                onClick={() => setArchitectDetailOpen(true)}
+                onPromptRespond={(promptId, answer) => selectedId && send({ type: "architect_prompt_response" as any, sessionId: selectedId, promptId, answer })}
+                onViewYaml={() => selectedId && openFlowYaml(selectedId)}
+              />
+            </div>
+          )}
+          <FlowArchitectDetail
+            state={selectedState.architectState}
+            onBack={() => setArchitectDetailOpen(false)}
+          />
+        </>
       ) : flowDetailAgent && selectedState.flowState?.agents.has(flowDetailAgent) ? (
         <>
-          {selectedState.flowState && (
+          {selectedState.architectState && (
             <div className="sticky top-0 z-10">
+              <FlowArchitect
+                state={selectedState.architectState}
+                onAbort={() => selectedId && send({ type: "flow_control" as any, sessionId: selectedId, action: "abort" })}
+                onClick={() => setArchitectDetailOpen(true)}
+                onPromptRespond={(promptId, answer) => selectedId && send({ type: "architect_prompt_response" as any, sessionId: selectedId, promptId, answer })}
+                onViewYaml={() => selectedId && openFlowYaml(selectedId)}
+              />
+            </div>
+          )}
+          {selectedState.flowState && (
+            <div className={`sticky ${selectedState.architectState ? 'top-auto' : 'top-0'} z-10`}>
               <FlowDashboard
                 flowState={selectedState.flowState}
                 onAgentClick={setFlowDetailAgent}
@@ -545,13 +620,10 @@ export default function App() {
                 onToggleAutonomous={() => selectedId && send({ type: "flow_control" as any, sessionId: selectedId, action: "toggle_autonomous" })}
                 onDismiss={() => {
                   setFlowDetailAgent(null);
-                  setSessionStates(prev => {
-                    const next = new Map(prev);
-                    const current = next.get(selectedId!);
-                    if (current) next.set(selectedId!, { ...current, flowState: null });
-                    return next;
-                  });
+                  selectedId && send({ type: "flow_control" as any, sessionId: selectedId, action: "dismiss_summary" });
                 }}
+                onSendPrompt={(text) => handleSend(text)}
+                onViewYaml={() => selectedId && openFlowYaml(selectedId)}
               />
             </div>
           )}
@@ -562,21 +634,29 @@ export default function App() {
         </>
       ) : (
         <>
-          {selectedState.flowState && (
+          {selectedState.architectState && (
             <div className="sticky top-0 z-10">
+              <FlowArchitect
+                state={selectedState.architectState}
+                onAbort={() => selectedId && send({ type: "flow_control" as any, sessionId: selectedId, action: "abort" })}
+                onClick={() => setArchitectDetailOpen(true)}
+                onPromptRespond={(promptId, answer) => selectedId && send({ type: "architect_prompt_response" as any, sessionId: selectedId, promptId, answer })}
+                onViewYaml={() => selectedId && openFlowYaml(selectedId)}
+              />
+            </div>
+          )}
+          {selectedState.flowState && (
+            <div className={`sticky ${selectedState.architectState ? 'top-auto' : 'top-0'} z-10`}>
               <FlowDashboard
                 flowState={selectedState.flowState}
                 onAgentClick={setFlowDetailAgent}
                 onAbort={() => selectedId && send({ type: "flow_control" as any, sessionId: selectedId, action: "abort" })}
                 onToggleAutonomous={() => selectedId && send({ type: "flow_control" as any, sessionId: selectedId, action: "toggle_autonomous" })}
                 onDismiss={() => {
-                  setSessionStates(prev => {
-                    const next = new Map(prev);
-                    const current = next.get(selectedId!);
-                    if (current) next.set(selectedId!, { ...current, flowState: null });
-                    return next;
-                  });
+                  selectedId && send({ type: "flow_control" as any, sessionId: selectedId, action: "dismiss_summary" });
                 }}
+                onSendPrompt={(text) => handleSend(text)}
+                onViewYaml={() => selectedId && openFlowYaml(selectedId)}
               />
             </div>
           )}
@@ -593,6 +673,7 @@ export default function App() {
           <StatusBar
             model={selectedState.model ?? selectedSession?.model}
             models={modelsMap.get(selectedId)}
+            roles={rolesMap.get(selectedId)}
             thinkingLevel={selectedState.thinkingLevel ?? selectedSession?.thinkingLevel}
             status={selectedState.status}
             currentTool={selectedState.currentTool}
@@ -607,6 +688,18 @@ export default function App() {
             }}
             onSelectThinkingLevel={(level) => {
               send({ type: "set_thinking_level", sessionId: selectedId, level });
+            }}
+            onRoleSet={(role, modelId) => {
+              send({ type: "role_set", sessionId: selectedId, role, modelId });
+            }}
+            onPresetLoad={(presetName) => {
+              send({ type: "role_preset_load", sessionId: selectedId, presetName });
+            }}
+            onPresetSave={(presetName) => {
+              send({ type: "role_preset_save", sessionId: selectedId, presetName });
+            }}
+            onPresetDelete={(presetName) => {
+              send({ type: "role_preset_delete", sessionId: selectedId, presetName });
             }}
           />
           <CommandInput
@@ -623,8 +716,12 @@ export default function App() {
           />
           {flowPickerOpen && (() => {
             const hasFlowsNew = selectedCommands.some(c => c.name === "flows:new");
+            const hasFlowsEdit = selectedCommands.some(c => c.name === "flows:edit");
+            const hasFlowsDelete = selectedCommands.some(c => c.name === "flows:delete");
             const flowOptions: SelectOption[] = [
               ...(hasFlowsNew ? [{ value: "__new__", label: "+ New Flow", description: "Design a new flow with the Flow Architect" }] : []),
+              ...(hasFlowsEdit && selectedFlows.length > 0 ? [{ value: "__edit__", label: "\u270E\uFE0E Edit Flow...", description: "Edit an existing flow" }] : []),
+              ...(hasFlowsDelete && selectedFlows.length > 0 ? [{ value: "__delete__", label: "\u00D7 Delete Flow...", description: "Delete a saved flow" }] : []),
               ...selectedFlows.map((f) => ({
                 value: f.name,
                 label: f.name,
@@ -641,13 +738,17 @@ export default function App() {
                   setFlowPickerOpen(false);
                   if (value === "__new__") {
                     setFlowNewOpen(true);
+                  } else if (value === "__edit__") {
+                    setFlowEditPickerOpen(true);
+                  } else if (value === "__delete__") {
+                    setFlowDeletePickerOpen(true);
                   } else {
                     const flow = selectedFlows.find(f => f.name === value);
                     if (flow) {
                       if (flow.taskRequired) {
                         setFlowLaunchTarget(flow);
                       } else {
-                        handleSend(`/${flow.name}`);
+                        if (selectedId) handleFlowAction(selectedId, "run", { flowName: flow.name });
                       }
                     }
                   }
@@ -661,11 +762,58 @@ export default function App() {
               flowName="flows:new"
               description="Design a new flow with the Flow Architect"
               onSubmit={(task) => {
-                const prompt = task ? `/flows:new ${task}` : `/flows:new`;
-                handleSend(prompt);
+                if (selectedId && task.trim()) handleFlowAction(selectedId, "new", { description: task.trim() });
                 setFlowNewOpen(false);
               }}
               onCancel={() => setFlowNewOpen(false)}
+            />
+          )}
+          {flowEditPickerOpen && (
+            <SearchableSelectDialog
+              title="Edit Flow"
+              options={selectedFlows.map((f) => ({ value: f.name, label: f.name, description: f.description }))}
+              placeholder="Search flows..."
+              emptyMessage="No flows available"
+              onSelect={(value) => {
+                setFlowEditFlowName(value);
+                setFlowEditPickerOpen(false);
+              }}
+              onCancel={() => setFlowEditPickerOpen(false)}
+            />
+          )}
+          {flowEditFlowName && (
+            <FlowLaunchDialog
+              flowName={flowEditFlowName}
+              description="Describe how this flow should be updated"
+              onSubmit={(desc) => {
+                if (selectedId && desc.trim()) handleFlowAction(selectedId, "edit", { flowName: flowEditFlowName, description: desc.trim() });
+                setFlowEditFlowName(null);
+              }}
+              onCancel={() => setFlowEditFlowName(null)}
+            />
+          )}
+          {flowDeletePickerOpen && (
+            <SearchableSelectDialog
+              title="Delete Flow"
+              options={selectedFlows.map((f) => ({ value: f.name, label: f.name, description: f.description }))}
+              placeholder="Search flows..."
+              emptyMessage="No flows available"
+              onSelect={(value) => {
+                setFlowDeleteFlowName(value);
+                setFlowDeletePickerOpen(false);
+              }}
+              onCancel={() => setFlowDeletePickerOpen(false)}
+            />
+          )}
+          {flowDeleteFlowName && (
+            <ConfirmDialog
+              message={`Delete flow "${flowDeleteFlowName}"? This will remove the flow file and any associated agents.`}
+              confirmLabel="Delete"
+              onConfirm={() => {
+                if (selectedId) handleFlowAction(selectedId, "delete", { flowName: flowDeleteFlowName });
+                setFlowDeleteFlowName(null);
+              }}
+              onCancel={() => setFlowDeleteFlowName(null)}
             />
           )}
           {flowLaunchTarget && (
@@ -673,8 +821,7 @@ export default function App() {
               flowName={flowLaunchTarget.name}
               description={flowLaunchTarget.description}
               onSubmit={(task) => {
-                const prompt = task ? `/${flowLaunchTarget.name} ${task}` : `/${flowLaunchTarget.name}`;
-                handleSend(prompt);
+                if (selectedId) handleFlowAction(selectedId, "run", { flowName: flowLaunchTarget.name, task: task || undefined });
                 setFlowLaunchTarget(null);
               }}
               onCancel={() => setFlowLaunchTarget(null)}
@@ -752,7 +899,7 @@ export default function App() {
       folderEditorCwd,
       settingsMatch: !!settingsMatch,
       tunnelSetupMatch: !!tunnelSetupMatch,
-      hasPreview: !!previewState || !!piResourcesState || !!piResourceFilePreview || !!readmePreview || !!specsBrowserCwd || !!archiveBrowserCwd || !!diffViewSessionId,
+      hasPreview: !!previewState || !!piResourcesState || !!piResourceFilePreview || !!readmePreview || !!specsBrowserCwd || !!archiveBrowserCwd || !!diffViewSessionId || !!flowYamlPreview,
     });
     return (
       <div className="bg-[var(--bg-primary)] text-[var(--text-primary)]">
@@ -763,6 +910,8 @@ export default function App() {
               setArchiveBrowserCwd(null);
             } else if (specsBrowserCwd) {
               setSpecsBrowserCwd(null);
+            } else if (flowYamlPreview) {
+              setFlowYamlPreview(null);
             } else if (diffViewSessionId) {
               setDiffViewSessionId(null);
             } else if (piResourceFilePreview) {
@@ -798,6 +947,12 @@ export default function App() {
               <SpecsBrowserView
                 cwd={specsBrowserCwd}
                 onBack={() => setSpecsBrowserCwd(null)}
+              />
+            ) : flowYamlPreview ? (
+              <MarkdownPreviewView
+                title={flowYamlPreview.title}
+                content={flowYamlPreview.content}
+                onBack={() => setFlowYamlPreview(null)}
               />
             ) : diffViewSessionId ? (
               <FileDiffView

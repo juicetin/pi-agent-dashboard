@@ -9,8 +9,6 @@ const BUILTIN_COMMANDS: CommandInfo[] = [
   { name: "compact", description: "Compact session context", source: "builtin" },
   { name: "reload", description: "Reload extensions, skills, prompts, and themes", source: "builtin" },
   { name: "new", description: "Start a new session", source: "builtin" },
-  { name: "name", description: "Set session display name", source: "builtin" },
-  { name: "quit", description: "Quit pi", source: "builtin" },
 ];
 
 interface Props {
@@ -190,12 +188,24 @@ export function CommandInput({ commands: externalCommands, onSend, onListFiles, 
       if (dropdownMode) {
         if (e.key === "ArrowDown") {
           e.preventDefault();
-          setSelectedIndex((i) => Math.min(i + 1, dropdownLength - 1));
+          setSelectedIndex((i) => {
+            const next = Math.min(i + 1, dropdownLength - 1);
+            requestAnimationFrame(() => {
+              document.querySelector(`[data-dropdown-index="${next}"]`)?.scrollIntoView({ block: "nearest" });
+            });
+            return next;
+          });
           return;
         }
         if (e.key === "ArrowUp") {
           e.preventDefault();
-          setSelectedIndex((i) => Math.max(i - 1, 0));
+          setSelectedIndex((i) => {
+            const next = Math.max(i - 1, 0);
+            requestAnimationFrame(() => {
+              document.querySelector(`[data-dropdown-index="${next}"]`)?.scrollIntoView({ block: "nearest" });
+            });
+            return next;
+          });
           return;
         }
         if (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey)) {
@@ -280,6 +290,7 @@ export function CommandInput({ commands: externalCommands, onSend, onListFiles, 
           {filteredCommands.map((cmd, i) => (
             <button
               key={cmd.name}
+              data-dropdown-index={i}
               onClick={() => selectCommand(cmd)}
               className={`w-full px-3 py-2 min-h-[44px] md:min-h-0 text-left text-sm flex items-center gap-2 ${
                 i === selectedIndex ? "bg-[var(--bg-tertiary)]" : "hover:bg-[var(--bg-hover)]"
@@ -302,6 +313,7 @@ export function CommandInput({ commands: externalCommands, onSend, onListFiles, 
             return (
               <button
                 key={file.path}
+                data-dropdown-index={i}
                 onClick={() => selectFile(file)}
                 className={`w-full px-3 py-2 min-h-[44px] md:min-h-0 text-left text-sm flex items-center gap-2 ${
                   i === selectedIndex ? "bg-[var(--bg-tertiary)]" : "hover:bg-[var(--bg-hover)]"

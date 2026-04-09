@@ -186,3 +186,18 @@ mark.markdown-search-highlight-active {
   background-color: rgba(250, 204, 21, 0.6);
   outline: 2px solid rgba(250, 204, 21, 0.8);
 }
+
+/* Flow DAG graph animations */
+@keyframes flow-node-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+.flow-node-running rect {
+  animation: flow-node-pulse 1.5s ease-in-out infinite;
+}
+@keyframes flow-edge-dash {
+  to { stroke-dashoffset: -18; }
+}
+.flow-edge-animated {
+  animation: flow-edge-dash 0.8s linear infinite;
+}

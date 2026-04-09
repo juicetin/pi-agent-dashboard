@@ -3,18 +3,27 @@ import { Icon } from "@mdi/react";
 import { mdiPlay, mdiPlus } from "@mdi/js";
 import type { FlowInfo } from "../../shared/types.js";
 import { FlowLaunchDialog } from "./FlowLaunchDialog.js";
+import { ConfirmDialog } from "./ConfirmDialog.js";
 import { SearchableSelectDialog, type SelectOption } from "./SearchableSelectDialog.js";
 
 export function SessionFlowActions({
   flows,
   hasFlowsNew,
-  onSendPrompt,
+  hasFlowsEdit,
+  hasFlowsDelete,
+  onFlowAction,
 }: {
   flows: FlowInfo[];
   hasFlowsNew: boolean;
-  onSendPrompt: (text: string) => void;
+  hasFlowsEdit?: boolean;
+  hasFlowsDelete?: boolean;
+  onFlowAction: (action: string, opts?: { flowName?: string; task?: string; description?: string }) => void;
 }) {
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [editPickerOpen, setEditPickerOpen] = useState(false);
+  const [editFlowName, setEditFlowName] = useState<string | null>(null);
+  const [deletePickerOpen, setDeletePickerOpen] = useState(false);
+  const [deleteFlowName, setDeleteFlowName] = useState<string | null>(null);
   const [selectedFlow, setSelectedFlow] = useState<FlowInfo | null>(null);
   const [newFlowOpen, setNewFlowOpen] = useState(false);
 
@@ -29,7 +38,7 @@ export function SessionFlowActions({
   return (
     <>
       <div className="mt-1.5 pt-1.5 border-t border-[var(--border-subtle)]">
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 flex-wrap">
           <span className="text-[10px] text-[var(--text-muted)]">Flows:</span>
           {flows.length > 0 && (
             <button
@@ -47,9 +56,26 @@ export function SessionFlowActions({
               <Icon path={mdiPlus} size={0.4} className="inline mr-0.5" />New Flow
             </button>
           )}
+          {hasFlowsEdit && flows.length > 0 && (
+            <button
+              onClick={(e) => { e.stopPropagation(); setEditPickerOpen(true); }}
+              className="text-[10px] px-1.5 py-0.5 rounded border border-[var(--border-subtle)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]"
+            >
+              &#x270E;&#xFE0E; Edit
+            </button>
+          )}
+          {hasFlowsDelete && flows.length > 0 && (
+            <button
+              onClick={(e) => { e.stopPropagation(); setDeletePickerOpen(true); }}
+              className="text-[10px] px-1.5 py-0.5 rounded border border-[var(--border-subtle)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]"
+            >
+              &#215; Delete
+            </button>
+          )}
         </div>
       </div>
 
+      {/* Run: pick flow → task dialog */}
       {pickerOpen && (
         <SearchableSelectDialog
           title="Run Flow"
@@ -65,29 +91,86 @@ export function SessionFlowActions({
         />
       )}
 
-      {newFlowOpen && (
-        <FlowLaunchDialog
-          flowName="flows:new"
-          description="Design a new flow with the Flow Architect"
-          onSubmit={(task) => {
-            const prompt = task ? `/flows:new ${task}` : `/flows:new`;
-            onSendPrompt(prompt);
-            setNewFlowOpen(false);
-          }}
-          onCancel={() => setNewFlowOpen(false)}
-        />
-      )}
-
       {selectedFlow && (
         <FlowLaunchDialog
           flowName={selectedFlow.name}
           description={selectedFlow.description}
           onSubmit={(task) => {
-            const prompt = task ? `/${selectedFlow.name} ${task}` : `/${selectedFlow.name}`;
-            onSendPrompt(prompt);
+            onFlowAction("run", { flowName: selectedFlow.name, task: task || undefined });
             setSelectedFlow(null);
           }}
           onCancel={() => setSelectedFlow(null)}
+        />
+      )}
+
+      {/* Edit: pick flow → modification input dialog */}
+      {editPickerOpen && (
+        <SearchableSelectDialog
+          title="Edit Flow"
+          options={flowOptions}
+          placeholder="Search flows..."
+          emptyMessage="No flows available"
+          onSelect={(value) => {
+            setEditFlowName(value);
+            setEditPickerOpen(false);
+          }}
+          onCancel={() => setEditPickerOpen(false)}
+        />
+      )}
+
+      {editFlowName && (
+        <FlowLaunchDialog
+          flowName={editFlowName}
+          description="Describe how this flow should be updated"
+          onSubmit={(desc) => {
+            if (desc.trim()) {
+              onFlowAction("edit", { flowName: editFlowName, description: desc.trim() });
+            }
+            setEditFlowName(null);
+          }}
+          onCancel={() => setEditFlowName(null)}
+        />
+      )}
+
+      {/* Delete: pick flow → confirm dialog */}
+      {deletePickerOpen && (
+        <SearchableSelectDialog
+          title="Delete Flow"
+          options={flowOptions}
+          placeholder="Search flows..."
+          emptyMessage="No flows available"
+          onSelect={(value) => {
+            setDeleteFlowName(value);
+            setDeletePickerOpen(false);
+          }}
+          onCancel={() => setDeletePickerOpen(false)}
+        />
+      )}
+
+      {deleteFlowName && (
+        <ConfirmDialog
+          message={`Delete flow "${deleteFlowName}"? This will remove the flow file and any associated agents.`}
+          confirmLabel="Delete"
+          onConfirm={() => {
+            onFlowAction("delete", { flowName: deleteFlowName });
+            setDeleteFlowName(null);
+          }}
+          onCancel={() => setDeleteFlowName(null)}
+        />
+      )}
+
+      {/* New: description dialog */}
+      {newFlowOpen && (
+        <FlowLaunchDialog
+          flowName="flows:new"
+          description="Design a new flow with the Flow Architect"
+          onSubmit={(task) => {
+            if (task.trim()) {
+              onFlowAction("new", { description: task.trim() });
+            }
+            setNewFlowOpen(false);
+          }}
+          onCancel={() => setNewFlowOpen(false)}
         />
       )}
     </>

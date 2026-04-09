@@ -279,6 +279,7 @@ export function SessionCard({
   contextUsage,
   openspecChanges,
   onSendPrompt,
+  onFlowAction,
   onAttachProposal,
   onDetachProposal,
   onReadArtifact,
@@ -300,6 +301,7 @@ export function SessionCard({
   contextUsage?: ContextUsageInfo;
   openspecChanges?: OpenSpecChange[];
   onSendPrompt?: (text: string) => void;
+  onFlowAction?: (action: string, opts?: { flowName?: string; task?: string; description?: string }) => void;
   onAttachProposal?: (changeName: string) => void;
   onDetachProposal?: () => void;
   onReadArtifact?: (changeName: string, artifactId: string) => void;
@@ -579,11 +581,13 @@ export function SessionCard({
         />
       )}
       {/* Flow launcher */}
-      {flows && onSendPrompt && (
+      {flows && onFlowAction && (
         <SessionFlowActions
           flows={flows}
           hasFlowsNew={commands?.some(c => c.name === "flows:new") ?? false}
-          onSendPrompt={onSendPrompt}
+          hasFlowsEdit={commands?.some(c => c.name === "flows:edit") ?? false}
+          hasFlowsDelete={commands?.some(c => c.name === "flows:delete") ?? false}
+          onFlowAction={onFlowAction}
         />
       )}
       </div>{/* end card content */}

@@ -243,6 +243,7 @@ export interface FlowAgentState {
   status: FlowAgentStatus;
   label?: string;
   model?: string;
+  resolvedModel?: string;
   cardRole?: string;
   blockedBy: string[];
   tokens?: { input: number; output: number };

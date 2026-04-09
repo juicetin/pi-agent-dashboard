@@ -17,6 +17,12 @@ export function FlowAgentCard({
   const displayName = agent.label || agent.agentName;
   const displayRole = agent.cardRole || agent.model || "";
   const isComplete = agent.status === "complete" || agent.status === "error" || agent.status === "blocked";
+  // Strip provider prefix for display (e.g., "anthropic/claude-opus-4-6" → "claude-opus-4-6")
+  const displayModel = agent.resolvedModel
+    ? (agent.resolvedModel.split("/").pop() ?? agent.resolvedModel)
+    : "";
+  const rawModel = agent.model || "";
+  const hasAlias = rawModel.startsWith("@");
 
   const headerRight = agent.loopIteration != null && agent.loopIteration > 0 ? (
     <span className="text-[10px] text-blue-400 flex-shrink-0 inline-flex items-center gap-0.5">
@@ -26,6 +32,8 @@ export function FlowAgentCard({
 
   const stats = isComplete && agent.tokens ? (
     <span>↑{formatTokens(agent.tokens.input)} ↓{formatTokens(agent.tokens.output)} · {formatDuration(agent.duration ?? 0)}</span>
+  ) : displayModel ? (
+    <span>{displayModel}</span>
   ) : displayRole ? (
     <span>{displayRole}</span>
   ) : null;
@@ -39,6 +47,11 @@ export function FlowAgentCard({
       onClick={onClick}
       selected={selected}
     >
+      {/* Model alias line (when model uses @role alias) */}
+      {hasAlias && (
+        <div className="text-[10px] text-[var(--text-tertiary)] truncate">{rawModel}</div>
+      )}
+
       {/* Metric / waiting line */}
       <div className="text-[11px] text-[var(--text-muted)] mt-0.5 truncate">
         {agent.status === "pending" && agent.blockedBy.length > 0 ? (

@@ -99,6 +99,7 @@ export function reduceFlowEvent(
         status: "running",
         label: config?.card?.label,
         model: config?.model,
+        resolvedModel: (data.resolvedModel as string) || undefined,
         cardRole: config?.card?.role,
       });
       return { ...flowState, agents };

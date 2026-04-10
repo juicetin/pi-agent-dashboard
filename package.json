@@ -35,7 +35,7 @@
     "lint": "tsc --noEmit",
     "reload": "./scripts/reload-all.sh",
     "reload:check": "./scripts/reload-all.sh --check",
-    "electron:dev": "ELECTRON_DEV=1 npm run start --workspace=@blackbelt-technology/pi-dashboard-electron",
+    "electron:dev": "npm run start:dev --workspace=@blackbelt-technology/pi-dashboard-electron",
     "electron:start": "npm run start --workspace=@blackbelt-technology/pi-dashboard-electron",
     "electron:make": "npm run make --workspace=@blackbelt-technology/pi-dashboard-electron"
   },

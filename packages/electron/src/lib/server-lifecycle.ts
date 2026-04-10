@@ -5,14 +5,33 @@
 import { spawn } from "node:child_process";
 import path from "node:path";
 import os from "node:os";
-import { discoverDashboard } from "@blackbelt-technology/pi-dashboard-shared/mdns-discovery.js";
-import { isDashboardRunning } from "@blackbelt-technology/pi-dashboard-shared/server-identity.js";
-import { loadConfig } from "@blackbelt-technology/pi-dashboard-shared/config.js";
 import { readModeFile } from "./wizard-state.js";
 import { resolveTsLoader } from "./ts-loader-resolver.js";
 import { detectSystemNode } from "./dependency-detector.js";
 import { getBundledNodePath } from "./bundled-node.js";
-import { buildSpawnEnv } from "@blackbelt-technology/pi-dashboard-server/process-manager.js";
+
+// Lazy imports — these packages may not be resolvable in all environments
+async function getDiscoverDashboard() {
+  const mod = await import("@blackbelt-technology/pi-dashboard-shared/mdns-discovery.js");
+  return mod.discoverDashboard;
+}
+async function getIsDashboardRunning() {
+  const mod = await import("@blackbelt-technology/pi-dashboard-shared/server-identity.js");
+  return mod.isDashboardRunning;
+}
+async function getLoadConfig() {
+  const mod = await import("@blackbelt-technology/pi-dashboard-shared/config.js");
+  return mod.loadConfig;
+}
+async function getBuildSpawnEnv() {
+  try {
+    const mod = await import("@blackbelt-technology/pi-dashboard-server/process-manager.js");
+    return mod.buildSpawnEnv;
+  } catch {
+    // Fallback: return identity function
+    return (env?: NodeJS.ProcessEnv) => env ?? process.env;
+  }
+}
 
 let serverStartedByUs = false;
 
@@ -26,18 +45,21 @@ export function didWeStartServer(): boolean {
  * Returns the URL to connect to.
  */
 export async function ensureServer(): Promise<string> {
+  const loadConfig = await getLoadConfig();
   const config = loadConfig();
 
   // 1. Try mDNS discovery (2s timeout)
   try {
+    const discoverDashboard = await getDiscoverDashboard();
     const servers = await discoverDashboard(2000);
-    const local = servers.find(s => s.isLocal);
+    const local = servers.find((s: any) => s.isLocal);
     if (local) {
       return `http://localhost:${local.port}`;
     }
   } catch { /* mDNS failed — fall through */ }
 
   // 2. Health check fallback
+  const isDashboardRunning = await getIsDashboardRunning();
   const status = await isDashboardRunning(config.port);
   if (status.running) {
     return `http://localhost:${config.port}`;
@@ -85,6 +107,7 @@ async function launchServer(port: number, piPort: number): Promise<void> {
     "--pi-port", String(piPort),
   ];
 
+  const buildSpawnEnv = await getBuildSpawnEnv();
   const child = spawn(nodePath, args, {
     detached: true,
     stdio: "ignore",
@@ -96,6 +119,7 @@ async function launchServer(port: number, piPort: number): Promise<void> {
   const deadline = Date.now() + 10_000;
   while (Date.now() < deadline) {
     await new Promise(r => setTimeout(r, 500));
+    const isDashboardRunning = await getIsDashboardRunning();
     const check = await isDashboardRunning(port);
     if (check.running) return;
   }
@@ -106,6 +130,7 @@ async function launchServer(port: number, piPort: number): Promise<void> {
 /** Stop the server if we started it. */
 export async function stopServerIfNeeded(): Promise<void> {
   if (!serverStartedByUs) return;
+  const loadConfig = await getLoadConfig();
   const config = loadConfig();
   try {
     await fetch(`http://localhost:${config.port}/api/shutdown`, { method: "POST" });

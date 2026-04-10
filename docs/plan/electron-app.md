@@ -2,7 +2,11 @@
 
 ## Overview
 
-Package the pi-dashboard as a standalone Electron desktop app for macOS, Linux, and Windows. The app works on a fresh machine with zero prerequisites — bundled Node.js bootstraps all dependencies. Two OpenSpec changes implement this in sequence: `mdns-server-discovery` (foundation) then `electron-desktop-bundle` (Electron shell).
+Package the pi-dashboard as a standalone Electron desktop app for macOS, Linux, and Windows. The app works on a fresh machine with zero prerequisites — bundled Node.js bootstraps all dependencies.
+
+**Current state:** The project has been restructured into an npm workspaces monorepo (`packages/client`, `packages/server`, `packages/extension`, `packages/shared`, `packages/dist`). The `mdns-server-discovery` change has been **fully implemented and archived** — `isDashboardRunning()`, mDNS discovery, `ServerSelector`, bridge mDNS connection handling are all in place. `spawnStrategy` default is already `"headless"`. CORS support is added for cross-origin client serving.
+
+**Remaining:** One OpenSpec change `electron-desktop-bundle` with 8 task groups, 40 tasks.
 
 ## Motivation
 
@@ -10,14 +14,18 @@ The pi-dashboard currently requires manual installation of Node.js, pi, and open
 
 ## Architecture
 
-### Current Architecture
+### Current Architecture (Monorepo)
 
 ```
-┌─────────────┐     WebSocket      ┌──────────────┐     WebSocket     ┌─────────────┐
-│   Bridge    │ ◄─────────────────► │  Dashboard   │ ◄───────────────► │  Web Client  │
-│  Extension  │    (port 9999)      │   Server     │    (port 8000)    │  (Browser)   │
-│  (per pi)   │                     │  (Node.js)   │                   │              │
-└─────────────┘                     └──────────────┘                   └─────────────┘
+┌────────────────────┐   WebSocket   ┌────────────────────┐   WebSocket   ┌──────────────────┐
+│ packages/extension │ ◄────────────►│ packages/server    │ ◄────────────►│ packages/client  │
+│ Bridge Extension   │  (port 9999)  │ Dashboard Server   │  (port 8000)  │ React Web UI     │
+│ (per pi session)   │               │ (Node.js detached) │               │ (Browser)        │
+└────────────────────┘               └────────────────────┘               └──────────────────┘
+                                            │
+                                     packages/shared
+                                     (types, config, mDNS,
+                                      server-identity)
 ```
 
 ### With Electron
@@ -278,36 +286,29 @@ Testing Electron shell:
 
 ## Implementation Plan
 
-### Change 1: `mdns-server-discovery` — Implement First
+### ~~Change 1: `mdns-server-discovery`~~ ✅ COMPLETED
 
-**OpenSpec:** `openspec/changes/mdns-server-discovery/`
-**6 task groups, 29 tasks**
+Fully implemented and archived. Provides:
+- `isDashboardRunning()` in `packages/shared/src/server-identity.ts`
+- mDNS discovery in `packages/shared/src/mdns-discovery.ts`
+- `ServerSelector` component in `packages/client/src/components/ServerSelector.tsx`
+- Bridge mDNS connection handling in `packages/extension/src/server-auto-start.ts`
 
-| Group | Tasks | Description |
-|-------|-------|-------------|
-| 1. Server Identity Detection | 7 | `isDashboardRunning()`, replace `isPortOpen()` everywhere |
-| 2. Shared mDNS Module | 5 | `bonjour-service`, advertise/discover/browse, fallback chain |
-| 3. Server mDNS Integration | 5 | Advertise on startup, peer discovery, browser protocol messages |
-| 4. Bridge mDNS Discovery | 4 | mDNS browse → fallback → auto-start |
-| 5. Config Changes | 3 | `lastServer` field, CLI status with mDNS |
-| 6. Server Selector UI | 6 | Header dropdown, switching, persistence |
-
-**Immediately useful** for existing CLI/browser users (zero-config discovery, LAN awareness).
-
-### Change 2: `electron-desktop-bundle` — Depends on Change 1
+### Change 2: `electron-desktop-bundle` — Remaining Work
 
 **OpenSpec:** `openspec/changes/electron-desktop-bundle/`
-**7 task groups, 37 tasks**
+**8 task groups, 40 tasks**
 
 | Group | Tasks | Description |
 |-------|-------|-------------|
-| 1. Config Changes | 5 | `electronMode`, headless default, managed PATH |
-| 2. Dependency Installer | 5 | Detection, standalone/power-user install, bundled Node, TS loader |
-| 3. First-Run Wizard | 8 | Mode selection, install progress, API key, mode persistence |
-| 4. Electron Shell | 7 | Main process, window, system tray, dev mode |
-| 5. Dependency Auto-Update | 5 | Outdated check, notification, update execution |
-| 6. Build Pipeline | 8 | Forge config, Node.js download, CI matrix, signing |
-| 7. App Auto-Updater | 5 | electron-updater, GitHub Releases, update UI |
+| 1. Config Changes | 4 | `electronMode`, managed PATH |
+| 2. Electron Workspace Setup | 6 | `packages/electron/`, forge config, npm scripts |
+| 3. Dependency Installer | 5 | Detection, standalone/power-user install, bundled Node, TS loader |
+| 4. First-Run Wizard | 8 | Mode selection, install progress, API key, mode persistence |
+| 5. Electron Shell | 6 | Main process, window, system tray, dev mode |
+| 6. Dependency Auto-Update | 5 | Outdated check, notification, update execution |
+| 7. Build Pipeline | 5 | Node.js download, extraResources, CI matrix, signing |
+| 8. App Auto-Updater | 5 | electron-updater, GitHub Releases, update UI |
 
 ## Key Design Decisions Summary
 

@@ -7,16 +7,15 @@ The pi-dashboard currently requires users to manually install Node.js, pi, and o
 - New Electron shell that acts as a **smart window + server bootstrapper** — not an in-process server. The dashboard server always runs as a separate detached process (same as `pi-dashboard start`), and Electron opens a BrowserWindow pointing at it.
 - Bundle standalone Node.js v22 LTS as `extraResources` for bootstrapping pi/openspec installation
 - First-run setup wizard with two modes: **standalone** (install everything into `~/.pi-dashboard/`) or **power user** (use existing system pi). Includes API key configuration.
-- Uses `isDashboardRunning()` health-check from `mdns-server-discovery` change for reliable server detection (no bare TCP probes).
-- Hardcode `spawnStrategy: "headless"` in Electron builds — tmux codepath excluded
-- `node-pty` rebuilt against Electron's Node ABI via `@electron/rebuild` per platform
+- Uses existing `isDashboardRunning()` and mDNS discovery from `@blackbelt-technology/pi-dashboard-shared` for reliable server detection (already implemented in `mdns-server-discovery` change).
+- `spawnStrategy` default already changed to `"headless"` (done in prior work). Electron mode forces headless regardless.
 - CI build matrix producing platform installers: macOS `.dmg` (universal), Linux `.AppImage` (x64), Windows `.exe` NSIS (x64)
 - Periodic pi/openspec update check with user prompt
 - Single-instance lock via `app.requestSingleInstanceLock()` to prevent multiple Electron windows
 - System tray integration — minimize to tray on close, quick reopen
 - App auto-updater via `electron-updater` + GitHub Releases
 - The existing web dashboard (`pi-dashboard` CLI) continues to work unchanged — Electron is an alternative entry point
-- **No port collision**: only one server ever runs per machine. Electron detects an existing server via health check and connects to it; if none is running, it launches one as a detached process. CLI-started and Electron-started servers are interchangeable.
+- **No port collision**: only one server ever runs per machine. Electron detects an existing server via mDNS + health check and connects to it; if none is running, it launches one as a detached process. CLI-started and Electron-started servers are interchangeable.
 - **Server outlives Electron**: closing the Electron window does not kill the server (bridges stay connected). Optionally stops the server on quit via tray "Quit" only if Electron was the one that started it.
 
 ## Capabilities
@@ -26,23 +25,22 @@ The pi-dashboard currently requires users to manually install Node.js, pi, and o
 - `bundled-node-runtime`: Standalone Node.js v22 LTS packaging as extraResources, platform-specific binary selection, PATH management for spawned processes
 - `dependency-installer`: Runtime detection and installation of pi, dashboard package, openspec, and tsx via bundled npm, managed install location (`~/.pi-dashboard/node_modules/`), TS loader resolution per mode
 - `first-run-wizard`: Mode selection (standalone vs power user), dependency installation/verification with progress, API key configuration, mode persistence to `~/.pi-dashboard/mode.json`
-- `electron-build-pipeline`: electron-forge configuration, node-pty native rebuild, CI matrix for macOS/Linux/Windows, code signing (macOS), auto-updater
+- `electron-build-pipeline`: electron-forge configuration, CI matrix for macOS/Linux/Windows, code signing (macOS), auto-updater
 - `dependency-auto-update`: Periodic outdated check for pi/openspec, user prompt for updates, background installation
 
 ### Modified Capabilities
-- `process-manager`: Electron builds force headless spawn strategy, skip tmux detection. Managed install bin prepended to spawned process PATH.
-- `shared-config`: `spawnStrategy` default changed from `"tmux"` to `"headless"` globally. New `electronMode` flag.
+- `process-manager`: Electron mode forces headless spawn strategy, skip tmux detection. Managed install bin prepended to spawned process PATH.
+- `shared-config`: New `electronMode` flag to distinguish Electron vs CLI server startup.
 
-### Dependencies
-- **`mdns-server-discovery`** (should be implemented first): provides `isDashboardRunning()` in `server-identity.ts` and optionally mDNS discovery, both used by Electron startup.
+### Already Completed (prerequisites)
+- **`mdns-server-discovery`** (archived): `isDashboardRunning()` in `packages/shared/src/server-identity.ts`, mDNS discovery in `packages/shared/src/mdns-discovery.ts`, `ServerSelector` component, bridge mDNS connection handling — all implemented and available.
+- **`spawnStrategy` default**: Already changed to `"headless"` globally.
+- **Monorepo restructure** (archived): Project split into `packages/client`, `packages/server`, `packages/extension`, `packages/shared`, `packages/dist`. CORS support added for cross-origin client serving.
 
 ## Impact
 
-- **New top-level directory**: `electron/` for main process entry, preload scripts, forge config
-- **Build tooling**: `electron-forge` added as dev dependency
+- **New workspace**: `packages/electron/` for Electron main process, preload, forge config (follows monorepo pattern)
+- **Build tooling**: `electron-forge` added as dev dependency in the electron workspace
 - **CI**: New GitHub Actions workflow for cross-platform Electron builds
-- **Native addons**: `node-pty` must be rebuilt per platform+arch in CI (not at user install time)
-- **Bundle size**: ~250MB per platform (Electron ~150MB + Node.js ~80MB + app ~15MB + node-pty ~2MB)
-- **Depends on `mdns-server-discovery`** for `isDashboardRunning()` and optionally mDNS discovery
-- **spawnStrategy default change**: affects all users (CLI and Electron). Existing users with explicit `"tmux"` in config are unaffected.
-- **No other breaking changes**: Existing `pi-dashboard` CLI, bridge extension, and web client are unaffected
+- **Bundle size**: ~250MB per platform (Electron ~150MB + Node.js ~80MB + app ~15MB)
+- **No breaking changes**: Existing `pi-dashboard` CLI, bridge extension, and web client are unaffected

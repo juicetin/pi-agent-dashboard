@@ -226,6 +226,10 @@ export default function App() {
     if (selectedId && !subscribedRef.current.has(selectedId) && status === "connected") {
       subscribedRef.current.add(selectedId);
       send({ type: "subscribe", sessionId: selectedId, lastSeq: maxSeqMapRef.current.get(selectedId) ?? 0 });
+      // Request model list for this session if we don't have it yet (e.g. after page refresh)
+      if (!modelsMap.has(selectedId)) {
+        send({ type: "request_models", sessionId: selectedId });
+      }
     }
   }, [selectedId, send, status]);
 
@@ -274,7 +278,7 @@ export default function App() {
   });
   const {
     handleAbort, handleForceKill, handleCancelPending, handleRespondToUi, handleFlowAction, handleSend,
-    handleSelect, handleRenameSession, handleShutdownSession,
+    handleSelect, handleRenameSession, handleShutdownSession, handleKillProcess,
     handleSendPromptToSession, handleResumeSession, handleSpawnSession,
     handleHideSession, handleUnhideSession,
     handleCreateTerminal, handleKillTerminal, handleRenameTerminal, handleTerminalTitle,
@@ -395,6 +399,7 @@ export default function App() {
       onCollapseSidebar={sidebar.toggleCollapse}
       commandsMap={sessionCommands}
       flowsMap={sessionFlows}
+      onKillProcess={handleKillProcess}
       onOpenTerminals={(cwd) => navigate(`/folder/${encodeFolderPath(cwd)}/terminals`)}
       onOpenEditor={(cwd) => navigate(`/folder/${encodeFolderPath(cwd)}/editor`)}
       editorStatuses={editorStatuses}

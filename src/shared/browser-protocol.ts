@@ -213,7 +213,8 @@ export type ServerToBrowserMessage =
   | PackageOperationCompleteMessage
   | EditorStatusMessage
   | ForceKillResultMessage
-  | BrowserRolesListMessage;
+  | BrowserRolesListMessage
+  | ProcessListUpdateMessage;
 
 // ── Browser → Server ────────────────────────────────────────────────
 
@@ -301,6 +302,18 @@ export interface ForceKillResultMessage {
   sessionId: string;
   success: boolean;
   message?: string;
+}
+
+export interface ProcessListUpdateMessage {
+  type: "process_list_update";
+  sessionId: string;
+  processes: Array<{ pid: number; pgid: number; command: string; elapsedMs: number }>;
+}
+
+export interface KillProcessBrowserMessage {
+  type: "kill_process";
+  sessionId: string;
+  pgid: number;
 }
 
 export interface ListSessionsBrowserMessage {
@@ -489,4 +502,5 @@ export type BrowserToServerMessage =
   | RolePresetLoadBrowserMessage
   | RolePresetSaveBrowserMessage
   | RolePresetDeleteBrowserMessage
-  | RequestRolesBrowserMessage;
+  | RequestRolesBrowserMessage
+  | KillProcessBrowserMessage;

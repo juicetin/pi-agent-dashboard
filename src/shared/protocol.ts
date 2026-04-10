@@ -157,6 +157,19 @@ export interface SpawnNewSessionMessage {
   cwd: string;
 }
 
+export interface ProcessInfo {
+  pid: number;
+  pgid: number;
+  command: string;
+  elapsedMs: number;
+}
+
+export interface ProcessListMessage {
+  type: "process_list";
+  sessionId: string;
+  processes: ProcessInfo[];
+}
+
 // LoadSessionEventsResultMessage and LoadSessionEventsErrorMessage removed — server loads directly
 
 export type ExtensionToServerMessage =
@@ -177,7 +190,8 @@ export type ExtensionToServerMessage =
   | ReplayCompleteMessage
   | FirstMessageUpdateMessage
   | RolesListMessage
-  | SpawnNewSessionMessage;
+  | SpawnNewSessionMessage
+  | ProcessListMessage;
 
 // ── Server → Extension ──────────────────────────────────────────────
 
@@ -314,6 +328,12 @@ export interface RequestRolesMessage {
   sessionId: string;
 }
 
+export interface KillProcessMessage {
+  type: "kill_process";
+  sessionId: string;
+  pgid: number;
+}
+
 export interface ExtensionUiResponseMessage {
   type: "extension_ui_response";
   sessionId: string;
@@ -345,4 +365,5 @@ export type ServerToExtensionMessage =
   | RolePresetLoadExtensionMessage
   | RolePresetSaveExtensionMessage
   | RolePresetDeleteExtensionMessage
-  | RequestRolesMessage;
+  | RequestRolesMessage
+  | KillProcessMessage;

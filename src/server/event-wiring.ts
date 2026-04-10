@@ -544,5 +544,14 @@ export function wireEvents(deps: EventWiringDeps): void {
       });
     }
 
+    // Forward process list from bridge to subscribed browsers
+    if (msg.type === "process_list") {
+      browserGateway.sendToSubscribers(sessionId, {
+        type: "process_list_update",
+        sessionId,
+        processes: msg.processes,
+      });
+    }
+
   };
 }

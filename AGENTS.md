@@ -50,6 +50,8 @@ pi-dashboard --dev   # Start with Vite proxy
 | `src/extension/server-auto-start.ts` | Extracted auto-start logic with retry-probe for concurrent launches |
 | `src/shared/session-meta.ts` | Session metadata sidecar (.meta.json) read/write helpers |
 | `src/extension/process-metrics.ts` | Lightweight CPU/memory/event-loop metrics collector for heartbeats |
+| `src/extension/process-scanner.ts` | Child process detection via pgrep (leaf-only, grandchild recursion) and PGID-based kill |
+| `src/client/components/ProcessList.tsx` | Session card process list with elapsed time and red ✕ kill button |
 | `src/extension/git-info.ts` | Git branch/remote/PR detection (polled every 30s) |
 | `src/extension/git-link-builder.ts` | Git remote URL parsing and platform-specific links |
 | `src/server/git-operations.ts` | Server-side git commands: branch listing, checkout, init, stash pop |

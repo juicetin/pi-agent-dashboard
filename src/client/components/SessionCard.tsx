@@ -13,6 +13,7 @@ import { OpenSpecActivityBadge } from "./OpenSpecActivityBadge.js";
 import { InlineRenameInput } from "./InlineRenameInput.js";
 import { FlowActivityBadge } from "./FlowActivityBadge.js";
 import { SessionFlowActions } from "./SessionFlowActions.js";
+import { ProcessList, type ProcessEntry } from "./ProcessList.js";
 import type { CommandInfo, FlowInfo } from "../../shared/types.js";
 import { useMobile } from "../hooks/useMobile.js";
 
@@ -289,6 +290,8 @@ export function SessionCard({
   onResume,
   commands,
   flows,
+  processes,
+  onKillProcess,
 }: {
   session: DashboardSession;
   selectedId?: string;
@@ -311,6 +314,8 @@ export function SessionCard({
   onResume?: (mode: "continue" | "fork") => void;
   commands?: CommandInfo[];
   flows?: FlowInfo[];
+  processes?: ProcessEntry[];
+  onKillProcess?: (pgid: number) => void;
 }) {
   const isSelected = selectedId === session.id;
   const [isRenaming, setIsRenaming] = useState(false);
@@ -390,6 +395,10 @@ export function SessionCard({
             status={session.flowStatus}
           />
         ) : null}
+        {/* Active child processes (mobile compact) */}
+        {processes && processes.length > 0 && onKillProcess && (
+          <ProcessList processes={processes} onKill={onKillProcess} compact />
+        )}
       </li>
     );
   }
@@ -589,6 +598,10 @@ export function SessionCard({
           hasFlowsDelete={commands?.some(c => c.name === "flows:delete") ?? false}
           onFlowAction={onFlowAction}
         />
+      )}
+      {/* Active child processes */}
+      {processes && processes.length > 0 && onKillProcess && (
+        <ProcessList processes={processes} onKill={onKillProcess} />
       )}
       </div>{/* end card content */}
       </div>{/* end flex row */}

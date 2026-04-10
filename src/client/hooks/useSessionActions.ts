@@ -116,6 +116,10 @@ export function useSessionActions(deps: SessionActionDeps) {
     send({ type: "shutdown", sessionId });
   }, [send]);
 
+  const handleKillProcess = useCallback((sessionId: string, pgid: number) => {
+    send({ type: "kill_process", sessionId, pgid });
+  }, [send]);
+
   const handleSendPromptToSession = useCallback((sessionId: string, text: string) => {
     send({ type: "send_prompt", sessionId, text });
   }, [send]);
@@ -203,7 +207,7 @@ export function useSessionActions(deps: SessionActionDeps) {
 
   return {
     handleAbort, handleForceKill, handleCancelPending, handleRespondToUi, handleFlowAction, handleSend,
-    handleSelect, handleRenameSession, handleShutdownSession,
+    handleSelect, handleRenameSession, handleShutdownSession, handleKillProcess,
     handleSendPromptToSession, handleResumeSession, handleSpawnSession,
     handleHideSession, handleUnhideSession,
     handleCreateTerminal, handleKillTerminal, handleRenameTerminal, handleTerminalTitle,

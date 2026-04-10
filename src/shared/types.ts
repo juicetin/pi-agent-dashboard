@@ -48,6 +48,8 @@ export interface DashboardSession {
   lastEntryCount?: number;
   /** OS process ID of the pi agent — used for force-kill escalation */
   pid?: number;
+  /** Active child processes detected by bridge process scanner */
+  processes?: Array<{ pid: number; pgid: number; command: string; elapsedMs: number }>;
   /** Latest process metrics from the pi agent */
   processMetrics?: {
     rss: number;

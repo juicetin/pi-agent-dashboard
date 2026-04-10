@@ -26,6 +26,7 @@ import { registerAskUserTool } from "./ask-user-tool.js";
 import { activate as activateProviderRegister, onProviderChanged } from "./provider-register.js";
 import type { FlowInfo } from "../shared/types.js";
 import { startMetricsMonitor, stopMetricsMonitor, collectMetrics } from "./process-metrics.js";
+import { scanChildProcesses } from "./process-scanner.js";
 import type { BridgeContext } from "./bridge-context.js";
 import { filterHiddenCommands, extractFirstMessage, getCurrentModelString } from "./bridge-context.js";
 import { sendStateSync as _sendStateSync, replaySessionEntries as _replaySessionEntries, handleSessionChange as _handleSessionChange } from "./session-sync.js";
@@ -34,6 +35,7 @@ import { registerFlowEventListeners, FLOW_EVENT_MAP, SUBAGENT_EVENT_MAP } from "
 
 const HEARTBEAT_INTERVAL = 15_000;
 const GIT_POLL_INTERVAL = 30_000;
+const PROCESS_SCAN_INTERVAL = 10_000;
 
 
 
@@ -162,6 +164,9 @@ function initBridge(pi: ExtensionAPI) {
 
   let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   let gitPollTimer: ReturnType<typeof setInterval> | null = null;
+  let processScanTimer: ReturnType<typeof setInterval> | null = null;
+  let previousProcessPids: string = ""; // JSON-stringified PID set for diff
+  const trackedPgids = new Set<number>(); // PGIDs captured during bash tool calls
   let lastGitBranch: string | undefined;
   let lastGitPrNumber: number | undefined;
   let lastSessionName: string | undefined;
@@ -603,6 +608,7 @@ function initBridge(pi: ExtensionAPI) {
   }
 
   pi.on("session_start", safe(async (_event: any, ctx: any) => {
+
     // Bail out if a newer bridge instance has taken over
     if (!isActive()) return;
     const newSessionId = ctx.sessionManager.getSessionId();
@@ -762,6 +768,23 @@ function initBridge(pi: ExtensionAPI) {
       sendModelUpdateIfChanged();
     }, GIT_POLL_INTERVAL);
     getBridgeState().timers!.push(gitPollTimer);
+
+    // Start process scanner (detect stalled child processes)
+    // Captures new child PGIDs during active bash calls, then checks tracked PGIDs
+    processScanTimer = setInterval(() => {
+      if (!isActive()) return;
+      const processes = scanChildProcesses(process.pid, trackedPgids);
+      const currentPids = JSON.stringify(processes.map((p) => p.pid).sort());
+      if (currentPids !== previousProcessPids) {
+        previousProcessPids = currentPids;
+        connection.send({
+          type: "process_list",
+          sessionId,
+          processes: processes.map((p) => ({ pid: p.pid, pgid: p.pgid, command: p.command, elapsedMs: p.elapsedMs })),
+        });
+      }
+    }, PROCESS_SCAN_INTERVAL);
+    getBridgeState().timers!.push(processScanTimer);
 
     // Register flow event listeners (pi-flows emits these via pi.events)
     registerFlowEventListeners(syncBc(), () => sessionReady, getFlowsList);

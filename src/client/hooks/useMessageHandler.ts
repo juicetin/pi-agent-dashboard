@@ -152,6 +152,17 @@ export function useMessageHandler(
         });
         break;
 
+      case "process_list_update":
+        setSessions((prev) => {
+          const next = new Map(prev);
+          const existing = next.get(msg.sessionId);
+          if (existing) {
+            next.set(msg.sessionId, { ...existing, processes: msg.processes });
+          }
+          return next;
+        });
+        break;
+
       case "openspec_update":
         setOpenspecMap((prev) => {
           const next = new Map(prev);

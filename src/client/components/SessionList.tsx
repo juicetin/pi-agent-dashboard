@@ -83,6 +83,7 @@ interface Props {
   onCollapseSidebar?: () => void;
   commandsMap?: Map<string, CommandInfo[]>;
   flowsMap?: Map<string, FlowInfo[]>;
+  onKillProcess?: (sessionId: string, pgid: number) => void;
   onOpenSpecs?: (cwd: string) => void;
   onOpenArchive?: (cwd: string) => void;
   onViewReadme?: (cwd: string) => void;
@@ -118,7 +119,7 @@ function ToggleButton({
   );
 }
 
-export function SessionList({ sessions, selectedId, onSelect, contextUsageMap, openspecMap, sessionOrderMap, onReorderSessions, onSendPrompt, onFlowAction, onOpenSpecRefresh, onAttachProposal, onDetachProposal, onBulkArchive, onReadArtifact, onOpenPiResources, onRename, onShutdown, onResume, onHideSession, onUnhideSession, onSpawnSession, spawningCwds, spawnResult, onSpawnResultSeen, pinnedDirectories, onPinDirectory, onUnpinDirectory, onReorderPinnedDirs, terminals, onCreateTerminal, onKillTerminal, onRenameTerminal, onCollapseSidebar, commandsMap, flowsMap, onOpenSpecs, onOpenArchive, onViewReadme, onOpenTerminals, onOpenEditor, editorStatuses, editorAvailable }: Props) {
+export function SessionList({ sessions, selectedId, onSelect, contextUsageMap, openspecMap, sessionOrderMap, onReorderSessions, onSendPrompt, onFlowAction, onOpenSpecRefresh, onAttachProposal, onDetachProposal, onBulkArchive, onReadArtifact, onOpenPiResources, onRename, onShutdown, onResume, onHideSession, onUnhideSession, onSpawnSession, spawningCwds, spawnResult, onSpawnResultSeen, pinnedDirectories, onPinDirectory, onUnpinDirectory, onReorderPinnedDirs, terminals, onCreateTerminal, onKillTerminal, onRenameTerminal, onCollapseSidebar, commandsMap, flowsMap, onKillProcess, onOpenSpecs, onOpenArchive, onViewReadme, onOpenTerminals, onOpenEditor, editorStatuses, editorAvailable }: Props) {
   const now = Date.now();
   const [, navigate] = useLocation();
   const { messages, showToast, dismissToast } = useToast();
@@ -411,6 +412,8 @@ export function SessionList({ sessions, selectedId, onSelect, contextUsageMap, o
                         onResume={onResume ? (mode) => onResume(session.id, mode) : undefined}
                         commands={commandsMap?.get(session.id)}
                         flows={flowsMap?.get(session.id)}
+                        processes={session.processes}
+                        onKillProcess={onKillProcess ? (pgid) => onKillProcess(session.id, pgid) : undefined}
                       />
                     </SortableSessionCard>
                   );

@@ -177,6 +177,13 @@ export function handleFlowControl(
   ctx.piGateway.sendToSession(msg.sessionId, { type: "flow_control", sessionId: msg.sessionId, action: msg.action });
 }
 
+export function handleKillProcess(
+  msg: Extract<BrowserToServerMessage, { type: "kill_process" }>,
+  ctx: BrowserHandlerContext,
+): void {
+  ctx.piGateway.sendToSession(msg.sessionId, { type: "kill_process", sessionId: msg.sessionId, pgid: msg.pgid });
+}
+
 /**
  * Check if a PID belongs to a pi/node process (safety check before SIGKILL).
  * Returns true if the process looks like a pi-related process, false otherwise.

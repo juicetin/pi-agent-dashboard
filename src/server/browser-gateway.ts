@@ -20,7 +20,7 @@ import { createPendingResumeRegistry, type PendingResumeRegistry } from "./pendi
 import type { TerminalManager } from "./terminal-manager.js";
 import type { BrowserHandlerContext } from "./browser-handlers/handler-context.js";
 import { handleSubscribe } from "./browser-handlers/subscription-handler.js";
-import { handleSendPrompt, handleResumeSession, handleSpawnSession, handleShutdown, handleAbort, handleFlowControl, handleForceKill } from "./browser-handlers/session-action-handler.js";
+import { handleSendPrompt, handleResumeSession, handleSpawnSession, handleShutdown, handleAbort, handleFlowControl, handleForceKill, handleKillProcess } from "./browser-handlers/session-action-handler.js";
 import { handleRenameSession, handleHideSession, handleUnhideSession, handleAttachProposal, handleDetachProposal, handleFetchContent, handleListSessions } from "./browser-handlers/session-meta-handler.js";
 import { handleCreateTerminal, handleKillTerminal, handleRenameTerminal } from "./browser-handlers/terminal-handler.js";
 import { handlePinDirectory, handleUnpinDirectory, handleReorderPinnedDirs, handleReorderSessions, handleOpenSpecRefresh, handleOpenSpecBulkArchive, handleExtensionUiResponse, handlePiGatewayForward } from "./browser-handlers/directory-handler.js";
@@ -247,6 +247,9 @@ export function createBrowserGateway(
             break;
           case "flow_control":
             handleFlowControl(msg, ctx);
+            break;
+          case "kill_process":
+            handleKillProcess(msg, ctx);
             break;
           case "shutdown":
             handleShutdown(msg, ctx);

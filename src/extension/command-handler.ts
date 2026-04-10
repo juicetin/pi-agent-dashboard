@@ -7,6 +7,7 @@ import type {
   ServerToExtensionMessage,
   ExtensionToServerMessage,
 } from "../shared/protocol.js";
+import { killProcessByPgid } from "./process-scanner.js";
 import type { FileEntry, PiSessionInfo } from "../shared/types.js";
 import { filterHiddenCommands } from "./bridge-context.js";
 
@@ -357,6 +358,13 @@ export function createCommandHandler(
         case "set_model":
           if (options?.setModel) {
             await options.setModel(msg.provider, msg.modelId);
+          }
+          return undefined;
+
+        case "kill_process":
+          if ('pgid' in msg) {
+            const killed = killProcessByPgid((msg as any).pgid);
+            console.error(`[dashboard] kill_process pgid=${(msg as any).pgid} result=${killed}`);
           }
           return undefined;
 

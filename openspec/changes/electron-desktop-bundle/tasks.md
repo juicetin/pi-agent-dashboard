@@ -16,20 +16,20 @@
 
 ## 3. Electron Workspace Setup
 
-- [ ] 3.1 Create `packages/electron/` workspace with `package.json` (deps: `electron`, `@electron-forge/cli`, `@electron-forge/plugin-vite`, `electron-updater`, shared workspace dep)
-- [ ] 3.2 Register workspace in root `package.json` `workspaces` array
-- [ ] 3.3 Create `packages/electron/forge.config.ts` with makers for macOS (dmg universal), Linux (deb, AppImage), Windows (squirrel)
-- [ ] 3.4 Create `packages/electron/src/main.ts` entry point (stub)
-- [ ] 3.5 Create `packages/electron/src/preload.ts`
-- [ ] 3.6 Add npm scripts to root: `electron:dev`, `electron:make`, `electron:start`
+- [x] 3.1 Create `packages/electron/` workspace with `package.json` (deps: `electron`, `@electron-forge/cli`, `@electron-forge/plugin-vite`, `electron-updater`, shared workspace dep)
+- [x] 3.2 Register workspace in root `package.json` `workspaces` array
+- [x] 3.3 Create `packages/electron/forge.config.ts` with makers for macOS (dmg universal), Linux (deb, AppImage), Windows (squirrel)
+- [x] 3.4 Create `packages/electron/src/main.ts` entry point (stub)
+- [x] 3.5 Create `packages/electron/src/preload.ts`
+- [x] 3.6 Add npm scripts to root: `electron:dev`, `electron:make`, `electron:start`
 
 ## 4. Dependency Installer Module
 
-- [ ] 4.1 Create `packages/electron/src/lib/dependency-detector.ts` — `detectPi()`, `detectOpenSpec()`, `detectDashboardPackage()`, `detectSystemNode()` with system PATH → managed install detection chain
-- [ ] 4.2 Create `packages/electron/src/lib/dependency-installer.ts` — `installStandalone()` (pi + dashboard + openspec + tsx into `~/.pi-dashboard/`), `installDashboardGlobal()` (for power user mode)
-- [ ] 4.3 Create `packages/electron/src/lib/bundled-node.ts` — `getBundledNodePath()`, `getBundledNpmPath()` resolving extraResources paths
-- [ ] 4.4 Create `packages/electron/src/lib/ts-loader-resolver.ts` — `resolveTsLoader(mode)` returning tsx path (standalone) or jiti-first-then-tsx (power user)
-- [ ] 4.5 Write tests for detection, installation, and TS loader resolution
+- [x] 4.1 Create `packages/electron/src/lib/dependency-detector.ts` — `detectPi()`, `detectOpenSpec()`, `detectDashboardPackage()`, `detectSystemNode()` with system PATH → managed install detection chain
+- [x] 4.2 Create `packages/electron/src/lib/dependency-installer.ts` — `installStandalone()` (pi + dashboard + openspec + tsx into `~/.pi-dashboard/`), `installDashboardGlobal()` (for power user mode)
+- [x] 4.3 Create `packages/electron/src/lib/bundled-node.ts` — `getBundledNodePath()`, `getBundledNpmPath()` resolving extraResources paths
+- [x] 4.4 Create `packages/electron/src/lib/ts-loader-resolver.ts` — `resolveTsLoader(mode)` returning tsx path (standalone) or jiti-first-then-tsx (power user)
+- [x] 4.5 Write tests for detection, installation, and TS loader resolution
 
 ## 5. First-Run Wizard
 

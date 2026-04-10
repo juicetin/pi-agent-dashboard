@@ -287,6 +287,23 @@ describe("loadConfig", () => {
     const config = loadConfig();
     expect(config.lastServer).toBeUndefined();
   });
+
+  it("should return electronMode false by default", () => {
+    const config = loadConfig();
+    expect(config.electronMode).toBe(false);
+  });
+
+  it("should parse electronMode when true", () => {
+    fs.writeFileSync(configFile, JSON.stringify({ electronMode: true }));
+    const config = loadConfig();
+    expect(config.electronMode).toBe(true);
+  });
+
+  it("should ignore non-boolean electronMode", () => {
+    fs.writeFileSync(configFile, JSON.stringify({ electronMode: "yes" }));
+    const config = loadConfig();
+    expect(config.electronMode).toBe(false);
+  });
 });
 
 describe("ensureConfig", () => {

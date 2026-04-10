@@ -3,7 +3,19 @@
  */
 import { execSync, spawn, type ChildProcess } from "node:child_process";
 import { existsSync } from "node:fs";
+import path from "node:path";
+import os from "node:os";
 import type { SpawnStrategy } from "@blackbelt-technology/pi-dashboard-shared/config.js";
+
+/** Path to managed install bin directory */
+const MANAGED_BIN = path.join(os.homedir(), ".pi-dashboard", "node_modules", ".bin");
+
+/** Build env with managed install bin prepended to PATH */
+export function buildSpawnEnv(baseEnv: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  const currentPath = baseEnv.PATH || "";
+  if (currentPath.includes(MANAGED_BIN)) return baseEnv;
+  return { ...baseEnv, PATH: `${MANAGED_BIN}${path.delimiter}${currentPath}` };
+}
 
 export interface PlatformInfo {
   strategy: "tmux" | "wsl" | "cmd";
@@ -95,7 +107,7 @@ function spawnHeadless(cwd: string, options?: SessionOptions): SpawnResult {
         cwd,
         detached: true,
         stdio: ["pipe", "ignore", "ignore"],
-        env: process.env,
+        env: buildSpawnEnv(),
       });
       child.unref();
       (child.stdin as any)?.unref();
@@ -119,7 +131,7 @@ function spawnHeadless(cwd: string, options?: SessionOptions): SpawnResult {
       cwd,
       detached: true,
       stdio: "ignore",
-      env: process.env,
+      env: buildSpawnEnv(),
     });
     child.unref();
 
@@ -144,7 +156,7 @@ export function shellEscape(s: string): string {
   return `'${s.replace(/'/g, "'\\''")}'`;
 }
 
-export async function spawnPiSession(cwd: string, options?: SessionOptions): Promise<SpawnResult> {
+export async function spawnPiSession(cwd: string, options?: SessionOptions & { electronMode?: boolean }): Promise<SpawnResult> {
   if (!existsSync(cwd)) {
     return {
       success: false,
@@ -152,7 +164,8 @@ export async function spawnPiSession(cwd: string, options?: SessionOptions): Pro
     };
   }
 
-  if (options?.strategy === "headless") {
+  // Electron mode always forces headless, skipping tmux detection entirely
+  if (options?.electronMode || options?.strategy === "headless") {
     return spawnHeadless(cwd, options);
   }
 

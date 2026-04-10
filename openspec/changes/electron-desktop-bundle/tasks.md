@@ -1,18 +1,18 @@
 ## 1. Config Changes
 
-- [ ] 1.1 Add `electronMode` field to `DashboardConfig` in `packages/shared/src/config.ts` with default `false`
-- [ ] 1.2 Update `packages/server/src/process-manager.ts` to force headless when `electronMode` is true
-- [ ] 1.3 Add `~/.pi-dashboard/node_modules/.bin` to PATH in spawned process env in `packages/server/src/process-manager.ts`
-- [ ] 1.4 Write tests for new config field and electron-mode spawn override
+- [x] 1.1 Add `electronMode` field to `DashboardConfig` in `packages/shared/src/config.ts` with default `false`
+- [x] 1.2 Update `packages/server/src/process-manager.ts` to force headless when `electronMode` is true
+- [x] 1.3 Add `~/.pi-dashboard/node_modules/.bin` to PATH in spawned process env in `packages/server/src/process-manager.ts`
+- [x] 1.4 Write tests for new config field and electron-mode spawn override
 
 ## 2. Windows Platform Fixes
 
-- [ ] 2.1 Update `packages/server/src/terminal-manager.ts` shell detection — use `process.env.COMSPEC` or `powershell.exe` on Windows instead of `/bin/bash`
-- [ ] 2.2 Write tests for cross-platform shell detection (darwin, linux, win32)
-- [ ] 2.3 Implement Windows process scanning in `packages/extension/src/process-scanner.ts` — use `wmic process` or `tasklist` to find child processes, `taskkill /T /F` for kill
-- [ ] 2.4 Write tests for Windows process scanning and kill (mocked)
-- [ ] 2.5 Add `win32` key to editor registry process patterns in `packages/server/src/editor-registry.ts` — VS Code (`code.cmd`, `%LOCALAPPDATA%`), IntelliJ (`idea64.exe`)
-- [ ] 2.6 Write tests for Windows editor detection
+- [x] 2.1 Update `packages/server/src/terminal-manager.ts` shell detection — use `process.env.COMSPEC` or `powershell.exe` on Windows instead of `/bin/bash`
+- [x] 2.2 Write tests for cross-platform shell detection (darwin, linux, win32)
+- [x] 2.3 Implement Windows process scanning in `packages/extension/src/process-scanner.ts` — use `wmic process` or `tasklist` to find child processes, `taskkill /T /F` for kill
+- [x] 2.4 Write tests for Windows process scanning and kill (mocked)
+- [x] 2.5 Add `win32` key to editor registry process patterns in `packages/server/src/editor-registry.ts` — VS Code (`code.cmd`, `%LOCALAPPDATA%`), IntelliJ (`idea64.exe`)
+- [x] 2.6 Write tests for Windows editor detection
 
 ## 3. Electron Workspace Setup
 

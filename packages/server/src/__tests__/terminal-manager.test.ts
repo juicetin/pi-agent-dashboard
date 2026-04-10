@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { createTerminalManager, type TerminalManager } from "../terminal-manager.js";
+import { createTerminalManager, detectShell, type TerminalManager } from "../terminal-manager.js";
 
 // Mock node-pty
 const mockPtyWrite = vi.fn();
@@ -216,5 +216,42 @@ describe("TerminalManager", () => {
       expect(cb).toHaveBeenCalledWith(session.id);
       expect(manager.get(session.id)).toBeUndefined();
     });
+  });
+});
+
+describe("detectShell", () => {
+  const origShell = process.env.SHELL;
+  const origComspec = process.env.COMSPEC;
+
+  afterEach(() => {
+    if (origShell !== undefined) process.env.SHELL = origShell;
+    else delete process.env.SHELL;
+    if (origComspec !== undefined) process.env.COMSPEC = origComspec;
+    else delete process.env.COMSPEC;
+  });
+
+  it("should use SHELL on macOS", () => {
+    process.env.SHELL = "/bin/zsh";
+    expect(detectShell("darwin")).toBe("/bin/zsh");
+  });
+
+  it("should use SHELL on Linux", () => {
+    process.env.SHELL = "/usr/bin/fish";
+    expect(detectShell("linux")).toBe("/usr/bin/fish");
+  });
+
+  it("should fall back to /bin/bash on Unix when SHELL unset", () => {
+    delete process.env.SHELL;
+    expect(detectShell("linux")).toBe("/bin/bash");
+  });
+
+  it("should use COMSPEC on Windows", () => {
+    process.env.COMSPEC = "C:\\Windows\\system32\\cmd.exe";
+    expect(detectShell("win32")).toBe("C:\\Windows\\system32\\cmd.exe");
+  });
+
+  it("should fall back to powershell.exe on Windows when COMSPEC unset", () => {
+    delete process.env.COMSPEC;
+    expect(detectShell("win32")).toBe("powershell.exe");
   });
 });

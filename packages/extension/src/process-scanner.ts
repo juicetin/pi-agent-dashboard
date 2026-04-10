@@ -1,8 +1,8 @@
 /**
  * Process scanner for detecting child processes of a pi session.
- * Unix-only (macOS + Linux); returns empty results on Windows.
+ * Supports Unix (macOS + Linux) via ps/PGID and Windows via wmic/tasklist.
  *
- * Two-phase approach:
+ * Two-phase approach (Unix):
  * 1. CAPTURE: During active bash tool calls, `ps -eo pid=,ppid=` finds children
  *    of the pi process (pgrep is not used — it misses detached children on macOS).
  *    Grandchildren are found by recursing one level. PGIDs are stored in a tracked set.
@@ -112,7 +112,7 @@ export function captureChildPgids(
   trackedPgids: Set<number>,
   options?: ScanOptions,
 ): void {
-  if (process.platform === "win32") return;
+  if ((options as any)?._platform === "win32" || (!((options as any)?._platform) && process.platform === "win32")) return;
 
   const spawnSync: SpawnSyncFn = options?._spawnSync ?? defaultSpawnSync;
 
@@ -161,7 +161,8 @@ export function scanTrackedProcesses(
   minElapsedMs: number = DEFAULT_MIN_ELAPSED_MS,
   options?: ScanOptions,
 ): ChildProcessInfo[] {
-  if (process.platform === "win32" || trackedPgids.size === 0) return [];
+  const platform = (options as any)?._platform ?? process.platform;
+  if (platform === "win32" || trackedPgids.size === 0) return [];
 
   const spawnSync: SpawnSyncFn = options?._spawnSync ?? defaultSpawnSync;
 
@@ -221,7 +222,10 @@ export function scanChildProcesses(
   minElapsedMs: number = DEFAULT_MIN_ELAPSED_MS,
   options?: ScanOptions,
 ): ChildProcessInfo[] {
-  if (process.platform === "win32") return [];
+  const platform = (options as any)?._platform ?? process.platform;
+  if (platform === "win32") {
+    return scanWindowsProcesses(parentPid, minElapsedMs, options);
+  }
 
   // Phase 1: Capture any new children (during active bash calls)
   captureChildPgids(parentPid, trackedPgids, options);
@@ -231,14 +235,161 @@ export function scanChildProcesses(
 }
 
 /**
- * Kill a process group by PGID using SIGTERM.
- * Returns true if signal was sent, false if process was already dead or on Windows.
+ * Kill a process group by PGID using SIGTERM (Unix) or taskkill (Windows).
+ * Returns true if signal was sent, false if process was already dead.
  */
-export function killProcessByPgid(pgid: number): boolean {
-  if (process.platform === "win32") return false;
+export function killProcessByPgid(pgid: number, options?: ScanOptions): boolean {
+  const platform = (options as any)?._platform ?? process.platform;
+  if (platform === "win32") {
+    return killWindowsProcess(pgid, options);
+  }
   try {
     process.kill(-pgid, "SIGTERM");
     return true;
+  } catch {
+    return false;
+  }
+}
+
+// ---- Windows support ----
+
+/** Parse wmic output lines into child process info. */
+function parseWmicLine(line: string): { pid: number; ppid: number; command: string; creationDate: string } | null {
+  // wmic outputs: CommandLine  CreationDate             ParentProcessId  ProcessId
+  // with fixed-width columns separated by whitespace
+  const parts = line.trim().split(/\s{2,}/);
+  if (parts.length < 4) return null;
+  const pid = parseInt(parts[3], 10);
+  const ppid = parseInt(parts[2], 10);
+  if (isNaN(pid) || isNaN(ppid)) return null;
+  return { pid, ppid, command: parts[0] || "", creationDate: parts[1] || "" };
+}
+
+/** Convert wmic CreationDate (yyyyMMddHHmmss.ffffff+ZZZ) to elapsed ms. */
+function wmicDateToElapsedMs(creationDate: string): number {
+  if (!creationDate) return 0;
+  // Format: 20260410225300.123456+060
+  const match = creationDate.match(/^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})/);
+  if (!match) return 0;
+  const created = new Date(
+    parseInt(match[1]), parseInt(match[2]) - 1, parseInt(match[3]),
+    parseInt(match[4]), parseInt(match[5]), parseInt(match[6])
+  );
+  return Math.max(0, Date.now() - created.getTime());
+}
+
+/** Find all descendant PIDs of a parent on Windows. */
+function getWindowsDescendants(parentPid: number, spawnSync: SpawnSyncFn): ChildProcessInfo[] {
+  try {
+    const result = spawnSync(
+      "wmic",
+      ["process", "where", `ParentProcessId=${parentPid}`, "get", "CommandLine,CreationDate,ParentProcessId,ProcessId", "/format:list"],
+      { encoding: "utf-8", timeout: 5000, stdio: ["pipe", "pipe", "pipe"] }
+    );
+    if (result.status !== 0 || !result.stdout) {
+      // wmic removed in newer Windows 11 — fallback to tasklist
+      return getWindowsDescendantsTasklist(parentPid, spawnSync);
+    }
+
+    const processes: ChildProcessInfo[] = [];
+    let current: Partial<{ pid: number; command: string; elapsed: number }> = {};
+
+    for (const line of result.stdout.split("\n")) {
+      const trimmed = line.trim();
+      if (!trimmed) {
+        if (current.pid) {
+          processes.push({
+            pid: current.pid,
+            pgid: current.pid, // Windows has no PGID; use PID
+            command: current.command || "",
+            elapsedMs: current.elapsed || 0,
+          });
+        }
+        current = {};
+        continue;
+      }
+      const [key, ...valueParts] = trimmed.split("=");
+      const value = valueParts.join("=");
+      if (key === "ProcessId") current.pid = parseInt(value, 10);
+      if (key === "CommandLine") current.command = value;
+      if (key === "CreationDate") current.elapsed = wmicDateToElapsedMs(value);
+    }
+    // Flush last entry
+    if (current.pid) {
+      processes.push({
+        pid: current.pid,
+        pgid: current.pid,
+        command: current.command || "",
+        elapsedMs: current.elapsed || 0,
+      });
+    }
+
+    return processes;
+  } catch {
+    return [];
+  }
+}
+
+/** Fallback: use tasklist when wmic is unavailable. */
+function getWindowsDescendantsTasklist(parentPid: number, spawnSync: SpawnSyncFn): ChildProcessInfo[] {
+  try {
+    // tasklist /FI filters by parent — but tasklist doesn't support ParentProcessId filter
+    // Use PowerShell Get-CimInstance as fallback
+    const result = spawnSync(
+      "powershell",
+      ["-NoProfile", "-Command", `Get-CimInstance Win32_Process -Filter "ParentProcessId=${parentPid}" | Select-Object ProcessId,CommandLine,CreationDate | ConvertTo-Json`],
+      { encoding: "utf-8", timeout: 10000, stdio: ["pipe", "pipe", "pipe"] }
+    );
+    if (result.status !== 0 || !result.stdout) return [];
+
+    const data = JSON.parse(result.stdout);
+    const items = Array.isArray(data) ? data : [data];
+    return items
+      .filter((item: any) => item?.ProcessId)
+      .map((item: any) => ({
+        pid: item.ProcessId,
+        pgid: item.ProcessId,
+        command: item.CommandLine || "",
+        elapsedMs: item.CreationDate ? Math.max(0, Date.now() - new Date(item.CreationDate).getTime()) : 0,
+      }));
+  } catch {
+    return [];
+  }
+}
+
+/** Scan child processes on Windows using wmic/PowerShell. */
+export function scanWindowsProcesses(
+  parentPid: number,
+  minElapsedMs: number = DEFAULT_MIN_ELAPSED_MS,
+  options?: ScanOptions,
+): ChildProcessInfo[] {
+  const spawnSync: SpawnSyncFn = options?._spawnSync ?? defaultSpawnSync;
+  const children = getWindowsDescendants(parentPid, spawnSync);
+
+  // Recurse one level for grandchildren
+  const all: ChildProcessInfo[] = [];
+  for (const child of children) {
+    const grandchildren = getWindowsDescendants(child.pid, spawnSync);
+    if (grandchildren.length > 0) {
+      all.push(...grandchildren);
+    } else {
+      all.push(child);
+    }
+  }
+
+  return all.filter(p => p.elapsedMs >= minElapsedMs);
+}
+
+/** Kill a process tree on Windows using taskkill. */
+export function killWindowsProcess(pid: number, options?: ScanOptions): boolean {
+  const spawnSync: SpawnSyncFn = options?._spawnSync ?? defaultSpawnSync;
+  try {
+    const result = spawnSync("taskkill", ["/PID", String(pid), "/T", "/F"], {
+      encoding: "utf-8",
+      timeout: 5000,
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    return result.status === 0;
   } catch {
     return false;
   }

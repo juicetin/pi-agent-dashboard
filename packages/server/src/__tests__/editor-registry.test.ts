@@ -9,7 +9,7 @@ vi.mock("node:child_process", () => ({
   execSync: mockedExecSync,
 }));
 
-import { detectEditors, isProcessRunning, EDITORS, type DetectedEditor } from "../editor-registry.js";
+import { detectEditors, isProcessRunning, isProcessRunningWin32, EDITORS, type DetectedEditor } from "../editor-registry.js";
 
 describe("editor-registry", () => {
   beforeEach(() => {
@@ -20,6 +20,32 @@ describe("editor-registry", () => {
     it("should have entries for zed, vscode, and idea", () => {
       expect(EDITORS).toHaveLength(3);
       expect(EDITORS.map((e) => e.id)).toEqual(["zed", "vscode", "idea"]);
+    });
+
+    it("should have win32 patterns for vscode and idea", () => {
+      const vscode = EDITORS.find(e => e.id === "vscode")!;
+      const idea = EDITORS.find(e => e.id === "idea")!;
+      expect(vscode.processPattern.win32).toBe("Code.exe");
+      expect(vscode.winCli).toBe("code.cmd");
+      expect(idea.processPattern.win32).toBe("idea64.exe");
+      expect(idea.winCli).toBe("idea64.exe");
+    });
+
+    it("should not have win32 pattern for zed", () => {
+      const zed = EDITORS.find(e => e.id === "zed")!;
+      expect(zed.processPattern.win32).toBeUndefined();
+    });
+  });
+
+  describe("isProcessRunningWin32", () => {
+    it("returns true when tasklist finds process", () => {
+      mockedExecSync.mockReturnValue("Code.exe                     12345 Console  1  150,000 K");
+      expect(isProcessRunningWin32("Code.exe")).toBe(true);
+    });
+
+    it("returns false when tasklist shows no matching process", () => {
+      mockedExecSync.mockReturnValue("INFO: No tasks are running which match the specified criteria.");
+      expect(isProcessRunningWin32("Code.exe")).toBe(false);
     });
   });
 

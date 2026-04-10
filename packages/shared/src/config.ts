@@ -76,6 +76,8 @@ export interface DashboardConfig {
   cors: CorsConfig;
   /** Last-used server address (host:port) for reconnection */
   lastServer?: string;
+  /** Whether the server was launched by the Electron app */
+  electronMode: boolean;
 }
 
 export interface CorsConfig {
@@ -100,6 +102,7 @@ const DEFAULTS: DashboardConfig = {
   trustedNetworks: [],
   resolvedTrustedNetworks: [],
   cors: { allowedOrigins: [] },
+  electronMode: false,
 };
 
 /**
@@ -200,6 +203,7 @@ export function loadConfig(): DashboardConfig {
           : defaults.cors.allowedOrigins,
       },
       ...(typeof parsed.lastServer === "string" ? { lastServer: parsed.lastServer } : {}),
+      electronMode: parsed.electronMode === true,
     };
 
     // Compute resolvedTrustedNetworks: merge trustedNetworks + auth.bypassHosts

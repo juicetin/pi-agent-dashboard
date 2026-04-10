@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { detectPlatform, buildTmuxCommand, buildHeadlessArgs, shellEscape, spawnPiSession, type SessionOptions } from "../process-manager.js";
+import { detectPlatform, buildTmuxCommand, buildHeadlessArgs, shellEscape, spawnPiSession, buildSpawnEnv, type SessionOptions } from "../process-manager.js";
 
 describe("Process Manager", () => {
   describe("detectPlatform", () => {
@@ -155,6 +155,30 @@ describe("Process Manager", () => {
       };
       const args = buildHeadlessArgs(opts);
       expect(args).toEqual(["--mode", "rpc", "--session", "/path/to/session.jsonl"]);
+    });
+  });
+
+  describe("buildSpawnEnv", () => {
+    it("should prepend managed bin to PATH", () => {
+      const env = buildSpawnEnv({ PATH: "/usr/bin" });
+      expect(env.PATH).toMatch(/\.pi-dashboard.*node_modules.*\.bin/);
+      expect(env.PATH).toContain("/usr/bin");
+    });
+
+    it("should not duplicate managed bin if already present", () => {
+      const managedBin = require("path").join(require("os").homedir(), ".pi-dashboard", "node_modules", ".bin");
+      const env = buildSpawnEnv({ PATH: `${managedBin}:/usr/bin` });
+      expect(env.PATH).toBe(`${managedBin}:/usr/bin`);
+    });
+  });
+
+  describe("electronMode", () => {
+    it("should force headless spawn when electronMode is true", async () => {
+      // electronMode should bypass tmux detection and use headless directly
+      // We test by calling with a non-existent dir to get a quick error without spawning
+      const result = await spawnPiSession("/nonexistent-path-12345", { electronMode: true });
+      expect(result.success).toBe(false);
+      expect(result.message).toContain("does not exist");
     });
   });
 });

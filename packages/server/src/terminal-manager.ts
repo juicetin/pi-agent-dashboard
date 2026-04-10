@@ -9,6 +9,15 @@ import type { WebSocket } from "ws";
 
 const DEFAULT_BUFFER_SIZE = 256 * 1024; // 256KB
 
+/** Detect the appropriate shell for the current platform. */
+export function detectShell(platform?: string): string {
+  const p = platform ?? process.platform;
+  if (p === "win32") {
+    return process.env.COMSPEC || "powershell.exe";
+  }
+  return process.env.SHELL || "/bin/bash";
+}
+
 /** Circular buffer for PTY output replay. */
 export class RingBuffer {
   private buf: Buffer;
@@ -94,7 +103,7 @@ export function createTerminalManager(options?: TerminalManagerOptions): Termina
   const bufferSize = options?.bufferSize ?? DEFAULT_BUFFER_SIZE;
 
   function spawn(cwd: string): TerminalSession {
-    const shell = process.env.SHELL || "/bin/bash";
+    const shell = detectShell();
     const id = generateId();
 
     const p = pty.spawn(shell, [], {

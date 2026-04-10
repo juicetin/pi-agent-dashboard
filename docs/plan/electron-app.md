@@ -6,7 +6,7 @@ Package the pi-dashboard as a standalone Electron desktop app for macOS, Linux, 
 
 **Current state:** The project has been restructured into an npm workspaces monorepo (`packages/client`, `packages/server`, `packages/extension`, `packages/shared`, `packages/dist`). The `mdns-server-discovery` change has been **fully implemented and archived** — `isDashboardRunning()`, mDNS discovery, `ServerSelector`, bridge mDNS connection handling are all in place. `spawnStrategy` default is already `"headless"`. CORS support is added for cross-origin client serving.
 
-**Remaining:** One OpenSpec change `electron-desktop-bundle` with 8 task groups, 40 tasks.
+**Remaining:** One OpenSpec change `electron-desktop-bundle` with 9 task groups, 46 tasks.
 
 ## Motivation
 
@@ -302,13 +302,14 @@ Fully implemented and archived. Provides:
 | Group | Tasks | Description |
 |-------|-------|-------------|
 | 1. Config Changes | 4 | `electronMode`, managed PATH |
-| 2. Electron Workspace Setup | 6 | `packages/electron/`, forge config, npm scripts |
-| 3. Dependency Installer | 5 | Detection, standalone/power-user install, bundled Node, TS loader |
-| 4. First-Run Wizard | 8 | Mode selection, install progress, API key, mode persistence |
-| 5. Electron Shell | 6 | Main process, window, system tray, dev mode |
-| 6. Dependency Auto-Update | 5 | Outdated check, notification, update execution |
-| 7. Build Pipeline | 5 | Node.js download, extraResources, CI matrix, signing |
-| 8. App Auto-Updater | 5 | electron-updater, GitHub Releases, update UI |
+| 2. Windows Platform Fixes | 6 | Terminal shell, process scanner, editor registry |
+| 3. Electron Workspace Setup | 6 | `packages/electron/`, forge config, npm scripts |
+| 4. Dependency Installer | 5 | Detection, standalone/power-user install, bundled Node, TS loader |
+| 5. First-Run Wizard | 8 | Mode selection, install progress, API key, mode persistence |
+| 6. Electron Shell | 6 | Main process, window, system tray, dev mode |
+| 7. Dependency Auto-Update | 5 | Outdated check, notification, update execution |
+| 8. Build Pipeline | 5 | Node.js download, extraResources, CI matrix, signing |
+| 9. App Auto-Updater | 5 | electron-updater, GitHub Releases, update UI |
 
 ## Key Design Decisions Summary
 
@@ -341,3 +342,6 @@ Fully implemented and archived. Provides:
 | Port conflict with other service | Can't start server | Health check detects conflict, shows clear error message |
 | Bridge extension not loaded | Sessions don't appear | Two-mode wizard explicitly installs/verifies dashboard package |
 | tsx vs jiti incompatibility | Server fails to start | Analyzed: server has zero jiti-specific imports; tsx verified safe |
+| Windows terminal defaults to `/bin/bash` | Terminal broken | Detect platform, use `COMSPEC` / `powershell.exe` fallback |
+| Windows process scanner disabled | No stalled process detection | Implement via `wmic`/`tasklist`, kill via `taskkill /T /F` |
+| Windows editor registry empty | No "Open in Editor" | Add `win32` patterns for VS Code, IntelliJ |

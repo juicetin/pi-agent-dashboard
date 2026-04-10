@@ -31,6 +31,9 @@ The pi-dashboard currently requires users to manually install Node.js, pi, and o
 ### Modified Capabilities
 - `process-manager`: Electron mode forces headless spawn strategy, skip tmux detection. Managed install bin prepended to spawned process PATH.
 - `shared-config`: New `electronMode` flag to distinguish Electron vs CLI server startup.
+- `terminal-emulator`: Windows shell detection — fall back to `powershell.exe` or `cmd.exe` when `$SHELL` / `/bin/bash` unavailable.
+- `session-process-tracker`: Windows process scanning via `wmic`/`tasklist` and `taskkill` for process termination (currently disabled on Windows).
+- `open-in-editor`: Windows editor detection patterns (VS Code, IntelliJ paths on Windows).
 
 ### Already Completed (prerequisites)
 - **`mdns-server-discovery`** (archived): `isDashboardRunning()` in `packages/shared/src/server-identity.ts`, mDNS discovery in `packages/shared/src/mdns-discovery.ts`, `ServerSelector` component, bridge mDNS connection handling — all implemented and available.

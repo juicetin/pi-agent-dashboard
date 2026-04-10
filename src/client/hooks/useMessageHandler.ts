@@ -7,6 +7,7 @@ import { createInitialState, reduceEvent, addInteractiveRequest, resolveInteract
 import type { DashboardSession, CommandInfo, FlowInfo, FileEntry, OpenSpecData, ModelInfo, RoleInfo } from "../../shared/types.js";
 import type { TerminalSession } from "../../shared/terminal-types.js";
 import type { EditorInstanceStatus } from "../../shared/editor-types.js";
+import type { DiscoveredServerInfo } from "../components/ServerSelector.js";
 import type { ServerToBrowserMessage } from "../../shared/browser-protocol.js";
 
 export interface MessageHandlerSetters {
@@ -23,6 +24,7 @@ export interface MessageHandlerSetters {
   setPinnedDirectories: React.Dispatch<React.SetStateAction<string[]>>;
   setTerminals: React.Dispatch<React.SetStateAction<Map<string, TerminalSession>>>;
   setEditorStatuses: React.Dispatch<React.SetStateAction<Map<string, { id: string; status: EditorInstanceStatus }>>>;
+  setDiscoveredServers: React.Dispatch<React.SetStateAction<DiscoveredServerInfo[]>>;
 }
 
 export interface MessageHandlerDeps {
@@ -43,6 +45,7 @@ export function useMessageHandler(
     setSessions, setSessionStates, setSessionCommands, setSessionFlows,
     setFileResults, setOpenspecMap, setModelsMap, setRolesMap, setSpawnResult,
     setSessionOrderMap, setPinnedDirectories, setTerminals, setEditorStatuses,
+    setDiscoveredServers,
   } = setters;
   const { send, navigate, clearSpawningCwd, spawningCwdsRef, subscribedRef, pendingTerminalCwdRef, maxSeqMapRef } = deps;
 
@@ -299,6 +302,11 @@ export function useMessageHandler(
           return next;
         });
         break;
+
+      case "servers_discovered":
+      case "servers_updated":
+        setDiscoveredServers(msg.servers as DiscoveredServerInfo[]);
+        break;
     }
-  }, [send, clearSpawningCwd, navigate, setSessions, setSessionStates, setSessionCommands, setSessionFlows, setFileResults, setOpenspecMap, setModelsMap, setRolesMap, setSpawnResult, setSessionOrderMap, setPinnedDirectories, setTerminals, setEditorStatuses, spawningCwdsRef, subscribedRef, pendingTerminalCwdRef, maxSeqMapRef]);
+  }, [send, clearSpawningCwd, navigate, setSessions, setSessionStates, setSessionCommands, setSessionFlows, setFileResults, setOpenspecMap, setModelsMap, setRolesMap, setSpawnResult, setSessionOrderMap, setPinnedDirectories, setTerminals, setEditorStatuses, setDiscoveredServers, spawningCwdsRef, subscribedRef, pendingTerminalCwdRef, maxSeqMapRef]);
 }

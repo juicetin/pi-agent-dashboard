@@ -5,7 +5,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { isPortOpen } from "../extension/server-probe.js";
+import { isDashboardRunning } from "../shared/server-identity.js";
 
 const DEFAULT_PID_PATH = path.join(os.homedir(), ".pi", "dashboard", "server.pid");
 
@@ -71,11 +71,11 @@ export async function isServerRunning(port: number, options?: ServerPidOptions):
 
   if (pid === null) return null;
 
-  // Process alive — verify it's actually our server via port probe
+  // Process alive — verify it's actually our server via health check
   if (isProcessAlive(pid)) {
-    const portOpen = await isPortOpen(port);
-    if (portOpen) return pid;
-    // Process alive but port not open — could be a recycled PID, treat as stale
+    const status = await isDashboardRunning(port);
+    if (status.running) return pid;
+    // Process alive but dashboard not responding — could be a recycled PID, treat as stale
   }
 
   // Stale PID file — clean up

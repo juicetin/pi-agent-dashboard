@@ -23,7 +23,8 @@ import { fileURLToPath } from "node:url";
 import fs from "node:fs";
 import path from "node:path";
 import { readPid, isProcessAlive, removePid, isServerRunning } from "./server-pid.js";
-import { isPortOpen } from "../extension/server-probe.js";
+import { isDashboardRunning } from "../shared/server-identity.js";
+import { discoverDashboard } from "../shared/mdns-discovery.js";
 import { resolveJitiImport } from "../shared/resolve-jiti.js";
 
 const SUBCOMMANDS = ["start", "stop", "restart", "status"] as const;
@@ -123,6 +124,14 @@ async function cmdStart(config: ServerConfig): Promise<void> {
     return;
   }
 
+  // Check if port is occupied by another service
+  const portStatus = await isDashboardRunning(config.port);
+  if (portStatus.portConflict) {
+    console.error(`Port ${config.port} is occupied by another service (not the dashboard).`);
+    console.error(`Change the port in ~/.pi/dashboard/config.json or use --port <n>`);
+    process.exit(1);
+  }
+
   // Spawn ourselves in foreground mode (no subcommand) as a detached process
   const cliPath = fileURLToPath(import.meta.url);
   const args: string[] = [];
@@ -160,12 +169,13 @@ async function cmdStart(config: ServerConfig): Promise<void> {
   });
   child.unref();
 
-  // Wait for port to become available (up to 5 seconds)
+  // Wait for dashboard to become available (up to 5 seconds)
   const deadline = Date.now() + 5000;
   let started = false;
   while (Date.now() < deadline) {
     await new Promise((r) => setTimeout(r, 300));
-    if (await isPortOpen(config.port)) {
+    const status = await isDashboardRunning(config.port);
+    if (status.running) {
       started = true;
       break;
     }
@@ -244,6 +254,28 @@ async function cmdStop(): Promise<void> {
  * Show server status.
  */
 async function cmdStatus(port: number): Promise<void> {
+  // 1. Try mDNS discovery first
+  try {
+    const servers = await discoverDashboard(2000);
+    const local = servers.find(s => s.isLocal);
+    if (local) {
+      // Verify via health check for uptime info
+      try {
+        const res = await fetch(`http://${local.host}:${local.port}/api/health`);
+        if (res.ok) {
+          const data = await res.json() as { pid: number; uptime: number };
+          console.log(`Dashboard server is running (pid ${data.pid}) on ${local.host}:${local.port}, uptime ${data.uptime}s (discovered via mDNS)`);
+          return;
+        }
+      } catch { /* fall through */ }
+      console.log(`Dashboard server discovered via mDNS at ${local.host}:${local.port} (pid ${local.pid})`);
+      return;
+    }
+  } catch {
+    // mDNS failed — fall through to PID file check
+  }
+
+  // 2. Fallback: PID file + health check
   const pid = readPid();
 
   if (pid === null) {

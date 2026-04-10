@@ -214,7 +214,9 @@ export type ServerToBrowserMessage =
   | EditorStatusMessage
   | ForceKillResultMessage
   | BrowserRolesListMessage
-  | ProcessListUpdateMessage;
+  | ProcessListUpdateMessage
+  | ServersDiscoveredMessage
+  | ServersUpdatedMessage;
 
 // ── Browser → Server ────────────────────────────────────────────────
 
@@ -308,6 +310,32 @@ export interface ProcessListUpdateMessage {
   type: "process_list_update";
   sessionId: string;
   processes: Array<{ pid: number; pgid: number; command: string; elapsedMs: number }>;
+}
+
+export interface ServersDiscoveredMessage {
+  type: "servers_discovered";
+  servers: Array<{
+    host: string;
+    port: number;
+    piPort: number;
+    version: string;
+    pid: number;
+    isLocal: boolean;
+    source: "mdns" | "fallback";
+  }>;
+}
+
+export interface ServersUpdatedMessage {
+  type: "servers_updated";
+  servers: Array<{
+    host: string;
+    port: number;
+    piPort: number;
+    version: string;
+    pid: number;
+    isLocal: boolean;
+    source: "mdns" | "fallback";
+  }>;
 }
 
 export interface KillProcessBrowserMessage {

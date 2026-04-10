@@ -1,9 +1,10 @@
 import { describe, it, expect, vi } from "vitest";
-import { autoStartServer, type AutoStartDeps } from "../server-auto-start.js";
+import { autoStartServer, type AutoStartDeps, type DiscoveredServer } from "../server-auto-start.js";
 
 function makeDeps(overrides: Partial<AutoStartDeps> = {}): AutoStartDeps {
   return {
-    isPortOpen: vi.fn().mockResolvedValue(false),
+    discoverDashboard: vi.fn().mockResolvedValue([]),
+    isDashboardRunning: vi.fn().mockResolvedValue({ running: false }),
     launchServer: vi.fn().mockResolvedValue({ success: true, message: "Server started" }),
     notify: vi.fn(),
     ...overrides,
@@ -13,71 +14,154 @@ function makeDeps(overrides: Partial<AutoStartDeps> = {}): AutoStartDeps {
 const baseConfig = { piPort: 9999, port: 8000, autoStart: true };
 
 describe("autoStartServer", () => {
-  it("shows success notification when launch succeeds", async () => {
+  it("returns server from mDNS when local server is discovered", async () => {
+    const localServer: DiscoveredServer = {
+      host: "myhost.local", port: 8000, piPort: 9999,
+      isLocal: true, source: "mdns",
+    };
     const deps = makeDeps({
-      isPortOpen: vi.fn().mockResolvedValue(false),
-      launchServer: vi.fn().mockResolvedValue({ success: true, message: "Server started" }),
+      discoverDashboard: vi.fn().mockResolvedValue([localServer]),
     });
 
-    await autoStartServer(baseConfig, deps);
+    const result = await autoStartServer(baseConfig, deps);
 
+    expect(result.server).toEqual({ host: "myhost.local", port: 8000, piPort: 9999 });
+    expect(deps.isDashboardRunning).not.toHaveBeenCalled();
+    expect(deps.launchServer).not.toHaveBeenCalled();
+  });
+
+  it("falls back to health check when mDNS finds no local server", async () => {
+    const deps = makeDeps({
+      discoverDashboard: vi.fn().mockResolvedValue([]),
+      isDashboardRunning: vi.fn().mockResolvedValue({ running: true }),
+    });
+
+    const result = await autoStartServer(baseConfig, deps);
+
+    expect(result.server).toEqual({ host: "localhost", port: 8000, piPort: 9999 });
+    expect(deps.launchServer).not.toHaveBeenCalled();
+  });
+
+  it("falls back to health check when mDNS throws", async () => {
+    const deps = makeDeps({
+      discoverDashboard: vi.fn().mockRejectedValue(new Error("mDNS failed")),
+      isDashboardRunning: vi.fn().mockResolvedValue({ running: true }),
+    });
+
+    const result = await autoStartServer(baseConfig, deps);
+
+    expect(result.server).toEqual({ host: "localhost", port: 8000, piPort: 9999 });
+  });
+
+  it("auto-starts server and returns config defaults when mDNS fails after launch", async () => {
+    const deps = makeDeps({
+      discoverDashboard: vi.fn().mockResolvedValue([]),
+      isDashboardRunning: vi.fn().mockResolvedValue({ running: false }),
+      launchServer: vi.fn().mockResolvedValue({ success: true, message: "ok" }),
+    });
+
+    const result = await autoStartServer(baseConfig, deps);
+
+    expect(deps.launchServer).toHaveBeenCalled();
     expect(deps.notify).toHaveBeenCalledWith(
       "🌐 Dashboard started at http://localhost:8000",
       "info",
     );
+    expect(result.server).toEqual({ host: "localhost", port: 8000, piPort: 9999 });
   });
 
-  it("suppresses warning when launch fails but port is open on re-probe (concurrent launch)", async () => {
-    const isPortOpen = vi.fn()
-      .mockResolvedValueOnce(false)   // initial probe: not running
-      .mockResolvedValueOnce(true);   // re-probe after failure: now running
-
+  it("uses mDNS-discovered piPort after auto-start", async () => {
+    const localServer: DiscoveredServer = {
+      host: "myhost.local", port: 8000, piPort: 9998,
+      isLocal: true, source: "mdns",
+    };
     const deps = makeDeps({
-      isPortOpen,
-      launchServer: vi.fn().mockResolvedValue({ success: false, message: "Server process exited immediately" }),
+      discoverDashboard: vi.fn()
+        .mockResolvedValueOnce([])      // First call: nothing found
+        .mockResolvedValueOnce([localServer]), // After launch: found
+      isDashboardRunning: vi.fn().mockResolvedValue({ running: false }),
+      launchServer: vi.fn().mockResolvedValue({ success: true, message: "ok" }),
     });
 
-    await autoStartServer(baseConfig, deps);
+    const result = await autoStartServer(baseConfig, deps);
+
+    expect(result.server).toEqual({ host: "myhost.local", port: 8000, piPort: 9998 });
+  });
+
+  it("suppresses warning when launch fails but health check succeeds on recheck", async () => {
+    const deps = makeDeps({
+      discoverDashboard: vi.fn().mockResolvedValue([]),
+      isDashboardRunning: vi.fn()
+        .mockResolvedValueOnce({ running: false })  // initial check
+        .mockResolvedValueOnce({ running: true }),   // recheck after failure
+      launchServer: vi.fn().mockResolvedValue({ success: false, message: "exited" }),
+    });
+
+    const result = await autoStartServer(baseConfig, deps);
 
     expect(deps.notify).not.toHaveBeenCalled();
-    expect(isPortOpen).toHaveBeenCalledTimes(2);
+    expect(result.server).toEqual({ host: "localhost", port: 8000, piPort: 9999 });
   });
 
-  it("shows warning when launch fails and port is still closed on re-probe", async () => {
-    const isPortOpen = vi.fn()
-      .mockResolvedValueOnce(false)   // initial probe: not running
-      .mockResolvedValueOnce(false);  // re-probe: still not running
-
+  it("shows warning when launch fails and recheck also fails", async () => {
     const deps = makeDeps({
-      isPortOpen,
-      launchServer: vi.fn().mockResolvedValue({ success: false, message: "Server process exited immediately" }),
+      discoverDashboard: vi.fn().mockResolvedValue([]),
+      isDashboardRunning: vi.fn().mockResolvedValue({ running: false }),
+      launchServer: vi.fn().mockResolvedValue({ success: false, message: "exited" }),
     });
 
-    await autoStartServer(baseConfig, deps);
+    const result = await autoStartServer(baseConfig, deps);
 
     expect(deps.notify).toHaveBeenCalledWith(
-      "Dashboard server failed to start: Server process exited immediately",
+      "Dashboard server failed to start: exited",
       "warning",
     );
-    expect(isPortOpen).toHaveBeenCalledTimes(2);
+    expect(result.server).toBeUndefined();
   });
 
-  it("does nothing when server is already running", async () => {
+  it("does nothing when autoStart is disabled and no server found", async () => {
     const deps = makeDeps({
-      isPortOpen: vi.fn().mockResolvedValue(true),
+      discoverDashboard: vi.fn().mockResolvedValue([]),
+      isDashboardRunning: vi.fn().mockResolvedValue({ running: false }),
     });
 
-    await autoStartServer(baseConfig, deps);
+    const result = await autoStartServer({ ...baseConfig, autoStart: false }, deps);
 
     expect(deps.launchServer).not.toHaveBeenCalled();
-    expect(deps.notify).not.toHaveBeenCalled();
+    expect(result.server).toBeUndefined();
   });
 
-  it("does nothing when autoStart is disabled", async () => {
-    const deps = makeDeps();
+  it("shows port conflict warning when port is occupied by another service", async () => {
+    const deps = makeDeps({
+      discoverDashboard: vi.fn().mockResolvedValue([]),
+      isDashboardRunning: vi.fn().mockResolvedValue({ running: false, portConflict: true }),
+    });
 
-    await autoStartServer({ ...baseConfig, autoStart: false }, deps);
+    const result = await autoStartServer(baseConfig, deps);
 
     expect(deps.launchServer).not.toHaveBeenCalled();
+    expect(deps.notify).toHaveBeenCalledWith(
+      "Port 8000 is occupied by another service",
+      "warning",
+    );
+    expect(result.server).toBeUndefined();
+  });
+
+  it("prefers local server over remote when both discovered via mDNS", async () => {
+    const remote: DiscoveredServer = {
+      host: "remote.local", port: 8000, piPort: 9999,
+      isLocal: false, source: "mdns",
+    };
+    const local: DiscoveredServer = {
+      host: "myhost.local", port: 8000, piPort: 9999,
+      isLocal: true, source: "mdns",
+    };
+    const deps = makeDeps({
+      discoverDashboard: vi.fn().mockResolvedValue([remote, local]),
+    });
+
+    const result = await autoStartServer(baseConfig, deps);
+
+    expect(result.server).toEqual({ host: "myhost.local", port: 8000, piPort: 9999 });
   });
 });

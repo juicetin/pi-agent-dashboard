@@ -546,6 +546,8 @@ export function wireEvents(deps: EventWiringDeps): void {
 
     // Forward process list from bridge to subscribed browsers
     if (msg.type === "process_list") {
+      // Store on session so new subscribers get current processes
+      sessionManager.update(sessionId, { processes: msg.processes });
       browserGateway.sendToSubscribers(sessionId, {
         type: "process_list_update",
         sessionId,

@@ -15,7 +15,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadConfig, ensureConfig } from "../shared/config.js";
 import { runDevBuild } from "./dev-build.js";
-import { isPortOpen } from "./server-probe.js";
+import { isDashboardRunning } from "../shared/server-identity.js";
+import { discoverDashboard } from "../shared/mdns-discovery.js";
 import { launchServer } from "./server-launcher.js";
 import { autoStartServer } from "./server-auto-start.js";
 import type { ServerToExtensionMessage } from "../shared/protocol.js";
@@ -738,11 +739,17 @@ function initBridge(pi: ExtensionAPI) {
       }
     }
 
-    // Auto-start server if not running (non-blocking — connection will reconnect)
+    // Discover or auto-start server (non-blocking — connection will reconnect)
     autoStartServer(config, {
-      isPortOpen,
+      discoverDashboard,
+      isDashboardRunning,
       launchServer,
       notify: (msg, level) => ctx.ui.notify(msg, level),
+    }).then((result) => {
+      if (result.server && result.server.piPort !== config.piPort) {
+        // Server found on a different piPort than configured — update connection URL
+        connection.updateUrl(`ws://${result.server.host === 'localhost' ? 'localhost' : result.server.host}:${result.server.piPort}`);
+      }
     }).catch(() => {});
 
     // Send initial git info

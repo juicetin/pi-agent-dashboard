@@ -43,11 +43,13 @@ pi-dashboard --dev   # Start with Vite proxy
 | `src/extension/flow-event-wiring.ts` | Flow event listener registration (flow:* → event_forward) |
 | `src/extension/connection.ts` | WebSocket with exponential backoff |
 | `src/extension/server-probe.ts` | TCP probe to detect running server |
+| `src/shared/server-identity.ts` | Identity-verified health check (`isDashboardRunning`) replacing bare TCP probes |
+| `src/shared/mdns-discovery.ts` | mDNS advertise/discover/browse for `_pi-dashboard._tcp` services |
 | `src/extension/server-launcher.ts` | Auto-start server as detached process |
 | `src/extension/command-handler.ts` | Command routing: `!`/`!!` bash, `/compact`, slash commands |
 | `src/extension/prompt-expander.ts` | Slash command → prompt template expansion (supports colon-to-hyphen aliasing: `/opsx:cmd` → `opsx-cmd.md`) |
 | `src/extension/dev-build.ts` | Dev build-on-reload helper (client build + server shutdown) |
-| `src/extension/server-auto-start.ts` | Extracted auto-start logic with retry-probe for concurrent launches |
+| `src/extension/server-auto-start.ts` | mDNS-first discovery → health check fallback → auto-start with concurrent launch detection |
 | `src/shared/session-meta.ts` | Session metadata sidecar (.meta.json) read/write helpers |
 | `src/extension/process-metrics.ts` | Lightweight CPU/memory/event-loop metrics collector for heartbeats |
 | `src/extension/process-scanner.ts` | Child process detection via ps + PGID tracking (leaf-only, grandchild recursion) and PGID-based kill |
@@ -130,6 +132,7 @@ pi-dashboard --dev   # Start with Vite proxy
 | `src/client/hooks/useAuthStatus.ts` | Client auth status hook and login redirect helper |
 | `src/server/localhost-guard.ts` | Localhost-only access guard for routes |
 | `src/server/server-pid.ts` | PID file management for daemon mode |
+| `src/client/components/ServerSelector.tsx` | Server selector dropdown for switching between discovered dashboard servers |
 | `src/server/terminal-manager.ts` | PTY lifecycle, ring buffer, spawn/attach/kill terminals |
 | `src/server/terminal-gateway.ts` | Binary WebSocket upgrade handler for `/ws/terminal/:id` |
 | `scripts/fix-pty-permissions.cjs` | Postinstall: fix node-pty spawn-helper execute permissions |

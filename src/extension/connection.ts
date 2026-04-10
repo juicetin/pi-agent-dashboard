@@ -90,6 +90,19 @@ export class ConnectionManager {
     return this.ws?.readyState === 1;
   }
 
+  /**
+   * Update the WebSocket URL and reconnect.
+   * Used when mDNS discovers the server on a different address/port.
+   */
+  updateUrl(newUrl: string): void {
+    if (newUrl === this.url) return;
+    this.url = newUrl;
+    // Force reconnect to new URL
+    if (this.ws) {
+      this.handleDisconnect();
+    }
+  }
+
   private createConnection(): void {
     try {
       this.ws = new this.WS(this.url);

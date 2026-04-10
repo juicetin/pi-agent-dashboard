@@ -68,6 +68,8 @@ export interface DashboardConfig {
   defaultModel: string;
   memoryLimits: MemoryLimitsConfig;
   editor: EditorConfig;
+  /** Last-used server address (host:port) for reconnection */
+  lastServer?: string;
 }
 
 const VALID_SPAWN_STRATEGIES: SpawnStrategy[] = ["tmux", "headless"];
@@ -171,6 +173,7 @@ export function loadConfig(): DashboardConfig {
       auth: parseAuthConfig(parsed.auth),
       memoryLimits: parseMemoryLimits(parsed.memoryLimits),
       editor: parseEditorConfig(parsed.editor),
+      ...(typeof parsed.lastServer === "string" ? { lastServer: parsed.lastServer } : {}),
     };
   } catch {
     return defaults;

@@ -20,6 +20,7 @@ import { ArchiveBrowserView } from "./components/ArchiveBrowserView.js";
 import { useOpenSpecReader } from "./hooks/useOpenSpecReader.js";
 import type { OpenSpecArtifact } from "../shared/types.js";
 import { SessionHeader } from "./components/SessionHeader.js";
+import { ServerSelector } from "./components/ServerSelector.js";
 import { TokenStatsBar } from "./components/TokenStatsBar.js";
 
 import { CommandInput } from "./components/CommandInput.js";
@@ -52,7 +53,21 @@ import type { ContextUsageInfo } from "./components/SessionList.js";
 
 const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
 const wsPort = window.location.port ? `:${window.location.port}` : "";
-const WS_URL = `${wsProtocol}//${window.location.hostname}${wsPort}/ws`;
+const DEFAULT_WS_URL = `${wsProtocol}//${window.location.hostname}${wsPort}/ws`;
+const LAST_SERVER_KEY = "pi-dashboard-last-server";
+
+function getInitialWsUrl(): string {
+  const saved = localStorage.getItem(LAST_SERVER_KEY);
+  if (saved) {
+    try {
+      const [host, port] = saved.split(":");
+      if (host && port) {
+        return `${wsProtocol}//${host}:${port}/ws`;
+      }
+    } catch { /* ignore */ }
+  }
+  return DEFAULT_WS_URL;
+}
 
 
 
@@ -85,7 +100,8 @@ function OpenSpecPreview({
 }
 
 export default function App() {
-  const { send, onMessage, status } = useWebSocket(WS_URL);
+  const [wsUrl, setWsUrl] = useState(getInitialWsUrl);
+  const { send, onMessage, status } = useWebSocket(wsUrl);
   const [, navigate] = useLocation();
   const [match, params] = useRoute("/session/:id");
   const [termMatch, termParams] = useRoute("/terminal/:id");
@@ -121,6 +137,7 @@ export default function App() {
   const pendingTerminalCwdRef = useRef<string | null>(null);
   const [editorStatuses, setEditorStatuses] = useState<Map<string, { id: string; status: EditorInstanceStatus }>>(new Map());
   const [editorAvailable, setEditorAvailable] = useState<boolean | undefined>(undefined);
+  const [discoveredServers, setDiscoveredServers] = useState<import("./components/ServerSelector.js").DiscoveredServerInfo[]>([]);
   const subscribedRef = useRef(new Set<string>());
   const maxSeqMapRef = useRef(new Map<string, number>());
   const [flowDetailAgent, setFlowDetailAgent] = useState<string | null>(null);
@@ -144,6 +161,40 @@ export default function App() {
     handleViewReadme,
   } = useContentViews();
 
+  const handleServerSwitch = useCallback((host: string, port: number) => {
+    const newUrl = `${wsProtocol}//${host}:${port}/ws`;
+    localStorage.setItem(LAST_SERVER_KEY, `${host}:${port}`);
+    // Persist to config.json for bridge/Electron reconnection
+    fetch("/api/config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lastServer: `${host}:${port}` }),
+    }).catch(() => {}); // Best-effort, don't block switching
+    // Clear all state for clean reconnect
+    setSessions(new Map());
+    setSessionStates(new Map());
+    setSessionCommands(new Map());
+    setSessionFlows(new Map());
+    setOpenspecMap(new Map());
+    setTerminals(new Map());
+    subscribedRef.current.clear();
+    setWsUrl(newUrl);
+  }, []);
+
+  // Parse current server host/port from wsUrl
+  const currentServerHost = useMemo(() => {
+    try {
+      const u = new URL(wsUrl.replace("ws://", "http://").replace("wss://", "https://"));
+      return u.hostname;
+    } catch { return "localhost"; }
+  }, [wsUrl]);
+  const currentServerPort = useMemo(() => {
+    try {
+      const u = new URL(wsUrl.replace("ws://", "http://").replace("wss://", "https://"));
+      return parseInt(u.port, 10) || 8000;
+    } catch { return 8000; }
+  }, [wsUrl]);
+
   const clearSpawningCwd = useCallback((cwd: string) => {
     setSpawningCwds((prev) => {
       if (!prev.has(cwd)) return prev;
@@ -159,7 +210,7 @@ export default function App() {
   }, []);
 
   const handleMessage = useMessageHandler(
-    { setSessions, setSessionStates, setSessionCommands, setSessionFlows, setFileResults, setOpenspecMap, setModelsMap, setRolesMap, setSpawnResult, setSessionOrderMap, setPinnedDirectories, setTerminals, setEditorStatuses },
+    { setSessions, setSessionStates, setSessionCommands, setSessionFlows, setFileResults, setOpenspecMap, setModelsMap, setRolesMap, setSpawnResult, setSessionOrderMap, setPinnedDirectories, setTerminals, setEditorStatuses, setDiscoveredServers },
     { send, navigate, clearSpawningCwd, spawningCwdsRef, subscribedRef, pendingTerminalCwdRef, maxSeqMapRef },
   );
 
@@ -404,6 +455,15 @@ export default function App() {
       onOpenEditor={(cwd) => navigate(`/folder/${encodeFolderPath(cwd)}/editor`)}
       editorStatuses={editorStatuses}
       editorAvailable={editorAvailable}
+      headerExtra={
+        <ServerSelector
+          servers={discoveredServers}
+          currentHost={currentServerHost}
+          currentPort={currentServerPort}
+          connected={status === "connected"}
+          onSwitch={handleServerSwitch}
+        />
+      }
     />
   );
 

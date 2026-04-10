@@ -300,4 +300,45 @@ describe("ConnectionManager", () => {
 
     cm.disconnect();
   });
+
+  describe("updateUrl", () => {
+    it("triggers reconnect when URL changes", () => {
+      const cm = new ConnectionManager({
+        url: "ws://localhost:9999",
+        WebSocketImpl: MockWebSocket,
+        watchdogTimeout: 0,
+      });
+      cm.connect();
+      MockWebSocket.instances[0].simulateOpen();
+      expect(MockWebSocket.instances).toHaveLength(1);
+
+      cm.updateUrl("ws://remote:9999");
+
+      // Old connection closed, reconnect scheduled
+      vi.advanceTimersByTime(1000);
+      expect(MockWebSocket.instances.length).toBeGreaterThan(1);
+      const last = MockWebSocket.instances[MockWebSocket.instances.length - 1];
+      expect(last.url).toBe("ws://remote:9999");
+
+      cm.disconnect();
+    });
+
+    it("is a no-op when URL is the same", () => {
+      const cm = new ConnectionManager({
+        url: "ws://localhost:9999",
+        WebSocketImpl: MockWebSocket,
+        watchdogTimeout: 0,
+      });
+      cm.connect();
+      MockWebSocket.instances[0].simulateOpen();
+      const countBefore = MockWebSocket.instances.length;
+
+      cm.updateUrl("ws://localhost:9999");
+
+      vi.advanceTimersByTime(2000);
+      expect(MockWebSocket.instances.length).toBe(countBefore);
+
+      cm.disconnect();
+    });
+  });
 });

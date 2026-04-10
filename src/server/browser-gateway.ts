@@ -49,6 +49,12 @@ export interface BrowserGateway {
   headlessPidRegistry: HeadlessPidRegistry;
   /** Registry for pending auto-resume prompts */
   pendingResumeRegistry: PendingResumeRegistry;
+  /** Send a message to a specific WebSocket client */
+  sendToClient(ws: WebSocket, msg: ServerToBrowserMessage): void;
+  /** Callback invoked when a new browser client connects */
+  onConnect?: (ws: WebSocket) => void;
+  /** Broadcast a message to all connected clients */
+  broadcast(msg: ServerToBrowserMessage): void;
 }
 
 export function createBrowserGateway(
@@ -190,6 +196,11 @@ export function createBrowserGateway(
       for (const terminal of terminalManager.list()) {
         sendTo(ws, { type: "terminal_added", terminal });
       }
+    }
+
+    // Notify server of new connection (for mDNS peer list etc.)
+    if (gateway.onConnect) {
+      gateway.onConnect(ws);
     }
 
 
@@ -397,8 +408,16 @@ export function createBrowserGateway(
     });
   });
 
-  return {
+  const gateway: BrowserGateway = {
     wss,
+
+    sendToClient(ws: WebSocket, msg: ServerToBrowserMessage) {
+      sendTo(ws, msg);
+    },
+
+    broadcast(msg: ServerToBrowserMessage) {
+      broadcast(msg);
+    },
 
     broadcastEvent(sessionId: string, seq: number, event: any) {
       const subscribers = getSubscribers(sessionId);
@@ -471,4 +490,6 @@ export function createBrowserGateway(
 
     pendingResumeRegistry,
   };
+
+  return gateway;
 }

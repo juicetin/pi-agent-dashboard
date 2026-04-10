@@ -28,6 +28,7 @@ describe("loadConfig", () => {
     expect(config.piPort).toBe(9999);
     expect(config.autoStart).toBe(true);
     expect(config.autoShutdown).toBe(true);
+    expect(config.lastServer).toBeUndefined();
     expect(config.shutdownIdleSeconds).toBe(300);
   });
 
@@ -267,6 +268,24 @@ describe("loadConfig", () => {
     }));
     const config = loadConfig();
     expect(config.auth!.bypassUrls).toEqual(["/valid", "/also-valid"]);
+  });
+
+  it("should parse lastServer when set", () => {
+    fs.writeFileSync(configFile, JSON.stringify({ lastServer: "workstation.local:8000" }));
+    const config = loadConfig();
+    expect(config.lastServer).toBe("workstation.local:8000");
+  });
+
+  it("should return undefined lastServer when not set", () => {
+    fs.writeFileSync(configFile, JSON.stringify({ port: 3000 }));
+    const config = loadConfig();
+    expect(config.lastServer).toBeUndefined();
+  });
+
+  it("should ignore non-string lastServer", () => {
+    fs.writeFileSync(configFile, JSON.stringify({ lastServer: 123 }));
+    const config = loadConfig();
+    expect(config.lastServer).toBeUndefined();
   });
 });
 

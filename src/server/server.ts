@@ -20,6 +20,7 @@ import { createDirectoryService, type DirectoryService } from "./directory-servi
 import { createTerminalManager, type TerminalManager } from "./terminal-manager.js";
 import { createTerminalGateway, type TerminalGateway } from "./terminal-gateway.js";
 import { writePid, removePid } from "./server-pid.js";
+import { advertiseDashboard, stopAdvertising, createBrowser, type DashboardBrowser, type DiscoveredServer } from "../shared/mdns-discovery.js";
 import { wireEvents } from "./event-wiring.js";
 import { createIdleTimer } from "./idle-timer.js";
 import { discoverAndBroadcastSessions } from "./session-bootstrap.js";
@@ -136,6 +137,10 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
 
   const directoryService = createDirectoryService(preferencesStore, sessionManager);
 
+  // mDNS peer discovery state
+  let mdnsBrowser: DashboardBrowser | null = null;
+  const peerServers = new Map<string, DiscoveredServer>();
+
   const piGateway = createPiGateway(sessionManager, {
     ...(config.pingInterval !== undefined ? { pingInterval: config.pingInterval } : {}),
   });
@@ -179,6 +184,15 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
 
   const browserGateway = createBrowserGateway(sessionManager, eventStore, piGateway, undefined, pendingForkRegistry, sessionOrderManager, preferencesStore, directoryService, terminalManager, pendingDashboardSpawns, config.maxWsBufferBytes);
 
+  // Send discovered peer servers to new browser connections
+  browserGateway.onConnect = (ws) => {
+    if (peerServers.size > 0) {
+      browserGateway.sendToClient(ws, {
+        type: "servers_discovered",
+        servers: Array.from(peerServers.values()),
+      });
+    }
+  };
 
   // Wire up event forwarding from pi gateway to browser gateway
   wireEvents({
@@ -388,6 +402,31 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
       console.log(`Dashboard server running at http://localhost:${config.port}`);
       console.log(`Pi gateway listening on port ${config.piPort}`);
 
+      // Advertise via mDNS
+      try {
+        advertiseDashboard(config.port, config.piPort);
+        console.log(`mDNS: advertising _pi-dashboard._tcp on port ${config.port}`);
+      } catch (err) {
+        console.warn(`mDNS advertisement failed (will continue without):`, err);
+      }
+
+      // Start continuous mDNS browser for peer discovery
+      try {
+        mdnsBrowser = createBrowser();
+        mdnsBrowser.on("server-up", (server: DiscoveredServer) => {
+          // Don't include ourselves
+          if (server.isLocal && server.port === config.port) return;
+          peerServers.set(`${server.host}:${server.port}`, server);
+          browserGateway.broadcast({ type: "servers_updated", servers: Array.from(peerServers.values()) });
+        });
+        mdnsBrowser.on("server-down", (server: DiscoveredServer) => {
+          peerServers.delete(`${server.host}:${server.port}`);
+          browserGateway.broadcast({ type: "servers_updated", servers: Array.from(peerServers.values()) });
+        });
+      } catch (err) {
+        console.warn(`mDNS browser failed (peer discovery disabled):`, err);
+      }
+
       if (config.tunnel) {
         const hasZrok = detectZrokBinary();
         if (hasZrok) {
@@ -406,6 +445,11 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
     },
 
     async stop() {
+      // Stop mDNS before closing
+      try {
+        if (mdnsBrowser) { mdnsBrowser.stop(); mdnsBrowser = null; }
+        stopAdvertising();
+      } catch { /* ignore mDNS cleanup errors */ }
       removePid();
       idleTimer.cancel();
       directoryService.stopPolling();

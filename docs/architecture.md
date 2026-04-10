@@ -196,6 +196,15 @@ When a user sends a prompt to an ended session, the server automatically resumes
 2. Changes are sent to the server only when values differ from last poll
 3. Server broadcasts updates to subscribed browsers
 
+### Child Process Scanning
+1. Bridge scans child processes every 10s via `process-scanner.ts` (two-phase: capture new PGIDs during active bash calls, then check tracked PGIDs)
+2. Only processes running ≥30s are reported (filters out short-lived commands)
+3. Bash/sh wrapper processes are excluded (only leaf commands shown)
+4. Bridge sends `process_list` to server only when the PID set changes (dedup)
+5. Server stores processes on the session object and forwards to subscribed browsers as `process_list_update`
+6. New browser connections receive current processes via the initial `session_added` message
+7. Session cards display processes with elapsed time and a kill button (sends SIGTERM to process group)
+
 ### OpenSpec Polling (Server-Side)
 1. Server's DirectoryService polls `openspec` CLI every 30s for each known directory (union of pinned dirs + session cwds)
 2. OpenSpec data is keyed by directory (cwd), not by session — one poll per directory regardless of session count
@@ -444,6 +453,31 @@ silently  pass --port & --pi-port
 ```
 
 The server is spawned detached (`child_process.spawn` with `detached: true`, stdout/stderr redirected to `~/.pi/dashboard/server.log`), so it outlives the pi session. If multiple pi sessions start simultaneously, duplicate spawn attempts fail harmlessly with EADDRINUSE. After a failed launch, the bridge re-probes the port — if another agent started the server concurrently, the warning is suppressed. The auto-start logic is extracted into `server-auto-start.ts` for testability.
+
+## mDNS Server Discovery
+
+The dashboard uses mDNS (via `bonjour-service`) for zero-config server discovery:
+
+### Discovery Chain
+1. **mDNS browse** (2s timeout) — discover `_pi-dashboard._tcp` services on the local network
+2. **Health check fallback** — `GET /api/health` on configured port, verifies `{ ok: true, pid }` response
+3. **Auto-start** — if no server found and `autoStart` is enabled, spawn detached server
+
+### Server Advertisement
+- On startup, the server publishes a `_pi-dashboard._tcp` mDNS service with TXT record: `{ version, pid, piPort }`
+- On shutdown, the service is unpublished
+- A continuous mDNS browser discovers peer servers and broadcasts updates to connected browsers via `servers_discovered`/`servers_updated` WebSocket messages
+
+### Bridge Discovery
+- Bridge extensions use the mDNS discovery chain instead of bare TCP port probes
+- `isDashboardRunning(port)` replaces `isPortOpen(port)` for identity-verified detection
+- After auto-starting, the bridge waits up to 10s for the server's mDNS advertisement
+
+### Server Selector UI
+- A dropdown in the sidebar header shows all discovered servers (local + LAN)
+- Each entry shows hostname, port, Local/Remote badge, and connection status
+- Switching closes the current WebSocket and connects to the selected server
+- Last-used server persisted in `localStorage` (`pi-dashboard-last-server`)
 
 ## Provider Authentication
 

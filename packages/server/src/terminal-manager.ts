@@ -106,9 +106,14 @@ export function createTerminalManager(options?: TerminalManagerOptions): Termina
     const shell = detectShell();
     const id = generateId();
 
+    const env = { ...process.env } as Record<string, string>;
+    if (process.platform === "win32" && !env.TERM) {
+      env.TERM = "cygwin";
+    }
+
     const p = pty.spawn(shell, [], {
       cwd,
-      env: process.env as Record<string, string>,
+      env,
       cols: 80,
       rows: 24,
     });

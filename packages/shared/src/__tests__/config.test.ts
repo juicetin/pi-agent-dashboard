@@ -336,6 +336,7 @@ describe("ensureConfig", () => {
     expect(content.autoShutdown).toBe(true);
     expect(content.shutdownIdleSeconds).toBe(300);
     expect(content.devBuildOnReload).toBe(false);
+    expect(content.electronMode).toBeUndefined();
   });
 
   it("should create config when directory exists but file does not", () => {

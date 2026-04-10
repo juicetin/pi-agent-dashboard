@@ -11,16 +11,12 @@ The project SHALL include an `electron/` directory with Electron main process en
 - **WHEN** the Electron app starts
 - **THEN** it SHALL load `electron/main.ts` as the main process entry point
 
-### Requirement: node-pty native rebuild
-The build pipeline SHALL rebuild `node-pty` against Electron's Node ABI using `@electron/rebuild`.
+### Requirement: node-pty native rebuild (deferred)
+The node-pty rebuild is NOT required for MVP. The server runs as a separate detached process using system Node.js, so node-pty in the server works without Electron-specific rebuilding. This requirement is deferred to a future enhancement where the server might run in-process.
 
-#### Scenario: Build for macOS
-- **WHEN** `npm run electron:make` is run on macOS
-- **THEN** node-pty SHALL be rebuilt against Electron's Node ABI before packaging
-
-#### Scenario: Build for Linux
-- **WHEN** `npm run electron:make` is run on Linux
-- **THEN** node-pty SHALL be rebuilt against Electron's Node ABI before packaging
+#### Scenario: Server handles PTY allocation
+- **WHEN** the Electron app is running
+- **THEN** terminal sessions SHALL be handled by the detached server process using system Node's node-pty (no Electron rebuild needed)
 
 ### Requirement: Node.js binary included as extraResources
 The build pipeline SHALL download and include the correct Node.js binary for the target platform in the packaged app's resources.

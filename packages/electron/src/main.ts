@@ -16,9 +16,14 @@ import { registerWizardIpc } from "./lib/wizard-ipc.js";
 import { ensureServer, stopServerIfNeeded, didWeStartServer } from "./lib/server-lifecycle.js";
 import { loadWindowState, saveWindowState } from "./lib/window-state.js";
 import { createTray, destroyTray } from "./lib/tray.js";
+import { startUpdateChecker } from "./lib/update-checker.js";
+import { notifyUpdatesAvailable } from "./lib/update-notifier.js";
+import { initAutoUpdater, quitAndInstall } from "./lib/app-updater.js";
 
 let mainWindow: BrowserWindow | null = null;
 let isQuitting = false;
+let cleanupUpdateChecker: (() => void) | null = null;
+let cleanupAutoUpdater: (() => void) | null = null;
 
 function createMainWindow(serverUrl: string): BrowserWindow {
   const state = loadWindowState();
@@ -57,8 +62,42 @@ function createMainWindow(serverUrl: string): BrowserWindow {
   return mainWindow;
 }
 
+function startUpdaters(): void {
+  // Dependency updates (pi, openspec)
+  cleanupUpdateChecker = startUpdateChecker(notifyUpdatesAvailable);
+
+  // App self-update (electron-updater + GitHub Releases)
+  cleanupAutoUpdater = initAutoUpdater({
+    onUpdateAvailable: (version) => {
+      dialog.showMessageBox({
+        type: "info",
+        title: "Update Available",
+        message: `PI Dashboard v${version} is available.`,
+        buttons: ["Download & Restart", "Later"],
+        defaultId: 0,
+      }).then(({ response }) => {
+        if (response === 0) quitAndInstall();
+      });
+    },
+    onUpdateDownloaded: (version) => {
+      dialog.showMessageBox({
+        type: "info",
+        title: "Update Ready",
+        message: `PI Dashboard v${version} has been downloaded. Restart to apply.`,
+        buttons: ["Restart Now", "Later"],
+        defaultId: 0,
+      }).then(({ response }) => {
+        if (response === 0) quitAndInstall();
+      });
+    },
+    onError: () => { /* silently ignore update errors */ },
+  });
+}
+
 async function quit(): Promise<void> {
   isQuitting = true;
+  cleanupUpdateChecker?.();
+  cleanupAutoUpdater?.();
   await stopServerIfNeeded();
   destroyTray();
   app.quit();
@@ -98,6 +137,7 @@ async function main(): Promise<void> {
   if (process.env.ELECTRON_DEV) {
     createMainWindow("http://localhost:8000");
     createTray(() => mainWindow, quit);
+    startUpdaters();
     return;
   }
 
@@ -113,6 +153,7 @@ async function main(): Promise<void> {
 
   createMainWindow(serverUrl);
   createTray(() => mainWindow, quit);
+  startUpdaters();
 }
 
 // macOS: re-create window when dock icon clicked

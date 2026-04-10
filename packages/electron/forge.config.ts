@@ -4,12 +4,26 @@ const config: ForgeConfig = {
   packagerConfig: {
     asar: true,
     name: "PI Dashboard",
+    appBundleId: "com.blackbelt-technology.pi-dashboard",
     // macOS universal binary (arm64 + x64)
     ...(process.platform === "darwin" ? { arch: "universal" as any } : {}),
     extraResource: [
-      // Node.js runtime is added by the download script at build time
-      // Path: resources/node/
+      "./resources/node",
     ],
+    // macOS code signing — requires APPLE_IDENTITY env var in CI
+    ...(process.env.APPLE_IDENTITY ? {
+      osxSign: {
+        identity: process.env.APPLE_IDENTITY,
+        hardenedRuntime: true,
+        entitlements: "entitlements.plist",
+        "entitlements-inherit": "entitlements.plist",
+      },
+      osxNotarize: {
+        appleId: process.env.APPLE_ID || "",
+        appleIdPassword: process.env.APPLE_ID_PASSWORD || "",
+        teamId: process.env.APPLE_TEAM_ID || "",
+      },
+    } : {}),
   },
   makers: [
     {

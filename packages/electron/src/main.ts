@@ -1,33 +1,67 @@
 /**
  * Electron main process entry point.
  *
- * Responsibilities:
+ * Flow:
  * 1. Single-instance lock
- * 2. Discover or launch dashboard server (mDNS → health check → spawn)
- * 3. Open BrowserWindow pointing at the server URL
- * 4. System tray integration (minimize on close, Show/Quit menu)
- * 5. First-run wizard (if ~/.pi-dashboard/mode.json is missing)
- *
- * The dashboard server always runs as a separate detached process.
- * Electron is a smart window + server bootstrapper.
+ * 2. First-run wizard (if ~/.pi-dashboard/mode.json is missing)
+ * 3. Discover or launch dashboard server (mDNS → health check → spawn)
+ * 4. Open BrowserWindow pointing at the server URL
+ * 5. System tray (minimize on close, Show/Quit menu)
  */
 
-import { app, BrowserWindow } from "electron";
+import { app, BrowserWindow, dialog } from "electron";
+import { isFirstRun } from "./lib/wizard-state.js";
+import { openWizardWindow, getWizardWindow } from "./lib/wizard-window.js";
+import { registerWizardIpc } from "./lib/wizard-ipc.js";
+import { ensureServer, stopServerIfNeeded, didWeStartServer } from "./lib/server-lifecycle.js";
+import { loadWindowState, saveWindowState } from "./lib/window-state.js";
+import { createTray, destroyTray } from "./lib/tray.js";
 
-// Placeholder — will be implemented in tasks 5.x and 6.x
-async function createWindow(serverUrl: string): Promise<BrowserWindow> {
-  const win = new BrowserWindow({
-    width: 1280,
-    height: 800,
+let mainWindow: BrowserWindow | null = null;
+let isQuitting = false;
+
+function createMainWindow(serverUrl: string): BrowserWindow {
+  const state = loadWindowState();
+
+  mainWindow = new BrowserWindow({
+    x: state.x,
+    y: state.y,
+    width: state.width,
+    height: state.height,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
-      preload: __dirname + "/preload.js",
     },
   });
 
-  await win.loadURL(serverUrl);
-  return win;
+  if (state.isMaximized) mainWindow.maximize();
+
+  mainWindow.loadURL(serverUrl);
+
+  // Save window state on resize/move
+  mainWindow.on("resize", () => mainWindow && saveWindowState(mainWindow));
+  mainWindow.on("move", () => mainWindow && saveWindowState(mainWindow));
+
+  // Minimize to tray instead of closing
+  mainWindow.on("close", (event) => {
+    if (!isQuitting) {
+      event.preventDefault();
+      mainWindow?.hide();
+    }
+  });
+
+  mainWindow.on("closed", () => {
+    mainWindow = null;
+  });
+
+  return mainWindow;
+}
+
+async function quit(): Promise<void> {
+  isQuitting = true;
+  await stopServerIfNeeded();
+  destroyTray();
+  app.quit();
 }
 
 async function main(): Promise<void> {
@@ -37,16 +71,57 @@ async function main(): Promise<void> {
     return;
   }
 
+  app.on("second-instance", () => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
+    }
+  });
+
   await app.whenReady();
 
-  // TODO: First-run wizard (task 5.8)
-  // TODO: Server discovery (task 6.1)
-  const serverUrl = process.env.ELECTRON_DEV
-    ? "http://localhost:8000"
-    : "http://localhost:8000"; // Will be resolved via mDNS/health check
+  // Register wizard IPC handlers
+  registerWizardIpc(getWizardWindow);
 
-  await createWindow(serverUrl);
+  // First-run wizard
+  if (isFirstRun()) {
+    await openWizardWindow();
+    // After wizard closes, re-check — user might have cancelled
+    if (isFirstRun()) {
+      app.quit();
+      return;
+    }
+  }
+
+  // Dev mode: skip discovery
+  if (process.env.ELECTRON_DEV) {
+    createMainWindow("http://localhost:8000");
+    createTray(() => mainWindow, quit);
+    return;
+  }
+
+  // Discover or launch server
+  let serverUrl: string;
+  try {
+    serverUrl = await ensureServer();
+  } catch (err: any) {
+    dialog.showErrorBox("PI Dashboard", err.message);
+    app.quit();
+    return;
+  }
+
+  createMainWindow(serverUrl);
+  createTray(() => mainWindow, quit);
 }
+
+// macOS: re-create window when dock icon clicked
+app.on("activate", () => {
+  if (mainWindow) {
+    mainWindow.show();
+    mainWindow.focus();
+  }
+});
 
 main().catch((err) => {
   console.error("Failed to start:", err);

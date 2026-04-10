@@ -130,7 +130,7 @@ pi-dashboard --dev   # Start with Vite proxy
 | `src/server/config-api.ts` | Config REST API: read (redacted), write (partial merge), secret preservation |
 | `src/client/components/SettingsPanel.tsx` | Settings UI: all dashboard config fields, grouped form, save to server |
 | `src/client/hooks/useAuthStatus.ts` | Client auth status hook and login redirect helper |
-| `src/server/localhost-guard.ts` | Localhost-only access guard for routes |
+| `src/server/localhost-guard.ts` | Network access guard: `createNetworkGuard` (loopback/trusted/authenticated), `isBypassedHost` (CIDR/wildcard/exact), netmask-to-CIDR helpers |
 | `src/server/server-pid.ts` | PID file management for daemon mode |
 | `src/client/components/ServerSelector.tsx` | Server selector dropdown for switching between discovered dashboard servers |
 | `src/server/terminal-manager.ts` | PTY lifecycle, ring buffer, spawn/attach/kill terminals |

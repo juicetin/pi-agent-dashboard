@@ -31,8 +31,7 @@ export function isBypassed(url: string, bypassUrls: string[]): boolean {
   return bypassUrls.some((prefix) => url.startsWith(prefix));
 }
 
-// isBypassedHost is now imported from localhost-guard.ts
-export { isBypassedHost } from "./localhost-guard.js";
+
 
 /** Escape HTML special characters to prevent XSS in server-rendered pages. */
 export function escapeHtml(str: string): string {

@@ -619,6 +619,19 @@ function TrustedNetworksSection({ networks, onChange }: { networks: string[]; on
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [interfaces, setInterfaces] = useState<NetworkInterfaceInfo[]>([]);
   const [loading, setLoading] = useState(false);
+  const dropdownRef = React.useRef<HTMLDivElement>(null);
+
+  // Close dropdown on outside click
+  React.useEffect(() => {
+    if (!dropdownOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [dropdownOpen]);
 
   const fetchInterfaces = async () => {
     if (dropdownOpen) { setDropdownOpen(false); return; }
@@ -666,7 +679,7 @@ function TrustedNetworksSection({ networks, onChange }: { networks: string[]; on
         </div>
       )}
 
-      <div className="relative">
+      <div className="relative" ref={dropdownRef}>
         <button
           onClick={fetchInterfaces}
           className="text-xs px-2 py-1 rounded bg-[var(--bg-tertiary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] cursor-pointer"

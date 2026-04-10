@@ -278,24 +278,45 @@ The web client includes a generic `MarkdownPreviewView` component that replaces 
 ### Archive Browser
 The `ArchiveBrowserView` provides a searchable, date-grouped listing of archived OpenSpec changes. It uses a dedicated `GET /api/openspec-archive?cwd=<path>` endpoint that scans `openspec/changes/archive/` and returns entry metadata (name, date, artifacts). The view uses two-level navigation: the list is the first level, and clicking an artifact letter (P/D/S/T) opens the reader as the second level. Back from the reader returns to the list (preserving search and scroll), and back from the list returns to the session view. Entry point is the `[Archive]` button in `FolderOpenSpecSection`.
 
+### Network Access Control
+
+The server has a two-layer access model:
+
+**Layer 1: Network Guard (`createNetworkGuard`)** — Fastify `preHandler` on all sensitive routes. Allows requests via three paths:
+1. **Loopback** — `127.0.0.1`, `::1`, `::ffff:127.0.0.1` (always allowed)
+2. **Trusted networks** — IPs matching `resolvedTrustedNetworks` (CIDR, wildcard, exact). Configured via top-level `trustedNetworks` in config, merged with `auth.bypassHosts` at load time.
+3. **Authenticated** — `request.isAuthenticated === true` (set by auth `onRequest` hook via `decorateRequest`)
+
+Otherwise → 403. The guard strips `::ffff:` IPv4-mapped prefixes before matching.
+
+**Layer 2: Auth Plugin (`onRequest` hook)** — Only registered when `auth` is configured. Skips loopback, trusted networks, `/auth/*`, `/api/health`, and `bypassUrls`. Validates JWT cookie for all other requests. Tags valid requests with `request.isAuthenticated = true`.
+
+**Execution order**: `onRequest` (auth) → `preHandler` (guard) → handler. This means the auth hook tags the request before the guard checks it.
+
+**WebSocket upgrades** follow the same logic: loopback → trusted network → JWT cookie validation.
+
+**Zrok tunnel** connections appear as `127.0.0.1` (zrok proxies to localhost), so both layers pass automatically.
+
+**`GET /api/network-interfaces`** returns detected non-internal IPv4 interfaces with computed CIDRs. Used by the Settings UI "Add Local Network" button. This endpoint uses the legacy `localhostGuard` (localhost-only, not network-guard-aware) since it exposes machine network topology.
+
 ### OAuth Authentication Flow
 
-Optional OAuth2 authentication protects the dashboard when accessed via tunnel (external). Localhost access is always unguarded.
+Optional OAuth2 authentication protects the dashboard when accessed remotely.
 
 1. Server loads `auth` config from `~/.pi/dashboard/config.json` at startup
-2. If `auth.providers` has entries, the auth plugin registers routes and an `onRequest` hook
-3. The `onRequest` hook skips localhost requests (`isLoopback`), `/auth/*` paths, `/api/health`, configured `bypassUrls` path prefixes, and configured `bypassHosts` trusted source IPs (exact, wildcard, CIDR)
+2. If `auth.providers` has entries, the auth plugin registers routes, the `isAuthenticated` request decorator, and an `onRequest` hook
+3. The `onRequest` hook skips localhost requests (`isLoopback`), trusted network IPs (`resolvedTrustedNetworks`), `/auth/*` paths, `/api/health`, and configured `bypassUrls` path prefixes
 4. External requests without a valid `pi_dash_token` JWT cookie are redirected to `/auth/login`
 5. `/auth/login` shows a provider picker (or auto-redirects if single provider)
 6. OAuth callback exchanges code for token, fetches user info, validates against `allowedEmails`
 7. On success, a signed JWT cookie is set (7-day expiry) and user is redirected back
-8. WebSocket upgrade requests are also validated — external connections without valid cookie get 401
+8. WebSocket upgrade requests are also validated — external connections without valid cookie or trusted network get 401
 9. Supported providers: GitHub (hardcoded endpoints), Google/Keycloak/OIDC (via OIDC discovery)
 
 ### Settings Panel
 The web client includes a Settings panel (gear icon in sidebar header → `/settings` route) that lets users view and edit all dashboard configuration. The panel:
 1. Loads config via `GET /api/config` (secrets redacted as `***`)
-2. Renders grouped form fields: Server, Sessions, Tunnel, Authentication, Developer
+2. Renders grouped form fields: Server, Sessions, Tunnel, Trusted Networks, Authentication, Developer
 3. Sends only changed fields via `PUT /api/config` (partial merge)
 4. Server preserves `***` secrets (doesn't overwrite real values), writes to disk, and applies runtime-safe changes
 5. Port/piPort changes flag `restartRequired` in the response

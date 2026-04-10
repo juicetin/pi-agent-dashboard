@@ -134,6 +134,11 @@ export function SettingsPanel({ availableModels }: { availableModels?: Array<{ p
     if (config.devBuildOnReload !== original.devBuildOnReload) partial.devBuildOnReload = config.devBuildOnReload;
     if (config.defaultModel !== original.defaultModel) partial.defaultModel = config.defaultModel;
 
+    // Trusted networks diff
+    if (JSON.stringify(config.trustedNetworks) !== JSON.stringify(original.trustedNetworks)) {
+      partial.trustedNetworks = config.trustedNetworks ?? [];
+    }
+
     // Memory limits diff
     if (JSON.stringify(config.memoryLimits) !== JSON.stringify(original.memoryLimits)) {
       partial.memoryLimits = config.memoryLimits;

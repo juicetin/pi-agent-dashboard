@@ -56,6 +56,7 @@ export function ServerSelector({ servers, currentHost, currentPort, connected, o
   if (servers.length === 0) return null;
 
   // Ensure localhost is always in the list when current server is remote
+  const isCurrentLocal = currentHost === "localhost" || currentHost === "127.0.0.1";
   const effectiveServers = [...servers];
   if (!isCurrentLocal && !effectiveServers.some(s => s.host === "localhost" && s.port === currentPort)) {
     effectiveServers.unshift({

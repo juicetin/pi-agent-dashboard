@@ -3,13 +3,14 @@
  */
 import type { FastifyInstance } from "fastify";
 import type { ApiResponse } from "../../shared/types.js";
-import { localhostGuard } from "../localhost-guard.js";
+import type { NetworkGuard } from "./route-deps.js";
 import { isGitRepo, listBranches, checkoutBranch, gitInit, stashPop } from "../git-operations.js";
 
-export function registerGitRoutes(fastify: FastifyInstance) {
+export function registerGitRoutes(fastify: FastifyInstance, deps: { networkGuard: NetworkGuard }) {
+  const { networkGuard } = deps;
   fastify.get<{ Querystring: { cwd?: string } }>(
     "/api/git/branches",
-    { preHandler: localhostGuard },
+    { preHandler: networkGuard },
     async (request, reply) => {
       const cwd = request.query.cwd;
       if (!cwd) {
@@ -30,7 +31,7 @@ export function registerGitRoutes(fastify: FastifyInstance) {
 
   fastify.post<{ Body: { cwd?: string; branch?: string; stash?: boolean } }>(
     "/api/git/checkout",
-    { preHandler: localhostGuard },
+    { preHandler: networkGuard },
     async (request, reply) => {
       const { cwd, branch, stash } = request.body ?? {};
       if (!cwd || !branch) {
@@ -52,7 +53,7 @@ export function registerGitRoutes(fastify: FastifyInstance) {
 
   fastify.post<{ Body: { cwd?: string } }>(
     "/api/git/init",
-    { preHandler: localhostGuard },
+    { preHandler: networkGuard },
     async (request, reply) => {
       const { cwd } = request.body ?? {};
       if (!cwd) {
@@ -70,7 +71,7 @@ export function registerGitRoutes(fastify: FastifyInstance) {
 
   fastify.post<{ Body: { cwd?: string } }>(
     "/api/git/stash-pop",
-    { preHandler: localhostGuard },
+    { preHandler: networkGuard },
     async (request, reply) => {
       const { cwd } = request.body ?? {};
       if (!cwd) {

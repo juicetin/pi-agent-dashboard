@@ -116,6 +116,9 @@ export function writeConfigPartial(partial: Record<string, any>): WriteConfigRes
 
     const merged = { ...existing, ...partial };
 
+    // Remove computed fields that shouldn't be persisted
+    delete merged.resolvedTrustedNetworks;
+
     // Write
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(file, JSON.stringify(merged, null, 2) + "\n");

@@ -40,6 +40,13 @@ interface MemoryLimitsConfig {
   maxWsBufferBytes: number;
 }
 
+interface NetworkInterfaceInfo {
+  name: string;
+  address: string;
+  netmask: string;
+  cidr: string;
+}
+
 interface Config {
   port: number;
   piPort: number;
@@ -52,6 +59,7 @@ interface Config {
   defaultModel: string;
   auth?: AuthConfig;
   memoryLimits: MemoryLimitsConfig;
+  trustedNetworks?: string[];
   editor?: {
     binary?: string;
     idleTimeoutMinutes?: number;
@@ -380,6 +388,11 @@ export function SettingsPanel({ availableModels }: { availableModels?: Array<{ p
                 <ToggleField label="Enable Zrok Tunnel" value={config.tunnel.enabled} onChange={(v) => update((c) => { c.tunnel.enabled = v; })} />
               </Section>
 
+              <TrustedNetworksSection
+                networks={config.trustedNetworks ?? []}
+                onChange={(nets) => update((c) => { c.trustedNetworks = nets; })}
+              />
+
               <Section title="Developer">
                 <ToggleField label="Dev Build on Reload" value={config.devBuildOnReload} onChange={(v) => update((c) => { c.devBuildOnReload = v; })} />
               </Section>
@@ -594,6 +607,90 @@ function DebugToolsToggle() {
       value={visible}
       onChange={setVisible}
     />
+  );
+}
+
+function TrustedNetworksSection({ networks, onChange }: { networks: string[]; onChange: (nets: string[]) => void }) {
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [interfaces, setInterfaces] = useState<NetworkInterfaceInfo[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  const fetchInterfaces = async () => {
+    if (dropdownOpen) { setDropdownOpen(false); return; }
+    setLoading(true);
+    try {
+      const res = await fetch("/api/network-interfaces");
+      const data = await res.json();
+      if (data.success) setInterfaces(data.data);
+    } catch { /* ignore */ }
+    setLoading(false);
+    setDropdownOpen(true);
+  };
+
+  const addNetwork = (cidr: string) => {
+    if (!networks.includes(cidr)) {
+      onChange([...networks, cidr]);
+    }
+    setDropdownOpen(false);
+  };
+
+  const removeNetwork = (cidr: string) => {
+    onChange(networks.filter((n) => n !== cidr));
+  };
+
+  return (
+    <Section title="Trusted Networks">
+      <p className="text-xs text-[var(--text-tertiary)] mb-2">
+        Devices on these networks can access the dashboard without authentication.
+      </p>
+
+      {networks.length > 0 && (
+        <div className="space-y-1 mb-2">
+          {networks.map((net) => (
+            <div key={net} className="flex items-center justify-between bg-[var(--bg-secondary)] rounded px-2 py-1">
+              <span className="text-sm text-[var(--text-primary)] font-mono">{net}</span>
+              <button
+                onClick={() => removeNetwork(net)}
+                className="text-red-400 hover:text-red-300 text-xs px-1 cursor-pointer"
+                title="Remove"
+              >
+                ✕
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="relative">
+        <button
+          onClick={fetchInterfaces}
+          className="text-xs px-2 py-1 rounded bg-[var(--bg-tertiary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] cursor-pointer"
+        >
+          {loading ? "Detecting…" : "+ Add Local Network"}
+        </button>
+        {dropdownOpen && interfaces.length > 0 && (
+          <div className="absolute left-0 top-full mt-1 z-50 min-w-[260px] bg-[var(--bg-surface)] border border-[var(--border-primary)] rounded-lg shadow-xl py-1">
+            {interfaces.map((iface) => (
+              <button
+                key={`${iface.name}-${iface.cidr}`}
+                onClick={() => addNetwork(iface.cidr)}
+                disabled={networks.includes(iface.cidr)}
+                className={`w-full flex items-center justify-between px-3 py-1.5 text-xs text-left hover:bg-[var(--bg-tertiary)] transition-colors cursor-pointer ${
+                  networks.includes(iface.cidr) ? "opacity-40" : ""
+                }`}
+              >
+                <span className="font-mono text-[var(--text-primary)]">{iface.cidr}</span>
+                <span className="text-[var(--text-tertiary)] ml-2">{iface.name}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <p className="text-xs text-amber-400/80 mt-2">
+        ⚠ Anyone on a trusted network has full access to the dashboard without authentication. Only use on private networks you control.
+      </p>
+    </Section>
   );
 }
 

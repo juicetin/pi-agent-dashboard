@@ -68,6 +68,10 @@ export interface DashboardConfig {
   defaultModel: string;
   memoryLimits: MemoryLimitsConfig;
   editor: EditorConfig;
+  /** Networks trusted for full access without authentication (CIDR, wildcard, exact IP) */
+  trustedNetworks: string[];
+  /** Merged trustedNetworks + auth.bypassHosts (deduplicated). Computed at load time. */
+  resolvedTrustedNetworks: string[];
   /** Last-used server address (host:port) for reconnection */
   lastServer?: string;
 }
@@ -86,6 +90,8 @@ const DEFAULTS: DashboardConfig = {
   defaultModel: "",
   memoryLimits: { ...DEFAULT_MEMORY_LIMITS },
   editor: { ...DEFAULT_EDITOR_CONFIG },
+  trustedNetworks: [],
+  resolvedTrustedNetworks: [],
 };
 
 /**
@@ -139,6 +145,11 @@ function parseMemoryLimits(raw: any): MemoryLimitsConfig {
   };
 }
 
+function parseTrustedNetworks(raw: any): string[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((entry: unknown) => typeof entry === "string" && entry.length > 0);
+}
+
 /**
  * Load configuration from ~/.pi/dashboard/config.json.
  * Returns defaults for missing fields, malformed JSON, or missing file.
@@ -157,7 +168,7 @@ export function loadConfig(): DashboardConfig {
     const spawnStrategy: SpawnStrategy =
       VALID_SPAWN_STRATEGIES.includes(rawStrategy) ? rawStrategy : defaults.spawnStrategy;
 
-    return {
+    const result: DashboardConfig = {
       port: parsed.port ?? defaults.port,
       piPort: parsed.piPort ?? defaults.piPort,
       autoStart: parsed.autoStart ?? defaults.autoStart,
@@ -173,8 +184,18 @@ export function loadConfig(): DashboardConfig {
       auth: parseAuthConfig(parsed.auth),
       memoryLimits: parseMemoryLimits(parsed.memoryLimits),
       editor: parseEditorConfig(parsed.editor),
+      trustedNetworks: parseTrustedNetworks(parsed.trustedNetworks),
+      resolvedTrustedNetworks: [],
       ...(typeof parsed.lastServer === "string" ? { lastServer: parsed.lastServer } : {}),
     };
+
+    // Compute resolvedTrustedNetworks: merge trustedNetworks + auth.bypassHosts
+    const merged = new Set(result.trustedNetworks);
+    if (result.auth?.bypassHosts) {
+      for (const h of result.auth.bypassHosts) merged.add(h);
+    }
+    result.resolvedTrustedNetworks = Array.from(merged);
+    return result;
   } catch {
     return defaults;
   }

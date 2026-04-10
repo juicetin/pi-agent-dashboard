@@ -7,13 +7,16 @@ import type { PreferencesStore } from "../preferences-store.js";
 import type { MetaPersistence } from "../meta-persistence.js";
 import type { ServerConfig } from "../server.js";
 import type { ApiResponse } from "../../shared/types.js";
-import { localhostGuard } from "../localhost-guard.js";
+import type { NetworkGuard } from "./route-deps.js";
 import { detectEditors, EDITORS } from "../editor-registry.js";
 import { detectCodeServerBinary, resetDetectionCache } from "../editor-detection.js";
 import { readConfigRedacted, writeConfigPartial } from "../config-api.js";
 import { createTunnel, deleteTunnel, getTunnelStatus } from "../tunnel.js";
 import { spawn } from "node:child_process";
 import path from "node:path";
+import os from "node:os";
+import { localhostGuard, netmaskToCidrBits, networkAddress } from "../localhost-guard.js";
+import type { NetworkInterface } from "../../shared/rest-api.js";
 
 export function registerSystemRoutes(
   fastify: FastifyInstance,
@@ -22,15 +25,16 @@ export function registerSystemRoutes(
     preferencesStore: PreferencesStore;
     metaPersistence: MetaPersistence;
     config: ServerConfig;
+    networkGuard: NetworkGuard;
   },
 ) {
-  const { sessionManager, preferencesStore, metaPersistence, config } = deps;
+  const { sessionManager, preferencesStore, metaPersistence, config, networkGuard } = deps;
   const serverStartTime = Date.now();
 
   // Editor detection endpoint
   fastify.get<{ Querystring: { path?: string } }>(
     "/api/editors",
-    { preHandler: localhostGuard },
+    { preHandler: networkGuard },
     async (request) => {
       const cwd = request.query.path;
       if (!cwd) {
@@ -44,7 +48,7 @@ export function registerSystemRoutes(
   // code-server binary detection endpoint
   fastify.get(
     "/api/editor/detect",
-    { preHandler: localhostGuard },
+    { preHandler: networkGuard },
     async () => {
       resetDetectionCache();
       const result = detectCodeServerBinary(config.editor);
@@ -55,7 +59,7 @@ export function registerSystemRoutes(
   // Open editor endpoint
   fastify.post<{ Body: { path?: string; editor?: string; file?: string; line?: number } }>(
     "/api/open-editor",
-    { preHandler: localhostGuard },
+    { preHandler: networkGuard },
     async (request) => {
       const { path: cwd, editor: editorId, file, line } = request.body ?? {};
       if (!cwd || !editorId) {
@@ -91,7 +95,7 @@ export function registerSystemRoutes(
   // Config endpoints
   fastify.get(
     "/api/config",
-    { preHandler: localhostGuard },
+    { preHandler: networkGuard },
     async () => {
       return { success: true, data: readConfigRedacted() };
     },
@@ -99,7 +103,7 @@ export function registerSystemRoutes(
 
   fastify.put(
     "/api/config",
-    { preHandler: localhostGuard },
+    { preHandler: networkGuard },
     async (request, reply) => {
       const partial = request.body as Record<string, any>;
       if (!partial || typeof partial !== "object") {
@@ -176,7 +180,7 @@ export function registerSystemRoutes(
   // Shutdown endpoint — used by devBuildOnReload
   fastify.post(
     "/api/shutdown",
-    { preHandler: localhostGuard },
+    { preHandler: networkGuard },
     async () => {
       metaPersistence.flushAll();
       preferencesStore.flush();
@@ -188,7 +192,7 @@ export function registerSystemRoutes(
   // Restart endpoint — flush state, spawn new server, then exit
   fastify.post<{ Body: { dev?: boolean } }>(
     "/api/restart",
-    { preHandler: localhostGuard },
+    { preHandler: networkGuard },
     async (request) => {
       metaPersistence.flushAll();
       preferencesStore.flush();
@@ -237,6 +241,31 @@ export function registerSystemRoutes(
 
       setTimeout(() => process.exit(0), 200);
       return { ok: true };
+    },
+  );
+
+  // Network interfaces for trusted networks UI (localhost-only for security)
+  fastify.get(
+    "/api/network-interfaces",
+    { preHandler: localhostGuard },
+    async () => {
+      const interfaces = os.networkInterfaces();
+      const result: NetworkInterface[] = [];
+      for (const [name, addrs] of Object.entries(interfaces)) {
+        if (!addrs) continue;
+        for (const info of addrs) {
+          if (info.internal || info.family !== "IPv4") continue;
+          const bits = netmaskToCidrBits(info.netmask);
+          const net = networkAddress(info.address, info.netmask);
+          result.push({
+            name,
+            address: info.address,
+            netmask: info.netmask,
+            cidr: `${net}/${bits}`,
+          });
+        }
+      }
+      return { success: true, data: result };
     },
   );
 }

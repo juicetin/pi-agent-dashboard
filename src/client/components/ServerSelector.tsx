@@ -53,9 +53,24 @@ export function ServerSelector({ servers, currentHost, currentPort, connected, o
     return () => document.removeEventListener("mousedown", handler);
   }, [open]);
 
-  // Don't show if no remote servers discovered (single localhost is the default)
-  if (servers.length <= 1 && servers.every(s => s.isLocal)) {
+  // Don't show if no remote servers discovered AND we're already on localhost
+  const isCurrentLocal = currentHost === "localhost" || currentHost === "127.0.0.1";
+  if (servers.length <= 1 && servers.every(s => s.isLocal) && isCurrentLocal) {
     return null;
+  }
+
+  // Ensure localhost is always in the list when current server is remote
+  const effectiveServers = [...servers];
+  if (!isCurrentLocal && !effectiveServers.some(s => s.host === "localhost" && s.port === currentPort)) {
+    effectiveServers.unshift({
+      host: "localhost",
+      port: currentPort,
+      piPort: 9999,
+      version: "",
+      pid: 0,
+      isLocal: true,
+      source: "fallback",
+    });
   }
 
   const currentKey = `${currentHost}:${currentPort}`;
@@ -77,7 +92,7 @@ export function ServerSelector({ servers, currentHost, currentPort, connected, o
 
       {open && (
         <div className="absolute left-0 top-full mt-1 z-50 min-w-[220px] bg-[var(--bg-surface)] border border-[var(--border-primary)] rounded-lg shadow-xl py-1">
-          {servers.map((server) => {
+          {effectiveServers.map((server) => {
             const key = `${server.host}:${server.port}`;
             const isCurrent = key === currentKey;
             return (

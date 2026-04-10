@@ -8,6 +8,9 @@ import type { PreferencesStore } from "../preferences-store.js";
 import type { MetaPersistence } from "../meta-persistence.js";
 import type { DirectoryService } from "../directory-service.js";
 import type { ServerConfig } from "../server.js";
+import type { FastifyRequest, FastifyReply } from "fastify";
+
+export type NetworkGuard = (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
 
 export interface RouteDeps {
   sessionManager: SessionManager;
@@ -16,4 +19,5 @@ export interface RouteDeps {
   metaPersistence: MetaPersistence;
   directoryService: DirectoryService;
   config: ServerConfig;
+  networkGuard: NetworkGuard;
 }

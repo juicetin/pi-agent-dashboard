@@ -7,7 +7,7 @@ import type { FastifyInstance } from "fastify";
 import type { SessionManager } from "../memory-session-manager.js";
 import type { EventStore } from "../memory-event-store.js";
 import type { ApiResponse } from "../../shared/types.js";
-import { localhostGuard } from "../localhost-guard.js";
+import type { NetworkGuard } from "./route-deps.js";
 import { extractFileChanges, enrichWithGitDiff } from "../session-diff.js";
 
 export function registerSessionRoutes(
@@ -15,9 +15,10 @@ export function registerSessionRoutes(
   deps: {
     sessionManager: SessionManager;
     eventStore: EventStore;
+    networkGuard: NetworkGuard;
   },
 ) {
-  const { sessionManager, eventStore } = deps;
+  const { sessionManager, eventStore, networkGuard } = deps;
 
   fastify.get("/api/sessions", async () => {
     const sessions = sessionManager.listAll();
@@ -39,7 +40,7 @@ export function registerSessionRoutes(
   // Session file diff endpoint (localhost-only)
   fastify.get<{ Querystring: { sessionId?: string } }>(
     "/api/session-diff",
-    { preHandler: localhostGuard },
+    { preHandler: networkGuard },
     async (request) => {
       const { sessionId } = request.query;
       if (!sessionId) {
@@ -59,7 +60,7 @@ export function registerSessionRoutes(
   // Read a file within a session's cwd (localhost-only)
   fastify.get<{ Querystring: { sessionId?: string; path?: string } }>(
     "/api/session-file",
-    { preHandler: localhostGuard },
+    { preHandler: networkGuard },
     async (request, reply) => {
       const { sessionId, path: filePath } = request.query;
       if (!sessionId || !filePath) {

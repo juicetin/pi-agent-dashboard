@@ -21,7 +21,7 @@ import {
   fetchUserInfo,
   COOKIE_NAME,
 } from "./auth.js";
-import { isLoopback } from "./localhost-guard.js";
+import { isLoopback, isBypassedHost } from "./localhost-guard.js";
 
 /**
  * Returns true if the request URL matches any of the configured bypass prefixes.
@@ -31,49 +31,8 @@ export function isBypassed(url: string, bypassUrls: string[]): boolean {
   return bypassUrls.some((prefix) => url.startsWith(prefix));
 }
 
-/**
- * Returns true if the source IP/hostname matches any configured bypass host.
- * Supports exact match, wildcard (e.g. "10.0.0.*"), and CIDR notation (e.g. "192.168.1.0/24").
- */
-export function isBypassedHost(sourceIp: string, bypassHosts: string[]): boolean {
-  for (const entry of bypassHosts) {
-    if (entry.includes("/")) {
-      // CIDR notation
-      if (matchCidr(sourceIp, entry)) return true;
-    } else if (entry.includes("*")) {
-      // Wildcard — convert to regex
-      const pattern = new RegExp("^" + entry.replace(/\./g, "\\.").replace(/\*/g, "\\d+") + "$");
-      if (pattern.test(sourceIp)) return true;
-    } else {
-      // Exact match
-      if (sourceIp === entry) return true;
-    }
-  }
-  return false;
-}
-
-function matchCidr(ip: string, cidr: string): boolean {
-  const [base, bitsStr] = cidr.split("/");
-  const bits = parseInt(bitsStr, 10);
-  if (isNaN(bits) || bits < 0 || bits > 32) return false;
-  const ipNum = ipToNum(ip);
-  const baseNum = ipToNum(base);
-  if (ipNum === null || baseNum === null) return false;
-  const mask = bits === 0 ? 0 : (~0 << (32 - bits)) >>> 0;
-  return (ipNum & mask) === (baseNum & mask);
-}
-
-function ipToNum(ip: string): number | null {
-  const parts = ip.split(".");
-  if (parts.length !== 4) return null;
-  let num = 0;
-  for (const p of parts) {
-    const n = parseInt(p, 10);
-    if (isNaN(n) || n < 0 || n > 255) return null;
-    num = (num << 8) | n;
-  }
-  return num >>> 0;
-}
+// isBypassedHost is now imported from localhost-guard.ts
+export { isBypassedHost } from "./localhost-guard.js";
 
 /** Escape HTML special characters to prevent XSS in server-rendered pages. */
 export function escapeHtml(str: string): string {
@@ -88,6 +47,8 @@ export function escapeHtml(str: string): string {
 export interface AuthPluginOptions {
   authConfig: AuthConfig;
   port: number;
+  /** Merged trusted networks (top-level + auth.bypassHosts) */
+  resolvedTrustedNetworks?: string[];
 }
 
 /**
@@ -147,7 +108,7 @@ export async function registerAuthPlugin(
   fastify: FastifyInstance,
   options: AuthPluginOptions,
 ): Promise<void> {
-  const { authConfig, port } = options;
+  const { authConfig, port, resolvedTrustedNetworks } = options;
 
   // Mutable auth state — can be rebuilt at runtime via reloadAuth()
   const authState = {
@@ -155,7 +116,7 @@ export async function registerAuthPlugin(
     providerRegistry: await buildProviderRegistry(authConfig.providers),
     allowedUsers: authConfig.allowedUsers,
     bypassUrls: authConfig.bypassUrls ?? [],
-    bypassHosts: authConfig.bypassHosts ?? [],
+    bypassHosts: resolvedTrustedNetworks ?? authConfig.bypassHosts ?? [],
   };
 
   if (authState.providerRegistry.size === 0) {
@@ -173,6 +134,9 @@ export async function registerAuthPlugin(
     const names = Array.from(authState.providerRegistry.values()).map((p) => p.name);
     console.log(`🔐 Auth reloaded with providers: ${names.join(", ")}`);
   };
+
+  // Tag requests with authentication status (read by createNetworkGuard)
+  fastify.decorateRequest("isAuthenticated", false);
 
   // Register cookie plugin
   await fastify.register(cookie);
@@ -300,7 +264,10 @@ export async function registerAuthPlugin(
     const cookieToken = (request.cookies as any)?.[COOKIE_NAME];
     if (cookieToken) {
       const payload = verifyToken(cookieToken, authState.secret);
-      if (payload) return; // Authenticated
+      if (payload) {
+        (request as any).isAuthenticated = true;
+        return;
+      }
       // Invalid/expired — clear cookie
       reply.clearCookie(COOKIE_NAME, { path: "/" });
     }
@@ -326,8 +293,10 @@ export function validateWsUpgrade(
   cookieHeader: string | undefined,
   remoteAddress: string,
   secret: string,
+  trustedNetworks: string[] = [],
 ): boolean {
   if (isLoopback(remoteAddress)) return true;
+  if (trustedNetworks.length > 0 && isBypassedHost(remoteAddress, trustedNetworks)) return true;
   const token = parseAuthCookie(cookieHeader);
   if (!token) return false;
   return verifyToken(token, secret) !== null;

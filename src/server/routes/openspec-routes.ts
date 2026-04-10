@@ -6,7 +6,7 @@ import type { SessionManager } from "../memory-session-manager.js";
 import type { PreferencesStore } from "../preferences-store.js";
 import type { DirectoryService } from "../directory-service.js";
 import type { ApiResponse } from "../../shared/types.js";
-import { localhostGuard } from "../localhost-guard.js";
+import type { NetworkGuard } from "./route-deps.js";
 import { scanOpenSpecArchive } from "../openspec-archive.js";
 import path from "node:path";
 import fs from "node:fs/promises";
@@ -17,14 +17,15 @@ export function registerOpenSpecRoutes(
     sessionManager: SessionManager;
     preferencesStore: PreferencesStore;
     directoryService: DirectoryService;
+    networkGuard: NetworkGuard;
   },
 ) {
-  const { sessionManager, preferencesStore, directoryService } = deps;
+  const { sessionManager, preferencesStore, directoryService, networkGuard } = deps;
 
   // OpenSpec archive listing endpoint
   fastify.get<{ Querystring: { cwd?: string } }>(
     "/api/openspec-archive",
-    { preHandler: localhostGuard },
+    { preHandler: networkGuard },
     async (request, reply) => {
       const cwd = request.query.cwd;
       if (!cwd) {
@@ -39,7 +40,7 @@ export function registerOpenSpecRoutes(
   // Pi Resources endpoint — returns discovered extensions, skills, prompts
   fastify.get<{ Querystring: { cwd?: string; refresh?: string } }>(
     "/api/pi-resources",
-    { preHandler: localhostGuard },
+    { preHandler: networkGuard },
     async (request, reply) => {
       const cwd = request.query.cwd;
       if (!cwd) {
@@ -58,7 +59,7 @@ export function registerOpenSpecRoutes(
   // Pi Resource file endpoint — reads files from allowed pi resource locations
   fastify.get<{ Querystring: { path?: string } }>(
     "/api/pi-resource-file",
-    { preHandler: localhostGuard },
+    { preHandler: networkGuard },
     async (request, reply) => {
       const filePath = request.query.path;
       if (!filePath) {

@@ -28,6 +28,7 @@ import { scanAllSessions } from "./session-scanner.js";
 import { needsMigration, runMigration } from "./migrate-persistence.js";
 import { detectZrokBinary, cleanupStaleZrok, createTunnel, deleteTunnel } from "./tunnel.js";
 import { registerAuthPlugin, validateWsUpgrade, isBypassedHost } from "./auth-plugin.js";
+import { createNetworkGuard, isLoopback } from "./localhost-guard.js";
 import type { AuthConfig } from "../shared/config.js";
 import { registerSessionApi } from "./session-api.js";
 import { registerSessionRoutes } from "./routes/session-routes.js";
@@ -61,6 +62,8 @@ export interface ServerConfig {
   maxWsBufferBytes?: number;
   /** Editor (code-server) config */
   editor: import("../shared/config.js").EditorConfig;
+  /** Merged trusted networks from config */
+  resolvedTrustedNetworks?: string[];
 }
 
 export interface DashboardServer {
@@ -218,9 +221,15 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
 
   // Register auth plugin if configured (must be before routes)
   if (config.authConfig) {
-    await registerAuthPlugin(fastify, { authConfig: config.authConfig, port: config.port });
+    await registerAuthPlugin(fastify, {
+      authConfig: config.authConfig,
+      port: config.port,
+      resolvedTrustedNetworks: config.resolvedTrustedNetworks,
+    });
   } else {
-    // Auth disabled — still expose /auth/status so clients can detect this
+    // Auth disabled — register isAuthenticated decorator so guard can always read it
+    fastify.decorateRequest("isAuthenticated", false);
+    // Still expose /auth/status so clients can detect this
     fastify.get("/auth/status", async () => ({ authenticated: true, authEnabled: false }));
   }
 
@@ -234,11 +243,14 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
   });
 
   // Register route modules
-  registerSessionRoutes(fastify, { sessionManager, eventStore });
-  registerGitRoutes(fastify);
-  registerFileRoutes(fastify, { sessionManager, preferencesStore });
-  registerOpenSpecRoutes(fastify, { sessionManager, preferencesStore, directoryService });
-  registerSystemRoutes(fastify, { sessionManager, preferencesStore, metaPersistence, config });
+  // Create network guard from merged trusted networks
+  const networkGuard = createNetworkGuard(config.resolvedTrustedNetworks ?? []);
+
+  registerSessionRoutes(fastify, { sessionManager, eventStore, networkGuard });
+  registerGitRoutes(fastify, { networkGuard });
+  registerFileRoutes(fastify, { sessionManager, preferencesStore, networkGuard });
+  registerOpenSpecRoutes(fastify, { sessionManager, preferencesStore, directoryService, networkGuard });
+  registerSystemRoutes(fastify, { sessionManager, preferencesStore, metaPersistence, config, networkGuard });
   // Package management
   const packageManagerWrapper = new PackageManagerWrapper();
 
@@ -282,11 +294,11 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
   registerPackageRoutes(fastify, { packageManagerWrapper });
 
   // Editor (code-server) routes and proxy
-  registerEditorRoutes(fastify, editorManager);
+  registerEditorRoutes(fastify, editorManager, { networkGuard });
   registerEditorProxy(fastify, editorManager);
 
   registerProviderAuthRoutes(fastify, { piGateway });
-  registerProviderRoutes(fastify);
+  registerProviderRoutes(fastify, { networkGuard });
 
   // Serve static files / SPA fallback
   const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -372,16 +384,20 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
       piGateway.start(config.piPort);
 
       fastify.server.on("upgrade", (request, socket, head) => {
-        // Auth check for WebSocket upgrades (when auth is configured)
+        // Access check for WebSocket upgrades
+        const remoteAddress = request.socket.remoteAddress || "";
+        const trusted = config.resolvedTrustedNetworks ?? [];
         if (config.authConfig?.secret) {
-          const remoteAddress = request.socket.remoteAddress || "";
-          if (isBypassedHost(remoteAddress, config.authConfig.bypassHosts ?? [])) {
-            // Trusted host — skip auth
-          } else if (!validateWsUpgrade(request.headers.cookie, remoteAddress, config.authConfig.secret)) {
+          if (!validateWsUpgrade(request.headers.cookie, remoteAddress, config.authConfig.secret, trusted)) {
             socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
             socket.destroy();
             return;
           }
+        } else if (!isLoopback(remoteAddress) && (trusted.length === 0 || !isBypassedHost(remoteAddress, trusted))) {
+          // No auth configured — only allow loopback or trusted networks
+          socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
+          socket.destroy();
+          return;
         }
 
         if (request.url === "/ws") {

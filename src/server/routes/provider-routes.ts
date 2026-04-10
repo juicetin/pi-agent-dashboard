@@ -5,7 +5,7 @@ import type { FastifyInstance } from "fastify";
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, dirname } from "node:path";
-import { localhostGuard } from "../localhost-guard.js";
+import type { NetworkGuard } from "./route-deps.js";
 
 const REDACTED = "***";
 const CONFIG_PATH = join(homedir(), ".pi", "agent", "providers.json");
@@ -44,10 +44,11 @@ function redactProviders(
   return redacted;
 }
 
-export function registerProviderRoutes(fastify: FastifyInstance): void {
+export function registerProviderRoutes(fastify: FastifyInstance, deps: { networkGuard: NetworkGuard }): void {
+  const { networkGuard } = deps;
   fastify.get(
     "/api/providers",
-    { preHandler: localhostGuard },
+    { preHandler: networkGuard },
     async () => {
       const providers = readProvidersRaw();
       return { success: true, providers: redactProviders(providers) };
@@ -56,7 +57,7 @@ export function registerProviderRoutes(fastify: FastifyInstance): void {
 
   fastify.put(
     "/api/providers",
-    { preHandler: localhostGuard },
+    { preHandler: networkGuard },
     async (request, reply) => {
       const body = request.body as Record<string, any> | null;
       if (!body || typeof body !== "object" || !body.providers || typeof body.providers !== "object") {

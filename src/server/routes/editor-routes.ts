@@ -4,16 +4,18 @@
 import type { FastifyInstance } from "fastify";
 import type { ApiResponse } from "../../shared/types.js";
 import type { EditorManager } from "../editor-manager.js";
-import { localhostGuard } from "../localhost-guard.js";
+import type { NetworkGuard } from "./route-deps.js";
 
 export function registerEditorRoutes(
   fastify: FastifyInstance,
   editorManager: EditorManager,
+  deps: { networkGuard: NetworkGuard },
 ) {
+  const { networkGuard } = deps;
   // Start or return existing editor instance
   fastify.post<{ Body: { cwd?: string; theme?: "dark" | "light" } }>(
     "/api/editor/start",
-    { preHandler: localhostGuard },
+    { preHandler: networkGuard },
     async (request) => {
       const { cwd, theme } = request.body ?? {};
       if (!cwd) {
@@ -32,7 +34,7 @@ export function registerEditorRoutes(
   // Heartbeat to keep instance alive
   fastify.post<{ Params: { id: string } }>(
     "/api/editor/:id/heartbeat",
-    { preHandler: localhostGuard },
+    { preHandler: networkGuard },
     async (request) => {
       const { id } = request.params;
       const inst = editorManager.get(id);
@@ -47,7 +49,7 @@ export function registerEditorRoutes(
   // Stop an editor instance
   fastify.post<{ Params: { id: string } }>(
     "/api/editor/:id/stop",
-    { preHandler: localhostGuard },
+    { preHandler: networkGuard },
     async (request) => {
       const { id } = request.params;
       editorManager.stop(id);
@@ -58,7 +60,7 @@ export function registerEditorRoutes(
   // Update theme for a running editor instance
   fastify.post<{ Params: { id: string }; Body: { theme?: "dark" | "light" } }>(
     "/api/editor/:id/theme",
-    { preHandler: localhostGuard },
+    { preHandler: networkGuard },
     async (request) => {
       const { id } = request.params;
       const { theme } = request.body ?? {};
@@ -76,7 +78,7 @@ export function registerEditorRoutes(
   // List all editor instances
   fastify.get(
     "/api/editor/status",
-    { preHandler: localhostGuard },
+    { preHandler: networkGuard },
     async () => {
       return { success: true, data: editorManager.list() } satisfies ApiResponse;
     },

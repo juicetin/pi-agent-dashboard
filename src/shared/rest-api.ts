@@ -245,3 +245,11 @@ export interface PackageUpdateInfo {
 }
 
 export type CheckUpdatesResponse = ApiResponse<PackageUpdateInfo[]>;
+
+/** Detected network interface for trusted networks UI. */
+export interface NetworkInterface {
+  name: string;
+  address: string;
+  netmask: string;
+  cidr: string;
+}

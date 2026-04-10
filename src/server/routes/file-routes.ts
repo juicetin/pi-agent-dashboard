@@ -5,7 +5,7 @@ import type { FastifyInstance } from "fastify";
 import type { SessionManager } from "../memory-session-manager.js";
 import type { PreferencesStore } from "../preferences-store.js";
 import type { ApiResponse } from "../../shared/types.js";
-import { localhostGuard } from "../localhost-guard.js";
+import type { NetworkGuard } from "./route-deps.js";
 import { listDirectories } from "../browse.js";
 import path from "node:path";
 import fs from "node:fs/promises";
@@ -15,14 +15,15 @@ export function registerFileRoutes(
   deps: {
     sessionManager: SessionManager;
     preferencesStore: PreferencesStore;
+    networkGuard: NetworkGuard;
   },
 ) {
-  const { sessionManager, preferencesStore } = deps;
+  const { sessionManager, preferencesStore, networkGuard } = deps;
 
   // Directory browse endpoint
   fastify.get<{ Querystring: { path?: string } }>(
     "/api/browse",
-    { preHandler: localhostGuard },
+    { preHandler: networkGuard },
     async (request) => {
       try {
         const result = await listDirectories(request.query.path || undefined);
@@ -36,7 +37,7 @@ export function registerFileRoutes(
   // File read endpoint — read file content or list directory
   fastify.get<{ Querystring: { cwd?: string; path?: string } }>(
     "/api/file",
-    { preHandler: localhostGuard },
+    { preHandler: networkGuard },
     async (request, reply) => {
       const cwd = request.query.cwd;
       const relPath = request.query.path;
@@ -76,7 +77,7 @@ export function registerFileRoutes(
   // README endpoint — read README.md from a directory
   fastify.get<{ Querystring: { cwd?: string; check?: string } }>(
     "/api/readme",
-    { preHandler: localhostGuard },
+    { preHandler: networkGuard },
     async (request, reply) => {
       const cwd = request.query.cwd;
       if (!cwd) {

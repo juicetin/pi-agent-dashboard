@@ -361,12 +361,14 @@ export function createCommandHandler(
           }
           return undefined;
 
-        case "kill_process":
-          if ('pgid' in msg) {
-            const killed = killProcessByPgid((msg as any).pgid);
-            console.error(`[dashboard] kill_process pgid=${(msg as any).pgid} result=${killed}`);
+        case "kill_process": {
+          const pgid = (msg as { pgid: number }).pgid;
+          if (pgid) {
+            const killed = killProcessByPgid(pgid);
+            console.error(`[dashboard] kill_process pgid=${pgid} result=${killed}`);
           }
           return undefined;
+        }
 
         case "shutdown":
           if (options?.shutdown) {

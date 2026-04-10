@@ -22,22 +22,23 @@ On Unix, every bash tool child has `PPID = process.pid` (the pi session's Node.j
 
 ## Decisions
 
-### 1. Detection via `pgrep -P` + `ps` (not process tree walking or /proc)
+### 1. Two-phase detection via `ps -eo` + PGID tracking
 
-**Choice**: Use `pgrep -P {pid}` to find direct children, then recurse one level to find grandchildren too, then `ps -p {pids} -o pid,pgid,etime,args` for details. Display uses the `ps` args output (actual running binary), not the original bash command.
+**Choice**: Two-phase approach using `ps -eo pid=,ppid=` (not `pgrep`) to find children, capture their PGIDs into a tracked set, then check tracked PGIDs on subsequent scans. Display uses the `ps` args output (actual running binary), not the original bash command.
 
 **Why**: 
-- `pgrep` is available on both macOS and Linux
-- PPID matching is 100% accurate — only processes spawned by this pi session match
-- No risk of false positives (unlike command-string matching)
-- Grandchild scan catches cases where bash exits but node/vitest survives (reparented to PID 1 won't be caught, but while bash is alive we see the full tree)
-- `ps` args shows the actual binary consuming resources, more useful than the original command for identifying stalled processes
-- Lightweight: a few `spawnSync` calls, no dependencies
+- `pgrep -P` misses detached children on macOS (`detached: true` creates a new process group that pgrep can't find)
+- `ps -eo pid=,ppid=` reliably finds all children regardless of process group
+- PGID tracking solves the reparenting problem: children get reparented to PID 1 when the bash wrapper exits, but their PGIDs are captured while the wrapper is alive
+- No risk of false positives — only PGIDs captured from the pi process's children are tracked
+- `ps` args shows the actual binary consuming resources, more useful than the original command
+- Bash/sh wrappers are filtered out in the check phase (leaf commands only)
 
 **Alternatives considered**:
+- `pgrep -P`: Doesn't find detached children on macOS
 - `/proc` filesystem: Linux only, not available on macOS
-- `ps -eo` with awk filtering: Works but more parsing, same data
-- Tracking PIDs at spawn time via BashSpawnHook: Hook runs before spawn, no PID available; would need to wrap BashOperations which requires pi core changes
+- CWD-based scanning via `lsof`: Too broad, catches all processes in the directory (Chrome, tmux, etc.)
+- Tracking PIDs at spawn time via BashSpawnHook: Hook runs before spawn, no PID available
 - Direct children only: misses grandchildren like vitest spawned by npm
 
 ### 2. Poll interval: 10 seconds, piggybacked near heartbeat

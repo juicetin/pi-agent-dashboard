@@ -3,7 +3,13 @@
 ### Requirement: Process scanner detects child processes of pi session
 The `process-scanner` module SHALL export a `scanChildProcesses(parentPid: number)` function that returns an array of `ChildProcessInfo` objects. Each object SHALL contain `pid` (number), `pgid` (number), `command` (string, the full args from `ps`), and `elapsedMs` (number, milliseconds since process start).
 
-The scanner SHALL use `pgrep -P {parentPid}` to find direct child PIDs, then recurse one level (`pgrep -P {childPid}` for each child) to also find grandchildren. It SHALL then use `ps -p {allPids} -o pid=,pgid=,etime=,args=` to get details for all discovered processes. The `command` field SHALL contain the `ps` args output (actual running binary).
+The scanner SHALL use a two-phase approach with PGID tracking:
+
+**Phase 1 (Capture):** Use `ps -eo pid=,ppid=` to find direct child PIDs of the pi process (pgrep is not used because it misses detached children on macOS). Recurse one level to find grandchildren. Capture their PGIDs into a tracked set via `ps -p {pids} -o pgid=`.
+
+**Phase 2 (Check):** Use `ps -eo pid=,pgid=,etime=,args=` to find all processes belonging to tracked PGIDs. Remove dead PGIDs from the tracked set. Filter out bash/sh wrappers (show leaf commands only).
+
+The `scanChildProcesses(parentPid, trackedPgids, minElapsedMs?, options?)` function combines both phases. The `trackedPgids` parameter is a `Set<number>` maintained across scans. The `command` field SHALL contain the `ps` args output (actual running binary).
 
 #### Scenario: No children
 - **WHEN** `scanChildProcesses` is called and the pi session has no child processes
@@ -25,8 +31,8 @@ The scanner SHALL use `pgrep -P {parentPid}` to find direct child PIDs, then rec
 - **WHEN** a direct child has no children of its own (it IS a leaf)
 - **THEN** it SHALL be included in the result
 
-#### Scenario: pgrep not available or fails
-- **WHEN** `pgrep` is not installed or returns an error
+#### Scenario: ps fails or not available
+- **WHEN** `ps` returns an error or is not available
 - **THEN** `scanChildProcesses` SHALL return an empty array (no throw)
 
 ### Requirement: Process scanner filters by minimum elapsed time

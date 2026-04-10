@@ -3,9 +3,9 @@
  * Unix-only (macOS + Linux); returns empty results on Windows.
  *
  * Two-phase approach:
- * 1. CAPTURE: During active bash tool calls, pgrep finds children of the pi
- *    process (bash wrappers) and their grandchildren (actual commands).
- *    PGIDs are stored in a tracked set.
+ * 1. CAPTURE: During active bash tool calls, `ps -eo pid=,ppid=` finds children
+ *    of the pi process (pgrep is not used — it misses detached children on macOS).
+ *    Grandchildren are found by recursing one level. PGIDs are stored in a tracked set.
  * 2. CHECK: On every scan, verify which tracked PGIDs are still alive via ps.
  *    Dead ones are removed from the set.
  *

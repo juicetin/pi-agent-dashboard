@@ -107,6 +107,37 @@ describe("scanTrackedProcesses", () => {
 });
 
 describe("scanChildProcesses (combined)", () => {
+  it("captures and returns processes in one call", () => {
+    let callCount = 0;
+    const mock: SpawnSyncFn = (cmd, args) => {
+      // Phase 1 (capture): getChildPids finds child 200 of parent 100
+      if (cmd === "ps" && args[0] === "-eo" && args[1] === "pid=,ppid=") {
+        callCount++;
+        // First call: find children of 100 → 200
+        // Second call: find children of 200 → none (leaf)
+        if (callCount === 1) return mockResult(psChildOutput([[200, 100], [999, 888]]));
+        if (callCount === 2) return mockResult(psChildOutput([[999, 888]])); // no children of 200
+        // Phase 2: full process list
+        return mockResult("  200  200 02:00 node vitest\n  999  888 01:00 unrelated\n");
+      }
+      // Phase 1: get PGID for captured PID 200
+      if (cmd === "ps" && args[0] === "-p" && args[1] === "200" && args[2] === "-o" && args[3] === "pgid=") {
+        return mockResult("  200\n");
+      }
+      // Phase 2: full scan
+      if (cmd === "ps" && args[0] === "-eo" && args[1] === "pid=,pgid=,etime=,args=") {
+        return mockResult("  200  200 02:00 node vitest\n  999  888 01:00 unrelated\n");
+      }
+      return fail();
+    };
+
+    const tracked = new Set<number>();
+    const result = scanChildProcesses(100, tracked, 0, { _spawnSync: mock });
+    expect(tracked.has(200)).toBe(true);
+    expect(result.some(p => p.command === "node vitest")).toBe(true);
+    expect(result.some(p => p.pgid === 888)).toBe(false); // unrelated PGID not tracked
+  });
+
   it("returns empty on Windows", () => {
     const origPlatform = Object.getOwnPropertyDescriptor(process, "platform");
     Object.defineProperty(process, "platform", { value: "win32", configurable: true });

@@ -62,10 +62,10 @@ pi-dashboard --dev   # Start with Vite proxy
 | `src/client/lib/git-api.ts` | Client-side fetch helpers for git API endpoints |
 | `src/extension/ui-proxy.ts` | Proxies ctx.ui dialogs to dashboard (confirm/select/input/editor/notify) |
 | `src/extension/ask-user-tool.ts` | `ask_user` tool registration (bundled in bridge, registered at session_start to avoid static tool-name conflicts with other extensions) |
-| `src/extension/openspec-activity-detector.ts` | Detects OpenSpec activity from tool events; auto-attach requires only changeName (phase optional) |
+| `src/shared/openspec-activity-detector.ts` | Detects OpenSpec activity from tool events; auto-attach requires only changeName (phase optional) |
 | `src/shared/openspec-poller.ts` | OpenSpec CLI polling (shared, used by server DirectoryService) |
 | `src/shared/state-replay.ts` | Synthesizes events from pi entries (shared, used by server + bridge) |
-| `src/extension/stats-extractor.ts` | Extracts token/cost stats from turn_end events |
+| `src/shared/stats-extractor.ts` | Extracts token/cost stats from turn_end events |
 | `src/server/session-stats-reader.ts` | Reads cumulative stats + context usage from session JSONL files at startup |
 | `src/server/server.ts` | HTTP + WebSocket server (composes route modules + wiring) |
 | `src/server/routes/session-routes.ts` | REST routes: sessions, events, session-diff |

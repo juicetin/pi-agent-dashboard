@@ -25,6 +25,8 @@ export interface MessageHandlerSetters {
   setTerminals: React.Dispatch<React.SetStateAction<Map<string, TerminalSession>>>;
   setEditorStatuses: React.Dispatch<React.SetStateAction<Map<string, { id: string; status: EditorInstanceStatus }>>>;
   setDiscoveredServers: React.Dispatch<React.SetStateAction<DiscoveredServerInfo[]>>;
+  setSpawnErrors: React.Dispatch<React.SetStateAction<Map<string, string>>>;
+  setResumeErrors: React.Dispatch<React.SetStateAction<Map<string, string>>>;
 }
 
 export interface MessageHandlerDeps {
@@ -45,7 +47,7 @@ export function useMessageHandler(
     setSessions, setSessionStates, setSessionCommands, setSessionFlows,
     setFileResults, setOpenspecMap, setModelsMap, setRolesMap, setSpawnResult,
     setSessionOrderMap, setPinnedDirectories, setTerminals, setEditorStatuses,
-    setDiscoveredServers,
+    setDiscoveredServers, setSpawnErrors, setResumeErrors,
   } = setters;
   const { send, navigate, clearSpawningCwd, spawningCwdsRef, subscribedRef, pendingTerminalCwdRef, maxSeqMapRef } = deps;
 
@@ -206,6 +208,17 @@ export function useMessageHandler(
             }
             return next;
           });
+          setResumeErrors((prev) => {
+            const next = new Map(prev);
+            next.set(msg.sessionId, msg.message ?? "Resume failed");
+            return next;
+          });
+        } else {
+          setResumeErrors((prev) => {
+            const next = new Map(prev);
+            next.delete(msg.sessionId);
+            return next;
+          });
         }
         break;
 
@@ -213,6 +226,17 @@ export function useMessageHandler(
         setSpawnResult({ success: msg.success, message: msg.message });
         if (!msg.success) {
           clearSpawningCwd(msg.cwd);
+          setSpawnErrors((prev) => {
+            const next = new Map(prev);
+            next.set(msg.cwd, msg.message ?? "Spawn failed");
+            return next;
+          });
+        } else {
+          setSpawnErrors((prev) => {
+            const next = new Map(prev);
+            next.delete(msg.cwd);
+            return next;
+          });
         }
         break;
 

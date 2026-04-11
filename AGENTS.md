@@ -179,7 +179,8 @@ pi-dashboard --dev   # Start with Vite proxy
 | `src/client/hooks/useSessionActions.ts` | Session action callbacks hook (send, abort, resume, spawn, etc.) |
 | `src/client/hooks/useOpenSpecActions.ts` | OpenSpec action callbacks hook (refresh, archive, attach, detach) |
 | `src/client/hooks/useContentViews.ts` | Content view state + fetch (pi resources, readme, file preview) |
-| `src/client/lib/event-reducer.ts` | Event-sourced state reducer (delegates flow events to flow-reducer) |
+| `src/client/lib/event-reducer.ts` | Event-sourced state reducer (delegates flow events to flow-reducer); extracts LLM errors from `agent_end` into `lastError` |
+| `src/client/hooks/usePendingPromptTimeout.ts` | 30-second safety timeout for stuck `pendingPrompt` spinners |
 | `src/client/lib/flow-reducer.ts` | Flow state machine: all flow_* event handling |
 | `src/client/lib/session-grouping.ts` | Pure functions: group, sort, filter sessions by directory |
 | `src/client/lib/truncate-path.ts` | Middle-truncation utility for filesystem paths |

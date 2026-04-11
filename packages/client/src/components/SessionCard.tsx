@@ -293,6 +293,7 @@ export function SessionCard({
   flows,
   processes,
   onKillProcess,
+  hasError,
 }: {
   session: DashboardSession;
   selectedId?: string;
@@ -317,12 +318,18 @@ export function SessionCard({
   flows?: FlowInfo[];
   processes?: ProcessEntry[];
   onKillProcess?: (pgid: number) => void;
+  hasError?: boolean;
 }) {
   const isSelected = selectedId === session.id;
   const [isRenaming, setIsRenaming] = useState(false);
   const canRename = session.status !== "ended" && !!onRename;
   const isAlive = session.status !== "ended";
   const isMobile = useMobile();
+  const dotColor = session.resuming
+    ? "bg-yellow-500 animate-pulse"
+    : hasError
+      ? "bg-red-500"
+      : (statusColors[session.status] ?? "bg-[var(--bg-surface)]");
 
   function handleConfirmRename(name: string) {
     setIsRenaming(false);
@@ -341,7 +348,7 @@ export function SessionCard({
         {/* Line 1: status dot + name + age */}
         <div className="flex items-center gap-2">
           <span
-            className={`w-2 h-2 rounded-full flex-shrink-0 ${session.resuming ? "bg-yellow-500 animate-pulse" : (statusColors[session.status] ?? "bg-[var(--bg-surface)]")}`}
+            className={`w-2 h-2 rounded-full flex-shrink-0 ${dotColor}`}
           />
           <span className="text-sm truncate flex-1">
             {getSessionDisplayName(session)}
@@ -371,9 +378,9 @@ export function SessionCard({
         </div>
 
         {/* OpenSpec activity badge */}
-        {session.openspecPhase ? (
+        {(session.openspecPhase || session.openspecChange) ? (
           <OpenSpecActivityBadge
-            phase={session.openspecPhase!}
+            phase={session.openspecPhase ?? undefined}
             changeName={session.openspecChange ?? undefined}
             completedTasks={
               session.openspecChange
@@ -415,7 +422,7 @@ export function SessionCard({
       {/* Left gutter: source icon vertically centered */}
       <div className="flex flex-col items-center flex-shrink-0 w-4 pt-1">
         <span
-          className={`w-2 h-2 rounded-full ${session.resuming ? "bg-yellow-500 animate-pulse" : (statusColors[session.status] ?? "bg-[var(--bg-surface)]")}`}
+          className={`w-2 h-2 rounded-full ${dotColor}`}
         />
         <span className="flex-1" />
         <span
@@ -547,9 +554,9 @@ export function SessionCard({
       </div>
 
       {/* OpenSpec activity badge */}
-      {session.openspecPhase ? (
+      {(session.openspecPhase || session.openspecChange) ? (
         <OpenSpecActivityBadge
-          phase={session.openspecPhase!}
+          phase={session.openspecPhase ?? undefined}
           changeName={session.openspecChange ?? undefined}
           completedTasks={
             session.openspecChange

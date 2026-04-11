@@ -337,4 +337,50 @@ describe("ChatView", () => {
       expect(container.querySelector('[data-testid="scroll-to-bottom"]')).toBeNull();
     });
   });
+
+  describe("error banner", () => {
+    it("renders error banner when lastError is set", () => {
+      const state = createInitialState();
+      state.lastError = { message: "Rate limit exceeded", timestamp: Date.now() };
+
+      const { container } = render(
+        <ThemeProvider>
+          <ChatView state={state} toolContext={defaultToolContext} />
+        </ThemeProvider>,
+      );
+
+      const banner = container.querySelector('[data-testid="error-banner"]');
+      expect(banner).toBeTruthy();
+      expect(banner!.textContent).toContain("Rate limit exceeded");
+    });
+
+    it("does not render error banner when lastError is undefined", () => {
+      const state = createInitialState();
+
+      const { container } = render(
+        <ThemeProvider>
+          <ChatView state={state} toolContext={defaultToolContext} />
+        </ThemeProvider>,
+      );
+
+      expect(container.querySelector('[data-testid="error-banner"]')).toBeNull();
+    });
+
+    it("calls onDismissError when dismiss button clicked", () => {
+      const state = createInitialState();
+      state.lastError = { message: "Quota exceeded", timestamp: Date.now() };
+      const onDismiss = vi.fn();
+
+      const { container } = render(
+        <ThemeProvider>
+          <ChatView state={state} toolContext={defaultToolContext} onDismissError={onDismiss} />
+        </ThemeProvider>,
+      );
+
+      const dismissBtn = container.querySelector('[data-testid="error-banner-dismiss"]');
+      expect(dismissBtn).toBeTruthy();
+      fireEvent.click(dismissBtn!);
+      expect(onDismiss).toHaveBeenCalledOnce();
+    });
+  });
 });

@@ -11,6 +11,8 @@ interface Props {
   selectedId?: string;
   onSelect: (sessionId: string) => void;
   onRename?: (sessionId: string, name: string) => void;
+  /** Set of session IDs that have an active error */
+  errorSessionIds?: Set<string>;
 }
 
 const sourceIcons: Record<string, ReactNode> = {
@@ -40,7 +42,7 @@ function formatCost(n?: number): string {
   return `$${n.toFixed(4)}`;
 }
 
-export function SessionSidebar({ sessions, selectedId, onSelect, onRename }: Props) {
+export function SessionSidebar({ sessions, selectedId, onSelect, onRename, errorSessionIds }: Props) {
   const [, navigate] = useLocation();
   const active = sessions.filter((s) => s.status !== "ended");
   const ended = sessions.filter((s) => s.status === "ended");
@@ -72,7 +74,7 @@ export function SessionSidebar({ sessions, selectedId, onSelect, onRename }: Pro
             >
               <div className="flex items-center gap-2">
                 <span
-                  className={`w-2 h-2 rounded-full flex-shrink-0 ${statusColors[session.status] ?? "bg-[var(--bg-surface)]"}`}
+                  className={`w-2 h-2 rounded-full flex-shrink-0 ${errorSessionIds?.has(session.id) ? "bg-red-500" : (statusColors[session.status] ?? "bg-[var(--bg-surface)]")}`}
                 />
                 {renamingId === session.id ? (
                   <InlineRenameInput

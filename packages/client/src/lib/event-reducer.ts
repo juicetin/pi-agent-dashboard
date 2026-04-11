@@ -108,6 +108,8 @@ export interface SessionState {
   subagents: Map<string, SubagentState>;
   /** Total turn count (for turnIndex assignment and sliding window offset) */
   turnCount: number;
+  /** Last LLM provider error (set from agent_end, cleared on agent_start or dismiss) */
+  lastError?: { message: string; timestamp: number };
 }
 
 export function createInitialState(): SessionState {
@@ -294,6 +296,15 @@ export function dismissInteractiveRequest(
   };
 }
 
+/** Extract error info from agent_end event's messages array. */
+export function extractAgentEndError(data: Record<string, unknown>): string | undefined {
+  const messages = data.messages;
+  if (!Array.isArray(messages) || messages.length === 0) return undefined;
+  const last = messages[messages.length - 1] as Record<string, unknown> | undefined;
+  if (!last || last.stopReason !== "error") return undefined;
+  return (last.errorMessage as string) || "An unknown error occurred";
+}
+
 export function reduceEvent(state: SessionState, event: DashboardEvent): SessionState {
   const next = { ...state, toolCalls: new Map(state.toolCalls) };
   const data = event.data;
@@ -304,14 +315,21 @@ export function reduceEvent(state: SessionState, event: DashboardEvent): Session
       next.status = "streaming";
       next.streamingText = "";
       next.pendingPrompt = undefined;
+      next.lastError = undefined;
       break;
 
-    case "agent_end":
+    case "agent_end": {
       next.isStreaming = false;
       next.status = "idle";
       next.streamingText = "";
       next.currentTool = undefined;
+      next.pendingPrompt = undefined;
+      const errorMsg = extractAgentEndError(data);
+      if (errorMsg) {
+        next.lastError = { message: errorMsg, timestamp: event.timestamp };
+      }
       break;
+    }
 
     case "message_start": {
       const msg = data.message as any;

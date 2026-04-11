@@ -40,6 +40,7 @@ import { useMessageHandler } from "./hooks/useMessageHandler.js";
 import { useEditors } from "./lib/use-editors.js";
 import { useContentViews } from "./hooks/useContentViews.js";
 import { useSessionActions } from "./hooks/useSessionActions.js";
+import { usePendingPromptTimeout } from "./hooks/usePendingPromptTimeout.js";
 import { useOpenSpecActions } from "./hooks/useOpenSpecActions.js";
 import type { DashboardSession, CommandInfo, FlowInfo, FileEntry, OpenSpecData, ModelInfo, RoleInfo, ImageContent } from "@blackbelt-technology/pi-dashboard-shared/types.js";
 import { SearchableSelectDialog, type SelectOption } from "./components/SearchableSelectDialog.js";
@@ -133,6 +134,8 @@ export default function App() {
   const [modelsMap, setModelsMap] = useState<Map<string, ModelInfo[]>>(new Map());
   const [rolesMap, setRolesMap] = useState<Map<string, RoleInfo>>(new Map());
   const [spawnResult, setSpawnResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [spawnErrors, setSpawnErrors] = useState<Map<string, string>>(new Map());
+  const [resumeErrors, setResumeErrors] = useState<Map<string, string>>(new Map());
   const [spawningCwds, setSpawningCwds] = useState<Set<string>>(new Set());
   const spawningCwdsRef = useRef<Set<string>>(spawningCwds);
   spawningCwdsRef.current = spawningCwds;
@@ -216,7 +219,7 @@ export default function App() {
   }, []);
 
   const handleMessage = useMessageHandler(
-    { setSessions, setSessionStates, setSessionCommands, setSessionFlows, setFileResults, setOpenspecMap, setModelsMap, setRolesMap, setSpawnResult, setSessionOrderMap, setPinnedDirectories, setTerminals, setEditorStatuses, setDiscoveredServers },
+    { setSessions, setSessionStates, setSessionCommands, setSessionFlows, setFileResults, setOpenspecMap, setModelsMap, setRolesMap, setSpawnResult, setSessionOrderMap, setPinnedDirectories, setTerminals, setEditorStatuses, setDiscoveredServers, setSpawnErrors, setResumeErrors },
     { send, navigate, clearSpawningCwd, spawningCwdsRef, subscribedRef, pendingTerminalCwdRef, maxSeqMapRef },
   );
 
@@ -293,6 +296,27 @@ export default function App() {
   const selectedState = selectedId
     ? sessionStates.get(selectedId) ?? createInitialState()
     : createInitialState();
+
+  // Safety timeout: clear stuck pendingPrompt after 30s and show error
+  usePendingPromptTimeout(!!selectedState.pendingPrompt, useCallback(() => {
+    if (selectedId) {
+      setSessionStates((prev) => {
+        const next = new Map(prev);
+        const current = next.get(selectedId);
+        if (current?.pendingPrompt) {
+          next.set(selectedId, {
+            ...current,
+            pendingPrompt: undefined,
+            lastError: {
+              message: "No response from session — the prompt may not have been received.",
+              timestamp: Date.now(),
+            },
+          });
+        }
+        return next;
+      });
+    }
+  }, [selectedId, setSessionStates]));
 
   const selectedCommands = selectedId
     ? sessionCommands.get(selectedId) ?? []
@@ -400,6 +424,15 @@ export default function App() {
     }
   }, [sessionStates, sessions]);
 
+  // Compute set of session IDs that have active errors
+  const errorSessionIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const [id, state] of sessionStates) {
+      if (state.lastError) ids.add(id);
+    }
+    return ids;
+  }, [sessionStates]);
+
   const sessionList = (
     <SessionList
       sessions={Array.from(sessions.values())}
@@ -461,6 +494,11 @@ export default function App() {
       onOpenEditor={(cwd) => navigate(`/folder/${encodeFolderPath(cwd)}/editor`)}
       editorStatuses={editorStatuses}
       editorAvailable={editorAvailable}
+      errorSessionIds={errorSessionIds}
+      spawnErrors={spawnErrors}
+      onDismissSpawnError={(cwd) => setSpawnErrors((prev) => { const next = new Map(prev); next.delete(cwd); return next; })}
+      resumeErrors={resumeErrors}
+      onDismissResumeError={(id) => setResumeErrors((prev) => { const next = new Map(prev); next.delete(id); return next; })}
       headerExtra={
         <ServerSelector
           servers={discoveredServers}
@@ -739,7 +777,16 @@ export default function App() {
               </div>
             </div>
           }>
-            <ChatView ref={chatViewRef} sessionId={selectedId} state={selectedState} toolContext={toolContext} onCancelPending={handleCancelPending} onRespondToUi={handleRespondToUi} onAbort={handleAbort} onForceKill={handleForceKill} onForkFromMessage={selectedId ? (entryId) => handleResumeSession(selectedId, "fork", entryId) : undefined} />
+            <ChatView ref={chatViewRef} sessionId={selectedId} state={selectedState} toolContext={toolContext} onCancelPending={handleCancelPending} onRespondToUi={handleRespondToUi} onAbort={handleAbort} onForceKill={handleForceKill} onForkFromMessage={selectedId ? (entryId) => handleResumeSession(selectedId, "fork", entryId) : undefined} onDismissError={selectedId ? () => {
+              setSessionStates((prev) => {
+                const next = new Map(prev);
+                const current = next.get(selectedId!);
+                if (current?.lastError) {
+                  next.set(selectedId!, { ...current, lastError: undefined });
+                }
+                return next;
+              });
+            } : undefined} />
           </ErrorBoundary>
           <StatusBar
             model={selectedState.model ?? selectedSession?.model}

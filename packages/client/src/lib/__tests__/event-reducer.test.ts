@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { createInitialState, reduceEvent, toDisplayString, addInteractiveRequest, resolveInteractiveRequest, dismissInteractiveRequest, type SessionState, type PendingPrompt } from "../event-reducer.js";
+import { createInitialState, reduceEvent, toDisplayString, addInteractiveRequest, resolveInteractiveRequest, dismissInteractiveRequest, extractAgentEndError, type SessionState, type PendingPrompt } from "../event-reducer.js";
 import type { DashboardEvent } from "@blackbelt-technology/pi-dashboard-shared/types.js";
 
 function applyEvents(events: DashboardEvent[]): SessionState {
@@ -898,13 +898,13 @@ describe("pendingPrompt", () => {
     });
     expect(state.pendingPrompt).toEqual(pending);
 
-    // agent_end should not clear pendingPrompt
+    // agent_end SHOULD clear pendingPrompt (error handling safety net)
     state = reduceEvent(state, {
       eventType: "agent_end",
       timestamp: Date.now(),
       data: { messages: [] },
     });
-    expect(state.pendingPrompt).toEqual(pending);
+    expect(state.pendingPrompt).toBeUndefined();
   });
 
   it("should clear pendingPrompt on message_start with role user", () => {
@@ -1795,5 +1795,184 @@ describe("turnIndex tracking", () => {
       },
     ]);
     expect(state.messages[0].entryId).toBeUndefined();
+  });
+});
+
+describe("extractAgentEndError", () => {
+  it("returns errorMessage when last message has stopReason error", () => {
+    expect(extractAgentEndError({
+      messages: [{ role: "assistant", stopReason: "error", errorMessage: "Rate limit exceeded", content: [] }],
+    })).toBe("Rate limit exceeded");
+  });
+
+  it("returns fallback when errorMessage is missing", () => {
+    expect(extractAgentEndError({
+      messages: [{ role: "assistant", stopReason: "error", content: [] }],
+    })).toBe("An unknown error occurred");
+  });
+
+  it("returns undefined for normal stopReason", () => {
+    expect(extractAgentEndError({
+      messages: [{ role: "assistant", stopReason: "end_turn", content: [] }],
+    })).toBeUndefined();
+  });
+
+  it("returns undefined for empty messages", () => {
+    expect(extractAgentEndError({ messages: [] })).toBeUndefined();
+  });
+
+  it("returns undefined for missing messages", () => {
+    expect(extractAgentEndError({})).toBeUndefined();
+  });
+
+  it("inspects only the last message", () => {
+    expect(extractAgentEndError({
+      messages: [
+        { role: "assistant", stopReason: "error", errorMessage: "first" },
+        { role: "assistant", stopReason: "end_turn" },
+      ],
+    })).toBeUndefined();
+  });
+});
+
+describe("lastError extraction from agent_end", () => {
+  it("should set lastError when agent_end has stopReason error", () => {
+    const state = applyEvents([
+      {
+        eventType: "agent_end",
+        timestamp: 1000,
+        data: {
+          messages: [
+            {
+              role: "assistant",
+              stopReason: "error",
+              errorMessage: "Rate limit exceeded",
+              content: [],
+            },
+          ],
+        },
+      },
+    ]);
+    expect(state.lastError).toEqual({ message: "Rate limit exceeded", timestamp: 1000 });
+    expect(state.status).toBe("idle");
+    expect(state.isStreaming).toBe(false);
+  });
+
+  it("should not set lastError when agent_end has normal stopReason", () => {
+    const state = applyEvents([
+      {
+        eventType: "agent_end",
+        timestamp: 1000,
+        data: {
+          messages: [
+            {
+              role: "assistant",
+              stopReason: "end_turn",
+              content: [],
+            },
+          ],
+        },
+      },
+    ]);
+    expect(state.lastError).toBeUndefined();
+  });
+
+  it("should not set lastError when agent_end has no messages", () => {
+    const state = applyEvents([
+      { eventType: "agent_end", timestamp: 1000, data: {} },
+    ]);
+    expect(state.lastError).toBeUndefined();
+  });
+
+  it("should not set lastError when agent_end has empty messages array", () => {
+    const state = applyEvents([
+      { eventType: "agent_end", timestamp: 1000, data: { messages: [] } },
+    ]);
+    expect(state.lastError).toBeUndefined();
+  });
+
+  it("should use fallback message when errorMessage is missing", () => {
+    const state = applyEvents([
+      {
+        eventType: "agent_end",
+        timestamp: 1000,
+        data: {
+          messages: [
+            { role: "assistant", stopReason: "error", content: [] },
+          ],
+        },
+      },
+    ]);
+    expect(state.lastError).toBeDefined();
+    expect(state.lastError!.message).toBeTruthy();
+  });
+
+  it("should clear lastError on agent_start", () => {
+    let state = applyEvents([
+      {
+        eventType: "agent_end",
+        timestamp: 1000,
+        data: {
+          messages: [
+            { role: "assistant", stopReason: "error", errorMessage: "Quota exceeded", content: [] },
+          ],
+        },
+      },
+    ]);
+    expect(state.lastError).toBeDefined();
+
+    state = reduceEvent(state, {
+      eventType: "agent_start",
+      timestamp: 2000,
+      data: {},
+    });
+    expect(state.lastError).toBeUndefined();
+  });
+
+  it("should extract error from last message in multi-message array", () => {
+    const state = applyEvents([
+      {
+        eventType: "agent_end",
+        timestamp: 1000,
+        data: {
+          messages: [
+            { role: "user", content: [{ type: "text", text: "Hi" }] },
+            { role: "assistant", stopReason: "error", errorMessage: "Service overloaded", content: [] },
+          ],
+        },
+      },
+    ]);
+    expect(state.lastError).toEqual({ message: "Service overloaded", timestamp: 1000 });
+  });
+});
+
+describe("pendingPrompt safety", () => {
+  it("should clear pendingPrompt on agent_end", () => {
+    let state = createInitialState();
+    state = { ...state, pendingPrompt: { text: "Fix the bug" } };
+
+    state = reduceEvent(state, {
+      eventType: "agent_end",
+      timestamp: 1000,
+      data: {},
+    });
+    expect(state.pendingPrompt).toBeUndefined();
+  });
+
+  it("should clear pendingPrompt on agent_end even when error occurs", () => {
+    let state = createInitialState();
+    state = { ...state, pendingPrompt: { text: "Fix the bug" } };
+
+    state = reduceEvent(state, {
+      eventType: "agent_end",
+      timestamp: 1000,
+      data: {
+        messages: [
+          { role: "assistant", stopReason: "error", errorMessage: "Quota exceeded", content: [] },
+        ],
+      },
+    });
+    expect(state.pendingPrompt).toBeUndefined();
+    expect(state.lastError).toBeDefined();
   });
 });

@@ -36,7 +36,7 @@ pi-dashboard --dev   # Start with Vite proxy
 | `src/shared/browser-protocol.ts` | Server↔Browser WebSocket messages |
 | `src/shared/types.ts` | Data models (Session, Workspace, Event) |
 | `src/shared/config.ts` | Shared config loader (`~/.pi/dashboard/config.json`) |
-| `src/extension/bridge.ts` | Main extension entry point (composes sync/tracker/flow modules) |
+| `src/extension/bridge.ts` | Main extension entry point (composes sync/tracker/flow modules, tracks `isAgentStreaming` in persistent BridgeState) |
 | `src/extension/bridge-context.ts` | Shared mutable state type + helpers for bridge modules |
 | `src/extension/session-sync.ts` | Session register, replay, and switch/fork handling |
 | `src/extension/model-tracker.ts` | Model/thinking-level/git/name change detection |
@@ -73,7 +73,7 @@ pi-dashboard --dev   # Start with Vite proxy
 | `src/server/routes/file-routes.ts` | REST routes: file read, browse, readme, pinned-dirs |
 | `src/server/routes/openspec-routes.ts` | REST routes: openspec-archive, pi-resources, pi-resource-file |
 | `src/server/routes/system-routes.ts` | REST routes: config, health, shutdown, tunnel, editors |
-| `src/server/event-wiring.ts` | Pi gateway → browser gateway event forwarding (replay suppression, flows refresh dedup, context usage extraction) |
+| `src/server/event-wiring.ts` | Pi gateway → browser gateway event forwarding (replay suppression with `skipReplayInsert` dedup, flows refresh dedup, context usage extraction) |
 | `src/server/idle-timer.ts` | Auto-shutdown idle timer with sleep-wake resilience |
 | `src/server/session-bootstrap.ts` | Startup session discovery and OpenSpec polling init |
 | `src/server/pi-gateway.ts` | Extension WebSocket gateway (port 9999) |

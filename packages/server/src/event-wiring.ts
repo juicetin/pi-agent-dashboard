@@ -68,11 +68,30 @@ export function wireEvents(deps: EventWiringDeps): void {
 
   // Track sessions replaying history — suppress status broadcasts to avoid card flicker
   const replayingSessions = new Set<string>();
+  // Sessions whose replay should be discarded (canSkipWipe was true — events already in store)
+  const skipReplayInsert = new Set<string>();
   // Debounce flows refresh to prevent infinite loop between sessions in same cwd
   const recentFlowsRefresh = new Set<string>();
 
   piGateway.onEvent = (sessionId, msg) => {
     if (msg.type === "event_forward") {
+      // When canSkipWipe was true, the event store already has all events —
+      // don't insert replayed events again (would cause exponential duplication)
+      if (replayingSessions.has(sessionId) && skipReplayInsert.has(sessionId)) {
+        // Still process status updates so session state stays accurate
+        const updates = extractSessionUpdates(msg.event);
+        if (updates) {
+          if (updates.flowAgentsDone === -1) {
+            const session = sessionManager.get(sessionId);
+            updates.flowAgentsDone = (session?.flowAgentsDone ?? 0) + 1;
+          }
+          sessionManager.update(sessionId, updates);
+        }
+        // Skip insert + broadcast — events are already in store
+        // Still need to continue to the rest of the handler for openspec/stats
+        // but those are only for non-replay events, so we can return early
+        return;
+      }
       const seq = eventStore.insertEvent(sessionId, msg.event);
       // Skip broadcasting during replay — browser gets events via subscribe replay
       if (!replayingSessions.has(sessionId)) {
@@ -193,7 +212,9 @@ export function wireEvents(deps: EventWiringDeps): void {
     }
 
     if (msg.type === "replay_complete") {
+      const wasSkipped = skipReplayInsert.has(sessionId);
       replayingSessions.delete(sessionId);
+      skipReplayInsert.delete(sessionId);
       // Clear any stale OpenSpec activity state that may have leaked
       // (e.g. from events forwarded before the replay flag was set)
       const preSession = sessionManager.get(sessionId);
@@ -216,14 +237,17 @@ export function wireEvents(deps: EventWiringDeps): void {
       // Send replayed events to browser subscribers.
       // During replay, event_forward messages were stored but not broadcast.
       // Subscribers who received session_state_reset need the events to rebuild chat.
-      const storedEvents = eventStore.getEvents(sessionId, 1);
-      if (storedEvents.length > 0) {
-        browserGateway.sendToSubscribers(sessionId, {
-          type: "event_replay",
-          sessionId,
-          events: storedEvents.map((e) => ({ seq: e.seq, event: e.event })),
-          isLast: true,
-        } as any);
+      // Skip when canSkipWipe was true — browser already has the events.
+      if (!wasSkipped) {
+        const storedEvents = eventStore.getEvents(sessionId, 1);
+        if (storedEvents.length > 0) {
+          browserGateway.sendToSubscribers(sessionId, {
+            type: "event_replay",
+            sessionId,
+            events: storedEvents.map((e) => ({ seq: e.seq, event: e.event })),
+            isLast: true,
+          } as any);
+        }
       }
     }
 
@@ -232,6 +256,7 @@ export function wireEvents(deps: EventWiringDeps): void {
       // Safety timeout: clear replay flag after 5s if replay_complete never arrives
       setTimeout(() => {
         if (replayingSessions.delete(sessionId)) {
+          const wasSkipped = skipReplayInsert.delete(sessionId);
           const session = sessionManager.get(sessionId);
           if (session) {
             browserGateway.broadcastSessionUpdated(sessionId, {
@@ -240,14 +265,16 @@ export function wireEvents(deps: EventWiringDeps): void {
             });
           }
           // Send any accumulated events to browser subscribers
-          const fallbackEvents = eventStore.getEvents(sessionId, 1);
-          if (fallbackEvents.length > 0) {
-            browserGateway.sendToSubscribers(sessionId, {
-              type: "event_replay",
-              sessionId,
-              events: fallbackEvents.map((e) => ({ seq: e.seq, event: e.event })),
-              isLast: true,
-            } as any);
+          if (!wasSkipped) {
+            const fallbackEvents = eventStore.getEvents(sessionId, 1);
+            if (fallbackEvents.length > 0) {
+              browserGateway.sendToSubscribers(sessionId, {
+                type: "event_replay",
+                sessionId,
+                events: fallbackEvents.map((e) => ({ seq: e.seq, event: e.event })),
+                isLast: true,
+              } as any);
+            }
           }
         }
       }, 5_000);
@@ -264,6 +291,9 @@ export function wireEvents(deps: EventWiringDeps): void {
       if (!canSkipWipe) {
         eventStore.deleteEventsForSession(sessionId);
         browserGateway.broadcastSessionStateReset(sessionId);
+      } else {
+        // Mark this session so replayed events are not re-inserted into the store
+        skipReplayInsert.add(sessionId);
       }
       sessionManager.update(sessionId, { hidden: false, dataUnavailable: false });
 

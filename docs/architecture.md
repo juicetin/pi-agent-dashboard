@@ -28,7 +28,7 @@ A global pi extension that runs in every pi session. It:
 - Sends heartbeats every 15s with process metrics (CPU%, RSS, heap, event loop max delay, load average); server responds with `heartbeat_ack`
 - Server liveness watchdog: forces reconnect if no message received for 60s
 - Server-side WS ping/pong (60s interval) detects dead TCP connections; requires 2 consecutive missed pongs before killing (tolerates long-running bash commands that block the event loop)
-- Detects OpenSpec activity (phase/change) from tool events; server auto-attaches the change when `changeName` is detected (phase is not required — skills loaded via prompt templates don't emit a SKILL.md read event)
+- Detects OpenSpec activity (phase/change) from tool events; server auto-attaches the change when `changeName` is detected (phase is not required — skills loaded via prompt templates don't emit a SKILL.md read event). The session card's OpenSpec activity badge displays when either `openspecPhase` or `openspecChange` is detected (not just phase).
 - **Duplicate bridge prevention**: Uses `process`-level shared state (not `globalThis`) with a monotonic generation counter. When the extension is loaded multiple times (e.g., local + global npm package), only the latest instance's event handlers are active — stale listeners bail out immediately. All previous connections and timers are tracked and cleaned up on re-init.
 - **Subagent re-entry guard**: When pi-subagents launches an Agent tool, the subagent creates its own `AgentSession` which loads extensions (including the bridge) in the same process. Without protection, this would overwrite the parent bridge's global state, disconnect its WebSocket, and prevent `tool_execution_end`/`agent_end` from being forwarded — leaving the parent session stuck at "streaming" forever. The bridge stores a reference to its owning `pi` instance and skips initialization when called from a different instance (subagent).
 - Proxies `ctx.ui` dialog methods (confirm, select, input, editor) to the dashboard via `ui-proxy.ts`
@@ -328,18 +328,21 @@ The web client includes a Settings panel (gear icon in sidebar header → `/sett
 
 ### Bridge Reconnection (State Reset)
 When a bridge extension reconnects (e.g., after `npm run reload` or network recovery):
-1. Bridge sends `session_register` to re-register the session
-2. Server marks the session as "replaying" and clears the in-memory event store
-3. Server broadcasts `session_state_reset` to all browser subscribers of that session
-4. Browser resets accumulated state to initial (clearing messages, tool calls, stats)
-5. Bridge replays full session history as individual `event_forward` messages (stored but not broadcast)
+1. Bridge sends `session_register` with `eventCount` to re-register the session
+2. Server checks `canSkipWipe`: if the bridge's `eventCount` matches the server's `lastEntryCount` and events exist in the store, the wipe is skipped (fast reconnect path)
+3. **Full replay path** (`canSkipWipe = false`): Server clears the in-memory event store, broadcasts `session_state_reset` to browsers, stores replayed events, and sends them as `event_replay` batch after `replay_complete`
+4. **Skip replay path** (`canSkipWipe = true`): Server keeps existing events in the store, marks the session in `skipReplayInsert` set so replayed events are NOT re-inserted (preventing exponential duplication). Status updates are still processed for session state accuracy. After `replay_complete`, the `event_replay` batch is skipped since browsers already have the events.
+5. Bridge replays full session history as individual `event_forward` messages
 6. Bridge sends `replay_complete` to signal replay is done
-7. Server clears the replaying flag, broadcasts the final accumulated session status, and sends all stored events as an `event_replay` batch to browser subscribers
-8. Browser rebuilds state cleanly from the replayed events
+7. If the agent is currently mid-turn (bridge tracks `isAgentStreaming` flag in persistent `BridgeState`), a synthetic `agent_start` event is sent after `replay_complete` so the session card shows "Thinking…" instead of "Waiting for input"
+8. Server clears the replaying flag, broadcasts the final accumulated session status
+9. Browser rebuilds state cleanly from the replayed events (full replay) or continues with existing state (skip replay)
 
-Without the `session_state_reset` message, replayed events would duplicate existing messages in the browser's accumulated state.
+Without the `session_state_reset` message (full replay path), replayed events would duplicate existing messages in the browser's accumulated state.
 
 **Replay status suppression**: During step 5, replayed events like `agent_start`/`agent_end` would normally trigger rapid `session_updated` broadcasts (e.g., `status: "streaming"` → `status: "idle"` for each turn), causing visible flicker on session cards. The server suppresses these status broadcasts while replaying, accumulating them in the session manager. Only the final status is broadcast after `replay_complete`. A 5-second safety timeout ensures the flag is cleared even if `replay_complete` never arrives (e.g., older bridge versions).
+
+**Agent streaming state recovery**: The bridge tracks `isAgentStreaming` in process-level `BridgeState` (survives reload). Set `true` on `agent_start`, `false` on `agent_end`/`session_shutdown`. Since the replay doesn't include `agent_start`/`agent_end` events, the session status would otherwise stay "active" (displayed as "Waiting for input") when the agent is mid-turn during reconnect.
 
 ### Session File Deduplication
 When pi continues a session via `--session <file>`, it reuses the same JSONL file but may create a new session ID. The server detects this: when a new session registers with a `sessionFile` already associated with another session, the old session's `sessionFile` is cleared. This prevents the Resume button from loading the wrong conversation.

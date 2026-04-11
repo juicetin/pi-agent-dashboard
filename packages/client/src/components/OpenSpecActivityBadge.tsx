@@ -33,13 +33,13 @@ export function OpenSpecActivityBadge({
   completedTasks,
   totalTasks,
 }: {
-  phase: OpenSpecPhase;
+  phase?: OpenSpecPhase;
   changeName?: string;
   completedTasks?: number;
   totalTasks?: number;
 }) {
-  const label = phaseLabels[phase] ?? phase;
-  const color = phaseColors[phase] ?? "text-[var(--text-tertiary)]";
+  const label = phase ? (phaseLabels[phase] ?? phase) : "OpenSpec";
+  const color = phase ? (phaseColors[phase] ?? "text-[var(--text-tertiary)]") : "text-[var(--text-tertiary)]";
   const hasProgress = totalTasks != null && totalTasks > 0;
 
   return (

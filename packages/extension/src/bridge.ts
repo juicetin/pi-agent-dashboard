@@ -57,6 +57,8 @@ interface BridgeState {
   connections?: ConnectionManager[];
   /** All interval timers from any bridge incarnation (for cleanup) */
   timers?: ReturnType<typeof setInterval>[];
+  /** True when the agent is currently in a turn (between agent_start and agent_end) */
+  isAgentStreaming?: boolean;
 }
 function getBridgeState(): BridgeState {
   if (!(process as any)[BRIDGE_KEY]) {
@@ -356,6 +358,10 @@ function initBridge(pi: ExtensionAPI) {
       sendStateSync();
       replaySessionEntries();
       connection.send({ type: "replay_complete", sessionId });
+      // If agent is mid-turn, send synthetic agent_start so server sets status to "streaming"
+      if (getBridgeState().isAgentStreaming) {
+        connection.send(mapEventToProtocol(sessionId, { type: "agent_start" }));
+      }
       // Re-send pending interactive UI requests so the new server can track them
       uiProxy?.resendPending();
     }),
@@ -539,6 +545,9 @@ function initBridge(pi: ExtensionAPI) {
       cachedCtx = ctx;
       // Don't send events before session_start has established the correct session ID
       if (!sessionReady) return;
+      // Track agent streaming state (survives reconnect/reload)
+      if (eventType === "agent_start") getBridgeState().isAgentStreaming = true;
+      if (eventType === "agent_end") getBridgeState().isAgentStreaming = false;
       // For model_select, enrich the event data with thinkingLevel
       if (eventType === "model_select") {
         const enriched = { ...event, thinkingLevel: (pi as any).getThinkingLevel?.() };
@@ -695,6 +704,10 @@ function initBridge(pi: ExtensionAPI) {
     // Replay full session history so the dashboard has all messages
     replaySessionEntries();
     connection.send({ type: "replay_complete", sessionId });
+    // If agent is mid-turn (e.g. reload during streaming), send synthetic agent_start
+    if (getBridgeState().isAgentStreaming) {
+      connection.send(mapEventToProtocol(sessionId, { type: "agent_start" }));
+    }
 
     // Send initial commands list
     const commands = filterHiddenCommands(pi.getCommands());
@@ -844,6 +857,7 @@ function initBridge(pi: ExtensionAPI) {
 
   pi.on("session_shutdown", safe(async () => {
     if (!isActive()) return;
+    getBridgeState().isAgentStreaming = false;
     stopMetricsMonitor();
     if (heartbeatTimer) {
       clearInterval(heartbeatTimer);

@@ -16,9 +16,7 @@ RUN apt-get update -o Acquire::AllowInsecureRepositories=true && \
     wget \
     unzip \
     zip \
-    wine \
-    && rm -rf /var/lib/apt/lists/* \
-    && (which wine || ln -s "$(which wine64 2>/dev/null)" /usr/local/bin/wine 2>/dev/null) || true
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /build
 

@@ -10,6 +10,66 @@
  */
 
 import { app, BrowserWindow, dialog } from "electron";
+import { mkdirSync, appendFileSync } from "node:fs";
+import path from "node:path";
+import os from "node:os";
+
+// Startup log for debugging
+const _LOG_DIR = process.env.TEMP || process.env.TMP || os.tmpdir();
+const _LOG_PATH = path.join(_LOG_DIR, "pi-dashboard-electron.log");
+function log(msg: string): void {
+  const line = `[${new Date().toISOString()}] ${msg}\n`;
+  try {
+    mkdirSync(_LOG_DIR, { recursive: true });
+    appendFileSync(_LOG_PATH, line);
+  } catch { /* ignore */ }
+}
+log("=== Electron starting ===");
+log(`platform=${process.platform} arch=${process.arch} pid=${process.pid}`);
+log(`resourcesPath=${(process as any).resourcesPath || "(none)"}`);
+log(`execPath=${process.execPath}`);
+
+// Disable GPU acceleration in VMs (prevents white screen on VMware/VirtualBox)
+// Must be called before app.whenReady()
+function isVirtualMachine(): boolean {
+  try {
+    const { execSync } = require("node:child_process");
+    if (process.platform === "darwin") {
+      const model = execSync("sysctl -n hw.model", { encoding: "utf-8" }).trim();
+      return model.includes("VMware") || model.includes("VirtualBox") || model.includes("Parallels");
+    }
+    if (process.platform === "linux") {
+      const virt = execSync("systemd-detect-virt 2>/dev/null || echo none", { encoding: "utf-8" }).trim();
+      return virt !== "none";
+    }
+    if (process.platform === "win32") {
+      // Check multiple sources — wmic serialnumber, manufacturer, and model
+      const checks = [
+        "wmic bios get serialnumber",
+        "wmic computersystem get manufacturer,model",
+      ];
+      for (const cmd of checks) {
+        try {
+          const out = execSync(cmd, { encoding: "utf-8", timeout: 5000 });
+          if (/VMware|VirtualBox|VBOX|Parallels|Virtual Machine|Hyper-V/i.test(out)) return true;
+        } catch { /* try next */ }
+      }
+      return false;
+    }
+  } catch { /* ignore */ }
+  return false;
+}
+
+const isVM = isVirtualMachine();
+const disableGpu = process.env.ELECTRON_DISABLE_GPU || isVM;
+log(`VM detection: isVM=${isVM} disableGpu=${!!disableGpu}`);
+if (disableGpu) {
+  app.disableHardwareAcceleration();
+  app.commandLine.appendSwitch("disable-gpu");
+  app.commandLine.appendSwitch("disable-software-rasterizer");
+  log("GPU disabled");
+}
+log("Importing lib modules...");
 import { isFirstRun } from "./lib/wizard-state.js";
 import { openWizardWindow, getWizardWindow } from "./lib/wizard-window.js";
 import { registerWizardIpc } from "./lib/wizard-ipc.js";
@@ -19,8 +79,71 @@ import { createTray, destroyTray } from "./lib/tray.js";
 import { startUpdateChecker } from "./lib/update-checker.js";
 import { notifyUpdatesAvailable } from "./lib/update-notifier.js";
 import { initAutoUpdater, quitAndInstall } from "./lib/app-updater.js";
+import { setupAppMenu } from "./lib/app-menu.js";
+log("All imports loaded");
 
 let mainWindow: BrowserWindow | null = null;
+let isStartingUp = true;
+
+/** Show a loading page that retries connecting to the server. */
+function showLoadingPage(win: BrowserWindow, serverUrl: string): void {
+  const html = `
+    <html>
+    <head><style>
+      body { font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+             display: flex; align-items: center; justify-content: center;
+             height: 100vh; margin: 0; background: #0d1117; color: #c9d1d9; }
+      .container { text-align: center; max-width: 480px; padding: 0 24px; }
+      .pi { font-size: 72px; color: #4a90d9; margin-bottom: 16px; }
+      .status { font-size: 14px; color: #8b949e; }
+      .error { display: none; margin-top: 24px; text-align: left; }
+      .error h3 { color: #f85149; margin: 0 0 12px; font-size: 16px; }
+      .error p { margin: 0 0 8px; font-size: 13px; line-height: 1.5; color: #8b949e; }
+      .error code { background: #161b22; padding: 2px 6px; border-radius: 4px; font-size: 12px; }
+      .dot { animation: blink 1.4s infinite; }
+      .dot:nth-child(2) { animation-delay: 0.2s; }
+      .dot:nth-child(3) { animation-delay: 0.4s; }
+      @keyframes blink { 0%,20% { opacity: 0; } 50% { opacity: 1; } 100% { opacity: 0; } }
+    </style></head>
+    <body><div class="container">
+      <div class="pi">π</div>
+      <div class="status" id="status">Connecting to dashboard<span class="dot">.</span><span class="dot">.</span><span class="dot">.</span></div>
+      <div class="error" id="error">
+        <h3>Cannot connect to dashboard server</h3>
+        <p>The server at <code>${serverUrl}</code> is not responding.</p>
+        <p>Make sure the dashboard is installed and running:</p>
+        <p><code>npm install -g @blackbelt-technology/pi-dashboard</code></p>
+        <p><code>pi-dashboard start</code></p>
+        <p style="margin-top: 16px; color: #c9d1d9;">The app will connect automatically once the server is available.</p>
+      </div>
+    </div></body>
+    </html>`;
+  win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+
+  let attempts = 0;
+  const MAX_ATTEMPTS_BEFORE_ERROR = 10; // ~15 seconds
+
+  const tryConnect = async () => {
+    try {
+      const res = await fetch(`${serverUrl}/api/health`, { signal: AbortSignal.timeout(2000) });
+      if (res.ok) {
+        win.loadURL(serverUrl);
+        return;
+      }
+    } catch { /* not ready yet */ }
+
+    attempts++;
+    if (attempts === MAX_ATTEMPTS_BEFORE_ERROR) {
+      // Show error message but keep retrying
+      win.webContents.executeJavaScript(`
+        document.getElementById('status').style.display = 'none';
+        document.getElementById('error').style.display = 'block';
+      `).catch(() => {});
+    }
+    setTimeout(tryConnect, 1500);
+  };
+  setTimeout(tryConnect, 1000);
+}
 let isQuitting = false;
 let cleanupUpdateChecker: (() => void) | null = null;
 let cleanupAutoUpdater: (() => void) | null = null;
@@ -29,6 +152,7 @@ function createMainWindow(serverUrl: string): BrowserWindow {
   const state = loadWindowState();
 
   mainWindow = new BrowserWindow({
+    title: "PI Dashboard",
     x: state.x,
     y: state.y,
     width: state.width,
@@ -47,9 +171,10 @@ function createMainWindow(serverUrl: string): BrowserWindow {
   mainWindow.on("resize", () => mainWindow && saveWindowState(mainWindow));
   mainWindow.on("move", () => mainWindow && saveWindowState(mainWindow));
 
-  // Minimize to tray instead of closing
+  // macOS: minimize to tray on close (standard macOS behavior)
+  // Linux/Windows: quit on close (tray may not be visible)
   mainWindow.on("close", (event) => {
-    if (!isQuitting) {
+    if (!isQuitting && process.platform === "darwin") {
       event.preventDefault();
       mainWindow?.hide();
     }
@@ -120,40 +245,91 @@ async function main(): Promise<void> {
 
   await app.whenReady();
 
+  // Set proper app name (overrides package.json name in dev mode)
+  app.name = "PI Dashboard";
+
+  // Set up macOS application menu (About, Edit, View, Window)
+  setupAppMenu();
+
   // Register wizard IPC handlers
   registerWizardIpc(getWizardWindow);
 
-  // First-run wizard
-  if (isFirstRun()) {
+  // Allow triggering setup wizard from menu (Doctor → Run Setup)
+  app.on("run-setup-wizard" as any, async () => {
     await openWizardWindow();
+  });
+
+  // First-run wizard
+  const firstRun = isFirstRun();
+  log(`isFirstRun=${firstRun}`);
+  if (firstRun) {
+    log("Opening wizard window...");
+    await openWizardWindow();
+    log("Wizard window closed");
     // After wizard closes, re-check — user might have cancelled
     if (isFirstRun()) {
+      log("Wizard not completed, quitting");
       app.quit();
       return;
     }
   }
 
-  // Dev mode: skip discovery
+  // Dev mode: skip discovery, wait for server
   if (process.env.ELECTRON_DEV) {
-    createMainWindow("http://localhost:8000");
+    const devUrl = "http://localhost:8000";
+    const win = createMainWindow(devUrl);
+    showLoadingPage(win, devUrl);
     createTray(() => mainWindow, quit);
     startUpdaters();
+    isStartingUp = false;
     return;
   }
 
-  // Discover or launch server
-  let serverUrl: string;
-  try {
-    serverUrl = await ensureServer();
-  } catch (err: any) {
-    dialog.showErrorBox("PI Dashboard", err.message);
-    app.quit();
-    return;
+  // Discover or launch server — retry up to 2 times with wizard fallback
+  let serverUrl: string | undefined;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      log(`ensureServer attempt ${attempt + 1}...`);
+      serverUrl = await ensureServer();
+      log(`Server found at ${serverUrl}`);
+      break;
+    } catch (err: any) {
+      console.error(`ensureServer attempt ${attempt + 1} failed:`, err.message);
+      log(`ensureServer failed: ${err.message}`);
+
+      const { response } = await dialog.showMessageBox({
+        type: "error",
+        title: "PI Dashboard",
+        message: "Could not start the dashboard server.",
+        detail: `${err.message}\n\nWould you like to run the setup wizard to fix this?`,
+        buttons: ["Run Setup", "Retry", "Quit"],
+        defaultId: 0,
+      });
+
+      if (response === 0) {
+        // Run Setup
+        await openWizardWindow();
+        // Continue loop to retry ensureServer
+      } else if (response === 1) {
+        // Retry — continue loop
+      } else {
+        app.quit();
+        return;
+      }
+    }
   }
 
-  createMainWindow(serverUrl);
+  if (!serverUrl) {
+    // All attempts exhausted — show loading page with connection retry
+    // Use default port (can't import shared config in packaged app)
+    serverUrl = "http://localhost:8000";
+  }
+
+  const win = createMainWindow(serverUrl);
+  showLoadingPage(win, serverUrl);
   createTray(() => mainWindow, quit);
   startUpdaters();
+  isStartingUp = false;
 }
 
 // macOS: re-create window when dock icon clicked
@@ -164,7 +340,24 @@ app.on("activate", () => {
   }
 });
 
-main().catch((err) => {
+// Linux/Windows: quit when all windows are closed (but not during startup/wizard)
+// macOS: keep running (hide to tray)
+app.on("window-all-closed", () => {
+  if (process.platform !== "darwin" && mainWindow === null && !isStartingUp) {
+    quit();
+  }
+});
+
+main().catch(async (err) => {
+  log(`FATAL: ${err?.message || err}`);
   console.error("Failed to start:", err);
+  try {
+    await dialog.showMessageBox({
+      type: "error",
+      title: "PI Dashboard",
+      message: "Unexpected error during startup",
+      detail: String(err?.message || err),
+    });
+  } catch { /* dialog failed too */ }
   app.quit();
 });

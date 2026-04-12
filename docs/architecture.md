@@ -61,6 +61,7 @@ A Node.js HTTP + WebSocket server that:
 - `event-wiring.ts` — Pi gateway → browser gateway event forwarding
 - `idle-timer.ts` — Auto-shutdown idle timer
 - `session-bootstrap.ts` — Startup session discovery and OpenSpec polling init
+- `extension-register.ts` — Auto-registers bundled bridge extension in pi's global settings (`~/.pi/agent/settings.json`) on startup; no-op in dev mode
 - `browser-handlers/` — Browser WebSocket message handlers by domain (subscription, session-actions, session-meta, terminal, directory)
 
 ### 3. Web Client (`src/client/`)
@@ -377,7 +378,8 @@ During bridge session replay (while `replayingSessions` set contains the session
 | Pinned directories | `~/.pi/dashboard/preferences.json` | Ordered array of cwd paths. Pinned dirs always visible in sidebar. |
 | Session order | `~/.pi/dashboard/preferences.json` | Per-cwd ordering managed by `session-order-manager.ts`. |
 | Server PID | `~/.pi/dashboard/server.pid` | Tracks running server process for daemon management. |
-| Headless PIDs | `~/.pi/dashboard/headless-pids.json` | Maps spawned headless processes to sessions. |
+| Headless PIDs | `~/.pi/dashboard/headless-pids.json` | Maps spawned headless processes to sessions. Unix: `tail -f /dev/null \| pi --mode rpc` (uses tail instead of sleep to avoid stdin pipeline bug). Windows: `pi.cmd --mode rpc` with `shell: true` and quoted paths for spaces in usernames. |
+| Bridge extension | `~/.pi/agent/settings.json` | On bundled installs (Electron DEB/DMG), the server auto-registers the bridge extension path in pi's global settings so all spawned pi sessions discover and load it. No-op in dev mode. |
 | Session files | `~/.pi/agent/sessions/` (pi's own) | Source of truth. Bridge loads on demand. |
 
 ## Configuration
@@ -389,7 +391,7 @@ Precedence: CLI flags → environment variables → config file (`~/.pi/dashboar
 | `port` | 8000 | HTTP + Browser WebSocket port |
 | `piPort` | 9999 | Pi extension WebSocket port |
 | `autoStart` | true | Bridge extension auto-starts server if not running |
-| `autoShutdown` | true | Server shuts down after idle period |
+| `autoShutdown` | false | Server shuts down after idle period (enable for TUI auto-start scenarios) |
 | `shutdownIdleSeconds` | 300 | Idle timeout before auto-shutdown |
 | `spawnStrategy` | `"headless"` | How to spawn new sessions: `"headless"` or `"tmux"` |
 | `tunnel.enabled` | true | Enable zrok tunnel for remote access |

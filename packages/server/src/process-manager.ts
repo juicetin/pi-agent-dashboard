@@ -10,11 +10,49 @@ import type { SpawnStrategy } from "@blackbelt-technology/pi-dashboard-shared/co
 /** Path to managed install bin directory */
 const MANAGED_BIN = path.join(os.homedir(), ".pi-dashboard", "node_modules", ".bin");
 
-/** Build env with managed install bin prepended to PATH */
+/** Common user bin directories that may not be on PATH when launched from
+ *  a desktop .desktop file or Electron app (shell profiles not sourced). */
+function getUserBinDirs(): string[] {
+  const home = os.homedir();
+  const dirs = [
+    path.join(home, ".local", "bin"),           // pip, install.sh scripts
+    path.join(home, ".npm-global", "bin"),       // npm config prefix
+    "/usr/local/bin",                            // brew, manual installs
+  ];
+  return dirs.filter(d => existsSync(d));
+}
+
+/** Build env with managed install bin + current node binary dir prepended to PATH.
+ *  Ensures `pi`, `node`, and user-installed tools (code-server) are findable.
+ *  This is critical when launched from Electron (no shell profile sourced).
+ */
 export function buildSpawnEnv(baseEnv: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
   const currentPath = baseEnv.PATH || "";
-  if (currentPath.includes(MANAGED_BIN)) return baseEnv;
-  return { ...baseEnv, PATH: `${MANAGED_BIN}${path.delimiter}${currentPath}` };
+  const parts: string[] = [];
+
+  // Always ensure managed bin is on PATH (for pi, openspec, tsx)
+  if (!currentPath.includes(MANAGED_BIN)) {
+    parts.push(MANAGED_BIN);
+  }
+
+  // Always ensure the current node binary's directory is on PATH.
+  // Handles bundled Node.js (e.g., /usr/lib/pi-dashboard/resources/node/bin/node)
+  // where spawned scripts use #!/usr/bin/env node.
+  const nodeBinDir = path.dirname(process.execPath);
+  if (!currentPath.includes(nodeBinDir)) {
+    parts.push(nodeBinDir);
+  }
+
+  // Add common user bin directories that Electron apps miss
+  // (desktop launchers don't source ~/.bashrc / ~/.profile)
+  for (const dir of getUserBinDirs()) {
+    if (!currentPath.includes(dir)) {
+      parts.push(dir);
+    }
+  }
+
+  if (parts.length === 0) return baseEnv;
+  return { ...baseEnv, PATH: `${parts.join(path.delimiter)}${path.delimiter}${currentPath}` };
 }
 
 export interface PlatformInfo {
@@ -95,19 +133,48 @@ export function buildHeadlessArgs(options?: SessionOptions): string[] {
   return args;
 }
 
+/** Resolve the full path to the pi binary. */
+function findPiBinary(): string | null {
+  const ext = process.platform === "win32" ? ".cmd" : "";
+  // Managed install
+  const managed = path.join(MANAGED_BIN, "pi" + ext);
+  if (existsSync(managed)) return managed;
+  // System PATH
+  try {
+    const whichCmd = process.platform === "win32" ? "where" : "which";
+    const result = execSync(`${whichCmd} pi`, {
+      encoding: "utf-8",
+      stdio: ["pipe", "pipe", "pipe"],
+      env: buildSpawnEnv(),
+    }).trim();
+    if (result) return result.split("\n")[0];
+  } catch { /* not found */ }
+  return null;
+}
+
 function spawnHeadless(cwd: string, options?: SessionOptions): SpawnResult {
   try {
     const args = buildHeadlessArgs(options);
+    const env = buildSpawnEnv();
+
+    // Pre-check: verify pi binary exists
+    const piBin = findPiBinary();
+    if (!piBin) {
+      return {
+        success: false,
+        message: `pi binary not found. Checked: ${MANAGED_BIN}/pi and system PATH.`,
+      };
+    }
 
     if (process.platform === "win32") {
-      // Windows: no sh/sleep, spawn pi directly with a pipe.
-      // stdin EOF on server exit will terminate the agent; this is a known
-      // limitation on Windows (process groups aren't supported).
-      const child = spawn("pi", args, {
+      // Windows: .cmd files require shell:true; quote paths with spaces
+      const child = spawn(`"${piBin}"`, args.map(a => `"${a}"`), {
         cwd,
         detached: true,
         stdio: ["pipe", "ignore", "ignore"],
-        env: buildSpawnEnv(),
+        env,
+        shell: true,
+        windowsHide: true,
       });
       child.unref();
       (child.stdin as any)?.unref();
@@ -122,16 +189,21 @@ function spawnHeadless(cwd: string, options?: SessionOptions): SpawnResult {
     }
 
     // Unix (macOS / Linux / WSL): wrap with "sleep infinity | pi" so stdin
-    // is an internal pipe that survives server restarts.
+    // is an internal pipe that survives GC and server restarts.
     // "sleep 2147483647" is used instead of "sleep infinity" for compatibility
     // with older macOS versions whose BSD sleep doesn't support "infinity".
     // detached: true creates a new process group; we kill via -pid later.
-    const piCmd = ["pi", ...args].map(shellEscape).join(" ");
-    const child = spawn("sh", ["-c", `sleep 2147483647 | ${piCmd}`], {
+    // Using the resolved pi path avoids shell PATH lookup issues.
+    const piCmd = [shellEscape(piBin), ...args.map(shellEscape)].join(" ");
+    // Use "tail -f /dev/null" to keep stdin pipe open for pi.
+    // Unlike "sleep N", tail -f /dev/null works correctly even when
+    // the outer shell's stdin is /dev/null (stdio:"ignore"),
+    // which breaks "sleep | pi" on some Linux systems.
+    const child = spawn("sh", ["-c", `tail -f /dev/null | ${piCmd}`], {
       cwd,
       detached: true,
       stdio: "ignore",
-      env: buildSpawnEnv(),
+      env,
     });
     child.unref();
 

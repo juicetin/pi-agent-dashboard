@@ -9,6 +9,9 @@
  */
 import path from "node:path";
 import { existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 /** Detect whether we're running in a packaged Electron app. */
 function isPackaged(): boolean {
@@ -46,6 +49,11 @@ export function getBundledNodePath(): string | null {
  */
 export function getBundledNpmPath(): string | null {
   const resources = getResourcesPath();
-  const p = path.join(resources, "node", "lib", "node_modules", "npm", "bin", "npm-cli.js");
-  return existsSync(p) ? p : null;
+  // Unix layout: node/lib/node_modules/npm/bin/npm-cli.js
+  // Windows layout: node/node_modules/npm/bin/npm-cli.js
+  const candidates = [
+    path.join(resources, "node", "lib", "node_modules", "npm", "bin", "npm-cli.js"),
+    path.join(resources, "node", "node_modules", "npm", "bin", "npm-cli.js"),
+  ];
+  return candidates.find((p) => existsSync(p)) ?? null;
 }

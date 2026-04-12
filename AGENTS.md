@@ -28,6 +28,29 @@ pi-dashboard         # Start dashboard server
 pi-dashboard --dev   # Start with Vite proxy
 ```
 
+## Cross-Platform QA Testing
+
+VM-based QA testing for verifying clean-state installation and runtime across platforms.
+
+```bash
+cd qa
+make build-linux-x86    # Build Ubuntu x86 base image (Packer + VMware)
+make test-linux-x86     # Clone → boot → run tests → destroy
+make manual-linux-x86   # Clone with GUI for manual testing
+make clean              # Destroy all cloned VMs
+```
+
+| File | Purpose |
+|------|---------||
+| `qa/Makefile` | Build/test/manual/clean targets for all platforms |
+| `qa/packer/*.pkr.hcl` | Packer templates per platform (Ubuntu, Windows, macOS) |
+| `qa/packer/scripts/` | Provisioning scripts (common, linux, macos, windows) |
+| `qa/packer/vars/` | OS-version-specific variables (ISO URL, checksum, VM specs) |
+| `qa/packer/http/` | Auto-install configs (cloud-init, autounattend.xml) |
+| `qa/scripts/` | VM lifecycle (clone, wait-ssh, destroy, run-test) |
+| `qa/tests/` | Test suite (install, server, websocket, terminal, git) |
+| `qa/README.md` | Full setup and usage documentation |
+
 ## Key Files
 
 | File | Purpose |
@@ -216,6 +239,28 @@ pi-dashboard --dev   # Start with Vite proxy
 | `.pi/skills/browser-visual-debug/SKILL.md` | Skill: visual debugging with a real browser (screenshots, interaction, responsive testing) via pi-agent-browser |
 | `.pi/skills/browser-visual-debug/references/` | Dashboard recipes, responsive testing presets, agent-browser commands cheatsheet |
 | `.pi/skills/browser-visual-debug/scripts/detect-dashboard.sh` | Auto-detect dashboard URL, mode, and Vite dev server status |
+| `packages/electron/src/main.ts` | Electron main process: single-instance, wizard, server launch, loading page, tray |
+| `packages/electron/src/lib/server-lifecycle.ts` | Health check → tsx binary spawn (inlined config/health, no shared pkg imports) |
+| `packages/server/src/extension-register.ts` | Auto-registers bundled bridge extension in pi's global settings on startup |
+| `packages/electron/src/lib/doctor.ts` | Doctor diagnostic: checks all binaries, versions, server status, offers setup |
+| `packages/electron/src/lib/app-menu.ts` | App menu with About dialog and Doctor on all platforms |
+| `packages/electron/src/lib/tray.ts` | System tray with platform-specific icons (template on macOS, ico/png on Win/Linux) |
+| `packages/electron/src/lib/dependency-installer.ts` | Async npm install of pi, openspec, tsx into ~/.pi-dashboard/ using bundled Node |
+| `packages/electron/src/lib/dependency-detector.ts` | Detects pi, openspec, Node.js on system PATH and managed install |
+| `packages/electron/src/lib/bundled-node.ts` | Resolves bundled Node.js/npm paths in Electron resources |
+| `packages/electron/src/lib/wizard-window.ts` | First-run setup wizard window with preload bridge |
+| `packages/electron/forge.config.ts` | Electron Forge config: DMG, DEB, AppImage, NSIS makers, icon, extraResources |
+| `packages/electron/scripts/build-installer.sh` | Build script: native + Docker cross-platform (--linux, --windows, --all) |
+| `packages/electron/scripts/docker-make.sh` | Docker entrypoint: platform-aware native module handling, ZIP for Windows |
+| `packages/electron/scripts/Dockerfile.build` | Docker image for cross-platform builds (node:22-bookworm-slim + build tools) |
+| `packages/electron/scripts/bundle-server.sh` | Bundles dashboard server source + deps into resources/server/ (--source-only for cross-builds) |
+| `packages/electron/scripts/docker-make.sh` | Docker entrypoint: bundles server, installs native deps, runs Forge make |
+| `packages/electron/scripts/Dockerfile.build` | Docker image for cross-platform builds (node:22-bookworm-slim + build tools) |
+| `packages/electron/scripts/test-server-launch.sh` | Docker-based test for server launch on clean Linux |
+| `packages/electron/scripts/test-electron-install.sh` | Full e2e Docker test: install, wizard, server launch, health check |
+| `packages/electron/scripts/test-electron-install-inner.sh` | Inner test script run inside Docker container |
+| `packages/electron/resources/icon.png` | Master 1024×1024 app icon (π on dark navy) |
+| `.github/workflows/electron-build.yml` | CI: builds DMG (macOS), DEB+AppImage (Linux), NSIS (Windows) on native runners |
 
 ## Build & Restart Workflow
 

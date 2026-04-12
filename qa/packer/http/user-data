@@ -1,0 +1,31 @@
+#cloud-config
+autoinstall:
+  version: 1
+  locale: en_US.UTF-8
+  keyboard:
+    layout: us
+  identity:
+    hostname: qa-ubuntu
+    username: qa
+    # Password: "qa" (hashed). Change for production use.
+    # Generated with: mkpasswd --method=SHA-512 qa
+    password: "$6$rounds=4096$randomsalt$LzP0pSViMGkQ5YMGxH8.JQhZBnN8KmYbpEicLS8W0K3t3bGJQ3kXFZrPkYwXJA3SjcNqPqBnNExjXQ1Wdk9D."
+  ssh:
+    install-server: true
+    allow-pw: true
+    authorized-keys:
+      # Replace with your qa_vm_key.pub content
+      - "ssh-ed25519 REPLACE_WITH_YOUR_PUBLIC_KEY qa@vm"
+  storage:
+    layout:
+      name: lvm
+  packages:
+    - openssh-server
+    - curl
+    - ca-certificates
+  late-commands:
+    # Enable password-less sudo for qa user
+    - echo 'qa ALL=(ALL) NOPASSWD:ALL' > /target/etc/sudoers.d/qa
+    - chmod 440 /target/etc/sudoers.d/qa
+  user-data:
+    disable_root: true

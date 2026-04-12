@@ -189,7 +189,7 @@ function spawnHeadless(cwd: string, options?: SessionOptions): SpawnResult {
         : [...prefixArgs, ...args];
       const child = spawn(spawnBin, spawnArgs, {
         cwd,
-        detached: true,
+        detached: false,
         stdio: ["pipe", "ignore", "ignore"],
         env,
         shell: needsShell,

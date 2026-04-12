@@ -220,9 +220,11 @@ async function launchServer(port: number, piPort: number): Promise<void> {
   } catch { /* can't write log, use ignore */ }
 
   // Launch: tsx <cli.ts> (tsx handles all TypeScript loading + __dirname shimming)
-  // On Windows, spawnBin is node.exe (not .cmd) so no shell needed = no cmd window
+  // On Windows: detached:true creates a visible console window for console apps (node.exe).
+  // Use detached:false + unref() instead — Electron manages server lifecycle via stopServerIfNeeded().
+  const isWin = process.platform === "win32";
   const child = spawn(spawnBin, spawnArgs, {
-    detached: true,
+    detached: !isWin,
     stdio,
     env,
     cwd,

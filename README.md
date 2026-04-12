@@ -130,7 +130,7 @@ Config file: **`~/.pi/dashboard/config.json`** (auto-created with defaults on fi
   "port": 8000,
   "piPort": 9999,
   "autoStart": true,
-  "autoShutdown": true,
+  "autoShutdown": false,
   "shutdownIdleSeconds": 300,
   "spawnStrategy": "headless",
   "tunnel": { "enabled": true, "reservedToken": "auto-created-on-first-run" },
@@ -187,7 +187,7 @@ Add an `auth` section to enable OAuth2 authentication for external (tunnel) acce
 | `--dev` | — | — | `false` | Development mode (proxy to Vite) |
 | `--no-tunnel` | — | `tunnel.enabled` | `true` | Disable zrok tunnel |
 | — | — | `autoStart` | `true` | Bridge auto-starts server if not running |
-| — | — | `autoShutdown` | `true` | Server shuts down when idle |
+| — | — | `autoShutdown` | `false` | Server shuts down when idle |
 | — | — | `shutdownIdleSeconds` | `300` | Seconds idle before auto-shutdown |
 | — | — | `spawnStrategy` | `"headless"` | Session spawn mode: `"headless"` or `"tmux"` |
 | — | — | `devBuildOnReload` | `false` | Rebuild client + restart server on `/reload` |

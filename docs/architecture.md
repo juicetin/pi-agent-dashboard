@@ -391,7 +391,7 @@ Precedence: CLI flags → environment variables → config file (`~/.pi/dashboar
 | `port` | 8000 | HTTP + Browser WebSocket port |
 | `piPort` | 9999 | Pi extension WebSocket port |
 | `autoStart` | true | Bridge extension auto-starts server if not running |
-| `autoShutdown` | false | Server shuts down after idle period (enable for TUI auto-start scenarios) |
+| `autoShutdown` | false | Server shuts down after idle period (disabled by default; enable for TUI auto-start scenarios) |
 | `shutdownIdleSeconds` | 300 | Idle timeout before auto-shutdown |
 | `spawnStrategy` | `"headless"` | How to spawn new sessions: `"headless"` or `"tmux"` |
 | `tunnel.enabled` | true | Enable zrok tunnel for remote access |

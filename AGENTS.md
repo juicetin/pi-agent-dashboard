@@ -41,7 +41,7 @@ make clean              # Destroy all cloned VMs
 ```
 
 | File | Purpose |
-|------|---------||
+|------|---------|
 | `qa/Makefile` | Build/test/manual/clean targets for all platforms |
 | `qa/packer/*.pkr.hcl` | Packer templates per platform (Ubuntu, Windows, macOS) |
 | `qa/packer/scripts/` | Provisioning scripts (common, linux, macos, windows) |

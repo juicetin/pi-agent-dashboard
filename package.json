@@ -22,8 +22,17 @@
     ]
   },
   "files": [
-    "packages/",
-    "docs/",
+    "packages/server/src/",
+    "packages/server/package.json",
+    "packages/server/tsconfig.json",
+    "packages/shared/src/",
+    "packages/shared/package.json",
+    "packages/shared/tsconfig.json",
+    "packages/extension/src/",
+    "packages/extension/package.json",
+    "packages/extension/tsconfig.json",
+    "packages/dist/",
+    "docs/architecture.md",
     "AGENTS.md",
     "README.md"
   ],

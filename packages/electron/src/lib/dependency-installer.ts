@@ -141,7 +141,7 @@ export async function installStandalone(onProgress?: ProgressCallback): Promise<
 export async function installDashboardGlobal(onProgress?: ProgressCallback): Promise<void> {
   onProgress?.({ step: "pi-dashboard", status: "running" });
   try {
-    await runNpmInstall(["@blackbelt-technology/pi-dashboard"], process.cwd(), "npm install -g");
+    await runNpmInstall(["@blackbelt-technology/pi-agent-dashboard"], process.cwd(), "npm install -g");
     onProgress?.({ step: "pi-dashboard", status: "done" });
   } catch (err: any) {
     onProgress?.({ step: "pi-dashboard", status: "error", error: err.message });

@@ -14,7 +14,7 @@ export function InstallButton({ canInstall, isInstalled, prompt }: Props) {
   return (
     <button
       onClick={prompt}
-      className="text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+      className="text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]"
       title="Install app"
       data-testid="install-btn"
     >

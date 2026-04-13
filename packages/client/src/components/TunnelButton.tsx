@@ -86,7 +86,7 @@ export function TunnelButton() {
 
   const color = isActive
     ? "text-green-400"
-    : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]";
+    : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]";
 
   const title = isActive
     ? `Tunnel: ${status.url} (click for QR code)`

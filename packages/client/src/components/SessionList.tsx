@@ -325,7 +325,7 @@ export function SessionList({ sessions, selectedId, onSelect, contextUsageMap, o
                   if (isPinned) onUnpinDirectory?.(group.cwd);
                   else onPinDirectory?.(group.cwd);
                 }}
-                className={`ml-auto px-1 py-0.5 rounded ${isPinned ? "text-yellow-400 hover:text-yellow-300" : "text-[var(--text-muted)] hover:text-yellow-400"}`}
+                className={`ml-auto px-1 py-0.5 rounded ${isPinned ? "text-yellow-400 hover:text-yellow-300" : "text-[var(--text-tertiary)] hover:text-yellow-400"}`}
                 title={isPinned ? "Unpin directory" : "Pin directory"}
                 data-testid={isPinned ? "unpin-dir-btn" : "pin-dir-btn"}
               >
@@ -481,7 +481,7 @@ export function SessionList({ sessions, selectedId, onSelect, contextUsageMap, o
             {headerExtra}
             <button
               onClick={() => navigate("/settings")}
-              className="text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+              className="text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]"
               title="Settings"
               data-testid="settings-btn"
             >

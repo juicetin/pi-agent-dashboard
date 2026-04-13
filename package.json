@@ -2,6 +2,9 @@
   "name": "@blackbelt-technology/pi-agent-dashboard",
   "version": "0.2.0",
   "description": "Web dashboard for monitoring and interacting with pi agent sessions",
+  "publishConfig": {
+    "access": "public"
+  },
   "keywords": [
     "pi-package"
   ],

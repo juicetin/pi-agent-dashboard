@@ -23,7 +23,12 @@ export function AskUserToolRenderer({ args, status, result }: ToolRendererProps)
   const method = (args?.method as string) ?? "input";
   const title = (args?.title as string) ?? (args?.question as string) ?? "";
   const message = (args?.message as string) ?? (args?.question as string) ?? "";
-  const options = args?.options as string[] | undefined;
+  const rawOptions = args?.options;
+  const options = Array.isArray(rawOptions)
+    ? rawOptions as string[]
+    : typeof rawOptions === "string"
+      ? (() => { try { const p = JSON.parse(rawOptions); return Array.isArray(p) ? p : undefined; } catch { return undefined; } })()
+      : undefined;
   const icon = methodIcons[method] ?? mdiCommentQuestion;
   const label = methodLabels[method] ?? method;
 

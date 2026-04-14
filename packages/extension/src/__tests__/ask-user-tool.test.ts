@@ -93,5 +93,43 @@ describe("registerAskUserTool", () => {
       await tool.execute("id", { method: "confirm" }, undefined, undefined, ctx);
       expect(ctx.ui.confirm).toHaveBeenCalledWith("Question", "");
     });
+
+    it("parses options from JSON string", async () => {
+      const { tool, ctx } = getToolAndMockCtx();
+      await tool.execute("id", { method: "select", title: "Pick", options: '["A", "B"]' }, undefined, undefined, ctx);
+      expect(ctx.ui.select).toHaveBeenCalledWith("Pick", ["A", "B"], undefined);
+    });
+
+    it("handles malformed options string gracefully", async () => {
+      const { tool, ctx } = getToolAndMockCtx();
+      await tool.execute("id", { method: "select", title: "Pick", options: "not json" }, undefined, undefined, ctx);
+      expect(ctx.ui.select).toHaveBeenCalledWith("Pick", [], undefined);
+    });
+  });
+
+  describe("prepareArguments", () => {
+    function getTool() {
+      const pi = createMockPi();
+      registerAskUserTool(pi as any);
+      return pi.registerTool.mock.calls[0][0];
+    }
+
+    it("parses stringified options array", () => {
+      const tool = getTool();
+      const result = tool.prepareArguments({ method: "select", title: "Pick", options: '["A", "B"]' });
+      expect(result.options).toEqual(["A", "B"]);
+    });
+
+    it("leaves real array options unchanged", () => {
+      const tool = getTool();
+      const result = tool.prepareArguments({ method: "select", title: "Pick", options: ["A", "B"] });
+      expect(result.options).toEqual(["A", "B"]);
+    });
+
+    it("leaves malformed string as-is", () => {
+      const tool = getTool();
+      const result = tool.prepareArguments({ method: "select", title: "Pick", options: "not json" });
+      expect(result.options).toBe("not json");
+    });
   });
 });

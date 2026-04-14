@@ -34,6 +34,17 @@ export function registerAskUserTool(pi: ExtensionAPI): void {
       ),
       placeholder: Type.Optional(Type.String({ description: "Placeholder text (for input)" })),
     }),
+    prepareArguments(args: unknown) {
+      const obj = (args && typeof args === "object" ? args : {}) as Record<string, unknown>;
+      // LLMs sometimes send options as a JSON string instead of an array
+      if (typeof obj.options === "string") {
+        try {
+          const parsed = JSON.parse(obj.options);
+          if (Array.isArray(parsed)) obj.options = parsed;
+        } catch { /* leave as-is, validation will report */ }
+      }
+      return obj as any;
+    },
     async execute(_toolCallId: any, params: any, _signal: any, _onUpdate: any, ctx: any) {
       let result: unknown;
 
@@ -41,15 +52,22 @@ export function registerAskUserTool(pi: ExtensionAPI): void {
 
       const title = params.title || params.message || "Question";
 
+      // LLMs sometimes send options as a JSON string instead of an array
+      const options: string[] = Array.isArray(params.options)
+        ? params.options
+        : typeof params.options === "string"
+          ? (() => { try { const p = JSON.parse(params.options); return Array.isArray(p) ? p : []; } catch { return []; } })()
+          : [];
+
       switch (params.method) {
         case "confirm":
           result = await ctx.ui.confirm(title, params.message ?? "");
           break;
         case "select":
-          result = await ctx.ui.select(title, params.options ?? [], msgOpts);
+          result = await ctx.ui.select(title, options, msgOpts);
           break;
         case "multiselect":
-          result = await (ctx.ui as any).multiselect(title, params.options ?? [], msgOpts);
+          result = await (ctx.ui as any).multiselect(title, options, msgOpts);
           break;
         case "input":
           result = await ctx.ui.input(title, params.placeholder, msgOpts);

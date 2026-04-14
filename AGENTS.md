@@ -56,7 +56,7 @@ make clean              # Destroy all cloned VMs
 | File | Purpose |
 |------|---------|
 | `src/shared/protocol.ts` | Extension↔Server WebSocket messages |
-| `src/shared/browser-protocol.ts` | Server↔Browser WebSocket messages |
+| `src/shared/browser-protocol.ts` | Server↔Browser WebSocket messages (all message types including PromptBus `prompt_request`/`prompt_dismiss`/`prompt_cancel` must be in the `ServerToBrowserMessage` union — `as any` switch cases are stripped by esbuild in production) |
 | `src/shared/types.ts` | Data models (Session, Workspace, Event) |
 | `src/shared/config.ts` | Shared config loader (`~/.pi/dashboard/config.json`) |
 | `src/extension/bridge.ts` | Main extension entry point (composes sync/tracker/flow modules, tracks `isAgentStreaming` in persistent BridgeState) |
@@ -157,7 +157,11 @@ make clean              # Destroy all cloned VMs
 | `src/client/hooks/useAuthStatus.ts` | Client auth status hook and login redirect helper |
 | `src/server/localhost-guard.ts` | Network access guard: `createNetworkGuard` (loopback/trusted/authenticated), `isBypassedHost` (CIDR/wildcard/exact), netmask-to-CIDR helpers |
 | `src/server/server-pid.ts` | PID file management for daemon mode |
-| `src/client/components/ServerSelector.tsx` | Server selector dropdown for switching between discovered dashboard servers |
+| `src/client/components/ServerSelector.tsx` | Server selector dropdown showing persisted known servers with availability probing |
+| `src/client/components/KnownServersSection.tsx` | Settings section: list/add/remove persisted known remote servers |
+| `src/client/components/NetworkDiscoverySection.tsx` | Settings section: mDNS network scan with "Add" action and label prompt |
+| `src/client/lib/known-servers-api.ts` | Client-side fetch helpers for known servers CRUD and discovery endpoints |
+| `src/server/routes/known-servers-routes.ts` | REST routes: known servers CRUD, on-demand mDNS discovery scan |
 | `src/server/terminal-manager.ts` | PTY lifecycle, ring buffer, spawn/attach/kill terminals |
 | `src/server/terminal-gateway.ts` | Binary WebSocket upgrade handler for `/ws/terminal/:id` |
 | `scripts/fix-pty-permissions.cjs` | Postinstall: fix node-pty spawn-helper execute permissions |

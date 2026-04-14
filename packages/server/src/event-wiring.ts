@@ -507,17 +507,17 @@ export function wireEvents(deps: EventWiringDeps): void {
     // Legacy extension_ui_request/dismiss removed — replaced by PromptBus protocol.
 
     // ── PromptBus protocol messages (extension → browser) ──
-    if ((msg as any).type === "prompt_request") {
+    if (msg.type === "prompt_request") {
       browserGateway.trackPromptRequest(sessionId, msg as any);
       browserGateway.sendToSubscribers(sessionId, msg as any);
     }
 
-    if ((msg as any).type === "prompt_dismiss") {
+    if (msg.type === "prompt_dismiss") {
       browserGateway.clearPromptRequest(sessionId, (msg as any).promptId);
       browserGateway.sendToSubscribers(sessionId, msg as any);
     }
 
-    if ((msg as any).type === "prompt_cancel") {
+    if (msg.type === "prompt_cancel") {
       browserGateway.clearPromptRequest(sessionId, (msg as any).promptId);
       browserGateway.sendToSubscribers(sessionId, msg as any);
     }

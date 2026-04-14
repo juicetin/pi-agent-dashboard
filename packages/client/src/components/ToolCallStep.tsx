@@ -54,7 +54,8 @@ export function ToolCallStep({ toolName, toolCallId, args, status, result, image
   const isMobile = useMobile();
   const hasImages = images && images.length > 0;
   const isAgentRunning = toolName === "Agent" && status === "running";
-  const [expanded, setExpanded] = useState(hasImages || isAgentRunning);
+  const isAskUser = toolName === "ask_user";
+  const [expanded, setExpanded] = useState(hasImages || isAgentRunning || isAskUser);
   const [stopState, setStopState] = useState<StopState>("idle");
   const Renderer = getToolRenderer(toolName);
 

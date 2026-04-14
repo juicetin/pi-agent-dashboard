@@ -279,51 +279,49 @@ export function useMessageHandler(
         break;
 
       // ── PromptBus protocol messages ──
-      case "prompt_request" as any:
+      case "prompt_request":
         setSessionStates((prev) => {
           const next = new Map(prev);
-          const current = next.get((msg as any).sessionId) ?? createInitialState();
-          // Reuse addInteractiveRequest for now — maps prompt_request to the existing UI
+          const current = next.get(msg.sessionId) ?? createInitialState();
           const updated = addInteractiveRequest(
             current,
-            (msg as any).promptId,
-            (msg as any).prompt?.type ?? "select",
+            msg.promptId,
+            msg.prompt?.type ?? "select",
             {
-              title: (msg as any).prompt?.question,
-              options: (msg as any).prompt?.options,
-              defaultValue: (msg as any).prompt?.defaultValue,
-              // Store component info for future custom rendering
-              _promptBusComponent: (msg as any).component,
-              _promptBusPlacement: (msg as any).placement,
+              title: msg.prompt?.question,
+              message: msg.prompt?.metadata?.message as string | undefined,
+              options: msg.prompt?.options,
+              defaultValue: msg.prompt?.defaultValue,
+              _promptBusComponent: msg.component,
+              _promptBusPlacement: msg.placement,
             },
           );
           if (updated === current) return prev;
-          next.set((msg as any).sessionId, updated);
+          next.set(msg.sessionId, updated);
           return next;
         });
         break;
 
-      case "prompt_dismiss" as any:
+      case "prompt_dismiss":
         setSessionStates((prev) => {
           const next = new Map(prev);
-          const current = next.get((msg as any).sessionId);
+          const current = next.get(msg.sessionId);
           if (!current) return prev;
-          const updated = dismissInteractiveRequest(current, (msg as any).promptId);
+          const updated = dismissInteractiveRequest(current, msg.promptId);
           if (updated === current) return prev;
-          next.set((msg as any).sessionId, updated);
+          next.set(msg.sessionId, updated);
           return next;
         });
         break;
 
-      case "prompt_cancel" as any:
+      case "prompt_cancel":
         setSessionStates((prev) => {
           const next = new Map(prev);
-          const current = next.get((msg as any).sessionId);
+          const current = next.get(msg.sessionId);
           if (!current) return prev;
-          // Cancel = remove from pending
-          const updated = dismissInteractiveRequest(current, (msg as any).promptId);
+          const updated = dismissInteractiveRequest(current, msg.promptId);
           if (updated === current) return prev;
-          next.set((msg as any).sessionId, updated);
+          next.set(msg.sessionId, updated);
           return next;
         });
         break;

@@ -81,5 +81,17 @@ describe("registerAskUserTool", () => {
       await tool.execute("id", { method: "input", title: "Q" }, undefined, undefined, ctx);
       expect(ctx.ui.input).toHaveBeenCalledWith("Q", undefined, undefined);
     });
+
+    it("falls back to message when title is missing", async () => {
+      const { tool, ctx } = getToolAndMockCtx();
+      await tool.execute("id", { method: "input", message: "Detailed question" }, undefined, undefined, ctx);
+      expect(ctx.ui.input).toHaveBeenCalledWith("Detailed question", undefined, { message: "Detailed question" });
+    });
+
+    it("falls back to 'Question' when both title and message are missing", async () => {
+      const { tool, ctx } = getToolAndMockCtx();
+      await tool.execute("id", { method: "confirm" }, undefined, undefined, ctx);
+      expect(ctx.ui.confirm).toHaveBeenCalledWith("Question", "");
+    });
   });
 });

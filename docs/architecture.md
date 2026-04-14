@@ -34,7 +34,8 @@ A global pi extension that runs in every pi session. It:
 - Routes `ctx.ui` dialog methods (confirm, select, input, editor, notify) through `PromptBus` (`prompt-bus.ts`)
   - Adapters register to handle prompts: `DashboardDefaultAdapter` renders generic dialogs inline; extensions (e.g. pi-flows) can register custom adapters via `prompt:register-adapter` event
   - First-response-wins: multiple adapters (TUI, dashboard, custom) can claim a prompt; the first to respond resolves it, others are dismissed
-  - Bridge emits `prompt:ctx-originals` so TUI adapters can capture original ctx.ui methods before patching
+  - Bridge's TUI adapter is registered inline (captures original `ctx.ui` methods before patching) and presents prompts in the terminal with AbortController-based cancellation
+  - Patched `ctx.ui` methods forward the `message` field (from opts) via `metadata` in the PromptBus request
   - Client-side `prompt-component-registry.ts` maps component type strings to render placement (inline, widget-bar, overlay)
   - Protocol messages: `prompt_request`, `prompt_dismiss`, `prompt_cancel`, `prompt_response`
 
@@ -78,7 +79,7 @@ A React-based responsive web UI that:
 ### 4. Shared Types (`src/shared/`)
 TypeScript type definitions shared across all components:
 - `protocol.ts` - Extension↔Server WebSocket messages
-- `browser-protocol.ts` - Server↔Browser WebSocket messages
+- `browser-protocol.ts` - Server↔Browser WebSocket messages (includes PromptBus messages: `prompt_request`, `prompt_dismiss`, `prompt_cancel`)
 - `types.ts` - Data models (Session, Workspace, Event, etc.)
 
 ## Data Flow
@@ -113,9 +114,15 @@ TypeScript type definitions shared across all components:
 - Adapters return custom `PromptClaim` with arbitrary component types (e.g. `"architect-prompt"`)
 - Client-side registry maps type strings to render placement; unknown types fall back to `"generic-dialog"`
 
+**Message passthrough:**
+- The `message` field from `ask_user` tool (and other `ctx.ui` callers) is forwarded via `metadata.message` in the PromptBus request, through the `prompt_request` protocol message, and extracted by the client into the interactive renderer's `params.message`.
+
+**Type safety:**
+- `prompt_request`, `prompt_dismiss`, and `prompt_cancel` **must** be in the `ServerToBrowserMessage` union in `browser-protocol.ts`. If they are only handled via `case "..." as any:` in switch statements, esbuild's dead-code elimination will strip the handlers in production builds, silently breaking the interactive UI.
+
 **Resilience:**
-- **Page refresh**: Server replays pending `prompt_request` messages when a browser subscribes.
-- **Server restart**: TODO — PromptBus reconnect resend not yet implemented.
+- **Page refresh**: Server replays pending `prompt_request` messages when a browser subscribes. Client deduplicates by `requestId` or pending title match.
+- **Bridge reconnect**: Bridge replays pending PromptBus requests on WebSocket reconnect so dashboard dialogs survive server restarts.
 
 ### Command Flow (browser → pi)
 1. User types prompt or command in browser
@@ -506,11 +513,25 @@ The dashboard uses mDNS (via `bonjour-service`) for zero-config server discovery
 - `isDashboardRunning(port)` replaces `isPortOpen(port)` for identity-verified detection
 - After auto-starting, the bridge waits up to 10s for the server's mDNS advertisement
 
+### Known Servers
+- Users can persist remote servers in `config.json` via `knownServers: KnownServer[]`
+- Each entry has `host`, `port`, optional `label`, and `addedAt` timestamp
+- REST API: `GET/POST/DELETE /api/known-servers` for CRUD, `POST /api/discover-servers` for on-demand mDNS scan
+- Localhost is always implicitly available (not stored)
+- The data model is extensible for future key exchange / auth tokens
+
 ### Server Selector UI
-- A dropdown in the sidebar header shows all discovered servers (local + LAN)
-- Each entry shows hostname, port, Local/Remote badge, and connection status
+- The header dropdown shows persisted known servers (from config) plus localhost, not raw mDNS results
+- Each entry shows label (or hostname), host:port, Local/Remote badge, and availability status
+- Non-current servers are probed via health check when the dropdown opens
 - Switching closes the current WebSocket and connects to the selected server
 - Last-used server persisted in `localStorage` (`pi-dashboard-last-server`)
+
+### Server Management (Settings Panel)
+- **Known Servers section**: lists persisted servers with remove buttons and an inline add form (host, port, label)
+- **Network Discovery section**: "Scan network" triggers `POST /api/discover-servers`, shows results with "Add" button that prompts for a label
+- Already-known servers show "Already added" badge in discovery results
+- Electron loading page shows known servers as fallback when primary server is unreachable
 
 ## Provider Authentication
 
@@ -618,6 +639,19 @@ All code-server traffic is proxied through `/editor/:id/*` on the dashboard serv
 ```
 
 Binary auto-detection order: config override → `code-server` on PATH → `openvscode-server` on PATH.
+
+### Known Servers Configuration
+
+```json
+{
+  "knownServers": [
+    { "host": "office-mac.local", "port": 8000, "label": "Office Mac", "addedAt": "2024-01-15T10:30:00Z" },
+    { "host": "build-server", "port": 8000, "addedAt": "2024-01-20T14:00:00Z" }
+  ]
+}
+```
+
+Managed via REST API (`/api/known-servers`) or Settings panel. Localhost is always implicit.
 
 ## Bundled Skill: pi-dashboard
 

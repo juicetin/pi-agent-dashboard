@@ -27,7 +27,7 @@ export function registerAskUserTool(pi: ExtensionAPI): void {
         description:
           "Type of question: confirm (yes/no), select (pick from options), multiselect (pick multiple), input (free text)",
       }),
-      title: Type.String({ description: "The question to ask" }),
+      title: Type.Optional(Type.String({ description: "Short title for the question (optional, falls back to message)" })),
       message: Type.Optional(Type.String({ description: "Additional context or detailed question body (all methods)" })),
       options: Type.Optional(
         Type.Array(Type.String(), { description: "Options to choose from (for select)" }),
@@ -39,18 +39,20 @@ export function registerAskUserTool(pi: ExtensionAPI): void {
 
       const msgOpts = params.message ? { message: params.message } : undefined;
 
+      const title = params.title || params.message || "Question";
+
       switch (params.method) {
         case "confirm":
-          result = await ctx.ui.confirm(params.title, params.message ?? "");
+          result = await ctx.ui.confirm(title, params.message ?? "");
           break;
         case "select":
-          result = await ctx.ui.select(params.title, params.options ?? [], msgOpts);
+          result = await ctx.ui.select(title, params.options ?? [], msgOpts);
           break;
         case "multiselect":
-          result = await (ctx.ui as any).multiselect(params.title, params.options ?? [], msgOpts);
+          result = await (ctx.ui as any).multiselect(title, params.options ?? [], msgOpts);
           break;
         case "input":
-          result = await ctx.ui.input(params.title, params.placeholder, msgOpts);
+          result = await ctx.ui.input(title, params.placeholder, msgOpts);
           break;
       }
 

@@ -162,6 +162,39 @@ export interface EditorStatusMessage {
   status: EditorInstanceStatus;
 }
 
+// ── PromptBus protocol (Server → Browser) ───────────────────────────
+
+export interface BrowserPromptRequestMessage {
+  type: "prompt_request";
+  sessionId: string;
+  promptId: string;
+  prompt: {
+    question: string;
+    type: string;
+    options?: string[];
+    defaultValue?: string;
+    pipeline?: string;
+    metadata?: Record<string, unknown>;
+  };
+  component: {
+    type: string;
+    props: Record<string, unknown>;
+  };
+  placement: string;
+}
+
+export interface BrowserPromptDismissMessage {
+  type: "prompt_dismiss";
+  sessionId: string;
+  promptId: string;
+}
+
+export interface BrowserPromptCancelMessage {
+  type: "prompt_cancel";
+  sessionId: string;
+  promptId: string;
+}
+
 /** Progress event streamed during a package install/remove/update operation. */
 export interface PackageProgressMessage {
   type: "package_progress";
@@ -216,7 +249,10 @@ export type ServerToBrowserMessage =
   | BrowserRolesListMessage
   | ProcessListUpdateMessage
   | ServersDiscoveredMessage
-  | ServersUpdatedMessage;
+  | ServersUpdatedMessage
+  | BrowserPromptRequestMessage
+  | BrowserPromptDismissMessage
+  | BrowserPromptCancelMessage;
 
 // ── Browser → Server ────────────────────────────────────────────────
 

@@ -7,6 +7,7 @@ import { AgentToolRenderer } from "./AgentToolRenderer.js";
 import { GetSubagentResultRenderer } from "./GetSubagentResultRenderer.js";
 import { SteerSubagentRenderer } from "./SteerSubagentRenderer.js";
 import { GenericToolRenderer } from "./GenericToolRenderer.js";
+import { AskUserToolRenderer } from "./AskUserToolRenderer.js";
 
 const renderers = new Map<string, ToolRenderer>([
   ["read", ReadToolRenderer],
@@ -16,6 +17,7 @@ const renderers = new Map<string, ToolRenderer>([
   ["Agent", AgentToolRenderer],
   ["get_subagent_result", GetSubagentResultRenderer],
   ["steer_subagent", SteerSubagentRenderer],
+  ["ask_user", AskUserToolRenderer],
 ]);
 
 /** Register a custom renderer for a tool name */

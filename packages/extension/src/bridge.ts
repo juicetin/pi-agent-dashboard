@@ -775,20 +775,20 @@ function initBridge(pi: ExtensionAPI) {
     // now route through the bus, which distributes to all registered adapters.
     {
       const bus = promptBus;
-      (ctx.ui as any).select = (title: string, options: string[], _opts?: any) =>
-        bus.request({ pipeline: "command", type: "select", question: title, options })
+      (ctx.ui as any).select = (title: string, options: string[], opts?: any) =>
+        bus.request({ pipeline: "command", type: "select", question: title, options, metadata: opts?.message ? { message: opts.message } : undefined })
           .then(r => r.cancelled ? undefined : r.answer);
 
-      (ctx.ui as any).input = (title: string, placeholder?: string, _opts?: any) =>
-        bus.request({ pipeline: "command", type: "input", question: title, defaultValue: placeholder })
+      (ctx.ui as any).input = (title: string, placeholder?: string, opts?: any) =>
+        bus.request({ pipeline: "command", type: "input", question: title, defaultValue: placeholder, metadata: opts?.message ? { message: opts.message } : undefined })
           .then(r => r.cancelled ? undefined : r.answer);
 
-      (ctx.ui as any).confirm = (title: string, _message: string, _opts?: any) =>
-        bus.request({ pipeline: "command", type: "confirm", question: title })
+      (ctx.ui as any).confirm = (title: string, message?: string, opts?: any) =>
+        bus.request({ pipeline: "command", type: "confirm", question: title, metadata: (message || opts?.message) ? { message: message || opts?.message } : undefined })
           .then(r => !r.cancelled && r.answer === "true");
 
-      (ctx.ui as any).editor = (title: string, prefill?: string, _opts?: any) =>
-        bus.request({ pipeline: "command", type: "editor", question: title, defaultValue: prefill })
+      (ctx.ui as any).editor = (title: string, prefill?: string, opts?: any) =>
+        bus.request({ pipeline: "command", type: "editor", question: title, defaultValue: prefill, metadata: opts?.message ? { message: opts.message } : undefined })
           .then(r => r.cancelled ? undefined : r.answer);
 
       // Notify is fire-and-forget: call original + forward to dashboard

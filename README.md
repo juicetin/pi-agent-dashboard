@@ -428,7 +428,7 @@ curl -X POST http://localhost:8000/api/restart -H 'Content-Type: application/jso
 src/
 ├── shared/           # Shared TypeScript types
 │   ├── protocol.ts        # Extension ↔ Server messages
-│   ├── browser-protocol.ts # Server ↔ Browser messages
+│   ├── browser-protocol.ts # Server ↔ Browser messages (incl. PromptBus types)
 │   ├── types.ts           # Data models
 │   ├── config.ts          # Shared config loader
 │   └── rest-api.ts        # REST API types

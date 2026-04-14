@@ -10,6 +10,11 @@
  */
 
 import { app, BrowserWindow, dialog } from "electron";
+
+// Enable Wayland support on Linux (auto-detect X11 vs Wayland)
+if (process.platform === "linux" && !process.env.ELECTRON_OZONE_PLATFORM_HINT) {
+  app.commandLine.appendSwitch("ozone-platform-hint", "auto");
+}
 import { mkdirSync, appendFileSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
@@ -70,10 +75,13 @@ if (disableGpu) {
   log("GPU disabled");
 }
 log("Importing lib modules...");
-import { isFirstRun } from "./lib/wizard-state.js";
+import { isFirstRun, writeModeFile } from "./lib/wizard-state.js";
 import { openWizardWindow, getWizardWindow } from "./lib/wizard-window.js";
 import { registerWizardIpc } from "./lib/wizard-ipc.js";
-import { ensureServer, stopServerIfNeeded, didWeStartServer } from "./lib/server-lifecycle.js";
+import { ensureServer, stopServerIfNeeded, didWeStartServer, loadMinimalConfig } from "./lib/server-lifecycle.js";
+import { isDashboardRunning } from "./lib/health-check.js";
+import { detectPi, detectBridgeExtension } from "./lib/dependency-detector.js";
+import { registerBundledBridgeExtension } from "./lib/bridge-register.js";
 import { loadWindowState, saveWindowState } from "./lib/window-state.js";
 import { createTray, destroyTray } from "./lib/tray.js";
 import { startUpdateChecker } from "./lib/update-checker.js";
@@ -305,19 +313,54 @@ async function main(): Promise<void> {
     await openWizardWindow();
   });
 
-  // First-run wizard
+  // Pre-wizard: check if dashboard server is already running
+  const config = loadMinimalConfig();
+  const preCheck = await isDashboardRunning(config.port);
+  log(`Pre-wizard health check: running=${preCheck.running}`);
+
+  if (preCheck.running && isFirstRun()) {
+    // Server is running — auto-write mode.json and skip wizard
+    log("Server running, auto-writing mode.json as power-user");
+    writeModeFile("power-user");
+    try { registerBundledBridgeExtension(); } catch { /* non-fatal */ }
+  }
+
+  // First-run wizard (with smart detection)
   const firstRun = isFirstRun();
   log(`isFirstRun=${firstRun}`);
   if (firstRun) {
-    closeSplash();
-    log("Opening wizard window...");
-    await openWizardWindow();
-    log("Wizard window closed");
-    // After wizard closes, re-check — user might have cancelled
-    if (isFirstRun()) {
-      log("Wizard not completed, quitting");
-      app.quit();
-      return;
+    // Server not running — check what's installed to decide wizard flow
+    const pi = detectPi();
+    const bridge = detectBridgeExtension();
+    log(`Smart detection: pi=${pi.found}, bridge=${bridge.found}`);
+
+    if (pi.found && bridge.found) {
+      // Both found — auto-skip wizard
+      log("Pi + bridge detected, auto-writing mode.json as power-user");
+      writeModeFile("power-user");
+      try { registerBundledBridgeExtension(); } catch { /* non-fatal */ }
+    } else if (pi.found && !bridge.found) {
+      // Pi found but no bridge — targeted wizard
+      closeSplash();
+      log("Opening wizard at bridge-install step...");
+      await openWizardWindow("bridge-install");
+      log("Wizard window closed");
+      if (isFirstRun()) {
+        log("Wizard not completed, quitting");
+        app.quit();
+        return;
+      }
+    } else {
+      // Nothing found — full wizard
+      closeSplash();
+      log("Opening wizard window...");
+      await openWizardWindow();
+      log("Wizard window closed");
+      if (isFirstRun()) {
+        log("Wizard not completed, quitting");
+        app.quit();
+        return;
+      }
     }
   }
 

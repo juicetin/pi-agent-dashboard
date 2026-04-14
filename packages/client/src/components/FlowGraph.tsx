@@ -340,20 +340,24 @@ export function computeLayout(steps: FlowGraphStep[]): LayoutResult {
     }
   }
 
-  // Compute actual bounding box from positioned nodes (dagre's graphHeight may
-  // not account for the yOffset shift correctly)
+  // Compute actual bounding box from positioned nodes (dagre's reported
+  // dimensions may not account for yOffset shift or full node extents)
+  let maxRight = 0;
   let maxBottom = 0;
   for (const n of nodes) {
+    const right = n.x + n.width;
     const bottom = n.y + n.height;
+    if (right > maxRight) maxRight = right;
     if (bottom > maxBottom) maxBottom = bottom;
   }
+  const actualWidth = Math.max(graphWidth, maxRight + 16);
   const actualHeight = Math.max(graphHeight + yOffset, maxBottom + 16);
 
   return {
     nodes,
     edges,
     loopEdges,
-    width: graphWidth,
+    width: actualWidth,
     height: actualHeight,
   };
 }
@@ -398,6 +402,15 @@ export function FlowGraph({ steps }: { steps: FlowGraphStep[] }) {
   const [hovered, setHovered] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
+  // Reset zoom/pan when the graph layout changes (new steps, different dimensions)
+  const prevStepCount = useRef(steps.length);
+  useEffect(() => {
+    if (steps.length !== prevStepCount.current) {
+      prevStepCount.current = steps.length;
+      reset();
+    }
+  }, [steps.length, reset]);
+
   // Attach non-passive wheel listener (React onWheel is passive and can't preventDefault)
   useEffect(() => {
     const el = containerRef.current;
@@ -411,13 +424,12 @@ export function FlowGraph({ steps }: { steps: FlowGraphStep[] }) {
 
   const svgWidth = Math.max(layout.width, 150);
   const svgHeight = Math.max(layout.height, 50);
-  const containerHeight = Math.min(svgHeight + 8, 300);
 
   return (
     <div
       ref={containerRef}
       className="flow-dag-graph-container relative"
-      style={{ height: containerHeight, overflow: "hidden" }}
+      style={{ overflow: "visible" }}
       onPointerDown={handlers.onPointerDown}
       onPointerMove={handlers.onPointerMove}
       onPointerUp={handlers.onPointerUp}
@@ -444,8 +456,9 @@ export function FlowGraph({ steps }: { steps: FlowGraphStep[] }) {
         <svg
           width={svgWidth}
           height={svgHeight}
+          viewBox={`0 0 ${svgWidth} ${svgHeight}`}
           className="flow-dag-graph"
-          style={{ display: "block", margin: svgWidth < 300 ? "0 auto" : undefined }}
+          style={{ display: "block", overflow: "visible" }}
         >
           <defs>
             {["#444", "#666", "#22c55e", "#eab308", "#ef4444", "#a855f7"].map((color) => (

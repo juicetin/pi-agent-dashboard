@@ -90,8 +90,8 @@
 
 ## 14. Migrate Consumers to ToolResolver
 
-- [ ] 14.1 Simplify `packages/electron/src/lib/dependency-detector.ts`: `detectPi()`, `detectSystemNode()`, `detectOpenSpec()`, `detectPiDashboardCli()` delegate to `ToolResolver.which()`. Remove local `whichSync()` and `detect()` functions. **Status: NOT done — local `whichSync()` and `detect()` still exist. Blocked on question Q1.**
-- [ ] 14.2 Simplify `packages/electron/src/lib/server-lifecycle.ts`: replace `resolveTsxCommand()` with `resolver.resolveTsx()`, replace manual PATH construction in `launchServer()` with `resolver.buildSpawnEnv()`. Remove local `resolveTsxCommand()` function. **Status: NOT done — `resolveTsxCommand()` and manual PATH construction still exist. Blocked on question Q1.**
+- [ ] 14.1 ~~Blocked~~ Moved to 18.3 (Electron can import from shared).
+- [ ] 14.2 ~~Blocked~~ Moved to 18.4 (Electron can import from shared).
 - [x] 14.3 Simplify `packages/server/src/process-manager.ts`: replace `resolvePiCommand()` with `resolver.resolvePi()`, replace local `buildSpawnEnv()` with `resolver.buildSpawnEnv()`. Export `buildSpawnEnv` as a thin wrapper for backward compatibility with `editor-detection.ts` and `editor-manager.ts`.
 - [x] 14.4 Update `packages/server/src/editor-detection.ts` and `packages/server/src/editor-manager.ts` to use the shared `buildSpawnEnv()` (via re-export or direct import). Note: these already import from process-manager.ts which now delegates to ToolResolver — no code change needed.
 - [x] 14.5 Verify all existing tests pass. Update import paths in test files where needed.
@@ -106,53 +106,49 @@
 
 ## 16. Cleanup & Verification
 
-- [x] 16.1 Partial cleanup: deleted `extension-register.ts` from server, replaced `resolvePiCommand()` and `buildSpawnEnv()` in process-manager with ToolResolver delegates. **Remaining:** `whichSync()`/`detect()` in dependency-detector and `resolveTsxCommand()` in server-lifecycle still exist (blocked on 14.1/14.2).
+- [x] 16.1 Partial cleanup: deleted `extension-register.ts` from server, replaced `resolvePiCommand()` and `buildSpawnEnv()` in process-manager with ToolResolver delegates. Electron local impls remain until Phase 3 tasks 18.3/18.4.
 - [x] 16.2 Run affected test suites (13 files, 116 tests) — all pass. Pre-existing config.test.ts failures unrelated.
 - [ ] 16.3 Run type checking (`npm run reload:check` or tsc). **Deferred — Electron requires forge build environment.**
 - [ ] 16.4 Manual smoke test: start Electron app, verify wizard flow, server launch, and session spawning still work. **Deferred to user.**
 
 ---
 
-## Phase 3 — Remaining Gaps (not yet tasked)
+## Phase 3 — Unified Server Launch & Electron Migration
 
-## 17. Unify Server Launch Paths (Problem #8)
+## 17. Unified TS Loader Resolution
 
-Three separate server launch functions exist with different TS loaders, PATH construction, error handling, and spawn patterns:
-- Extension: `server-launcher.ts` → `process.execPath` + jiti
-- Electron standalone: `server-lifecycle.ts` → tsx or jiti + cli.ts
-- Electron power-user: `server-lifecycle.ts` → `launchViaCli()`
+Four callers spawn the dashboard server with different TS loader resolution:
+- Extension `server-launcher.ts`: jiti only (from pi process)
+- CLI `cli.ts` `cmdStart()`: jiti → tsx fallback
+- Electron `launchServer()`: tsx → jiti fallback
+- Electron `launchViaCli()`: delegates to CLI
 
-- [ ] 17.1 **NEEDS CLARIFICATION (Q2):** Should we unify these into a single `launchDashboardServer()` in shared, or keep them separate? The extension runs inside pi's process (has access to `process.execPath` + jiti natively). Electron needs tsx/jiti/CLI fallback chains. A shared launcher would need to abstract over these differences.
-- [ ] 17.2 Add `resolveJiti()` method to ToolResolver — currently `resolveJitiFromPi()` exists as standalone function in `server-lifecycle.ts` and separately in `resolve-jiti.ts` (shared) and `ts-loader-resolver.ts` (electron). Three implementations of the same thing.
-- [ ] 17.3 Unify `server-lifecycle.ts` `launchServer()` PATH construction to use `resolver.buildSpawnEnv()` instead of manual env.PATH concatenation.
+Plus 3 separate jiti resolution implementations:
+- `packages/shared/src/resolve-jiti.ts` (anchored to `process.argv[1]`)
+- `packages/electron/src/lib/server-lifecycle.ts` `resolveJitiFromPi()` (managed pi → system pi)
+- `packages/electron/src/lib/ts-loader-resolver.ts` (managed pi → global pi)
 
-## 18. Fix Naming Inconsistency (Problem #13)
+Note: overlaps with open change `replace-tsx-with-jiti` which wants to create a shared `resolveJitiRegisterPath()` and eliminate tsx entirely.
 
-- [ ] 18.1 **NEEDS CLARIFICATION (Q3):** The npm package is `pi-agent-dashboard`, CLI binary is `pi-dashboard`, sub-packages use `pi-dashboard-*`. Substring matching in detection and cleanup uses both. Should we standardize on one pattern, or keep matching both? What's the canonical name going forward?
+- [ ] 17.1 Add `resolveJiti()` to ToolResolver. Unifies jiti resolution: managed pi → system pi (via `which()`) → `process.argv[1]` anchor. Returns absolute path to `jiti-register.mjs` or null.
+- [ ] 17.2 Add `resolveTsLoader()` to ToolResolver. Returns `{ loader: "jiti" | "tsx", importPath: string } | null`. Resolution order: jiti (from `resolveJiti()`) → tsx (from `resolveTsx()`, resolving ESM register hook). Callers get a single function instead of implementing their own fallback chains.
+- [ ] 17.3 Create shared `packages/shared/src/server-launcher.ts` with `launchDashboardServer(opts)`. Core pattern: `spawn(node, ["--import", tsLoader, cliPath, ...args], { detached, ... })`. Options control: node binary, CLI path, TS loader (or auto-resolve via ToolResolver), stdio routing (ignore vs log file path), health wait timeout, env overrides.
+- [ ] 17.4 Migrate extension `server-launcher.ts` to use shared launcher (opts: node=process.execPath, loader=jiti-only, stdio=ignore, timeout=2s).
+- [ ] 17.5 Migrate CLI `cmdStart()` to use shared launcher (opts: node=process.execPath, loader=jiti→tsx, stdio=logfile, timeout=5s).
+- [ ] 17.6 Migrate Electron `launchServer()` to use shared launcher (opts: node=detected/bundled, loader=tsx→jiti, stdio=logfile, timeout=15s, env=buildSpawnEnv).
+- [ ] 17.7 Delete `resolveJitiFromPi()` from server-lifecycle.ts, jiti/tsx resolution from ts-loader-resolver.ts, `resolve-jiti.ts` from shared. Consolidate into ToolResolver.
+- [ ] 17.8 Write tests for shared launcher and ToolResolver.resolveJiti(): spawn with jiti, spawn with tsx, early exit detection, health poll timeout, env construction.
+- [ ] 17.9 Coordinate with `replace-tsx-with-jiti` change — if that lands first, the tsx fallback paths can be removed.
 
-## 19. Electron Consumer Migration (Unblocked by Q1)
+## 18. Electron Consumer Migration (Q1 resolved: can import from shared)
 
-- [ ] 19.1 Migrate `dependency-detector.ts` to use ToolResolver (requires resolving Q1 about Vite bundling vs runtime import constraint).
-- [ ] 19.2 Migrate `server-lifecycle.ts` to use ToolResolver for tsx resolution and env building.
-- [ ] 19.3 Update Electron test mocking to work with ToolResolver imports.
+- [ ] 18.1 Remove the outdated "must NOT import from shared" NOTEs in `server-lifecycle.ts` and `health-check.ts`. Vite bundles shared imports inline at build time.
+- [ ] 18.2 Replace `packages/electron/src/lib/managed-paths.ts` local mirror with direct import from `@blackbelt-technology/pi-dashboard-shared/managed-paths.js`. Delete the local file.
+- [ ] 18.3 Migrate `dependency-detector.ts`: `detectPi()`, `detectSystemNode()`, `detectOpenSpec()`, `detectPiDashboardCli()` delegate to `ToolResolver.which()`. Remove local `whichSync()` and `detect()` functions.
+- [ ] 18.4 Migrate `server-lifecycle.ts`: replace `resolveTsxCommand()` with `resolver.resolveTsx()`, replace manual PATH construction with `resolver.buildSpawnEnv()`, replace `resolveJitiFromPi()` with `resolver.resolveJiti()`.
+- [ ] 18.5 Update Electron test mocking: tests currently mock `node:child_process` and `node:fs` at module level. After migration, they need to mock ToolResolver or its dependencies instead.
+- [ ] 18.6 Verify all Electron tests pass after migration.
 
----
+## 19. Naming Inconsistency (Problem #13) — Deferred
 
-## Open Questions
-
-**Q1: Can Electron modules import from `@blackbelt-technology/pi-dashboard-shared`?**
-The NOTE in `server-lifecycle.ts` and `health-check.ts` says "must NOT import from shared". But Vite bundles all non-external imports at build time — shared IS bundled inline, not resolved at runtime. We already import `MANAGED_DIR` from a local `managed-paths.ts` mirror. Should we:
-- (a) Remove the NOTE as outdated, import ToolResolver directly from shared (Vite bundles it) → enables 14.1/14.2/19.x
-- (b) Create a local ToolResolver mirror in Electron (like we did for managed-paths) → more duplication
-- (c) Leave Electron modules as-is, accept ToolResolver is server-only → scope down the proposal
-
-**Q2: Should server launch be unified across extension/Electron/CLI?**
-The extension's `server-launcher.ts` uses `process.execPath` + jiti because it runs inside pi. The Electron's `launchServer()` has tsx→jiti→CLI fallback. The CLI's `cmdStart()` has jiti→tsx fallback. A shared `launchDashboardServer()` would need to abstract over:
-- TS loader resolution (jiti vs tsx vs both)
-- Node binary (process.execPath vs detected vs bundled)
-- Spawn style (detached vs child)
-- Error handling and logging
-Is this worth the abstraction cost, or are the three paths intentionally different?
-
-**Q3: What is the canonical project name — `pi-dashboard` or `pi-agent-dashboard`?**
-This affects substring matching in bridge detection, stale path cleanup, and npm path lookups. Currently both are matched. Should we pick one and alias the other, or keep matching both indefinitely?
+Deferred to a future change per Q3 decision.

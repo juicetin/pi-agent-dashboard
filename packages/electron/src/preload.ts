@@ -13,10 +13,12 @@ export interface WizardApi {
     node: { found: boolean; source?: string };
     apiKeyConfigured: boolean;
   }>;
-  /** Run standalone install */
-  installStandalone: () => Promise<void>;
+  /** Run standalone install (optionally skip already-installed packages) */
+  installStandalone: (skipPackages?: string[]) => Promise<void>;
   /** Install dashboard package globally (power user) */
   installDashboardGlobal: () => Promise<void>;
+  /** Register the bundled bridge extension in pi's settings */
+  registerBundledBridge: () => Promise<void>;
   /** Save API key */
   saveApiKey: (provider: string, key: string) => Promise<void>;
   /** Complete wizard and persist mode */
@@ -27,8 +29,9 @@ export interface WizardApi {
 
 const api: WizardApi = {
   detectDependencies: () => ipcRenderer.invoke("wizard:detect"),
-  installStandalone: () => ipcRenderer.invoke("wizard:install-standalone"),
+  installStandalone: (skipPackages) => ipcRenderer.invoke("wizard:install-standalone", skipPackages),
   installDashboardGlobal: () => ipcRenderer.invoke("wizard:install-dashboard-global"),
+  registerBundledBridge: () => ipcRenderer.invoke("wizard:register-bundled-bridge"),
   saveApiKey: (provider, key) => ipcRenderer.invoke("wizard:save-api-key", provider, key),
   completeWizard: (mode) => ipcRenderer.invoke("wizard:complete", mode),
   onInstallProgress: (callback) => {

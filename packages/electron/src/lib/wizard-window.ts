@@ -25,7 +25,7 @@ let wizardWindow: BrowserWindow | null = null;
  * Open the first-run wizard window.
  * Returns a promise that resolves when the wizard is closed.
  */
-export function openWizardWindow(): Promise<void> {
+export function openWizardWindow(startStep?: string): Promise<void> {
   return new Promise((resolve) => {
     wizardWindow = new BrowserWindow({
       width: 640,
@@ -45,7 +45,7 @@ export function openWizardWindow(): Promise<void> {
     if (!existsSync(wizardHtml) && (process as any).resourcesPath) {
       wizardHtml = path.join((process as any).resourcesPath, "renderer", "wizard.html");
     }
-    wizardWindow.loadFile(wizardHtml);
+    wizardWindow.loadFile(wizardHtml, startStep ? { query: { start: startStep } } : undefined);
 
     wizardWindow.on("closed", () => {
       wizardWindow = null;

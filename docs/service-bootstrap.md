@@ -1,0 +1,357 @@
+# Service Bootstrap & Tool Resolution
+
+## Overview
+
+The PI Dashboard has two independent startup chains that lead to the same server process. Each chain must resolve tool paths (pi, openspec, node, tsx, bridge extension) to launch the server and spawn pi sessions. This document describes both chains, the tool resolution problem, and the target architecture.
+
+## Startup Chains
+
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│  CHAIN 1: ELECTRON APP → SERVER                                         │
+│                                                                          │
+│  /Applications/PI Dashboard.app                                          │
+│    │                                                                     │
+│    ├─ main.ts: pre-wizard health check                                   │
+│    │    └─ isDashboardRunning(port) → server already running? → connect  │
+│    │                                                                     │
+│    ├─ main.ts: smart detection (if first run)                            │
+│    │    ├─ detectPi() ─────────┐                                         │
+│    │    ├─ detectBridgeExt() ──┤ whichSync() uses login shell            │
+│    │    ├─ detectOpenSpec() ───┘ fallback on macOS/Linux                 │
+│    │    │                                                                │
+│    │    ├─ pi + bridge found → auto-skip wizard                          │
+│    │    ├─ pi found, no bridge → wizard at bridge-install step           │
+│    │    └─ nothing found → full wizard                                   │
+│    │                                                                     │
+│    ├─ wizard or auto-skip writes:                                        │
+│    │    ├─ ~/.pi-dashboard/mode.json (standalone | power-user)           │
+│    │    └─ ~/.pi/agent/settings.json (bridge extension path)             │
+│    │                                                                     │
+│    ├─ ensureServer() (mode-aware)                                        │
+│    │    ├─ Power-user: pi-dashboard CLI on PATH → managed → bundled      │
+│    │    └─ Standalone: bundled → managed → CLI on PATH                   │
+│    │                                                                     │
+│    └─ BrowserWindow → http://localhost:8000                              │
+│                                                                          │
+├──────────────────────────────────────────────────────────────────────────┤
+│  CHAIN 2: PI TUI → BRIDGE EXTENSION → SERVER                            │
+│                                                                          │
+│  Terminal: `pi` (user's shell has full PATH)                             │
+│    │                                                                     │
+│    ├─ pi loads ~/.pi/agent/settings.json → packages[]                    │
+│    │    └─ finds bridge extension → loads bridge.ts                      │
+│    │                                                                     │
+│    ├─ bridge.ts reads ~/.pi/dashboard/config.json                        │
+│    │                                                                     │
+│    ├─ autoStartServer() discovery chain:                                 │
+│    │    ├─ mDNS browse (2s timeout)                                      │
+│    │    ├─ health check on configured port                               │
+│    │    └─ launchServer() if autoStart=true                              │
+│    │         └─ spawn(process.execPath, ["--import", jiti, cli.ts])      │
+│    │            process.execPath = the node running pi (from shell PATH) │
+│    │            cli.ts = resolved relative to extension __dirname        │
+│    │                                                                     │
+│    └─ ConnectionManager → ws://localhost:9999                            │
+│                                                                          │
+└──────────────────────────────────────────────────────────────────────────┘
+```
+
+## The Tool Resolution Problem
+
+### What needs resolving
+
+| Tool | Used by | Purpose |
+|------|---------|---------|
+| `pi` | Server process-manager | Spawn new pi sessions (headless or tmux) |
+| `openspec` | Pi sessions (inherited PATH) | OpenSpec CLI inside sessions |
+| `node` | Server launch, tsx, spawn | Node.js runtime |
+| `tsx` | Server launch (standalone) | TypeScript loader for server CLI |
+| `bridge` | settings.json, pi loader | Extension directory with package.json + bridge.ts |
+| `serverCli` | Electron + bridge launcher | Server entry point (cli.ts) |
+
+### Why it's hard
+
+**Chain 2 (TUI) works naturally** — the user's shell has the full PATH with nvm/volta/homebrew/fnm, so all tools are findable. The server inherits this environment.
+
+**Chain 1 (Electron) breaks** — macOS/Linux GUI apps get a minimal system PATH (`/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin`). Tools installed via nvm, volta, or homebrew are invisible.
+
+### Current mitigations (fragile)
+
+| Component | File | Strategy |
+|-----------|------|----------|
+| Electron detector | `dependency-detector.ts` | Login shell fallback (`$SHELL -ilc "which <cmd>"`) |
+| Electron server launch | `server-lifecycle.ts` | Prepends detected pi bin dir + bundled node to PATH |
+| Server process-manager | `process-manager.ts` | `buildSpawnEnv()` adds managed bin + node bin + user dirs |
+| Server extension-register | `extension-register.ts` | Relative path from `__dirname` |
+| Bridge server-launcher | `server-launcher.ts` | Uses `process.execPath` + relative `__dirname` |
+
+Each component resolves tools independently. No shared state. Login shell output includes macOS session restore noise (`Restored session:...`, `Saving session...completed.`) that must be parsed out.
+
+### Failure modes
+
+| Scenario | What breaks | Root cause |
+|----------|-------------|------------|
+| Electron GUI, nvm user | Wizard shows pi ✗ | `which pi` fails on minimal PATH |
+| Server spawned by Electron | Can't spawn pi sessions | Server PATH missing nvm bin dir |
+| nvm version change (v22.22→v22.23) | Persisted paths become stale | Hardcoded absolute paths |
+| AppImage on Linux | Bridge path in settings.json invalid after relaunch | Temp mount path changes |
+| tmux sessions | `pi` not found in tmux shell | tmux server has its own env, not the spawner's |
+
+## Tool Source Hierarchy
+
+Each tool can come from multiple sources. Priority depends on mode:
+
+### Power-user mode
+
+Prefers the user's system installation:
+
+```
+pi, openspec:  System PATH (nvm/volta) → Managed (~/.pi-dashboard/) → Bundled
+node:          System PATH → Bundled (Electron resources)
+tsx:           System PATH → Managed → Bundled
+bridge:        System (npm global) → Bundled (Electron resources) → Dev (relative)
+serverCli:     System (pi-dashboard CLI) → Bundled → Managed
+```
+
+### Standalone mode
+
+Prefers the app's own copies:
+
+```
+pi, openspec:  Managed (~/.pi-dashboard/) → Bundled → System PATH
+node:          Bundled (Electron resources) → System PATH
+tsx:           Managed → Bundled → System PATH
+bridge:        Bundled (Electron resources) → System → Dev
+serverCli:     Bundled → Managed → System
+```
+
+## Target Architecture: Persisted Tool Paths
+
+### Config schema
+
+Add `toolPaths` to `~/.pi/dashboard/config.json`:
+
+```jsonc
+{
+  "port": 8000,
+  "piPort": 9999,
+  "toolPaths": {
+    "pi":        "/Users/x/.nvm/versions/node/v22.22.0/bin/pi",
+    "openspec":  "/Users/x/.nvm/versions/node/v22.22.0/bin/openspec",
+    "node":      "/Applications/PI Dashboard.app/Contents/Resources/node/bin/node",
+    "tsx":       "/Users/x/.pi-dashboard/node_modules/.bin/tsx",
+    "bridge":    "/Applications/PI Dashboard.app/Contents/Resources/server/packages/extension",
+    "serverCli": "/Applications/PI Dashboard.app/Contents/Resources/server/packages/server/src/cli.ts"
+  },
+  "autoStart": true,
+  "spawnStrategy": "headless"
+}
+```
+
+All paths are absolute. `null` or missing means "detect at runtime."
+
+### Writers
+
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│  WHO WRITES toolPaths?                                               │
+│                                                                      │
+│  ┌─────────────────┐                                                 │
+│  │  Electron Wizard │──── initial detection + user selection         │
+│  └────────┬────────┘     writes all toolPaths on first run           │
+│           │                                                          │
+│  ┌────────▼────────┐                                                 │
+│  │  Server Startup  │──── validate + re-detect on every start        │
+│  └────────┬────────┘     updates stale paths (nvm version change)    │
+│           │                                                          │
+│  ┌────────▼────────┐                                                 │
+│  │  Settings Panel  │──── manual override via dashboard UI           │
+│  └────────┬────────┘     (Doctor could also edit)                    │
+│           │                                                          │
+│  ┌────────▼────────┐                                                 │
+│  │  Bridge Start    │──── if toolPaths empty, detect from shell env  │
+│  └─────────────────┘     (Chain 2: full PATH available)              │
+│                                                                      │
+└──────────────────────────────────────────────────────────────────────┘
+```
+
+### Consumers
+
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│  WHO READS toolPaths?                                                │
+│                                                                      │
+│  Electron ensureServer()                                             │
+│    ├─ toolPaths.serverCli → server CLI path                          │
+│    ├─ toolPaths.tsx → TypeScript loader                              │
+│    ├─ toolPaths.node → node binary for PATH                         │
+│    └─ derives PATH from dirname of all resolved paths                │
+│                                                                      │
+│  Server process-manager                                              │
+│    ├─ toolPaths.pi → resolvePiCommand() shortcut                     │
+│    ├─ derives PATH from dirname(pi), dirname(node) for spawn env     │
+│    └─ tmux: injects PATH export into tmux command                    │
+│                                                                      │
+│  Bridge server-launcher                                              │
+│    ├─ toolPaths.serverCli → CLI path (fallback: __dirname relative)  │
+│    └─ toolPaths.node → spawn binary                                  │
+│                                                                      │
+│  Bridge registration                                                 │
+│    └─ toolPaths.bridge → written to settings.json packages[]         │
+│                                                                      │
+│  Wizard / Doctor / Settings Panel                                    │
+│    └─ toolPaths.* → display, validate, edit                          │
+│                                                                      │
+└──────────────────────────────────────────────────────────────────────┘
+```
+
+### Server startup validation
+
+On every server start:
+
+```
+for each tool in toolPaths:
+  if path is set:
+    if file/dir exists at path:
+      keep (valid)
+    else:
+      re-detect using:
+        1. login shell (macOS/Linux GUI)
+        2. system PATH
+        3. managed install
+        4. bundled location
+      if found:
+        update config.json with new path
+        log: "Tool <name> moved from <old> to <new>"
+      else:
+        warn: "Tool <name> not found at <old> and could not be re-detected"
+        set to null (consumers use fallback)
+  else:
+    detect (same chain as above)
+    if found: write to config.json
+```
+
+### PATH derivation
+
+Instead of hardcoding which directories to add, derive PATH from the resolved tool paths:
+
+```typescript
+function buildPathFromToolPaths(toolPaths: ToolPaths): string {
+  const dirs = new Set<string>();
+  for (const toolPath of Object.values(toolPaths)) {
+    if (toolPath && existsSync(toolPath)) {
+      dirs.add(path.dirname(toolPath));
+    }
+  }
+  return [...dirs, process.env.PATH || ""].join(path.delimiter);
+}
+```
+
+This automatically handles nvm, volta, homebrew — wherever the tools live, their parent dirs end up on PATH.
+
+### tmux PATH injection
+
+tmux sessions start in a new shell that doesn't inherit the server's environment. Fix: prepend the resolved PATH to the tmux command:
+
+```typescript
+function buildTmuxCommand(cwd, sessionExists, options, resolvedPath) {
+  const pathExport = `export PATH="${resolvedPath}:$PATH" && `;
+  const piCmd = `${pathExport}cd ${safeCwd} && pi`;
+  // ...
+}
+```
+
+## Platform-Specific Considerations
+
+### macOS (.app bundle)
+
+- `process.resourcesPath` = `/Applications/PI Dashboard.app/Contents/Resources`
+- Bundled paths are stable across app launches
+- Login shell fallback needed for nvm/volta detection (GUI apps don't source `.zshrc`)
+- Login shell outputs session restore noise — parse by finding first line starting with `/`
+
+### Linux (deb/rpm)
+
+- `process.resourcesPath` = `/usr/lib/pi-dashboard/resources`
+- Stable paths, similar to macOS
+- Login shell fallback needed for nvm/volta
+- Less session restore noise than macOS zsh
+
+### Linux (AppImage)
+
+- `process.resourcesPath` = `/tmp/.mount_PIxxxxxx/resources`
+- **Unstable** — mount path changes every launch
+- `toolPaths.bridge` and `toolPaths.serverCli` must not be persisted from AppImage paths
+- Detection: reject paths containing `/tmp/.mount_`
+- Workaround: use global npm install or re-detect on every start
+
+### Windows (NSIS)
+
+- `process.resourcesPath` = `C:\Program Files\PI Dashboard\resources`
+- Stable paths
+- No login shell fallback (not needed — PATH is global on Windows)
+- Spawn uses `windowsHide: true` to prevent console windows
+
+## Key Files
+
+| File | Role |
+|------|------|
+| `packages/shared/src/config.ts` | `DashboardConfig` interface, defaults, loader |
+| `packages/electron/src/lib/dependency-detector.ts` | Tool detection with login shell fallback |
+| `packages/electron/src/lib/server-lifecycle.ts` | `ensureServer()`, mode-aware launch, `launchViaCli()` |
+| `packages/electron/src/lib/health-check.ts` | `isDashboardRunning()` shared utility |
+| `packages/electron/src/lib/bridge-register.ts` | Register bundled extension in settings.json |
+| `packages/electron/src/lib/wizard-ipc.ts` | Wizard IPC: detect, install, register bridge |
+| `packages/electron/src/lib/wizard-window.ts` | Wizard window with `startStep` parameter |
+| `packages/electron/src/renderer/wizard.html` | Wizard UI: mode selection, bridge install, verification |
+| `packages/electron/src/main.ts` | Startup flow: health check → detection → wizard → server |
+| `packages/extension/src/bridge.ts` | Bridge entry point, auto-start trigger |
+| `packages/extension/src/server-auto-start.ts` | mDNS → health check → launch chain |
+| `packages/extension/src/server-launcher.ts` | Spawns server via `process.execPath` + jiti |
+| `packages/server/src/server.ts` | Server init, calls `ensureBridgeExtensionRegistered()` |
+| `packages/server/src/extension-register.ts` | Register bridge in settings.json (server-side) |
+| `packages/server/src/process-manager.ts` | `spawnPiSession()`, `buildSpawnEnv()`, `resolvePiCommand()` |
+| `packages/server/src/session-bootstrap.ts` | Startup session discovery |
+
+## Migration Path
+
+The `toolPaths` config is additive — all fields are optional. Existing installations continue to work with runtime detection as fallback:
+
+1. **Phase 1**: Add `toolPaths` to config schema. Server reads them if present, falls back to current detection. No breaking changes.
+2. **Phase 2**: Wizard writes `toolPaths` on setup. Server validates on start. Doctor displays them.
+3. **Phase 3**: Settings panel allows editing. `mode.json` simplified to just "wizard completed" flag.
+4. **Phase 4**: Remove scattered detection logic from `resolvePiCommand()`, `resolveTsxCommand()`, `findServerCli()`, etc. All read from config with detect-on-miss fallback.
+
+## Appendix: Detection Methods
+
+### Login shell fallback (macOS/Linux)
+
+Used when `which <cmd>` fails on the process PATH (Electron GUI apps):
+
+```typescript
+const shell = process.env.SHELL || "/bin/zsh";
+const output = execSync(`${shell} -ilc "which ${cmd}"`, {
+  encoding: "utf-8",
+  timeout: 5000,
+}).trim();
+// Extract path: find first line starting with "/"
+// (macOS zsh emits "Restored session:..." and "Saving session..." noise)
+const pathLine = output.split("\n").find(l => l.trim().startsWith("/"));
+```
+
+### buildSpawnEnv (server process-manager)
+
+Adds directories to PATH for spawned pi sessions:
+
+```typescript
+function buildSpawnEnv(baseEnv = process.env): NodeJS.ProcessEnv {
+  // With toolPaths:
+  const config = loadConfig();
+  const resolvedPath = buildPathFromToolPaths(config.toolPaths);
+  return { ...baseEnv, PATH: `${resolvedPath}:${baseEnv.PATH}` };
+
+  // Without toolPaths (current):
+  // managed bin + node bin + ~/.local/bin + /usr/local/bin
+}
+```

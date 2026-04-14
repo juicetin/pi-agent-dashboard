@@ -58,6 +58,25 @@
       </button>
     </div>
 
+    <!-- Step 1b: Bridge Installation (targeted, when pi found but no bridge) -->
+    <div id="step-bridge-install" class="step">
+      <h1>Install Dashboard Extension</h1>
+      <h2>pi detected! Choose how to add the dashboard bridge:</h2>
+      <button class="mode-btn" onclick="installBridgeBundled()">
+        <div class="label">📦 Use bundled extension</div>
+        <div class="desc">Register the extension bundled with this app. Quick and reliable.</div>
+      </button>
+      <button class="mode-btn" onclick="installBridgeGlobal()">
+        <div class="label">🌐 Install global package</div>
+        <div class="desc">Install pi-dashboard globally via npm. Includes the CLI and server.</div>
+      </button>
+      <div id="bridge-install-status" style="margin-top: 1rem; display: none;"></div>
+      <div id="bridge-install-error" class="error-msg" style="display:none"></div>
+      <div class="btn-row">
+        <button class="btn btn-secondary" onclick="goToStep('step-mode')">Back</button>
+      </div>
+    </div>
+
     <!-- Step 2: Installation / Verification -->
     <div id="step-install" class="step">
       <h1 id="install-title">Installing...</h1>
@@ -116,6 +135,55 @@
       document.getElementById(id).classList.add('active');
     }
 
+    // Check for start-step query parameter
+    (function checkStartStep() {
+      const params = new URLSearchParams(window.location.search);
+      const startStep = params.get('start');
+      if (startStep === 'bridge-install') {
+        selectedMode = 'power-user';
+        goToStep('step-bridge-install');
+      }
+    })();
+
+    async function installBridgeBundled() {
+      const statusEl = document.getElementById('bridge-install-status');
+      const errorEl = document.getElementById('bridge-install-error');
+      statusEl.style.display = 'block';
+      statusEl.innerHTML = '<span class="status-running">◎</span> Registering bundled extension...';
+      errorEl.style.display = 'none';
+      try {
+        await api.registerBundledBridge();
+        statusEl.innerHTML = '<span class="check">✓</span> Extension registered';
+        await api.completeWizard('power-user');
+        goToStep('step-apikey');
+      } catch (err) {
+        const isAppImage = (err.message || '').includes('not found');
+        errorEl.textContent = isAppImage
+          ? 'Bundled extension not available (AppImage has a temporary path). Use the global package option instead.'
+          : 'Failed: ' + err.message;
+        errorEl.style.display = 'block';
+        statusEl.style.display = 'none';
+      }
+    }
+
+    async function installBridgeGlobal() {
+      const statusEl = document.getElementById('bridge-install-status');
+      const errorEl = document.getElementById('bridge-install-error');
+      statusEl.style.display = 'block';
+      statusEl.innerHTML = '<span class="status-running">◎</span> Installing pi-dashboard globally...';
+      errorEl.style.display = 'none';
+      try {
+        await api.installDashboardGlobal();
+        statusEl.innerHTML = '<span class="check">✓</span> pi-dashboard installed';
+        await api.completeWizard('power-user');
+        goToStep('step-apikey');
+      } catch (err) {
+        errorEl.textContent = 'Failed: ' + err.message;
+        errorEl.style.display = 'block';
+        statusEl.style.display = 'none';
+      }
+    }
+
     async function selectMode(mode) {
       selectedMode = mode;
       deps = await api.detectDependencies();
@@ -135,10 +203,21 @@
 
     async function runInstall() {
       const list = document.getElementById('progress-list');
-      const items = ['pi-coding-agent', 'pi-dashboard', 'openspec', 'tsx'];
-      list.innerHTML = items.map(name =>
-        `<div class="progress-item" id="prog-${name}"><span class="icon status-pending">○</span><div class="progress-wrap"><span class="name">${name}</span></div><span class="elapsed"></span></div>`
-      ).join('');
+      // Map display names to detection results
+      const itemDeps = {
+        'pi-coding-agent': deps?.pi,
+        'openspec': deps?.openspec,
+        'tsx': deps?.node, // tsx is needed when node exists but not as a skip signal itself
+      };
+      const items = ['pi-coding-agent', 'openspec', 'tsx'];
+      list.innerHTML = items.map(name => {
+        const dep = itemDeps[name];
+        const alreadyInstalled = dep?.found && dep?.source === 'system';
+        const icon = alreadyInstalled ? 'status-done' : 'status-pending';
+        const iconChar = alreadyInstalled ? '✓' : '○';
+        const note = alreadyInstalled ? '<div class="output">Already installed (system)</div>' : '';
+        return `<div class="progress-item" id="prog-${name}"><span class="icon ${icon}">${iconChar}</span><div class="progress-wrap"><span class="name">${name}</span>${note}</div><span class="elapsed"></span></div>`;
+      }).join('');
       document.getElementById('install-error').style.display = 'none';
       document.getElementById('install-retry').style.display = 'none';
       document.getElementById('install-next').style.display = 'none';
@@ -183,8 +262,13 @@
         }
       });
 
+      // Build skip list from detection results
+      const skipPackages = [];
+      if (deps?.pi?.found && deps.pi.source === 'system') skipPackages.push('@mariozechner/pi-coding-agent');
+      if (deps?.openspec?.found && deps.openspec.source === 'system') skipPackages.push('@fission-ai/openspec');
+
       try {
-        await api.installStandalone();
+        await api.installStandalone(skipPackages.length > 0 ? skipPackages : undefined);
         document.getElementById('install-next').style.display = 'inline-block';
       } catch (err) {
         document.getElementById('install-retry').style.display = 'inline-block';
@@ -196,7 +280,7 @@
       const checks = [
         { name: 'pi', label: 'pi CLI', found: deps.pi.found },
         { name: 'openspec', label: 'openspec CLI', found: deps.openspec.found },
-        { name: 'dashboard', label: 'Dashboard bridge', found: deps.dashboard.found },
+        { name: 'bridge', label: 'Dashboard bridge', found: deps.bridge?.found || deps.dashboard.found },
       ];
 
       list.innerHTML = checks.map(c =>
@@ -207,9 +291,13 @@
       if (allGood) {
         document.getElementById('install-next').style.display = 'inline-block';
       } else if (!deps.pi.found) {
-        document.getElementById('install-error').textContent = 'pi is not installed. Install it with: npm install -g @mariozechner/pi-coding-agent';
+        document.getElementById('install-error').innerHTML =
+          'pi was not detected. If pi is installed (e.g. via nvm), it may not be visible to GUI apps.<br>' +
+          '<span style="color:#94a3b8">You can continue anyway — the dashboard will try to find it at startup.</span>';
         document.getElementById('install-error').style.display = 'block';
-      } else if (!deps.dashboard.found) {
+        // Allow continuing even if pi not detected (login shell may resolve it at runtime)
+        document.getElementById('install-next').style.display = 'inline-block';
+      } else if (!(deps.bridge?.found || deps.dashboard.found)) {
         document.getElementById('install-error').textContent = 'Installing dashboard bridge...';
         document.getElementById('install-error').style.display = 'block';
         try {
@@ -221,6 +309,8 @@
           if (dashEl) { dashEl.className = 'icon status-done'; dashEl.textContent = '✓'; }
         } catch (err) {
           document.getElementById('install-error').textContent = 'Failed to install dashboard bridge: ' + err.message;
+          // Still allow continuing
+          document.getElementById('install-next').style.display = 'inline-block';
         }
       }
     }

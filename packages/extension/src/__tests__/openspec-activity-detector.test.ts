@@ -93,28 +93,28 @@ describe("detectOpenSpecActivity", () => {
       const result = detectOpenSpecActivity("bash", {
         command: 'openspec status --change "session-sync" --json',
       });
-      expect(result).toEqual({ changeName: "session-sync" });
+      expect(result).toEqual({ changeName: "session-sync", isActive: true });
     });
 
     it("detects change name from openspec instructions command", () => {
       const result = detectOpenSpecActivity("bash", {
         command: 'openspec instructions apply --change "my-feature" --json',
       });
-      expect(result).toEqual({ changeName: "my-feature" });
+      expect(result).toEqual({ changeName: "my-feature", isActive: true });
     });
 
     it("detects change name without quotes", () => {
       const result = detectOpenSpecActivity("bash", {
         command: "openspec status --change session-sync --json",
       });
-      expect(result).toEqual({ changeName: "session-sync" });
+      expect(result).toEqual({ changeName: "session-sync", isActive: true });
     });
 
     it("detects change name from openspec archive command", () => {
       const result = detectOpenSpecActivity("bash", {
         command: "openspec archive session-sync",
       });
-      expect(result).toEqual({ changeName: "session-sync" });
+      expect(result).toEqual({ changeName: "session-sync", isActive: true });
     });
 
     it("returns null for non-openspec bash commands", () => {
@@ -128,21 +128,21 @@ describe("detectOpenSpecActivity", () => {
       const result = detectOpenSpecActivity("bash", {
         command: 'openspec new change "add-auth"',
       });
-      expect(result).toEqual({ changeName: "add-auth" });
+      expect(result).toEqual({ changeName: "add-auth", isActive: true });
     });
 
     it("detects change name from openspec new change with unquoted name", () => {
       const result = detectOpenSpecActivity("bash", {
         command: "openspec new change add-auth",
       });
-      expect(result).toEqual({ changeName: "add-auth" });
+      expect(result).toEqual({ changeName: "add-auth", isActive: true });
     });
 
     it("detects change name from openspec new change with cd prefix", () => {
       const result = detectOpenSpecActivity("bash", {
         command: 'cd /Users/dev/project && openspec new change "my-feature"',
       });
-      expect(result).toEqual({ changeName: "my-feature" });
+      expect(result).toEqual({ changeName: "my-feature", isActive: true });
     });
 
     it("returns null for openspec list (no change name)", () => {
@@ -154,18 +154,18 @@ describe("detectOpenSpecActivity", () => {
   });
 
   describe("change name detection from file reads", () => {
-    it("detects change name from openspec change file read", () => {
+    it("detects change name from openspec change file read as passive", () => {
       const result = detectOpenSpecActivity("read", {
         path: "openspec/changes/session-sync/tasks.md",
       });
-      expect(result).toEqual({ changeName: "session-sync" });
+      expect(result).toEqual({ changeName: "session-sync", isActive: false });
     });
 
-    it("detects change name from absolute path", () => {
+    it("detects change name from absolute path as passive", () => {
       const result = detectOpenSpecActivity("read", {
         path: "/Users/dev/project/openspec/changes/my-feature/proposal.md",
       });
-      expect(result).toEqual({ changeName: "my-feature" });
+      expect(result).toEqual({ changeName: "my-feature", isActive: false });
     });
 
     it("returns null for non-openspec file reads", () => {
@@ -177,18 +177,18 @@ describe("detectOpenSpecActivity", () => {
   });
 
   describe("change name detection from file writes", () => {
-    it("detects change name from openspec change file write", () => {
+    it("detects change name from openspec change file write as active", () => {
       const result = detectOpenSpecActivity("write", {
         path: "openspec/changes/session-sync/proposal.md",
       });
-      expect(result).toEqual({ changeName: "session-sync" });
+      expect(result).toEqual({ changeName: "session-sync", isActive: true });
     });
 
-    it("detects change name from absolute path write", () => {
+    it("detects change name from absolute path write as active", () => {
       const result = detectOpenSpecActivity("write", {
         path: "/Users/dev/project/openspec/changes/my-feature/spec.md",
       });
-      expect(result).toEqual({ changeName: "my-feature" });
+      expect(result).toEqual({ changeName: "my-feature", isActive: true });
     });
 
     it("returns null for non-openspec file writes", () => {
@@ -203,15 +203,15 @@ describe("detectOpenSpecActivity", () => {
     it("handles capitalized tool names (backward compatibility)", () => {
       expect(detectOpenSpecActivity("Read", {
         path: "openspec/changes/my-feature/proposal.md",
-      })).toEqual({ changeName: "my-feature" });
+      })).toEqual({ changeName: "my-feature", isActive: false });
 
       expect(detectOpenSpecActivity("Bash", {
         command: 'openspec status --change "add-auth" --json',
-      })).toEqual({ changeName: "add-auth" });
+      })).toEqual({ changeName: "add-auth", isActive: true });
 
       expect(detectOpenSpecActivity("Write", {
         path: "openspec/changes/my-feature/design.md",
-      })).toEqual({ changeName: "my-feature" });
+      })).toEqual({ changeName: "my-feature", isActive: true });
     });
 
     it("returns null for unknown tool names", () => {

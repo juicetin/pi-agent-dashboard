@@ -37,17 +37,39 @@ The browser SHALL send a `detach_proposal` message to clear the attached proposa
 - **AND** the session later receives new `openspec_activity_update` messages with both phase and changeName
 - **THEN** the server SHALL auto-attach the newly detected change
 
+### Requirement: DetectedActivity includes active flag
+The `DetectedActivity` interface SHALL include an `isActive` boolean field that indicates whether the detected activity represents an active operation (write, CLI command) or a passive operation (read). Read operations return `isActive: false`, write and bash/CLI operations return `isActive: true`. Phase-only detections (SKILL.md reads) omit `isActive`.
+
+#### Scenario: Read operation returns isActive false
+- **WHEN** `detectOpenSpecActivity` is called with tool "read" and a path matching `openspec/changes/<name>/`
+- **THEN** the result SHALL include `isActive: false`
+
+#### Scenario: Write operation returns isActive true
+- **WHEN** `detectOpenSpecActivity` is called with tool "write" and a path matching `openspec/changes/<name>/`
+- **THEN** the result SHALL include `isActive: true`
+
+#### Scenario: Bash CLI command returns isActive true
+- **WHEN** `detectOpenSpecActivity` is called with tool "bash" and a command containing an openspec CLI invocation with a change name
+- **THEN** the result SHALL include `isActive: true`
+
+#### Scenario: Phase-only detection omits isActive
+- **WHEN** `detectOpenSpecActivity` is called with a SKILL.md read (phase detection only, no changeName)
+- **THEN** the result SHALL NOT include `isActive`
+
 ### Requirement: Server-side auto-attach from activity detection
-When the server receives `openspec_activity_update` messages, it SHALL update the session's `openspecPhase` and `openspecChange` fields independently. After each update, if the session has both `openspecPhase` and `openspecChange` set and no `attachedProposal`, the server SHALL automatically set `attachedProposal` to the session's accumulated `openspecChange` value.
+When the server receives `openspec_activity_update` messages, it SHALL update the session's `openspecPhase` and `openspecChange` fields independently. After each update, if the session has `openspecChange` set, no `attachedProposal`, and the detected activity has `isActive: true`, the server SHALL automatically set `attachedProposal` to the session's accumulated `openspecChange` value. Read-only operations (`isActive: false`) update tracking fields but SHALL NOT trigger auto-attach.
 
-#### Scenario: Auto-attach on first activity detection
-- **WHEN** the server receives `openspec_activity_update` with `phase: "apply"` and `changeName: "add-auth"` for a session with `attachedProposal = null`
+#### Scenario: Auto-attach on active write operation
+- **WHEN** the server detects a write to `openspec/changes/add-auth/proposal.md` for a session with `attachedProposal = null`
 - **THEN** the server SHALL set `session.attachedProposal = "add-auth"` and broadcast `session_updated`
 
-#### Scenario: Auto-attach from separately arriving phase and changeName
-- **WHEN** the server receives `openspec_activity_update` with `phase: "apply"` (no changeName) for a session with `attachedProposal = null`
-- **AND** later receives `openspec_activity_update` with `changeName: "add-auth"` (no phase) for the same session
+#### Scenario: Auto-attach on bash CLI operation
+- **WHEN** the server detects `openspec new change "add-auth"` for a session with `attachedProposal = null`
 - **THEN** the server SHALL set `session.attachedProposal = "add-auth"` and broadcast `session_updated`
+
+#### Scenario: No auto-attach on read operation
+- **WHEN** the server detects a read of `openspec/changes/add-auth/proposal.md` for a session with `attachedProposal = null`
+- **THEN** `openspecChange` SHALL update to "add-auth" but `attachedProposal` SHALL remain unset
 
 #### Scenario: No auto-attach when proposal already attached
 - **WHEN** the server receives `openspec_activity_update` with `changeName: "other-change"` for a session with `attachedProposal = "add-auth"`
@@ -55,10 +77,6 @@ When the server receives `openspec_activity_update` messages, it SHALL update th
 
 #### Scenario: No auto-attach when only phase detected
 - **WHEN** the server receives `openspec_activity_update` with `phase: "explore"` but no `changeName` for a session with `openspecChange = null`
-- **THEN** the server SHALL NOT set `attachedProposal`
-
-#### Scenario: No auto-attach when only changeName detected
-- **WHEN** the server receives `openspec_activity_update` with `changeName: "add-auth"` but no `phase` for a session with `openspecPhase = null`
 - **THEN** the server SHALL NOT set `attachedProposal`
 
 ### Requirement: Case-insensitive tool name matching in activity detector

@@ -7,6 +7,8 @@ import type { OpenSpecPhase } from "./types.js";
 export interface DetectedActivity {
   phase?: OpenSpecPhase;
   changeName?: string;
+  /** True for write/CLI operations (active work), false for reads (passive browsing) */
+  isActive?: boolean;
 }
 
 /** Map from skill directory name suffix to phase */
@@ -59,10 +61,10 @@ export function detectOpenSpecActivity(
       return null;
     }
 
-    // Check for openspec change file read → change name detection
+    // Check for openspec change file read → change name detection (passive)
     const changeMatch = path.match(CHANGE_PATH_RE);
     if (changeMatch) {
-      return { changeName: changeMatch[1] };
+      return { changeName: changeMatch[1], isActive: false };
     }
 
     return null;
@@ -74,7 +76,7 @@ export function detectOpenSpecActivity(
 
     const changeMatch = path.match(CHANGE_PATH_RE);
     if (changeMatch) {
-      return { changeName: changeMatch[1] };
+      return { changeName: changeMatch[1], isActive: true };
     }
 
     return null;
@@ -87,19 +89,19 @@ export function detectOpenSpecActivity(
     // Check for --change flag
     const flagMatch = command.match(CLI_CHANGE_FLAG_RE);
     if (flagMatch) {
-      return { changeName: flagMatch[1] };
+      return { changeName: flagMatch[1], isActive: true };
     }
 
     // Check for openspec archive <name>
     const archiveMatch = command.match(CLI_ARCHIVE_RE);
     if (archiveMatch) {
-      return { changeName: archiveMatch[1] };
+      return { changeName: archiveMatch[1], isActive: true };
     }
 
     // Check for openspec new change "name"
     const newChangeMatch = command.match(CLI_NEW_CHANGE_RE);
     if (newChangeMatch) {
-      return { changeName: newChangeMatch[1] };
+      return { changeName: newChangeMatch[1], isActive: true };
     }
 
     return null;

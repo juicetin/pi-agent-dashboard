@@ -135,10 +135,11 @@ export function wireEvents(deps: EventWiringDeps): void {
           if (changed) {
             sessionManager.update(sessionId, activityUpdates);
             const updatedSession = sessionManager.get(sessionId);
-            // Auto-attach proposal when changeName is detected (phase is optional —
-            // skills loaded via prompt templates don't emit a SKILL.md read event)
+            // Auto-attach proposal when changeName is detected via active operations
+            // (write/CLI). Reads are passive (browsing/analysis) and don't trigger attach.
+            // Phase is optional — skills loaded via prompt templates don't emit a SKILL.md read event.
             const attachUpdates: Partial<DashboardSession> = {};
-            if (updatedSession?.openspecChange && !updatedSession.attachedProposal) {
+            if (updatedSession?.openspecChange && !updatedSession.attachedProposal && detected.isActive) {
               attachUpdates.attachedProposal = updatedSession.openspecChange;
               if (!updatedSession.name?.trim()) {
                 attachUpdates.name = updatedSession.openspecChange;

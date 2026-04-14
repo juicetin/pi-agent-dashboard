@@ -524,8 +524,7 @@ function initBridge(pi: ExtensionAPI) {
   // - `context`: carries full message arrays (very large)
   // - `before_provider_request`: carries raw API payloads (very large)
   // - `session_start`: dedicated handler → session_register protocol message
-  // - `session_switch`: dedicated handler → session_register protocol message
-  // - `session_fork`: dedicated handler → session_register protocol message
+  // - session change (new/fork/resume): handled inside session_start via event.reason
   // - `session_shutdown`: dedicated handler → disconnect/cleanup
 
   // Unified EventBus rename map for the emit intercept (flow + subagent events)
@@ -616,6 +615,13 @@ function initBridge(pi: ExtensionAPI) {
     // Bail out if a newer bridge instance has taken over
     if (!isActive()) return;
     const newSessionId = ctx.sessionManager.getSessionId();
+
+    // On session switch/fork (0.65.0+: event.reason replaces session_switch/session_fork events),
+    // unregister the old session before re-registering the new one.
+    const reason = _event?.reason;
+    if ((reason === "new" || reason === "fork" || reason === "resume") && sessionId && sessionId !== newSessionId) {
+      handleSessionChange(ctx);
+    }
 
     cachedHasUI = ctx.hasUI;
     cachedCtx = ctx;
@@ -883,7 +889,7 @@ function initBridge(pi: ExtensionAPI) {
     registerFlowEventListeners(syncBc(), () => sessionReady, getFlowsList);
   }));
 
-  // Shared handler for session_switch and session_fork
+  // Shared handler for session changes (new/fork/resume)
   function handleSessionChange(ctx: any) {
     const bc = syncBc();
     _handleSessionChange(bc, ctx, getFlowsList);
@@ -896,17 +902,8 @@ function initBridge(pi: ExtensionAPI) {
     }, GIT_POLL_INTERVAL);
   }
 
-  pi.on("session_switch" as any, safe(async (_event: any, ctx: any) => {
-    if (!isActive()) return;
-    cachedCtx = ctx;
-    handleSessionChange(ctx);
-  }));
-
-  pi.on("session_fork" as any, safe(async (_event: any, ctx: any) => {
-    if (!isActive()) return;
-    cachedCtx = ctx;
-    handleSessionChange(ctx);
-  }));
+  // session_switch and session_fork events removed in pi 0.65.0.
+  // Now handled via session_start with event.reason ("new"|"fork"|"resume").
 
   pi.on("turn_end", safe(async (event: any, ctx: any) => {
     if (!isActive()) return;

@@ -1,6 +1,6 @@
 import React from "react";
 import { Icon } from "@mdi/react";
-import { mdiRefresh, mdiEyeOutline, mdiFileDocumentOutline } from "@mdi/js";
+import { mdiRefresh, mdiEyeOutline, mdiEyeOffOutline, mdiFileDocumentOutline } from "@mdi/js";
 import type { FlowAgentState } from "@blackbelt-technology/pi-dashboard-shared/types.js";
 import { AgentCardShell } from "./AgentCardShell.js";
 import { formatTokens, formatDuration } from "./agent-card-utils.js";
@@ -10,11 +10,15 @@ export function FlowAgentCard({
   onClick,
   onViewSource,
   selected,
+  isDetailOpen,
+  isSourceOpen,
 }: {
   agent: FlowAgentState;
   onClick?: () => void;
   onViewSource?: () => void;
   selected?: boolean;
+  isDetailOpen?: boolean;
+  isSourceOpen?: boolean;
 }) {
   const displayName = agent.label || agent.stepId || agent.agentName;
   const displayRole = agent.cardRole || agent.model || "";
@@ -36,6 +40,10 @@ export function FlowAgentCard({
   const headerRight = agent.loopIteration != null && agent.loopIteration > 0 ? (
     <span className="text-[10px] text-blue-400 flex-shrink-0 inline-flex items-center gap-0.5">
       <Icon path={mdiRefresh} size={0.4} />{agent.loopIteration}/{agent.loopMax}
+    </span>
+  ) : (agent.runCount ?? 1) > 1 ? (
+    <span className="text-[10px] text-blue-400 flex-shrink-0 inline-flex items-center gap-0.5">
+      <Icon path={mdiRefresh} size={0.4} />{agent.runCount}
     </span>
   ) : stepTypeBadge;
 
@@ -87,8 +95,12 @@ export function FlowAgentCard({
             {onViewSource && (
               <button
                 onClick={(e) => { e.stopPropagation(); onViewSource(); }}
-                className="text-[var(--text-tertiary)] hover:text-blue-400 transition-colors p-0.5 rounded hover:bg-[var(--bg-surface)] inline-flex items-center"
-                title={`View ${displayName} source`}
+                className={`transition-colors p-0.5 rounded inline-flex items-center ${
+                  isSourceOpen
+                    ? "text-blue-400 bg-blue-400/10"
+                    : "text-[var(--text-tertiary)] hover:text-blue-400 hover:bg-[var(--bg-surface)]"
+                }`}
+                title={isSourceOpen ? `Close ${displayName} source` : `View ${displayName} source`}
               >
                 <Icon path={mdiFileDocumentOutline} size={0.45} />
               </button>
@@ -96,10 +108,14 @@ export function FlowAgentCard({
             {onClick && (
               <button
                 onClick={(e) => { e.stopPropagation(); onClick(); }}
-                className="text-[var(--text-tertiary)] hover:text-blue-400 transition-colors p-0.5 rounded hover:bg-[var(--bg-surface)] inline-flex items-center"
-                title={`View ${displayName} detail`}
+                className={`transition-colors p-0.5 rounded inline-flex items-center ${
+                  isDetailOpen
+                    ? "text-blue-400 bg-blue-400/10"
+                    : "text-[var(--text-tertiary)] hover:text-blue-400 hover:bg-[var(--bg-surface)]"
+                }`}
+                title={isDetailOpen ? `Close ${displayName} detail` : `View ${displayName} detail`}
               >
-                <Icon path={mdiEyeOutline} size={0.45} />
+                <Icon path={isDetailOpen ? mdiEyeOffOutline : mdiEyeOutline} size={0.45} />
               </button>
             )}
           </div>

@@ -14,6 +14,18 @@ import { layout as dagreLayout } from "dagre-d3-es/src/dagre/index.js";
  */
 export type FlowStepType = "agent" | "fork" | "loop" | "conditional" | "flow-ref";
 
+/** Map flow engine stepType string to graph visual type */
+export function mapStepType(stepType: string | undefined): FlowStepType | undefined {
+  switch (stepType) {
+    case "fork":
+    case "conditional":
+    case "agent-decision": return "fork";
+    case "agent-loop-decision": return "loop";
+    case "flow-ref": return "flow-ref";
+    default: return undefined; // "agent" → default styling
+  }
+}
+
 export interface FlowGraphStep {
   id: string;
   label: string;
@@ -22,6 +34,48 @@ export interface FlowGraphStep {
   type?: FlowStepType;
   /** For loop steps: the step ID to loop back to (rendered as a backward arrow) */
   loopTarget?: string;
+}
+
+/** Step types that act as segment separators (non-agent control flow) */
+const SEPARATOR_STEP_TYPES = new Set(["fork", "conditional", "agent-decision", "agent-loop-decision", "flow-ref"]);
+
+/** Synthesize implicit sequential edges that aren't expressed in blockedBy.
+ *  - Steps after a separator with no blockedBy get an edge from the preceding separator.
+ *  - Loop exit_target steps get an edge from the loop step. */
+export function synthesizeImplicitEdges(
+  steps: FlowGraphStep[],
+  dagSteps: Array<{ id: string; stepType?: string; exitTarget?: string }>,
+): void {
+  const allStepIds = new Set(steps.map(s => s.id));
+  const stepById = new Map(steps.map(s => [s.id, s]));
+
+  // 1. Exit target edges: loop-decision → exit_target
+  for (const ds of dagSteps) {
+    if (ds.exitTarget && allStepIds.has(ds.exitTarget)) {
+      const target = stepById.get(ds.exitTarget);
+      if (target && !target.blockedBy.includes(ds.id)) {
+        target.blockedBy = [...target.blockedBy, ds.id];
+      }
+    }
+  }
+
+  // 2. Implicit segment edges: steps with no blockedBy after a separator
+  for (let i = 1; i < dagSteps.length; i++) {
+    const curr = stepById.get(dagSteps[i].id);
+    if (!curr || curr.blockedBy.length > 0) continue;
+
+    for (let j = i - 1; j >= 0; j--) {
+      const prev = dagSteps[j];
+      if (prev.stepType && SEPARATOR_STEP_TYPES.has(prev.stepType) && allStepIds.has(prev.id)) {
+        curr.blockedBy = [prev.id];
+        break;
+      }
+      if ((!prev.stepType || prev.stepType === "agent") && allStepIds.has(prev.id)) {
+        curr.blockedBy = [prev.id];
+        break;
+      }
+    }
+  }
 }
 
 interface PositionedNode {
@@ -206,12 +260,21 @@ export function computeLayout(steps: FlowGraphStep[]): LayoutResult {
     }
   }
 
+  // Compute actual bounding box from positioned nodes (dagre's graphHeight may
+  // not account for the yOffset shift correctly)
+  let maxBottom = 0;
+  for (const n of nodes) {
+    const bottom = n.y + n.height;
+    if (bottom > maxBottom) maxBottom = bottom;
+  }
+  const actualHeight = Math.max(graphHeight + yOffset, maxBottom + 16);
+
   return {
     nodes,
     edges,
     loopEdges,
     width: graphWidth,
-    height: graphHeight + yOffset,
+    height: actualHeight,
   };
 }
 
@@ -268,7 +331,7 @@ export function FlowGraph({ steps }: { steps: FlowGraphStep[] }) {
 
   const svgWidth = Math.max(layout.width, 150);
   const svgHeight = Math.max(layout.height, 50);
-  const containerHeight = Math.min(svgHeight + 8, 200);
+  const containerHeight = Math.min(svgHeight + 8, 300);
 
   return (
     <div

@@ -59,7 +59,7 @@ function extractStepsFromYaml(content: string): ArchitectDagStep[] {
     const id = m[1].trim();
     steps.push({ id, blockedBy: [] });
   }
-  // Try to extract blockedBy for each step (simple regex, may miss complex cases)
+  // Try to extract fields for each step (simple regex, may miss complex cases)
   const stepBlocks = content.split(/^\s+-\s*id:/m).slice(1);
   for (let i = 0; i < stepBlocks.length && i < steps.length; i++) {
     const block = stepBlocks[i];
@@ -69,6 +69,12 @@ function extractStepsFromYaml(content: string): ArchitectDagStep[] {
     if (blockedMatch) {
       steps[i].blockedBy = blockedMatch[1].split(",").map(s => s.trim().replace(/^["']|["']$/g, "")).filter(Boolean);
     }
+    const stepTypeMatch = block.match(/^\s+stepType:\s*(.+)$/m);
+    if (stepTypeMatch) steps[i].stepType = stepTypeMatch[1].trim() as ArchitectDagStep["stepType"];
+    const loopTargetMatch = block.match(/^\s+loop_target:\s*(.+)$/m);
+    if (loopTargetMatch) steps[i].loopTarget = loopTargetMatch[1].trim();
+    const exitTargetMatch = block.match(/^\s+exit_target:\s*(.+)$/m);
+    if (exitTargetMatch) steps[i].exitTarget = exitTargetMatch[1].trim();
   }
   return steps;
 }

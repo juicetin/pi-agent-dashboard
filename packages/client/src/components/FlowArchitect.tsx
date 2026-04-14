@@ -7,6 +7,7 @@ import {
   mdiArrowLeft,
   mdiFileDocumentOutline,
   mdiEyeOutline,
+  mdiEyeOffOutline,
 } from "@mdi/js";
 import type {
   ArchitectState,
@@ -15,19 +16,24 @@ import type {
   FlowDetailEntry,
 } from "@blackbelt-technology/pi-dashboard-shared/types.js";
 import { MarkdownContent } from "./MarkdownContent.js";
-import { FlowGraph, type FlowGraphStep } from "./FlowGraph.js";
+import { FlowGraph, mapStepType, synthesizeImplicitEdges, type FlowGraphStep } from "./FlowGraph.js";
 import { AgentCardShell } from "./AgentCardShell.js";
 
 /** Map ArchitectState.dagSteps to FlowGraphStep array (all pending) */
 function architectStepsToGraphSteps(state: ArchitectState): FlowGraphStep[] {
-  return state.dagSteps.map((step) => ({
+  const allStepIds = new Set(state.dagSteps.map(s => s.id));
+  const steps: FlowGraphStep[] = state.dagSteps.map((step) => ({
     id: step.id,
     label: step.agentName || step.id,
     status: "pending" as const,
-    blockedBy: step.blockedBy,
-    type:
-      step.stepType === "flow-ref" ? ("flow-ref" as const) : ("agent" as const),
+    blockedBy: [...step.blockedBy],
+    type: mapStepType(step.stepType),
+    loopTarget: step.loopTarget && allStepIds.has(step.loopTarget) ? step.loopTarget : undefined,
   }));
+
+  synthesizeImplicitEdges(steps, state.dagSteps);
+
+  return steps;
 }
 
 // ── Detail view (reuses same patterns as FlowAgentDetail) ─────────
@@ -394,6 +400,7 @@ export function FlowArchitect({
   state,
   onAbort,
   onClick,
+  isDetailOpen,
   onPromptRespond,
   onViewYaml,
   onViewAgentSource,
@@ -401,6 +408,7 @@ export function FlowArchitect({
   state: ArchitectState;
   onAbort: () => void;
   onClick?: () => void;
+  isDetailOpen?: boolean;
   onPromptRespond?: (promptId: string, answer: string) => void;
   onViewYaml?: () => void;
   onViewAgentSource?: (agentName: string, source: string) => void;
@@ -424,7 +432,11 @@ export function FlowArchitect({
             size={0.6}
           />
         </span>
-        <span className="text-purple-400 text-sm font-medium">π</span>
+        {isActive ? (
+          <Icon path={mdiLoading} size={0.55} className="text-purple-400 animate-spin shrink-0" />
+        ) : (
+          <span className="text-purple-400 text-sm font-medium">π</span>
+        )}
         <span className="text-sm text-[var(--text-primary)] truncate flex-1">
           Flow Architect
           <span className="text-[var(--text-tertiary)] ml-1.5">
@@ -586,17 +598,21 @@ export function FlowArchitect({
                 </div>
               ))}
             </div>
-            {onClick && (
-              <div className="mt-1">
+            <div className="flex items-center gap-2 mt-1">
+              {onClick && (
                 <button
                   onClick={onClick}
-                  className="text-[var(--text-tertiary)] hover:text-purple-400 transition-colors p-0.5 rounded hover:bg-[var(--bg-surface)] inline-flex items-center"
-                  title="View full architect detail"
+                  className={`transition-colors p-0.5 rounded inline-flex items-center ${
+                    isDetailOpen
+                      ? "text-purple-400 bg-purple-400/10"
+                      : "text-[var(--text-tertiary)] hover:text-purple-400 hover:bg-[var(--bg-surface)]"
+                  }`}
+                  title={isDetailOpen ? "Close architect detail" : "View full architect detail"}
                 >
-                  <Icon path={mdiEyeOutline} size={0.5} />
+                  <Icon path={isDetailOpen ? mdiEyeOffOutline : mdiEyeOutline} size={0.5} />
                 </button>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         </div>
       </div>

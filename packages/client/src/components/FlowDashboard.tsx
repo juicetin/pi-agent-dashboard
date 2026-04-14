@@ -1,67 +1,9 @@
 import React, { useState, useMemo, useEffect, useRef } from "react";
 import { Icon } from "@mdi/react";
-import { mdiRobotOutline, mdiStop, mdiChevronUp, mdiChevronRight, mdiChevronDown, mdiFileDocumentOutline } from "@mdi/js";
+import { mdiRobotOutline, mdiStop, mdiChevronUp, mdiChevronRight, mdiChevronDown, mdiFileDocumentOutline, mdiLoading } from "@mdi/js";
 import type { FlowState } from "@blackbelt-technology/pi-dashboard-shared/types.js";
 import { FlowAgentCard } from "./FlowAgentCard.js";
-import { FlowGraph, type FlowGraphStep, type FlowStepType } from "./FlowGraph.js";
-
-/** Step types that act as segment separators (non-agent control flow) */
-const SEPARATOR_STEP_TYPES = new Set(["fork", "conditional", "agent-decision", "agent-loop-decision", "flow-ref"]);
-
-/** Synthesize implicit sequential edges that aren't expressed in blockedBy.
- *  - Steps after a separator with no blockedBy get an edge from the preceding separator.
- *  - Loop exit_target steps get an edge from the loop step. */
-function synthesizeImplicitEdges(
-  steps: FlowGraphStep[],
-  dagSteps: NonNullable<FlowState["dagSteps"]>,
-): void {
-  const allStepIds = new Set(steps.map(s => s.id));
-  const stepById = new Map(steps.map(s => [s.id, s]));
-
-  // 1. Exit target edges: loop-decision → exit_target
-  for (const ds of dagSteps) {
-    if (ds.exitTarget && allStepIds.has(ds.exitTarget)) {
-      const target = stepById.get(ds.exitTarget);
-      if (target && !target.blockedBy.includes(ds.id)) {
-        target.blockedBy = [...target.blockedBy, ds.id];
-      }
-    }
-  }
-
-  // 2. Implicit segment edges: steps with no blockedBy after a separator
-  for (let i = 1; i < dagSteps.length; i++) {
-    const curr = stepById.get(dagSteps[i].id);
-    if (!curr || curr.blockedBy.length > 0) continue;
-
-    // Walk backward to find the nearest preceding separator step
-    for (let j = i - 1; j >= 0; j--) {
-      const prev = dagSteps[j];
-      if (SEPARATOR_STEP_TYPES.has(prev.stepType) && allStepIds.has(prev.id)) {
-        curr.blockedBy = [prev.id];
-        break;
-      }
-      // If we hit an agent step, it means there's a DAG segment before us —
-      // this step should depend on all root agents in that segment (but that's complex).
-      // Simple heuristic: depend on the previous step in YAML order.
-      if (prev.stepType === "agent" && allStepIds.has(prev.id)) {
-        curr.blockedBy = [prev.id];
-        break;
-      }
-    }
-  }
-}
-
-/** Map YAML stepType to graph visual type */
-function mapStepType(stepType: string): FlowStepType | undefined {
-  switch (stepType) {
-    case "fork":
-    case "conditional":
-    case "agent-decision": return "fork";
-    case "agent-loop-decision": return "loop";
-    case "flow-ref": return "flow-ref";
-    default: return undefined; // "agent" → default styling
-  }
-}
+import { FlowGraph, mapStepType, synthesizeImplicitEdges, type FlowGraphStep } from "./FlowGraph.js";
 import { FlowSummary } from "./FlowSummary.js";
 import { FlowTabBar, type FlowTab } from "./FlowTabBar.js";
 import { useMobile } from "../hooks/useMobile.js";
@@ -138,23 +80,27 @@ export function FlowDashboard({
   flowState,
   flowStates,
   onAgentClick,
+  selectedAgent,
   onAbort,
   onToggleAutonomous,
   onDismiss,
   onSendPrompt,
   onViewYaml,
   onViewAgentSource,
+  sourceOpenAgent,
 }: {
   flowState: FlowState;
   /** All flow states (main + subflows) for tab navigation */
   flowStates?: Map<string, FlowState>;
-  onAgentClick: (agentName: string) => void;
+  onAgentClick: (agentName: string | null) => void;
+  selectedAgent?: string | null;
   onAbort: () => void;
   onToggleAutonomous: () => void;
   onDismiss: () => void;
   onSendPrompt?: (text: string) => void;
   onViewYaml?: () => void;
   onViewAgentSource?: (sourcePath: string, agentName: string) => void;
+  sourceOpenAgent?: string | null;
 }) {
   const isMobile = useMobile();
   const [collapsed, setCollapsed] = useState(false);
@@ -249,7 +195,11 @@ export function FlowDashboard({
         >
           <Icon path={collapsed ? mdiChevronRight : mdiChevronDown} size={0.6} />
         </span>
-        <span className="text-blue-400 text-sm font-medium">π</span>
+        {isRunning ? (
+          <Icon path={mdiLoading} size={0.55} className="text-blue-400 animate-spin shrink-0" />
+        ) : (
+          <span className="text-blue-400 text-sm font-medium">π</span>
+        )}
         <span className="text-sm text-[var(--text-primary)] truncate flex-1">
           {flowState.flowName}
           <span className="text-[var(--text-tertiary)] ml-1.5">{doneCount}/{totalCount} steps</span>
@@ -322,7 +272,13 @@ export function FlowDashboard({
               <FlowAgentCard
                 key={agent.stepId || agent.agentName}
                 agent={agent}
-                onClick={() => onAgentClick(agent.stepId || agent.agentName)}
+                onClick={() => {
+                  const key = agent.stepId || agent.agentName;
+                  onAgentClick(selectedAgent === key ? null : key);
+                }}
+                selected={selectedAgent === (agent.stepId || agent.agentName)}
+                isDetailOpen={selectedAgent === (agent.stepId || agent.agentName)}
+                isSourceOpen={sourceOpenAgent === (agent.label || agent.stepId || agent.agentName)}
                 onViewSource={agent.sourcePath && onViewAgentSource ? () => onViewAgentSource(agent.sourcePath!, agent.label || agent.stepId || agent.agentName) : undefined}
               />
             ))}

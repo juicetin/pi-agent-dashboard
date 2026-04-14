@@ -133,6 +133,7 @@ export function reduceFlowEvent(
       const agents = new Map(flowState.agents);
       const [key, existing] = findAgent(agents, agentName, stepId);
       const mapKey = key || stepId;
+      const isRerun = existing && (existing.status === "complete" || existing.status === "error" || existing.status === "blocked");
       agents.set(mapKey, {
         ...(existing || {
           agentName,
@@ -141,12 +142,14 @@ export function reduceFlowEvent(
           recentTools: [],
           detailHistory: [],
         }),
+        ...(isRerun ? { recentTools: [], detailHistory: [] } : {}),
         status: "running",
         label: config?.card?.label,
         model: config?.model,
         resolvedModel: (data.resolvedModel as string) || undefined,
         cardRole: config?.card?.role,
         sourcePath: config?.sourcePath,
+        runCount: isRerun ? (existing.runCount ?? 1) + 1 : (existing?.runCount ?? 1),
       });
       return { ...flowState, agents };
     }

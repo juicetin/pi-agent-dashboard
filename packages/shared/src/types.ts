@@ -260,6 +260,7 @@ export interface FlowAgentState {
   loopIteration?: number;
   loopMax?: number;
   sourcePath?: string;
+  runCount?: number;
 }
 
 /** Overall flow execution status */
@@ -314,8 +315,12 @@ export interface ArchitectDagStep {
   id: string;
   agentName?: string;
   blockedBy: string[];
-  /** Step type — "flow-ref" for subflow references */
-  stepType?: "agent" | "flow-ref";
+  /** Step type — matches flow engine step types */
+  stepType?: "agent" | "fork" | "conditional" | "agent-decision" | "agent-loop-decision" | "flow-ref";
+  /** For loop steps: the step ID to loop back to */
+  loopTarget?: string;
+  /** For loop steps: the step ID to continue to after exiting the loop */
+  exitTarget?: string;
 }
 
 /** Parsed flow metadata from architect preview */

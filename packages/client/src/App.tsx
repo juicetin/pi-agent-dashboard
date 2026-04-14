@@ -161,6 +161,7 @@ export default function App() {
   const [archiveBrowserCwd, setArchiveBrowserCwd] = useState<string | null>(null);
   const [diffViewSessionId, setDiffViewSessionId] = useState<string | null>(null);
   const [flowYamlPreview, setFlowYamlPreview] = useState<{ content: string; title: string } | null>(null);
+  const [sourceOpenAgent, setSourceOpenAgent] = useState<string | null>(null);
   const {
     piResourcesState, setPiResourcesState,
     piResourceFilePreview, setPiResourceFilePreview,
@@ -424,18 +425,25 @@ export default function App() {
     }
   }, [sessionStates, sessions]);
 
-  // Flow agent source viewer — fetch agent .md file on demand
-  const openFlowAgentSource = useCallback(async (sourcePath: string, agentName: string) => {
+  // Flow agent source viewer — toggle: fetch on open, clear on close
+  const toggleFlowAgentSource = useCallback(async (sourcePath: string, agentName: string) => {
+    // Toggle off if same agent's source is already open
+    if (sourceOpenAgent === agentName) {
+      setSourceOpenAgent(null);
+      setFlowYamlPreview(null);
+      return;
+    }
     const session = selectedId ? sessions.get(selectedId) : undefined;
     if (!session?.cwd) return;
     try {
       const res = await fetch(`${apiBase}/api/file?cwd=${encodeURIComponent(session.cwd)}&path=${encodeURIComponent(sourcePath)}`);
       const body = await res.json();
       if (body.success && body.data?.content) {
+        setSourceOpenAgent(agentName);
         setFlowYamlPreview({ content: body.data.content, title: agentName });
       }
     } catch { /* ignore fetch errors */ }
-  }, [selectedId, sessions]);
+  }, [selectedId, sessions, sourceOpenAgent]);
 
   // Compute set of session IDs that have active errors
   const errorSessionIds = useMemo(() => {
@@ -695,7 +703,7 @@ export default function App() {
         <MarkdownPreviewView
           title={flowYamlPreview.title}
           content={flowYamlPreview.content}
-          onBack={() => setFlowYamlPreview(null)}
+          onBack={() => { setFlowYamlPreview(null); setSourceOpenAgent(null); }}
         />
       ) : diffViewSessionId ? (
         <FileDiffView
@@ -709,7 +717,8 @@ export default function App() {
               <FlowArchitect
                 state={selectedState.architectState}
                 onAbort={() => selectedId && send({ type: "flow_control" as any, sessionId: selectedId, action: "abort" })}
-                onClick={() => setArchitectDetailOpen(true)}
+                onClick={() => setArchitectDetailOpen(prev => !prev)}
+                isDetailOpen={architectDetailOpen}
                 onPromptRespond={(promptId, answer) => selectedId && send({ type: "architect_prompt_response" as any, sessionId: selectedId, promptId, answer })}
                 onViewYaml={() => selectedId && openFlowYaml(selectedId)}
                 onViewAgentSource={(name, source) => setFlowYamlPreview({ content: "```yaml\n" + source + "\n```", title: name })}
@@ -728,7 +737,8 @@ export default function App() {
               <FlowArchitect
                 state={selectedState.architectState}
                 onAbort={() => selectedId && send({ type: "flow_control" as any, sessionId: selectedId, action: "abort" })}
-                onClick={() => setArchitectDetailOpen(true)}
+                onClick={() => setArchitectDetailOpen(prev => !prev)}
+                isDetailOpen={architectDetailOpen}
                 onPromptRespond={(promptId, answer) => selectedId && send({ type: "architect_prompt_response" as any, sessionId: selectedId, promptId, answer })}
                 onViewYaml={() => selectedId && openFlowYaml(selectedId)}
                 onViewAgentSource={(name, source) => setFlowYamlPreview({ content: "```yaml\n" + source + "\n```", title: name })}
@@ -741,6 +751,7 @@ export default function App() {
                 flowState={selectedState.flowState}
                 flowStates={selectedState.flowStates}
                 onAgentClick={setFlowDetailAgent}
+                selectedAgent={flowDetailAgent}
                 onAbort={() => selectedId && send({ type: "flow_control" as any, sessionId: selectedId, action: "abort" })}
                 onToggleAutonomous={() => selectedId && send({ type: "flow_control" as any, sessionId: selectedId, action: "toggle_autonomous" })}
                 onDismiss={() => {
@@ -749,7 +760,8 @@ export default function App() {
                 }}
                 onSendPrompt={(text) => handleSend(text)}
                 onViewYaml={() => selectedId && openFlowYaml(selectedId)}
-                onViewAgentSource={openFlowAgentSource}
+                onViewAgentSource={toggleFlowAgentSource}
+                sourceOpenAgent={sourceOpenAgent}
               />
             </div>
           )}
@@ -765,7 +777,8 @@ export default function App() {
               <FlowArchitect
                 state={selectedState.architectState}
                 onAbort={() => selectedId && send({ type: "flow_control" as any, sessionId: selectedId, action: "abort" })}
-                onClick={() => setArchitectDetailOpen(true)}
+                onClick={() => setArchitectDetailOpen(prev => !prev)}
+                isDetailOpen={architectDetailOpen}
                 onPromptRespond={(promptId, answer) => selectedId && send({ type: "architect_prompt_response" as any, sessionId: selectedId, promptId, answer })}
                 onViewYaml={() => selectedId && openFlowYaml(selectedId)}
                 onViewAgentSource={(name, source) => setFlowYamlPreview({ content: "```yaml\n" + source + "\n```", title: name })}
@@ -778,6 +791,7 @@ export default function App() {
                 flowState={selectedState.flowState}
                 flowStates={selectedState.flowStates}
                 onAgentClick={setFlowDetailAgent}
+                selectedAgent={flowDetailAgent}
                 onAbort={() => selectedId && send({ type: "flow_control" as any, sessionId: selectedId, action: "abort" })}
                 onToggleAutonomous={() => selectedId && send({ type: "flow_control" as any, sessionId: selectedId, action: "toggle_autonomous" })}
                 onDismiss={() => {
@@ -785,7 +799,8 @@ export default function App() {
                 }}
                 onSendPrompt={(text) => handleSend(text)}
                 onViewYaml={() => selectedId && openFlowYaml(selectedId)}
-                onViewAgentSource={openFlowAgentSource}
+                onViewAgentSource={toggleFlowAgentSource}
+                sourceOpenAgent={sourceOpenAgent}
               />
             </div>
           )}
@@ -1094,7 +1109,7 @@ export default function App() {
               <MarkdownPreviewView
                 title={flowYamlPreview.title}
                 content={flowYamlPreview.content}
-                onBack={() => setFlowYamlPreview(null)}
+                onBack={() => { setFlowYamlPreview(null); setSourceOpenAgent(null); }}
               />
             ) : diffViewSessionId ? (
               <FileDiffView

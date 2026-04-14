@@ -83,8 +83,8 @@ const config: ForgeConfig = {
       config: {
         oneClick: true,
         perMachine: false,
-        // Prevent electron-builder from auto-publishing when GITHUB_TOKEN is set
-        publish: "never",
+        // Inject publish:never into electron-builder config via getAppBuilderConfig
+        getAppBuilderConfig: async () => ({ publish: null }),
       },
     },
   ],

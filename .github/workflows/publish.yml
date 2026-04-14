@@ -108,9 +108,6 @@ jobs:
             node_modules/@pengx17/electron-forge-maker-appimage/scripts/patch-apprun.sh
 
       - name: Make Electron distributables
-        env:
-          # Unset GITHUB_TOKEN so electron-builder doesn't auto-publish
-          GITHUB_TOKEN: ''
         run: npm run electron:make
 
       - name: Upload artifacts

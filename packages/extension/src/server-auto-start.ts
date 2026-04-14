@@ -1,0 +1,87 @@
+/**
+ * Auto-start logic for the dashboard server.
+ * Uses mDNS discovery first, falls back to health check, then auto-starts.
+ */
+
+export interface DiscoveredServer {
+  host: string;
+  port: number;
+  piPort: number;
+  isLocal: boolean;
+  source: "mdns" | "fallback";
+}
+
+export interface AutoStartDeps {
+  discoverDashboard: (timeout?: number) => Promise<DiscoveredServer[]>;
+  isDashboardRunning: (port: number) => Promise<{ running: boolean; portConflict?: boolean }>;
+  launchServer: (config: any) => Promise<{ success: boolean; message: string }>;
+  notify: (message: string, level: "info" | "warning") => void;
+}
+
+export interface AutoStartResult {
+  /** The server to connect to (if found or launched) */
+  server?: { host: string; port: number; piPort: number };
+}
+
+/**
+ * Discover or auto-start the dashboard server.
+ * Discovery chain: mDNS browse → health check fallback → auto-start.
+ * Returns the server to connect to.
+ */
+export async function autoStartServer(
+  config: { piPort: number; port: number; autoStart: boolean },
+  deps: AutoStartDeps,
+): Promise<AutoStartResult> {
+  // 1. Try mDNS discovery (2s timeout)
+  try {
+    const servers = await deps.discoverDashboard(2000);
+    const local = servers.find(s => s.isLocal);
+    if (local) {
+      return { server: { host: local.host, port: local.port, piPort: local.piPort } };
+    }
+    // Remote servers exist but no local — fall through to health check
+  } catch {
+    // mDNS failed — fall through to health check
+  }
+
+  // 2. Fallback: health check on configured port
+  const status = await deps.isDashboardRunning(config.port);
+  if (status.running) {
+    return { server: { host: "localhost", port: config.port, piPort: config.piPort } };
+  }
+
+  if (!config.autoStart) return {};
+
+  if (status.portConflict) {
+    deps.notify(`Port ${config.port} is occupied by another service`, "warning");
+    return {};
+  }
+
+  // 3. Auto-start server
+  const result = await deps.launchServer(config);
+  if (result.success) {
+    deps.notify(`🌐 Dashboard started at http://localhost:${config.port}`, "info");
+
+    // Wait for mDNS advertisement from the newly started server (up to 10s)
+    try {
+      const discovered = await deps.discoverDashboard(10000);
+      const local = discovered.find(s => s.isLocal);
+      if (local) {
+        return { server: { host: local.host, port: local.port, piPort: local.piPort } };
+      }
+    } catch {
+      // mDNS failed — use config defaults
+    }
+
+    return { server: { host: "localhost", port: config.port, piPort: config.piPort } };
+  }
+
+  // Another agent may have started the server concurrently — recheck before warning
+  const recheck = await deps.isDashboardRunning(config.port);
+  if (recheck.running) {
+    return { server: { host: "localhost", port: config.port, piPort: config.piPort } };
+  }
+
+  deps.notify(`Dashboard server failed to start: ${result.message}`, "warning");
+  return {};
+}

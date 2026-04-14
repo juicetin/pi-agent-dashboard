@@ -1,0 +1,358 @@
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { loadConfig, ensureConfig, type DashboardConfig } from "../config.js";
+import fs from "node:fs";
+import path from "node:path";
+import os from "node:os";
+
+describe("loadConfig", () => {
+  let testDir: string;
+  let configFile: string;
+  let origHome: string;
+
+  beforeEach(() => {
+    testDir = path.join(os.tmpdir(), `test-config-${Date.now()}`);
+    fs.mkdirSync(path.join(testDir, ".pi", "dashboard"), { recursive: true });
+    configFile = path.join(testDir, ".pi", "dashboard", "config.json");
+    origHome = process.env.HOME!;
+    process.env.HOME = testDir;
+  });
+
+  afterEach(() => {
+    process.env.HOME = origHome;
+    if (fs.existsSync(testDir)) fs.rmSync(testDir, { recursive: true });
+  });
+
+  it("should return all defaults when config file is missing", () => {
+    const config = loadConfig();
+    expect(config.port).toBe(8000);
+    expect(config.piPort).toBe(9999);
+    expect(config.autoStart).toBe(true);
+    expect(config.autoShutdown).toBe(true);
+    expect(config.lastServer).toBeUndefined();
+    expect(config.shutdownIdleSeconds).toBe(300);
+  });
+
+  it("should return values from config when all fields present", () => {
+    fs.writeFileSync(configFile, JSON.stringify({
+      port: 3000,
+      piPort: 4000,
+      autoStart: false,
+    }));
+
+    const config = loadConfig();
+    expect(config.port).toBe(3000);
+    expect(config.piPort).toBe(4000);
+    expect(config.autoStart).toBe(false);
+  });
+
+  it("should apply defaults for omitted fields", () => {
+    fs.writeFileSync(configFile, JSON.stringify({ port: 3000 }));
+
+    const config = loadConfig();
+    expect(config.port).toBe(3000);
+    expect(config.piPort).toBe(9999);
+    expect(config.autoStart).toBe(true);
+    expect(config.autoShutdown).toBe(true);
+    expect(config.shutdownIdleSeconds).toBe(300);
+  });
+
+  it("should load auto-shutdown config fields", () => {
+    fs.writeFileSync(configFile, JSON.stringify({
+      autoShutdown: false,
+      shutdownIdleSeconds: 60,
+    }));
+
+    const config = loadConfig();
+    expect(config.autoShutdown).toBe(false);
+    expect(config.shutdownIdleSeconds).toBe(60);
+    expect(config.port).toBe(8000);
+  });
+
+  it("should return defaults for malformed JSON", () => {
+    fs.writeFileSync(configFile, "not valid json {{{");
+
+    const config = loadConfig();
+    expect(config.port).toBe(8000);
+    expect(config.piPort).toBe(9999);
+    expect(config.autoStart).toBe(true);
+  });
+
+  it("should return defaults for empty file", () => {
+    fs.writeFileSync(configFile, "");
+
+    const config = loadConfig();
+    expect(config.port).toBe(8000);
+  });
+
+  it("should return spawnStrategy when set to headless", () => {
+    fs.writeFileSync(configFile, JSON.stringify({ spawnStrategy: "headless" }));
+
+    const config = loadConfig();
+    expect(config.spawnStrategy).toBe("headless");
+  });
+
+  it("should default spawnStrategy to headless when missing", () => {
+    fs.writeFileSync(configFile, JSON.stringify({ port: 3000 }));
+
+    const config = loadConfig();
+    expect(config.spawnStrategy).toBe("headless");
+  });
+
+  it("should fall back to headless for invalid spawnStrategy", () => {
+    fs.writeFileSync(configFile, JSON.stringify({ spawnStrategy: "invalid" }));
+
+    const config = loadConfig();
+    expect(config.spawnStrategy).toBe("headless");
+  });
+
+  it("should return devBuildOnReload true when set", () => {
+    fs.writeFileSync(configFile, JSON.stringify({ devBuildOnReload: true }));
+
+    const config = loadConfig();
+    expect(config.devBuildOnReload).toBe(true);
+  });
+
+  it("should default devBuildOnReload to false when missing", () => {
+    fs.writeFileSync(configFile, JSON.stringify({ port: 3000 }));
+
+    const config = loadConfig();
+    expect(config.devBuildOnReload).toBe(false);
+  });
+
+  it("should return defaultModel when set", () => {
+    fs.writeFileSync(configFile, JSON.stringify({ defaultModel: "anthropic/claude-opus-4-6" }));
+    const config = loadConfig();
+    expect(config.defaultModel).toBe("anthropic/claude-opus-4-6");
+  });
+
+  it("should default defaultModel to empty string when missing", () => {
+    fs.writeFileSync(configFile, JSON.stringify({ port: 3000 }));
+    const config = loadConfig();
+    expect(config.defaultModel).toBe("");
+  });
+
+  it("should default defaultModel to empty string when not a string", () => {
+    fs.writeFileSync(configFile, JSON.stringify({ defaultModel: 123 }));
+    const config = loadConfig();
+    expect(config.defaultModel).toBe("");
+  });
+
+  it("should return auth undefined when no auth key", () => {
+    fs.writeFileSync(configFile, JSON.stringify({ port: 3000 }));
+    const config = loadConfig();
+    expect(config.auth).toBeUndefined();
+  });
+
+  it("should return auth undefined when auth has empty providers", () => {
+    fs.writeFileSync(configFile, JSON.stringify({ auth: { providers: {} } }));
+    const config = loadConfig();
+    expect(config.auth).toBeUndefined();
+  });
+
+  it("should return auth undefined when auth.providers is missing", () => {
+    fs.writeFileSync(configFile, JSON.stringify({ auth: { secret: "abc" } }));
+    const config = loadConfig();
+    expect(config.auth).toBeUndefined();
+  });
+
+  it("should parse auth config with github provider", () => {
+    fs.writeFileSync(configFile, JSON.stringify({
+      auth: {
+        secret: "my-secret",
+        providers: {
+          github: { clientId: "id1", clientSecret: "secret1" },
+        },
+        allowedUsers: ["user@example.com", "octocat"],
+      },
+    }));
+    const config = loadConfig();
+    expect(config.auth).toBeDefined();
+    expect(config.auth!.secret).toBe("my-secret");
+    expect(config.auth!.providers.github.clientId).toBe("id1");
+    expect(config.auth!.providers.github.clientSecret).toBe("secret1");
+    expect(config.auth!.allowedUsers).toEqual(["user@example.com", "octocat"]);
+  });
+
+  it("should parse auth config with keycloak provider including issuerUrl", () => {
+    fs.writeFileSync(configFile, JSON.stringify({
+      auth: {
+        secret: "sec",
+        providers: {
+          keycloak: { clientId: "kc", clientSecret: "ks", issuerUrl: "https://kc.example.com/realms/test" },
+        },
+      },
+    }));
+    const config = loadConfig();
+    expect(config.auth!.providers.keycloak.issuerUrl).toBe("https://kc.example.com/realms/test");
+  });
+
+  it("should skip providers missing clientId or clientSecret", () => {
+    fs.writeFileSync(configFile, JSON.stringify({
+      auth: {
+        secret: "sec",
+        providers: {
+          github: { clientId: "id1" }, // missing clientSecret
+          google: { clientId: "id2", clientSecret: "s2" },
+        },
+      },
+    }));
+    const config = loadConfig();
+    expect(config.auth).toBeDefined();
+    expect(config.auth!.providers.github).toBeUndefined();
+    expect(config.auth!.providers.google).toBeDefined();
+  });
+
+  it("should return auth undefined when all providers are invalid", () => {
+    fs.writeFileSync(configFile, JSON.stringify({
+      auth: {
+        secret: "sec",
+        providers: {
+          github: { clientId: "id1" }, // missing clientSecret
+        },
+      },
+    }));
+    const config = loadConfig();
+    expect(config.auth).toBeUndefined();
+  });
+
+  it("should default auth.secret to empty string when missing", () => {
+    fs.writeFileSync(configFile, JSON.stringify({
+      auth: {
+        providers: {
+          github: { clientId: "id1", clientSecret: "s1" },
+        },
+      },
+    }));
+    const config = loadConfig();
+    expect(config.auth!.secret).toBe("");
+  });
+
+  it("should parse auth.bypassUrls as a string array", () => {
+    fs.writeFileSync(configFile, JSON.stringify({
+      auth: {
+        providers: { github: { clientId: "id1", clientSecret: "s1" } },
+        bypassUrls: ["/webhooks/", "/metrics"],
+      },
+    }));
+    const config = loadConfig();
+    expect(config.auth!.bypassUrls).toEqual(["/webhooks/", "/metrics"]);
+  });
+
+  it("should default auth.bypassUrls to empty array when absent", () => {
+    fs.writeFileSync(configFile, JSON.stringify({
+      auth: {
+        providers: { github: { clientId: "id1", clientSecret: "s1" } },
+      },
+    }));
+    const config = loadConfig();
+    expect(config.auth!.bypassUrls).toEqual([]);
+  });
+
+  it("should ignore non-array auth.bypassUrls", () => {
+    fs.writeFileSync(configFile, JSON.stringify({
+      auth: {
+        providers: { github: { clientId: "id1", clientSecret: "s1" } },
+        bypassUrls: "not-an-array",
+      },
+    }));
+    const config = loadConfig();
+    expect(config.auth!.bypassUrls).toEqual([]);
+  });
+
+  it("should filter non-string entries from auth.bypassUrls", () => {
+    fs.writeFileSync(configFile, JSON.stringify({
+      auth: {
+        providers: { github: { clientId: "id1", clientSecret: "s1" } },
+        bypassUrls: ["/valid", 42, null, "/also-valid"],
+      },
+    }));
+    const config = loadConfig();
+    expect(config.auth!.bypassUrls).toEqual(["/valid", "/also-valid"]);
+  });
+
+  it("should parse lastServer when set", () => {
+    fs.writeFileSync(configFile, JSON.stringify({ lastServer: "workstation.local:8000" }));
+    const config = loadConfig();
+    expect(config.lastServer).toBe("workstation.local:8000");
+  });
+
+  it("should return undefined lastServer when not set", () => {
+    fs.writeFileSync(configFile, JSON.stringify({ port: 3000 }));
+    const config = loadConfig();
+    expect(config.lastServer).toBeUndefined();
+  });
+
+  it("should ignore non-string lastServer", () => {
+    fs.writeFileSync(configFile, JSON.stringify({ lastServer: 123 }));
+    const config = loadConfig();
+    expect(config.lastServer).toBeUndefined();
+  });
+
+  it("should return electronMode false by default", () => {
+    const config = loadConfig();
+    expect(config.electronMode).toBe(false);
+  });
+
+  it("should parse electronMode when true", () => {
+    fs.writeFileSync(configFile, JSON.stringify({ electronMode: true }));
+    const config = loadConfig();
+    expect(config.electronMode).toBe(true);
+  });
+
+  it("should ignore non-boolean electronMode", () => {
+    fs.writeFileSync(configFile, JSON.stringify({ electronMode: "yes" }));
+    const config = loadConfig();
+    expect(config.electronMode).toBe(false);
+  });
+});
+
+describe("ensureConfig", () => {
+  let testDir: string;
+  let configDir: string;
+  let configFile: string;
+  let origHome: string;
+
+  beforeEach(() => {
+    testDir = path.join(os.tmpdir(), `test-ensure-${Date.now()}`);
+    configDir = path.join(testDir, ".pi", "dashboard");
+    configFile = path.join(configDir, "config.json");
+    origHome = process.env.HOME!;
+    process.env.HOME = testDir;
+  });
+
+  afterEach(() => {
+    process.env.HOME = origHome;
+    if (fs.existsSync(testDir)) fs.rmSync(testDir, { recursive: true });
+  });
+
+  it("should create directory and config when nothing exists", () => {
+    ensureConfig();
+    expect(fs.existsSync(configFile)).toBe(true);
+
+    const content = JSON.parse(fs.readFileSync(configFile, "utf-8"));
+    expect(content.port).toBe(8000);
+    expect(content.piPort).toBe(9999);
+    expect(content.autoStart).toBe(true);
+    expect(content.autoShutdown).toBe(true);
+    expect(content.shutdownIdleSeconds).toBe(300);
+    expect(content.devBuildOnReload).toBe(false);
+    expect(content.electronMode).toBeUndefined();
+  });
+
+  it("should create config when directory exists but file does not", () => {
+    fs.mkdirSync(configDir, { recursive: true });
+    ensureConfig();
+    expect(fs.existsSync(configFile)).toBe(true);
+  });
+
+  it("should not overwrite existing config", () => {
+    fs.mkdirSync(configDir, { recursive: true });
+    fs.writeFileSync(configFile, JSON.stringify({ port: 1234 }));
+
+    ensureConfig();
+
+    const content = JSON.parse(fs.readFileSync(configFile, "utf-8"));
+    expect(content.port).toBe(1234);
+    expect(content.piPort).toBeUndefined();
+  });
+});

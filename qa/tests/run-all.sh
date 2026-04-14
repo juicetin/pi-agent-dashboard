@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+# Run all QA tests in order, collect results, print summary
+set -uo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Source nvm for all tests
+export NVM_DIR="$HOME/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+
+TESTS=(
+  "01-install.sh"
+  "02-server-start.sh"
+  "03-websocket.sh"
+  "04-terminal.sh"
+  "05-git-ops.sh"
+)
+
+PASSED=0
+FAILED=0
+RESULTS=()
+
+echo "╔══════════════════════════════════════════════╗"
+echo "║           QA Test Suite                      ║"
+echo "╚══════════════════════════════════════════════╝"
+echo ""
+
+for test in "${TESTS[@]}"; do
+  TEST_PATH="$SCRIPT_DIR/$test"
+  if [ ! -f "$TEST_PATH" ]; then
+    echo "SKIP: $test (not found)"
+    RESULTS+=("SKIP  $test")
+    continue
+  fi
+
+  echo "────────────────────────────────────────────────"
+  echo "Running: $test"
+  echo "────────────────────────────────────────────────"
+
+  if bash "$TEST_PATH"; then
+    PASSED=$((PASSED + 1))
+    RESULTS+=("PASS  $test")
+  else
+    FAILED=$((FAILED + 1))
+    RESULTS+=("FAIL  $test")
+  fi
+  echo ""
+done
+
+# Cleanup: stop server if running
+pi-dashboard stop 2>/dev/null || true
+
+# Print summary
+TOTAL=$((PASSED + FAILED))
+echo "╔══════════════════════════════════════════════╗"
+echo "║           Test Results                       ║"
+echo "╠══════════════════════════════════════════════╣"
+for result in "${RESULTS[@]}"; do
+  printf "║  %-42s ║\n" "$result"
+done
+echo "╠══════════════════════════════════════════════╣"
+printf "║  Total: %-3d  Passed: %-3d  Failed: %-3d      ║\n" "$TOTAL" "$PASSED" "$FAILED"
+echo "╚══════════════════════════════════════════════╝"
+
+if [ $FAILED -gt 0 ]; then
+  exit 1
+fi
+exit 0

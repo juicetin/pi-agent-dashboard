@@ -1,46 +1,137 @@
-name: Publish
+name: Release
 
 on:
   push:
-    tags: ['v*']
-
-permissions:
-  contents: read
-  id-token: write
+    tags:
+      - 'v*'
 
 jobs:
-  ci:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-
-      - run: npm ci
-      - run: npm run lint
-      - run: npm test
-      - run: npm run build
-
+  # ── npm publish ────────────────────────────────────────────────
   publish:
-    needs: ci
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
       id-token: write
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
-          cache: npm
+          node-version: 24
           registry-url: https://registry.npmjs.org
 
       - run: npm ci
+
+      - name: Set version from tag
+        run: npm version "${GITHUB_REF_NAME#v}" --no-git-tag-version --allow-same-version --workspaces --include-workspace-root
+
       - run: npm run build
-      - run: npm publish --access public --provenance
+
+      - name: Publish to npm
+        run: npm publish --provenance --access public
+
+  # ── Electron builds (parallel) ────────────────────────────────
+  electron:
+    strategy:
+      matrix:
+        include:
+          - os: macos-14
+            platform: darwin
+            arch: arm64
+            node-arch: arm64
+          - os: ubuntu-latest
+            platform: linux
+            arch: x64
+            node-arch: x64
+          - os: windows-latest
+            platform: win32
+            arch: x64
+            node-arch: x64
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+        timeout-minutes: 15
+
+      - name: Set version from tag
+        shell: bash
+        run: npm version "${GITHUB_REF_NAME#v}" --no-git-tag-version --allow-same-version --workspaces --include-workspace-root
+
+      - name: Install Linux build dependencies
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends dpkg fakeroot libarchive-tools libfuse2 squashfs-tools
+
+      - name: Download Node.js binary (Unix)
+        if: matrix.platform != 'win32'
+        run: |
+          cd packages/electron
+          bash scripts/download-node.sh v22.12.0 ${{ matrix.platform }} ${{ matrix.node-arch }}
+
+      - name: Download Node.js binary (Windows)
+        if: matrix.platform == 'win32'
+        shell: pwsh
+        run: |
+          $version = "v22.12.0"
+          $url = "https://nodejs.org/dist/$version/node-$version-win-x64.zip"
+          $outDir = "packages/electron/resources/node"
+          New-Item -ItemType Directory -Force -Path $outDir
+          Invoke-WebRequest -Uri $url -OutFile node.zip
+          Expand-Archive -Path node.zip -DestinationPath temp-node
+          Copy-Item "temp-node/node-$version-win-x64/node.exe" "$outDir/"
+          Copy-Item -Recurse "temp-node/node-$version-win-x64/node_modules" "$outDir/"
+          Remove-Item -Recurse -Force temp-node, node.zip
+
+      - name: Build client
+        run: npm run build
+
+      - name: Bundle dashboard server
+        shell: bash
+        run: bash packages/electron/scripts/bundle-server.sh
+
+      - name: Patch AppImage maker script (Linux)
+        if: matrix.platform == 'linux'
+        shell: bash
+        run: |
+          # Replace the broken patch-apprun.sh with our robust version
+          cp packages/electron/scripts/patch-appimage-fix.sh \
+            node_modules/@pengx17/electron-forge-maker-appimage/scripts/patch-apprun.sh
+
+      - name: Make Electron distributables
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          # Unset GITHUB_TOKEN so electron-builder doesn't auto-publish
+          GITHUB_TOKEN: ''
+        run: npm run electron:make
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: electron-${{ matrix.platform }}-${{ matrix.arch }}
+          path: packages/electron/out/make/**/*
+
+  # ── GitHub Release (waits for all builds) ─────────────────────
+  github-release:
+    if: always() && needs.electron.result == 'success'
+    needs: [publish, electron]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: electron-*/**/*
+          generate_release_notes: true
+          draft: true

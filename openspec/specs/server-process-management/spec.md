@@ -88,3 +88,15 @@ Running `pi-dashboard` with no subcommand SHALL continue to run the server in th
 #### Scenario: No subcommand runs foreground
 - **WHEN** a user runs `pi-dashboard` (no subcommand)
 - **THEN** the server SHALL start in the foreground, write the PID file, and block until terminated
+
+
+### Requirement: mDNS as primary discovery for CLI status
+The `pi-dashboard status` command SHALL use mDNS discovery first, falling back to PID file + health check.
+
+#### Scenario: Status finds server via mDNS
+- **WHEN** `pi-dashboard status` is run and the server is advertising on mDNS
+- **THEN** it SHALL report the server as running with hostname and port from the mDNS record
+
+#### Scenario: Status falls back to PID file
+- **WHEN** `pi-dashboard status` is run and mDNS returns no results
+- **THEN** it SHALL fall back to reading the PID file and probing the health endpoint

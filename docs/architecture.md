@@ -28,7 +28,7 @@ A global pi extension that runs in every pi session. It:
 - Sends heartbeats every 15s with process metrics (CPU%, RSS, heap, event loop max delay, load average); server responds with `heartbeat_ack`
 - Server liveness watchdog: forces reconnect if no message received for 60s
 - Server-side WS ping/pong (60s interval) detects dead TCP connections; requires 2 consecutive missed pongs before killing (tolerates long-running bash commands that block the event loop)
-- Detects OpenSpec activity (phase/change) from tool events; server auto-attaches the change when `changeName` is detected (phase is not required — skills loaded via prompt templates don't emit a SKILL.md read event)
+- Detects OpenSpec activity (phase/change) from tool events; server auto-attaches the change when `changeName` is detected (phase is not required — skills loaded via prompt templates don't emit a SKILL.md read event). The session card's OpenSpec activity badge displays when either `openspecPhase` or `openspecChange` is detected (not just phase).
 - **Duplicate bridge prevention**: Uses `process`-level shared state (not `globalThis`) with a monotonic generation counter. When the extension is loaded multiple times (e.g., local + global npm package), only the latest instance's event handlers are active — stale listeners bail out immediately. All previous connections and timers are tracked and cleaned up on re-init.
 - **Subagent re-entry guard**: When pi-subagents launches an Agent tool, the subagent creates its own `AgentSession` which loads extensions (including the bridge) in the same process. Without protection, this would overwrite the parent bridge's global state, disconnect its WebSocket, and prevent `tool_execution_end`/`agent_end` from being forwarded — leaving the parent session stuck at "streaming" forever. The bridge stores a reference to its owning `pi` instance and skips initialization when called from a different instance (subagent).
 - Proxies `ctx.ui` dialog methods (confirm, select, input, editor) to the dashboard via `ui-proxy.ts`
@@ -61,6 +61,7 @@ A Node.js HTTP + WebSocket server that:
 - `event-wiring.ts` — Pi gateway → browser gateway event forwarding
 - `idle-timer.ts` — Auto-shutdown idle timer
 - `session-bootstrap.ts` — Startup session discovery and OpenSpec polling init
+- `extension-register.ts` — Auto-registers bundled bridge extension in pi's global settings (`~/.pi/agent/settings.json`) on startup; no-op in dev mode
 - `browser-handlers/` — Browser WebSocket message handlers by domain (subscription, session-actions, session-meta, terminal, directory)
 
 ### 3. Web Client (`src/client/`)
@@ -196,6 +197,15 @@ When a user sends a prompt to an ended session, the server automatically resumes
 2. Changes are sent to the server only when values differ from last poll
 3. Server broadcasts updates to subscribed browsers
 
+### Child Process Scanning
+1. Bridge scans child processes every 10s via `process-scanner.ts` (two-phase: capture new PGIDs during active bash calls, then check tracked PGIDs)
+2. Only processes running ≥30s are reported (filters out short-lived commands)
+3. Bash/sh wrapper processes are excluded (only leaf commands shown)
+4. Bridge sends `process_list` to server only when the PID set changes (dedup)
+5. Server stores processes on the session object and forwards to subscribed browsers as `process_list_update`
+6. New browser connections receive current processes via the initial `session_added` message
+7. Session cards display processes with elapsed time and a kill button (sends SIGTERM to process group)
+
 ### OpenSpec Polling (Server-Side)
 1. Server's DirectoryService polls `openspec` CLI every 30s for each known directory (union of pinned dirs + session cwds)
 2. OpenSpec data is keyed by directory (cwd), not by session — one poll per directory regardless of session count
@@ -269,24 +279,45 @@ The web client includes a generic `MarkdownPreviewView` component that replaces 
 ### Archive Browser
 The `ArchiveBrowserView` provides a searchable, date-grouped listing of archived OpenSpec changes. It uses a dedicated `GET /api/openspec-archive?cwd=<path>` endpoint that scans `openspec/changes/archive/` and returns entry metadata (name, date, artifacts). The view uses two-level navigation: the list is the first level, and clicking an artifact letter (P/D/S/T) opens the reader as the second level. Back from the reader returns to the list (preserving search and scroll), and back from the list returns to the session view. Entry point is the `[Archive]` button in `FolderOpenSpecSection`.
 
+### Network Access Control
+
+The server has a two-layer access model:
+
+**Layer 1: Network Guard (`createNetworkGuard`)** — Fastify `preHandler` on all sensitive routes. Allows requests via three paths:
+1. **Loopback** — `127.0.0.1`, `::1`, `::ffff:127.0.0.1` (always allowed)
+2. **Trusted networks** — IPs matching `resolvedTrustedNetworks` (CIDR, wildcard, exact). Configured via top-level `trustedNetworks` in config, merged with `auth.bypassHosts` at load time.
+3. **Authenticated** — `request.isAuthenticated === true` (set by auth `onRequest` hook via `decorateRequest`)
+
+Otherwise → 403. The guard strips `::ffff:` IPv4-mapped prefixes before matching.
+
+**Layer 2: Auth Plugin (`onRequest` hook)** — Only registered when `auth` is configured. Skips loopback, trusted networks, `/auth/*`, `/api/health`, and `bypassUrls`. Validates JWT cookie for all other requests. Tags valid requests with `request.isAuthenticated = true`.
+
+**Execution order**: `onRequest` (auth) → `preHandler` (guard) → handler. This means the auth hook tags the request before the guard checks it.
+
+**WebSocket upgrades** follow the same logic: loopback → trusted network → JWT cookie validation.
+
+**Zrok tunnel** connections appear as `127.0.0.1` (zrok proxies to localhost), so both layers pass automatically.
+
+**`GET /api/network-interfaces`** returns detected non-internal IPv4 interfaces with computed CIDRs. Used by the Settings UI "Add Local Network" button. This endpoint uses the legacy `localhostGuard` (localhost-only, not network-guard-aware) since it exposes machine network topology.
+
 ### OAuth Authentication Flow
 
-Optional OAuth2 authentication protects the dashboard when accessed via tunnel (external). Localhost access is always unguarded.
+Optional OAuth2 authentication protects the dashboard when accessed remotely.
 
 1. Server loads `auth` config from `~/.pi/dashboard/config.json` at startup
-2. If `auth.providers` has entries, the auth plugin registers routes and an `onRequest` hook
-3. The `onRequest` hook skips localhost requests (`isLoopback`), `/auth/*` paths, `/api/health`, configured `bypassUrls` path prefixes, and configured `bypassHosts` trusted source IPs (exact, wildcard, CIDR)
+2. If `auth.providers` has entries, the auth plugin registers routes, the `isAuthenticated` request decorator, and an `onRequest` hook
+3. The `onRequest` hook skips localhost requests (`isLoopback`), trusted network IPs (`resolvedTrustedNetworks`), `/auth/*` paths, `/api/health`, and configured `bypassUrls` path prefixes
 4. External requests without a valid `pi_dash_token` JWT cookie are redirected to `/auth/login`
 5. `/auth/login` shows a provider picker (or auto-redirects if single provider)
 6. OAuth callback exchanges code for token, fetches user info, validates against `allowedEmails`
 7. On success, a signed JWT cookie is set (7-day expiry) and user is redirected back
-8. WebSocket upgrade requests are also validated — external connections without valid cookie get 401
+8. WebSocket upgrade requests are also validated — external connections without valid cookie or trusted network get 401
 9. Supported providers: GitHub (hardcoded endpoints), Google/Keycloak/OIDC (via OIDC discovery)
 
 ### Settings Panel
 The web client includes a Settings panel (gear icon in sidebar header → `/settings` route) that lets users view and edit all dashboard configuration. The panel:
 1. Loads config via `GET /api/config` (secrets redacted as `***`)
-2. Renders grouped form fields: Server, Sessions, Tunnel, Authentication, Developer
+2. Renders grouped form fields: Server, Sessions, Tunnel, Trusted Networks, Authentication, Developer
 3. Sends only changed fields via `PUT /api/config` (partial merge)
 4. Server preserves `***` secrets (doesn't overwrite real values), writes to disk, and applies runtime-safe changes
 5. Port/piPort changes flag `restartRequired` in the response
@@ -298,18 +329,21 @@ The web client includes a Settings panel (gear icon in sidebar header → `/sett
 
 ### Bridge Reconnection (State Reset)
 When a bridge extension reconnects (e.g., after `npm run reload` or network recovery):
-1. Bridge sends `session_register` to re-register the session
-2. Server marks the session as "replaying" and clears the in-memory event store
-3. Server broadcasts `session_state_reset` to all browser subscribers of that session
-4. Browser resets accumulated state to initial (clearing messages, tool calls, stats)
-5. Bridge replays full session history as individual `event_forward` messages (stored but not broadcast)
+1. Bridge sends `session_register` with `eventCount` to re-register the session
+2. Server checks `canSkipWipe`: if the bridge's `eventCount` matches the server's `lastEntryCount` and events exist in the store, the wipe is skipped (fast reconnect path)
+3. **Full replay path** (`canSkipWipe = false`): Server clears the in-memory event store, broadcasts `session_state_reset` to browsers, stores replayed events, and sends them as `event_replay` batch after `replay_complete`
+4. **Skip replay path** (`canSkipWipe = true`): Server keeps existing events in the store, marks the session in `skipReplayInsert` set so replayed events are NOT re-inserted (preventing exponential duplication). Status updates are still processed for session state accuracy. After `replay_complete`, the `event_replay` batch is skipped since browsers already have the events.
+5. Bridge replays full session history as individual `event_forward` messages
 6. Bridge sends `replay_complete` to signal replay is done
-7. Server clears the replaying flag, broadcasts the final accumulated session status, and sends all stored events as an `event_replay` batch to browser subscribers
-8. Browser rebuilds state cleanly from the replayed events
+7. If the agent is currently mid-turn (bridge tracks `isAgentStreaming` flag in persistent `BridgeState`), a synthetic `agent_start` event is sent after `replay_complete` so the session card shows "Thinking…" instead of "Waiting for input"
+8. Server clears the replaying flag, broadcasts the final accumulated session status
+9. Browser rebuilds state cleanly from the replayed events (full replay) or continues with existing state (skip replay)
 
-Without the `session_state_reset` message, replayed events would duplicate existing messages in the browser's accumulated state.
+Without the `session_state_reset` message (full replay path), replayed events would duplicate existing messages in the browser's accumulated state.
 
 **Replay status suppression**: During step 5, replayed events like `agent_start`/`agent_end` would normally trigger rapid `session_updated` broadcasts (e.g., `status: "streaming"` → `status: "idle"` for each turn), causing visible flicker on session cards. The server suppresses these status broadcasts while replaying, accumulating them in the session manager. Only the final status is broadcast after `replay_complete`. A 5-second safety timeout ensures the flag is cleared even if `replay_complete` never arrives (e.g., older bridge versions).
+
+**Agent streaming state recovery**: The bridge tracks `isAgentStreaming` in process-level `BridgeState` (survives reload). Set `true` on `agent_start`, `false` on `agent_end`/`session_shutdown`. Since the replay doesn't include `agent_start`/`agent_end` events, the session status would otherwise stay "active" (displayed as "Waiting for input") when the agent is mid-turn during reconnect.
 
 ### Session File Deduplication
 When pi continues a session via `--session <file>`, it reuses the same JSONL file but may create a new session ID. The server detects this: when a new session registers with a `sessionFile` already associated with another session, the old session's `sessionFile` is cleared. This prevents the Resume button from loading the wrong conversation.
@@ -344,7 +378,8 @@ During bridge session replay (while `replayingSessions` set contains the session
 | Pinned directories | `~/.pi/dashboard/preferences.json` | Ordered array of cwd paths. Pinned dirs always visible in sidebar. |
 | Session order | `~/.pi/dashboard/preferences.json` | Per-cwd ordering managed by `session-order-manager.ts`. |
 | Server PID | `~/.pi/dashboard/server.pid` | Tracks running server process for daemon management. |
-| Headless PIDs | `~/.pi/dashboard/headless-pids.json` | Maps spawned headless processes to sessions. |
+| Headless PIDs | `~/.pi/dashboard/headless-pids.json` | Maps spawned headless processes to sessions. Unix: `tail -f /dev/null \| pi --mode rpc` (uses tail instead of sleep to avoid stdin pipeline bug). Windows: `pi.cmd --mode rpc` with `shell: true` and quoted paths for spaces in usernames. |
+| Bridge extension | `~/.pi/agent/settings.json` | On bundled installs (Electron DEB/DMG), the server auto-registers the bridge extension path in pi's global settings so all spawned pi sessions discover and load it. No-op in dev mode. |
 | Session files | `~/.pi/agent/sessions/` (pi's own) | Source of truth. Bridge loads on demand. |
 
 ## Configuration
@@ -356,7 +391,7 @@ Precedence: CLI flags → environment variables → config file (`~/.pi/dashboar
 | `port` | 8000 | HTTP + Browser WebSocket port |
 | `piPort` | 9999 | Pi extension WebSocket port |
 | `autoStart` | true | Bridge extension auto-starts server if not running |
-| `autoShutdown` | true | Server shuts down after idle period |
+| `autoShutdown` | false | Server shuts down after idle period (disabled by default; enable for TUI auto-start scenarios) |
 | `shutdownIdleSeconds` | 300 | Idle timeout before auto-shutdown |
 | `spawnStrategy` | `"headless"` | How to spawn new sessions: `"headless"` or `"tmux"` |
 | `tunnel.enabled` | true | Enable zrok tunnel for remote access |
@@ -444,6 +479,31 @@ silently  pass --port & --pi-port
 ```
 
 The server is spawned detached (`child_process.spawn` with `detached: true`, stdout/stderr redirected to `~/.pi/dashboard/server.log`), so it outlives the pi session. If multiple pi sessions start simultaneously, duplicate spawn attempts fail harmlessly with EADDRINUSE. After a failed launch, the bridge re-probes the port — if another agent started the server concurrently, the warning is suppressed. The auto-start logic is extracted into `server-auto-start.ts` for testability.
+
+## mDNS Server Discovery
+
+The dashboard uses mDNS (via `bonjour-service`) for zero-config server discovery:
+
+### Discovery Chain
+1. **mDNS browse** (2s timeout) — discover `_pi-dashboard._tcp` services on the local network
+2. **Health check fallback** — `GET /api/health` on configured port, verifies `{ ok: true, pid }` response
+3. **Auto-start** — if no server found and `autoStart` is enabled, spawn detached server
+
+### Server Advertisement
+- On startup, the server publishes a `_pi-dashboard._tcp` mDNS service with TXT record: `{ version, pid, piPort }`
+- On shutdown, the service is unpublished
+- A continuous mDNS browser discovers peer servers and broadcasts updates to connected browsers via `servers_discovered`/`servers_updated` WebSocket messages
+
+### Bridge Discovery
+- Bridge extensions use the mDNS discovery chain instead of bare TCP port probes
+- `isDashboardRunning(port)` replaces `isPortOpen(port)` for identity-verified detection
+- After auto-starting, the bridge waits up to 10s for the server's mDNS advertisement
+
+### Server Selector UI
+- A dropdown in the sidebar header shows all discovered servers (local + LAN)
+- Each entry shows hostname, port, Local/Remote badge, and connection status
+- Switching closes the current WebSocket and connects to the selected server
+- Last-used server persisted in `localStorage` (`pi-dashboard-last-server`)
 
 ## Provider Authentication
 

@@ -61,6 +61,16 @@ Routing order:
 - **WHEN** `send_prompt` arrives with text `explain this function`
 - **THEN** the handler SHALL call `sendUserMessage("explain this function")` as before
 
+The command handler SHALL also handle `kill_process` messages by calling `killProcessByPgid(pgid)` from the process-scanner module.
+
+#### Scenario: Kill process command received
+- **WHEN** the command handler receives a `kill_process` message with a valid PGID
+- **THEN** it SHALL call `killProcessByPgid(pgid)` and log the result
+
+#### Scenario: Kill process for wrong session ignored
+- **WHEN** the command handler receives a `kill_process` message with a sessionId that does not match the current session
+- **THEN** it SHALL ignore the message
+
 ### Requirement: Hidden command registration
 The bridge SHALL register a `__dashboard` command via `pi.registerCommand()` during `initBridge()`. The command SHALL have no description. The commands list sent to the server SHALL filter out commands whose names start with `__`.
 
@@ -199,3 +209,80 @@ The bridge SHALL include `process.pid` (the Node.js process ID) in the `session_
 #### Scenario: PID is a positive integer
 - **WHEN** the bridge registers
 - **THEN** the `pid` value SHALL be a positive integer
+
+### Requirement: Bridge wires process scanner timer
+The bridge extension SHALL start a process scanner timer during session initialization (alongside existing heartbeat and git poll timers). The timer SHALL call `scanChildProcesses(process.pid)` every 10 seconds. The timer SHALL be added to the bridge state's `timers` array for cleanup on disconnect.
+
+#### Scenario: Timer starts on session init
+- **WHEN** the bridge connects and registers a session
+- **THEN** a 10-second interval timer for process scanning SHALL be started
+
+#### Scenario: Timer cleared on cleanup
+- **WHEN** the bridge disconnects or the session ends
+- **THEN** the process scan timer SHALL be cleared via the timers array cleanup
+
+### Requirement: Bridge sends process_list only on change
+The bridge SHALL maintain the previous process scan result (array of PIDs). After each scan, it SHALL compare the current PID set to the previous one. A `process_list` message SHALL only be sent when the sets differ.
+
+#### Scenario: First scan with active processes
+- **WHEN** the first scan returns two processes
+- **THEN** a `process_list` message SHALL be sent (previous was empty)
+
+#### Scenario: Subsequent scan unchanged
+- **WHEN** the scan returns the same PIDs as the previous scan
+- **THEN** no `process_list` message SHALL be sent
+
+#### Scenario: Process exits between scans
+- **WHEN** a previously reported process is no longer in the scan
+- **THEN** a `process_list` message SHALL be sent with the updated list
+
+
+### Requirement: Bridge uses mDNS discovery for server connection
+The bridge extension SHALL use mDNS browsing as the primary mechanism to discover the dashboard server, falling back to config-based port probe when mDNS is unavailable.
+
+#### Scenario: Server found via mDNS
+- **WHEN** the bridge extension starts and a `_pi-dashboard._tcp` service is advertised on localhost
+- **THEN** the bridge SHALL connect to the discovered server's piPort
+
+#### Scenario: mDNS times out — fallback to config
+- **WHEN** mDNS browse returns no results within 2 seconds
+- **THEN** the bridge SHALL fall back to probing `localhost:<config.piPort>` with `isDashboardRunning()`
+
+#### Scenario: Auto-start with mDNS
+- **WHEN** no server is found via mDNS or fallback and `autoStart` is `true`
+- **THEN** the bridge SHALL launch the server as a detached process
+- **AND** wait for the server's mDNS advertisement (up to 10 seconds, fallback to config probe) before connecting
+
+
+### Requirement: Remove OpenSpec activity detection from bridge
+The bridge extension SHALL NOT call `detectOpenSpecActivity()` or track OpenSpec state (`currentOpenSpecPhase`, `currentOpenSpecChange`). It SHALL NOT send `openspec_activity_update` protocol messages. The `tool_execution_start` and `agent_end` events SHALL be forwarded as raw `event_forward` messages without OpenSpec processing.
+
+#### Scenario: tool_execution_start forwarded without OpenSpec detection
+- **WHEN** a `tool_execution_start` event fires
+- **THEN** the bridge SHALL forward it as an `event_forward` and SHALL NOT run `detectOpenSpecActivity()`
+
+#### Scenario: agent_end forwarded without OpenSpec clear
+- **WHEN** an `agent_end` event fires
+- **THEN** the bridge SHALL forward it as an `event_forward` and SHALL NOT send `openspec_activity_update`
+
+### Requirement: Remove stats_update message send from bridge
+The bridge extension SHALL NOT call `extractTurnStats()` or send `stats_update` protocol messages. The `turn_end` event SHALL be forwarded as a raw `event_forward` message.
+
+The bridge SHALL enrich `turn_end` events with `contextUsage` from `ctx.getContextUsage()` before forwarding, since this data is only available via the pi process API.
+
+#### Scenario: turn_end forwarded with contextUsage enrichment
+- **WHEN** a `turn_end` event fires
+- **THEN** the bridge SHALL attach `contextUsage` (from `ctx.getContextUsage()`) to the event data and forward it as `event_forward`
+
+#### Scenario: No stats_update message sent
+- **WHEN** a `turn_end` event fires
+- **THEN** the bridge SHALL NOT send a `stats_update` protocol message
+
+### Requirement: Remove redundant model_update send after model_select
+The bridge's `model_select` handler SHALL NOT call `sendModelUpdateIfChanged()`. The event is already enriched with `thinkingLevel` and forwarded — the server extracts model/thinkingLevel via `extractSessionUpdates()`.
+
+The `model_update` protocol message type is retained for state sync on reconnect (sent from `sendStateSync`), not removed.
+
+#### Scenario: model_select does not trigger model_update
+- **WHEN** a `model_select` event fires
+- **THEN** the bridge SHALL enrich it with `thinkingLevel`, forward as `event_forward`, and SHALL NOT call `sendModelUpdateIfChanged()`

@@ -17,6 +17,7 @@ The shared config module SHALL read configuration from `~/.pi/dashboard/config.j
 | `auth.secret` | string | (auto-generated) | JWT signing secret |
 | `auth.providers` | object | `{}` | Map of provider name → credentials |
 | `auth.allowedUsers` | string[] | `[]` | User allowlist: emails, usernames, or `*@domain` wildcards. Empty = allow all |
+| `lastServer` | string \| undefined | undefined | Last-used server address (`host:port`) for reconnection |
 
 Invalid `spawnStrategy` values SHALL fall back to `"tmux"`.
 
@@ -65,3 +66,30 @@ When `auth` is undefined or not present, authentication SHALL be completely disa
 #### Scenario: Config with allowedUsers
 - **WHEN** `~/.pi/dashboard/config.json` contains `{ "auth": { ..., "allowedUsers": ["octocat", "user@example.com", "*@company.com"] } }`
 - **THEN** `loadConfig()` SHALL return `auth.allowedUsers` as `["octocat", "user@example.com", "*@company.com"]`
+
+#### Scenario: Config with lastServer
+- **WHEN** `~/.pi/dashboard/config.json` contains `{ "lastServer": "workstation.local:8000" }`
+- **THEN** `loadConfig()` SHALL return `lastServer: "workstation.local:8000"`
+
+#### Scenario: Config without lastServer
+- **WHEN** `~/.pi/dashboard/config.json` does not include `lastServer`
+- **THEN** `loadConfig()` SHALL return `lastServer: undefined`
+
+### Requirement: Config file schema additions for Electron
+The shared config module SHALL include a new field:
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `electronMode` | boolean | false | Whether the server was launched by the Electron app |
+
+#### Scenario: Config with electronMode
+- **WHEN** `~/.pi/dashboard/config.json` contains `{ "electronMode": true }`
+- **THEN** `loadConfig()` SHALL return `electronMode: true`
+
+#### Scenario: Empty or missing electronMode
+- **WHEN** `~/.pi/dashboard/config.json` does not include `electronMode`
+- **THEN** `loadConfig()` SHALL return `electronMode: false`
+
+#### Scenario: ensureConfig excludes electronMode
+- **WHEN** `ensureConfig()` creates a new config file
+- **THEN** it SHALL NOT include `electronMode` in the written defaults

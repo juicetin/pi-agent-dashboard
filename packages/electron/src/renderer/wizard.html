@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PI Dashboard Setup</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0f172a; color: #e2e8f0; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+    .wizard { max-width: 560px; width: 100%; padding: 2rem; }
+    h1 { font-size: 1.75rem; margin-bottom: 0.5rem; color: #f8fafc; }
+    h2 { font-size: 1.25rem; margin-bottom: 1rem; color: #94a3b8; font-weight: 400; }
+    .step { display: none; }
+    .step.active { display: block; }
+    .mode-btn { display: block; width: 100%; padding: 1.25rem; margin: 0.75rem 0; border: 2px solid #334155; border-radius: 0.75rem; background: #1e293b; color: #e2e8f0; cursor: pointer; text-align: left; font-size: 1rem; transition: border-color 0.2s; }
+    .mode-btn:hover { border-color: #3b82f6; }
+    .mode-btn .label { font-weight: 600; }
+    .mode-btn .desc { color: #94a3b8; font-size: 0.875rem; margin-top: 0.25rem; }
+    .progress-item { display: flex; align-items: center; gap: 0.75rem; padding: 0.75rem 0; border-bottom: 1px solid #1e293b; }
+    .progress-item .icon { font-size: 1.25rem; width: 1.5rem; text-align: center; }
+    .progress-item .name { flex: 1; }
+    .status-pending { color: #64748b; }
+    .status-running { color: #f59e0b; animation: pulse 1.2s ease-in-out infinite; }
+    .status-done { color: #22c55e; }
+    .status-error { color: #ef4444; }
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+    .progress-item .elapsed { color: #64748b; font-size: 0.8rem; min-width: 3rem; text-align: right; }
+    .progress-item .output { color: #64748b; font-size: 0.75rem; margin-top: 0.25rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 400px; }
+    .progress-wrap { flex: 1; }
+    .form-group { margin: 1rem 0; }
+    .form-group label { display: block; margin-bottom: 0.5rem; color: #94a3b8; font-size: 0.875rem; }
+    .form-group select, .form-group input { width: 100%; padding: 0.75rem; border: 1px solid #334155; border-radius: 0.5rem; background: #1e293b; color: #e2e8f0; font-size: 1rem; }
+    .btn { padding: 0.75rem 1.5rem; border: none; border-radius: 0.5rem; font-size: 1rem; cursor: pointer; font-weight: 500; }
+    .btn-primary { background: #3b82f6; color: white; }
+    .btn-primary:hover { background: #2563eb; }
+    .btn-secondary { background: #334155; color: #e2e8f0; }
+    .btn-secondary:hover { background: #475569; }
+    .btn-row { display: flex; gap: 0.75rem; margin-top: 1.5rem; }
+    .check { color: #22c55e; }
+    .error-msg { color: #ef4444; margin-top: 0.5rem; font-size: 0.875rem; }
+    .success { text-align: center; padding: 2rem 0; }
+    .success .icon { font-size: 3rem; margin-bottom: 1rem; }
+  </style>
+</head>
+<body>
+  <div class="wizard">
+    <!-- Step 1: Mode Selection -->
+    <div id="step-mode" class="step active">
+      <h1>Welcome to PI Dashboard</h1>
+      <h2>How would you like to set up?</h2>
+      <button class="mode-btn" onclick="selectMode('standalone')">
+        <div class="label">🚀 Set up everything for me</div>
+        <div class="desc">Installs pi, openspec, and all tools automatically. Best for new users.</div>
+      </button>
+      <button class="mode-btn" onclick="selectMode('power-user')">
+        <div class="label">⚡ Use my existing pi installation</div>
+        <div class="desc">Connects to your system pi. For developers who already have pi installed.</div>
+      </button>
+    </div>
+
+    <!-- Step 2: Installation / Verification -->
+    <div id="step-install" class="step">
+      <h1 id="install-title">Installing...</h1>
+      <h2 id="install-subtitle"></h2>
+      <div id="progress-list"></div>
+      <div id="install-error" class="error-msg" style="display:none"></div>
+      <div class="btn-row">
+        <button class="btn btn-secondary" onclick="goToStep('step-mode')">Back</button>
+        <button id="install-retry" class="btn btn-primary" onclick="runInstall()" style="display:none">Retry</button>
+        <button id="install-next" class="btn btn-primary" onclick="goToStep('step-apikey')" style="display:none">Next</button>
+      </div>
+    </div>
+
+    <!-- Step 3: API Key -->
+    <div id="step-apikey" class="step">
+      <h1>Configure API Key</h1>
+      <h2 id="apikey-status"></h2>
+      <div class="form-group">
+        <label for="provider">Provider</label>
+        <select id="provider">
+          <option value="anthropic">Anthropic (Claude)</option>
+          <option value="openai">OpenAI</option>
+          <option value="google">Google</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="apikey">API Key</label>
+        <input id="apikey" type="password" placeholder="sk-..." />
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-secondary" onclick="skipApiKey()">Skip</button>
+        <button class="btn btn-primary" onclick="saveApiKey()">Save & Continue</button>
+      </div>
+    </div>
+
+    <!-- Step 4: Done -->
+    <div id="step-done" class="step">
+      <div class="success">
+        <div class="icon">✅</div>
+        <h1>All Set!</h1>
+        <h2>PI Dashboard is ready to use.</h2>
+        <div class="btn-row" style="justify-content:center; margin-top: 2rem;">
+          <button class="btn btn-primary" onclick="finish()">Launch Dashboard</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const api = window.wizardApi;
+    let selectedMode = null;
+    let deps = null;
+
+    function goToStep(id) {
+      document.querySelectorAll('.step').forEach(s => s.classList.remove('active'));
+      document.getElementById(id).classList.add('active');
+    }
+
+    async function selectMode(mode) {
+      selectedMode = mode;
+      deps = await api.detectDependencies();
+
+      if (mode === 'standalone') {
+        document.getElementById('install-title').textContent = 'Installing Dependencies';
+        document.getElementById('install-subtitle').textContent = 'Setting up pi, openspec, and tools...';
+        goToStep('step-install');
+        await runInstall();
+      } else {
+        document.getElementById('install-title').textContent = 'Checking Installation';
+        document.getElementById('install-subtitle').textContent = 'Verifying your existing setup...';
+        goToStep('step-install');
+        await verifyPowerUser();
+      }
+    }
+
+    async function runInstall() {
+      const list = document.getElementById('progress-list');
+      const items = ['pi-coding-agent', 'pi-dashboard', 'openspec', 'tsx'];
+      list.innerHTML = items.map(name =>
+        `<div class="progress-item" id="prog-${name}"><span class="icon status-pending">○</span><div class="progress-wrap"><span class="name">${name}</span></div><span class="elapsed"></span></div>`
+      ).join('');
+      document.getElementById('install-error').style.display = 'none';
+      document.getElementById('install-retry').style.display = 'none';
+      document.getElementById('install-next').style.display = 'none';
+
+      const timers = {};
+      api.onInstallProgress(({ step, status, error, output }) => {
+        const el = document.getElementById('prog-' + step);
+        if (!el) return;
+        const icon = el.querySelector('.icon');
+        icon.className = 'icon status-' + status;
+        icon.textContent = status === 'done' ? '✓' : status === 'running' ? '◎' : status === 'error' ? '✗' : '○';
+        // Elapsed timer
+        const elapsedEl = el.querySelector('.elapsed');
+        if (status === 'running' && !timers[step]) {
+          const start = Date.now();
+          timers[step] = setInterval(() => {
+            const s = Math.floor((Date.now() - start) / 1000);
+            if (elapsedEl) elapsedEl.textContent = s + 's';
+          }, 1000);
+        }
+        if (status === 'done' || status === 'error') {
+          clearInterval(timers[step]);
+          delete timers[step];
+        }
+        // npm output line
+        if (output) {
+          let outEl = el.querySelector('.output');
+          if (!outEl) {
+            outEl = document.createElement('div');
+            outEl.className = 'output';
+            el.querySelector('.progress-wrap').appendChild(outEl);
+          }
+          outEl.textContent = output;
+        }
+        if (status === 'done') {
+          const outEl = el.querySelector('.output');
+          if (outEl) outEl.remove();
+        }
+        if (error) {
+          document.getElementById('install-error').textContent = error;
+          document.getElementById('install-error').style.display = 'block';
+        }
+      });
+
+      try {
+        await api.installStandalone();
+        document.getElementById('install-next').style.display = 'inline-block';
+      } catch (err) {
+        document.getElementById('install-retry').style.display = 'inline-block';
+      }
+    }
+
+    async function verifyPowerUser() {
+      const list = document.getElementById('progress-list');
+      const checks = [
+        { name: 'pi', label: 'pi CLI', found: deps.pi.found },
+        { name: 'openspec', label: 'openspec CLI', found: deps.openspec.found },
+        { name: 'dashboard', label: 'Dashboard bridge', found: deps.dashboard.found },
+      ];
+
+      list.innerHTML = checks.map(c =>
+        `<div class="progress-item"><span class="icon ${c.found ? 'status-done' : 'status-error'}">${c.found ? '✓' : '✗'}</span><span class="name">${c.label}</span></div>`
+      ).join('');
+
+      const allGood = checks.every(c => c.found);
+      if (allGood) {
+        document.getElementById('install-next').style.display = 'inline-block';
+      } else if (!deps.pi.found) {
+        document.getElementById('install-error').textContent = 'pi is not installed. Install it with: npm install -g @mariozechner/pi-coding-agent';
+        document.getElementById('install-error').style.display = 'block';
+      } else if (!deps.dashboard.found) {
+        document.getElementById('install-error').textContent = 'Installing dashboard bridge...';
+        document.getElementById('install-error').style.display = 'block';
+        try {
+          await api.installDashboardGlobal();
+          document.getElementById('install-error').style.display = 'none';
+          document.getElementById('install-next').style.display = 'inline-block';
+          // Update the dashboard check
+          const dashEl = list.children[2]?.querySelector('.icon');
+          if (dashEl) { dashEl.className = 'icon status-done'; dashEl.textContent = '✓'; }
+        } catch (err) {
+          document.getElementById('install-error').textContent = 'Failed to install dashboard bridge: ' + err.message;
+        }
+      }
+    }
+
+    async function saveApiKey() {
+      const provider = document.getElementById('provider').value;
+      const key = document.getElementById('apikey').value.trim();
+      if (!key) return;
+      await api.saveApiKey(provider, key);
+      await api.completeWizard(selectedMode);
+      goToStep('step-done');
+    }
+
+    function skipApiKey() {
+      api.completeWizard(selectedMode);
+      goToStep('step-done');
+    }
+
+    function finish() {
+      window.close();
+    }
+
+    // Check API key status when reaching step 3
+    const observer = new MutationObserver(() => {
+      const apiStep = document.getElementById('step-apikey');
+      if (apiStep.classList.contains('active') && deps?.apiKeyConfigured) {
+        document.getElementById('apikey-status').textContent = 'An API key is already configured. You can update it or skip.';
+      } else if (apiStep.classList.contains('active')) {
+        document.getElementById('apikey-status').textContent = 'Enter your LLM provider API key to get started.';
+      }
+    });
+    observer.observe(document.getElementById('step-apikey'), { attributes: true });
+  </script>
+</body>
+</html>

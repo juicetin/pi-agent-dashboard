@@ -28,6 +28,29 @@ pi-dashboard         # Start dashboard server
 pi-dashboard --dev   # Start with Vite proxy
 ```
 
+## Cross-Platform QA Testing
+
+VM-based QA testing for verifying clean-state installation and runtime across platforms.
+
+```bash
+cd qa
+make build-linux-x86    # Build Ubuntu x86 base image (Packer + VMware)
+make test-linux-x86     # Clone → boot → run tests → destroy
+make manual-linux-x86   # Clone with GUI for manual testing
+make clean              # Destroy all cloned VMs
+```
+
+| File | Purpose |
+|------|---------|
+| `qa/Makefile` | Build/test/manual/clean targets for all platforms |
+| `qa/packer/*.pkr.hcl` | Packer templates per platform (Ubuntu, Windows, macOS) |
+| `qa/packer/scripts/` | Provisioning scripts (common, linux, macos, windows) |
+| `qa/packer/vars/` | OS-version-specific variables (ISO URL, checksum, VM specs) |
+| `qa/packer/http/` | Auto-install configs (cloud-init, autounattend.xml) |
+| `qa/scripts/` | VM lifecycle (clone, wait-ssh, destroy, run-test) |
+| `qa/tests/` | Test suite (install, server, websocket, terminal, git) |
+| `qa/README.md` | Full setup and usage documentation |
+
 ## Key Files
 
 | File | Purpose |
@@ -36,20 +59,24 @@ pi-dashboard --dev   # Start with Vite proxy
 | `src/shared/browser-protocol.ts` | Server↔Browser WebSocket messages |
 | `src/shared/types.ts` | Data models (Session, Workspace, Event) |
 | `src/shared/config.ts` | Shared config loader (`~/.pi/dashboard/config.json`) |
-| `src/extension/bridge.ts` | Main extension entry point (composes sync/tracker/flow modules) |
+| `src/extension/bridge.ts` | Main extension entry point (composes sync/tracker/flow modules, tracks `isAgentStreaming` in persistent BridgeState) |
 | `src/extension/bridge-context.ts` | Shared mutable state type + helpers for bridge modules |
 | `src/extension/session-sync.ts` | Session register, replay, and switch/fork handling |
 | `src/extension/model-tracker.ts` | Model/thinking-level/git/name change detection |
 | `src/extension/flow-event-wiring.ts` | Flow event listener registration (flow:* → event_forward) |
 | `src/extension/connection.ts` | WebSocket with exponential backoff |
 | `src/extension/server-probe.ts` | TCP probe to detect running server |
+| `src/shared/server-identity.ts` | Identity-verified health check (`isDashboardRunning`) replacing bare TCP probes |
+| `src/shared/mdns-discovery.ts` | mDNS advertise/discover/browse for `_pi-dashboard._tcp` services |
 | `src/extension/server-launcher.ts` | Auto-start server as detached process |
 | `src/extension/command-handler.ts` | Command routing: `!`/`!!` bash, `/compact`, slash commands |
 | `src/extension/prompt-expander.ts` | Slash command → prompt template expansion (supports colon-to-hyphen aliasing: `/opsx:cmd` → `opsx-cmd.md`) |
 | `src/extension/dev-build.ts` | Dev build-on-reload helper (client build + server shutdown) |
-| `src/extension/server-auto-start.ts` | Extracted auto-start logic with retry-probe for concurrent launches |
+| `src/extension/server-auto-start.ts` | mDNS-first discovery → health check fallback → auto-start with concurrent launch detection |
 | `src/shared/session-meta.ts` | Session metadata sidecar (.meta.json) read/write helpers |
 | `src/extension/process-metrics.ts` | Lightweight CPU/memory/event-loop metrics collector for heartbeats |
+| `src/extension/process-scanner.ts` | Child process detection via ps + PGID tracking (leaf-only, grandchild recursion) and PGID-based kill |
+| `src/client/components/ProcessList.tsx` | Session card process list with elapsed time and red ✕ kill button |
 | `src/extension/git-info.ts` | Git branch/remote/PR detection (polled every 30s) |
 | `src/extension/git-link-builder.ts` | Git remote URL parsing and platform-specific links |
 | `src/server/git-operations.ts` | Server-side git commands: branch listing, checkout, init, stash pop |
@@ -58,10 +85,10 @@ pi-dashboard --dev   # Start with Vite proxy
 | `src/client/lib/git-api.ts` | Client-side fetch helpers for git API endpoints |
 | `src/extension/ui-proxy.ts` | Proxies ctx.ui dialogs to dashboard (confirm/select/input/editor/notify) |
 | `src/extension/ask-user-tool.ts` | `ask_user` tool registration (bundled in bridge, registered at session_start to avoid static tool-name conflicts with other extensions) |
-| `src/extension/openspec-activity-detector.ts` | Detects OpenSpec activity from tool events; auto-attach requires only changeName (phase optional) |
+| `src/shared/openspec-activity-detector.ts` | Detects OpenSpec activity from tool events; auto-attach requires only changeName (phase optional) |
 | `src/shared/openspec-poller.ts` | OpenSpec CLI polling (shared, used by server DirectoryService) |
 | `src/shared/state-replay.ts` | Synthesizes events from pi entries (shared, used by server + bridge) |
-| `src/extension/stats-extractor.ts` | Extracts token/cost stats from turn_end events |
+| `src/shared/stats-extractor.ts` | Extracts token/cost stats from turn_end events |
 | `src/server/session-stats-reader.ts` | Reads cumulative stats + context usage from session JSONL files at startup |
 | `src/server/server.ts` | HTTP + WebSocket server (composes route modules + wiring) |
 | `src/server/routes/session-routes.ts` | REST routes: sessions, events, session-diff |
@@ -69,7 +96,7 @@ pi-dashboard --dev   # Start with Vite proxy
 | `src/server/routes/file-routes.ts` | REST routes: file read, browse, readme, pinned-dirs |
 | `src/server/routes/openspec-routes.ts` | REST routes: openspec-archive, pi-resources, pi-resource-file |
 | `src/server/routes/system-routes.ts` | REST routes: config, health, shutdown, tunnel, editors |
-| `src/server/event-wiring.ts` | Pi gateway → browser gateway event forwarding (replay suppression, flows refresh dedup, context usage extraction) |
+| `src/server/event-wiring.ts` | Pi gateway → browser gateway event forwarding (replay suppression with `skipReplayInsert` dedup, flows refresh dedup, context usage extraction) |
 | `src/server/idle-timer.ts` | Auto-shutdown idle timer with sleep-wake resilience |
 | `src/server/session-bootstrap.ts` | Startup session discovery and OpenSpec polling init |
 | `src/server/pi-gateway.ts` | Extension WebSocket gateway (port 9999) |
@@ -126,8 +153,9 @@ pi-dashboard --dev   # Start with Vite proxy
 | `src/server/config-api.ts` | Config REST API: read (redacted), write (partial merge), secret preservation |
 | `src/client/components/SettingsPanel.tsx` | Settings UI: all dashboard config fields, grouped form, save to server |
 | `src/client/hooks/useAuthStatus.ts` | Client auth status hook and login redirect helper |
-| `src/server/localhost-guard.ts` | Localhost-only access guard for routes |
+| `src/server/localhost-guard.ts` | Network access guard: `createNetworkGuard` (loopback/trusted/authenticated), `isBypassedHost` (CIDR/wildcard/exact), netmask-to-CIDR helpers |
 | `src/server/server-pid.ts` | PID file management for daemon mode |
+| `src/client/components/ServerSelector.tsx` | Server selector dropdown for switching between discovered dashboard servers |
 | `src/server/terminal-manager.ts` | PTY lifecycle, ring buffer, spawn/attach/kill terminals |
 | `src/server/terminal-gateway.ts` | Binary WebSocket upgrade handler for `/ws/terminal/:id` |
 | `scripts/fix-pty-permissions.cjs` | Postinstall: fix node-pty spawn-helper execute permissions |
@@ -174,7 +202,8 @@ pi-dashboard --dev   # Start with Vite proxy
 | `src/client/hooks/useSessionActions.ts` | Session action callbacks hook (send, abort, resume, spawn, etc.) |
 | `src/client/hooks/useOpenSpecActions.ts` | OpenSpec action callbacks hook (refresh, archive, attach, detach) |
 | `src/client/hooks/useContentViews.ts` | Content view state + fetch (pi resources, readme, file preview) |
-| `src/client/lib/event-reducer.ts` | Event-sourced state reducer (delegates flow events to flow-reducer) |
+| `src/client/lib/event-reducer.ts` | Event-sourced state reducer (delegates flow events to flow-reducer); extracts LLM errors from `agent_end` into `lastError` |
+| `src/client/hooks/usePendingPromptTimeout.ts` | 30-second safety timeout for stuck `pendingPrompt` spinners |
 | `src/client/lib/flow-reducer.ts` | Flow state machine: all flow_* event handling |
 | `src/client/lib/session-grouping.ts` | Pure functions: group, sort, filter sessions by directory |
 | `src/client/lib/truncate-path.ts` | Middle-truncation utility for filesystem paths |
@@ -210,6 +239,28 @@ pi-dashboard --dev   # Start with Vite proxy
 | `.pi/skills/browser-visual-debug/SKILL.md` | Skill: visual debugging with a real browser (screenshots, interaction, responsive testing) via pi-agent-browser |
 | `.pi/skills/browser-visual-debug/references/` | Dashboard recipes, responsive testing presets, agent-browser commands cheatsheet |
 | `.pi/skills/browser-visual-debug/scripts/detect-dashboard.sh` | Auto-detect dashboard URL, mode, and Vite dev server status |
+| `packages/electron/src/main.ts` | Electron main process: single-instance, wizard, server launch, loading page, tray |
+| `packages/electron/src/lib/server-lifecycle.ts` | Health check → tsx binary spawn (inlined config/health, no shared pkg imports) |
+| `packages/server/src/extension-register.ts` | Auto-registers bundled bridge extension in pi's global settings on startup |
+| `packages/electron/src/lib/doctor.ts` | Doctor diagnostic: checks all binaries, versions, server status, offers setup |
+| `packages/electron/src/lib/app-menu.ts` | App menu with About dialog and Doctor on all platforms |
+| `packages/electron/src/lib/tray.ts` | System tray with platform-specific icons (template on macOS, ico/png on Win/Linux) |
+| `packages/electron/src/lib/dependency-installer.ts` | Async npm install of pi, openspec, tsx into ~/.pi-dashboard/ using bundled Node |
+| `packages/electron/src/lib/dependency-detector.ts` | Detects pi, openspec, Node.js on system PATH and managed install |
+| `packages/electron/src/lib/bundled-node.ts` | Resolves bundled Node.js/npm paths in Electron resources |
+| `packages/electron/src/lib/wizard-window.ts` | First-run setup wizard window with preload bridge |
+| `packages/electron/forge.config.ts` | Electron Forge config: DMG, DEB, AppImage, NSIS makers, icon, extraResources |
+| `packages/electron/scripts/build-installer.sh` | Build script: native + Docker cross-platform (--linux, --windows, --all) |
+| `packages/electron/scripts/docker-make.sh` | Docker entrypoint: platform-aware native module handling, ZIP for Windows |
+| `packages/electron/scripts/Dockerfile.build` | Docker image for cross-platform builds (node:22-bookworm-slim + build tools) |
+| `packages/electron/scripts/bundle-server.sh` | Bundles dashboard server source + deps into resources/server/ (--source-only for cross-builds) |
+| `packages/electron/scripts/docker-make.sh` | Docker entrypoint: bundles server, installs native deps, runs Forge make |
+| `packages/electron/scripts/Dockerfile.build` | Docker image for cross-platform builds (node:22-bookworm-slim + build tools) |
+| `packages/electron/scripts/test-server-launch.sh` | Docker-based test for server launch on clean Linux |
+| `packages/electron/scripts/test-electron-install.sh` | Full e2e Docker test: install, wizard, server launch, health check |
+| `packages/electron/scripts/test-electron-install-inner.sh` | Inner test script run inside Docker container |
+| `packages/electron/resources/icon.png` | Master 1024×1024 app icon (π on dark navy) |
+| `.github/workflows/electron-build.yml` | CI: builds DMG (macOS), DEB+AppImage (Linux), NSIS (Windows) on native runners |
 
 ## Build & Restart Workflow
 

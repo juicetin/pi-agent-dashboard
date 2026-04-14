@@ -3,6 +3,7 @@ import { useZoomPan } from "../hooks/useZoomPan.js";
 import { ZoomControls } from "./ZoomControls.js";
 import { graphlib } from "dagre-d3-es";
 import { layout as dagreLayout } from "dagre-d3-es/src/dagre/index.js";
+import type { FlowState, ArchitectDagStep } from "@blackbelt-technology/pi-dashboard-shared/types.js";
 
 // ── Types ───────────────────────────────────────────────────────────
 
@@ -76,6 +77,85 @@ export function synthesizeImplicitEdges(
       }
     }
   }
+}
+
+// ── Data converters ────────────────────────────────────────────────
+
+/** Convert FlowState (running/completed flow) to FlowGraphStep array.
+ *  Uses dagSteps when available, falls back to agents map for backward compat. */
+export function flowStateToGraphSteps(flowState: FlowState): FlowGraphStep[] {
+  if (flowState.dagSteps && flowState.dagSteps.length > 0) {
+    const stepStatus = new Map<string, FlowGraphStep["status"]>();
+    for (const [key, agent] of flowState.agents) {
+      stepStatus.set(key, agent.status);
+      if (agent.stepId) stepStatus.set(agent.stepId, agent.status);
+      stepStatus.set(agent.agentName, agent.status);
+    }
+
+    const allStepIds = new Set(flowState.dagSteps.map(s => s.id));
+    const steps: FlowGraphStep[] = flowState.dagSteps.map(step => ({
+      id: step.id,
+      label: step.id,
+      status: stepStatus.get(step.id) || stepStatus.get(step.agent || "") || "pending",
+      blockedBy: step.blockedBy.filter(dep => allStepIds.has(dep)),
+      type: mapStepType(step.stepType),
+      loopTarget: step.loopTarget && allStepIds.has(step.loopTarget) ? step.loopTarget : undefined,
+    }));
+
+    // Add flow-ref steps not in dagSteps
+    for (const ref of flowState.flowRefSteps || []) {
+      if (!allStepIds.has(ref.id)) {
+        steps.push({
+          id: ref.id,
+          label: ref.label,
+          status: "pending",
+          blockedBy: ref.blockedBy.filter(dep => allStepIds.has(dep)),
+          type: "flow-ref",
+        });
+      }
+    }
+
+    synthesizeImplicitEdges(steps, flowState.dagSteps);
+    return steps;
+  }
+
+  // Fallback: build from agents map (backward compat for old events without dagSteps)
+  const stepToAgent = new Map<string, string>();
+  for (const agent of flowState.agents.values()) {
+    if (agent.stepId) stepToAgent.set(agent.stepId, agent.agentName);
+  }
+  const agentSteps: FlowGraphStep[] = Array.from(flowState.agents.values()).map(agent => ({
+    id: agent.agentName,
+    label: agent.label || agent.agentName,
+    status: agent.status,
+    blockedBy: agent.blockedBy
+      .map(depId => stepToAgent.get(depId) || depId)
+      .filter(name => flowState.agents.has(name) || flowState.flowRefSteps?.some(r => r.id === name)),
+  }));
+  const flowRefSteps: FlowGraphStep[] = (flowState.flowRefSteps || []).map(ref => ({
+    id: ref.id,
+    label: ref.label,
+    status: "pending" as const,
+    blockedBy: ref.blockedBy.map(depId => stepToAgent.get(depId) || depId),
+    type: "flow-ref" as const,
+  }));
+  return [...agentSteps, ...flowRefSteps];
+}
+
+/** Convert ArchitectState dagSteps (design-time, all pending) to FlowGraphStep array. */
+export function architectStepsToGraphSteps(dagSteps: ArchitectDagStep[]): FlowGraphStep[] {
+  const allStepIds = new Set(dagSteps.map(s => s.id));
+  const steps: FlowGraphStep[] = dagSteps.map((step) => ({
+    id: step.id,
+    label: step.agentName || step.id,
+    status: "pending" as const,
+    blockedBy: [...step.blockedBy],
+    type: mapStepType(step.stepType),
+    loopTarget: step.loopTarget && allStepIds.has(step.loopTarget) ? step.loopTarget : undefined,
+  }));
+
+  synthesizeImplicitEdges(steps, dagSteps);
+  return steps;
 }
 
 interface PositionedNode {

@@ -16,25 +16,8 @@ import type {
   FlowDetailEntry,
 } from "@blackbelt-technology/pi-dashboard-shared/types.js";
 import { MarkdownContent } from "./MarkdownContent.js";
-import { FlowGraph, mapStepType, synthesizeImplicitEdges, type FlowGraphStep } from "./FlowGraph.js";
+import { FlowGraph, architectStepsToGraphSteps } from "./FlowGraph.js";
 import { AgentCardShell } from "./AgentCardShell.js";
-
-/** Map ArchitectState.dagSteps to FlowGraphStep array (all pending) */
-function architectStepsToGraphSteps(state: ArchitectState): FlowGraphStep[] {
-  const allStepIds = new Set(state.dagSteps.map(s => s.id));
-  const steps: FlowGraphStep[] = state.dagSteps.map((step) => ({
-    id: step.id,
-    label: step.agentName || step.id,
-    status: "pending" as const,
-    blockedBy: [...step.blockedBy],
-    type: mapStepType(step.stepType),
-    loopTarget: step.loopTarget && allStepIds.has(step.loopTarget) ? step.loopTarget : undefined,
-  }));
-
-  synthesizeImplicitEdges(steps, state.dagSteps);
-
-  return steps;
-}
 
 // ── Detail view (reuses same patterns as FlowAgentDetail) ─────────
 
@@ -524,7 +507,7 @@ export function FlowArchitect({
           {/* Flow graph + view YAML icon (only when file exists) */}
           {state.dagSteps.length > 0 && (
             <div>
-              <FlowGraph steps={architectStepsToGraphSteps(state)} />
+              <FlowGraph steps={architectStepsToGraphSteps(state.dagSteps)} />
               <div className="flex items-center gap-2 mt-1">
                 {firstFlow && (
                   <span className="text-[10px] text-[var(--text-muted)]">

@@ -3,78 +3,10 @@ import { Icon } from "@mdi/react";
 import { mdiRobotOutline, mdiStop, mdiChevronUp, mdiChevronRight, mdiChevronDown, mdiFileDocumentOutline, mdiLoading } from "@mdi/js";
 import type { FlowState } from "@blackbelt-technology/pi-dashboard-shared/types.js";
 import { FlowAgentCard } from "./FlowAgentCard.js";
-import { FlowGraph, mapStepType, synthesizeImplicitEdges, type FlowGraphStep } from "./FlowGraph.js";
+import { FlowGraph, flowStateToGraphSteps } from "./FlowGraph.js";
 import { FlowSummary } from "./FlowSummary.js";
 import { FlowTabBar, type FlowTab } from "./FlowTabBar.js";
 import { useMobile } from "../hooks/useMobile.js";
-
-/** Map FlowState to FlowGraphStep array for DAG rendering.
- *  Uses dagSteps (all steps including fork/loop/conditional) when available,
- *  falling back to agents-only for backward compatibility.
- *  Agent status is resolved from the agents map. */
-function agentsToGraphSteps(flowState: FlowState): FlowGraphStep[] {
-  // When dagSteps is available, use it for a complete graph
-  if (flowState.dagSteps && flowState.dagSteps.length > 0) {
-    // Build status lookup — agents map is keyed by step ID
-    const stepStatus = new Map<string, FlowGraphStep["status"]>();
-    for (const [key, agent] of flowState.agents) {
-      stepStatus.set(key, agent.status);
-      if (agent.stepId) stepStatus.set(agent.stepId, agent.status);
-      stepStatus.set(agent.agentName, agent.status);
-    }
-
-    const allStepIds = new Set(flowState.dagSteps.map(s => s.id));
-    const steps: FlowGraphStep[] = flowState.dagSteps.map(step => ({
-      id: step.id,
-      label: step.id,
-      status: stepStatus.get(step.id) || stepStatus.get(step.agent || "") || "pending",
-      blockedBy: step.blockedBy.filter(dep => allStepIds.has(dep)),
-      type: mapStepType(step.stepType),
-      loopTarget: step.loopTarget && allStepIds.has(step.loopTarget) ? step.loopTarget : undefined,
-    }));
-
-    // Add flow-ref steps not in dagSteps
-    for (const ref of flowState.flowRefSteps || []) {
-      if (!allStepIds.has(ref.id)) {
-        steps.push({
-          id: ref.id,
-          label: ref.label,
-          status: "pending",
-          blockedBy: ref.blockedBy.filter(dep => allStepIds.has(dep)),
-          type: "flow-ref",
-        });
-      }
-    }
-
-    // Synthesize implicit edges (exit_target, segment ordering)
-    synthesizeImplicitEdges(steps, flowState.dagSteps);
-
-    return steps;
-  }
-
-  // Fallback: build from agents map (backward compat for old events without dagSteps)
-  const stepToAgent = new Map<string, string>();
-  for (const agent of flowState.agents.values()) {
-    if (agent.stepId) stepToAgent.set(agent.stepId, agent.agentName);
-  }
-  const agentSteps: FlowGraphStep[] = Array.from(flowState.agents.values()).map(agent => ({
-    id: agent.agentName,
-    label: agent.label || agent.agentName,
-    status: agent.status,
-    blockedBy: agent.blockedBy
-      .map(depId => stepToAgent.get(depId) || depId)
-      .filter(name => flowState.agents.has(name) || flowState.flowRefSteps?.some(r => r.id === name)),
-  }));
-  const flowRefSteps: FlowGraphStep[] = (flowState.flowRefSteps || []).map(ref => ({
-    id: ref.id,
-    label: ref.label,
-    status: "pending" as const,
-    blockedBy: ref.blockedBy
-      .map(depId => stepToAgent.get(depId) || depId),
-    type: "flow-ref" as const,
-  }));
-  return [...agentSteps, ...flowRefSteps];
-}
 
 export function FlowDashboard({
   flowState,
@@ -249,7 +181,7 @@ export function FlowDashboard({
           />
 
           <FlowGraph
-            steps={agentsToGraphSteps(displayState)}
+            steps={flowStateToGraphSteps(displayState)}
           />
           {onViewYaml && (
             <div className="mt-1">

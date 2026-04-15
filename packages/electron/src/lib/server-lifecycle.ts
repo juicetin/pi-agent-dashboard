@@ -65,22 +65,34 @@ export function didWeStartServer(): boolean {
 
 // ── Inlined config reading (replaces @blackbelt-technology/pi-dashboard-shared/config) ──
 
+interface KnownServerEntry {
+  host: string;
+  port: number;
+  label?: string;
+}
+
 interface MinimalConfig {
   port: number;
   piPort: number;
+  knownServers: KnownServerEntry[];
 }
 
 export function loadMinimalConfig(): MinimalConfig {
-  const defaults = { port: 8000, piPort: 9999 };
+  const defaults: MinimalConfig = { port: 8000, piPort: 9999, knownServers: [] };
   try {
     const configFile = path.join(os.homedir(), ".pi", "dashboard", "config.json");
     if (!existsSync(configFile)) return defaults;
     const raw = readFileSync(configFile, "utf-8").trim();
     if (!raw) return defaults;
     const parsed = JSON.parse(raw);
+    const knownServers: KnownServerEntry[] = Array.isArray(parsed.knownServers)
+      ? parsed.knownServers.filter((s: any) => s && typeof s.host === "string" && typeof s.port === "number")
+          .map((s: any) => ({ host: s.host, port: s.port, ...(typeof s.label === "string" ? { label: s.label } : {}) }))
+      : [];
     return {
       port: typeof parsed.port === "number" ? parsed.port : defaults.port,
       piPort: typeof parsed.piPort === "number" ? parsed.piPort : defaults.piPort,
+      knownServers,
     };
   } catch {
     return defaults;

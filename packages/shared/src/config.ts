@@ -55,6 +55,13 @@ export const DEFAULT_EDITOR_CONFIG: EditorConfig = {
   maxInstances: 3,
 };
 
+export interface KnownServer {
+  host: string;
+  port: number;
+  label?: string;
+  addedAt: string; // ISO timestamp
+}
+
 export interface DashboardConfig {
   port: number;
   piPort: number;
@@ -78,6 +85,8 @@ export interface DashboardConfig {
   lastServer?: string;
   /** Whether the server was launched by the Electron app */
   electronMode: boolean;
+  /** Persisted list of known remote servers */
+  knownServers: KnownServer[];
 }
 
 export interface CorsConfig {
@@ -103,6 +112,7 @@ const DEFAULTS: DashboardConfig = {
   resolvedTrustedNetworks: [],
   cors: { allowedOrigins: [] },
   electronMode: false,
+  knownServers: [],
 };
 
 /**
@@ -156,6 +166,18 @@ function parseMemoryLimits(raw: any): MemoryLimitsConfig {
   };
 }
 
+function parseKnownServers(raw: any): KnownServer[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((entry: any) => entry && typeof entry === "object" && typeof entry.host === "string" && typeof entry.port === "number")
+    .map((entry: any) => ({
+      host: entry.host,
+      port: entry.port,
+      ...(typeof entry.label === "string" ? { label: entry.label } : {}),
+      addedAt: typeof entry.addedAt === "string" ? entry.addedAt : new Date().toISOString(),
+    }));
+}
+
 function parseTrustedNetworks(raw: any): string[] {
   if (!Array.isArray(raw)) return [];
   return raw.filter((entry: unknown) => typeof entry === "string" && entry.length > 0);
@@ -204,6 +226,7 @@ export function loadConfig(): DashboardConfig {
       },
       ...(typeof parsed.lastServer === "string" ? { lastServer: parsed.lastServer } : {}),
       electronMode: parsed.electronMode === true,
+      knownServers: parseKnownServers(parsed.knownServers),
     };
 
     // Compute resolvedTrustedNetworks: merge trustedNetworks + auth.bypassHosts

@@ -429,6 +429,46 @@ Disconnect the active tunnel.
 
 ---
 
+## Known Servers
+
+### `GET /api/known-servers`
+List persisted known remote servers from config.
+
+**Response:**
+```json
+{ "success": true, "data": [{ "host": "office-mac", "port": 8000, "label": "Office", "addedAt": "2024-01-15T10:30:00Z" }] }
+```
+
+### `POST /api/known-servers`
+Add or update a known server. Deduplicates by host:port (updates label on duplicate).
+
+**Body:**
+```json
+{ "host": "office-mac", "port": 8000, "label": "Office" }
+```
+
+**Response:** `{ "success": true }`
+
+### `DELETE /api/known-servers`
+Remove a known server by host:port. Idempotent.
+
+**Body:**
+```json
+{ "host": "office-mac", "port": 8000 }
+```
+
+**Response:** `{ "success": true }`
+
+### `POST /api/discover-servers`
+On-demand mDNS network scan. Returns currently discovered peer servers.
+
+**Response:**
+```json
+{ "success": true, "data": [{ "host": "192.168.1.42", "port": 8000, "piPort": 9999, "version": "1.2.3", "pid": 123, "isLocal": false }] }
+```
+
+---
+
 ## Server Lifecycle
 
 ### `POST /api/shutdown`

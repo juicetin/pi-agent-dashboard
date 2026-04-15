@@ -5,6 +5,8 @@ import { Icon } from "@mdi/react";
 import { mdiArrowLeft, mdiContentSave, mdiAlert, mdiPlus, mdiDelete, mdiRestart, mdiUpdate } from "@mdi/js";
 import { useLocation } from "wouter";
 import { ProviderAuthSection } from "./ProviderAuthSection.js";
+import { KnownServersSection } from "./KnownServersSection.js";
+import { NetworkDiscoverySection } from "./NetworkDiscoverySection.js";
 import { PackageBrowser } from "./PackageBrowser.js";
 import { PackageInstallConfirmDialog } from "./PackageInstallConfirmDialog.js";
 import { PackageReadmeDialog } from "./PackageReadmeDialog.js";
@@ -87,7 +89,11 @@ export function SettingsPanel({ availableModels }: { availableModels?: Array<{ p
   const [saving, setSaving] = useState(false);
   const [restarting, setRestarting] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error" | "warn"; text: string } | null>(null);
-  const [activeTab, setActiveTab] = useState("general");
+  const [activeTab, setActiveTab] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    const tab = params.get("tab");
+    return tab && ["general", "servers", "packages", "providers", "security", "advanced"].includes(tab) ? tab : "general";
+  });
 
   useEffect(() => {
     const configPromise = fetch(`${getApiBase()}/api/config`).then((res) => res.json());
@@ -260,6 +266,7 @@ export function SettingsPanel({ availableModels }: { availableModels?: Array<{ p
 
   const tabs = [
     { id: "general", label: "General" },
+    { id: "servers", label: "Servers" },
     { id: "packages", label: "Packages" },
     { id: "providers", label: "Providers" },
     { id: "security", label: "Security" },
@@ -403,6 +410,11 @@ export function SettingsPanel({ availableModels }: { availableModels?: Array<{ p
                 <ToggleField label="Dev Build on Reload" value={config.devBuildOnReload} onChange={(v) => update((c) => { c.devBuildOnReload = v; })} />
               </Section>
             </>
+          )}
+
+          {/* Servers Tab */}
+          {activeTab === "servers" && (
+            <ServersTab />
           )}
 
           {/* Providers Tab */}
@@ -710,6 +722,35 @@ function TrustedNetworksSection({ networks, onChange }: { networks: string[]; on
         ⚠ Anyone on a trusted network has full access to the dashboard without authentication. Only use on private networks you control.
       </p>
     </Section>
+  );
+}
+
+function ServersTab() {
+  const [knownServers, setKnownServers] = useState<import("@blackbelt-technology/pi-dashboard-shared/config.js").KnownServer[]>([]);
+  const [loadCount, setLoadCount] = useState(0);
+
+  const reload = useCallback(async () => {
+    try {
+      const { listKnownServers } = await import("../lib/known-servers-api.js");
+      const data = await listKnownServers();
+      setKnownServers(data);
+    } catch { /* ignore */ }
+  }, []);
+
+  useEffect(() => { reload(); }, [reload, loadCount]);
+
+  return (
+    <>
+      <Section title="Known Servers">
+        <KnownServersSection onChange={() => setLoadCount((c) => c + 1)} />
+      </Section>
+      <Section title="Network Discovery">
+        <NetworkDiscoverySection
+          knownServers={knownServers}
+          onServerAdded={() => setLoadCount((c) => c + 1)}
+        />
+      </Section>
+    </>
   );
 }
 

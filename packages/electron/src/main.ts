@@ -138,6 +138,19 @@ function closeSplash(): void {
 
 /** Show a loading page that retries connecting to the server. */
 function showLoadingPage(win: BrowserWindow, serverUrl: string): void {
+  const config = loadMinimalConfig();
+  const knownServersHtml = config.knownServers.length > 0
+    ? `<div class="known-servers" id="known-servers" style="display:none; margin-top:20px; text-align:left;">
+        <h3 style="color:#c9d1d9; font-size:14px; margin:0 0 8px;">Known Servers</h3>
+        ${config.knownServers.map((s) =>
+          `<button onclick="window.switchServer('${s.host}', ${s.port})" class="server-btn">
+            <span class="server-label">${s.label || s.host}</span>
+            <span class="server-addr">${s.host}:${s.port}</span>
+          </button>`
+        ).join("")}
+      </div>`
+    : "";
+
   const html = `
     <html>
     <head><style>
@@ -151,6 +164,12 @@ function showLoadingPage(win: BrowserWindow, serverUrl: string): void {
       .error h3 { color: #f85149; margin: 0 0 12px; font-size: 16px; }
       .error p { margin: 0 0 8px; font-size: 13px; line-height: 1.5; color: #8b949e; }
       .error code { background: #161b22; padding: 2px 6px; border-radius: 4px; font-size: 12px; }
+      .server-btn { display: flex; justify-content: space-between; align-items: center; width: 100%; padding: 8px 12px;
+        margin-bottom: 6px; background: #161b22; border: 1px solid #30363d; border-radius: 6px;
+        color: #c9d1d9; cursor: pointer; font-size: 13px; text-align: left; }
+      .server-btn:hover { border-color: #4a90d9; background: #1c2128; }
+      .server-label { font-weight: 500; }
+      .server-addr { color: #8b949e; font-size: 12px; }
       .dot { animation: blink 1.4s infinite; }
       .dot:nth-child(2) { animation-delay: 0.2s; }
       .dot:nth-child(3) { animation-delay: 0.4s; }
@@ -166,8 +185,15 @@ function showLoadingPage(win: BrowserWindow, serverUrl: string): void {
         <p><code>npm install -g @blackbelt-technology/pi-dashboard</code></p>
         <p><code>pi-dashboard start</code></p>
         <p style="margin-top: 16px; color: #c9d1d9;">The app will connect automatically once the server is available.</p>
+        ${knownServersHtml}
       </div>
-    </div></body>
+    </div>
+    <script>
+      window.switchServer = function(host, port) {
+        window.location.href = 'http://' + host + ':' + port;
+      };
+    </script>
+    </body>
     </html>`;
   win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
 
@@ -185,10 +211,12 @@ function showLoadingPage(win: BrowserWindow, serverUrl: string): void {
 
     attempts++;
     if (attempts === MAX_ATTEMPTS_BEFORE_ERROR) {
-      // Show error message but keep retrying
+      // Show error message with known servers fallback, keep retrying
       win.webContents.executeJavaScript(`
         document.getElementById('status').style.display = 'none';
         document.getElementById('error').style.display = 'block';
+        var ks = document.getElementById('known-servers');
+        if (ks) ks.style.display = 'block';
       `).catch(() => {});
     }
     setTimeout(tryConnect, 1500);

@@ -246,6 +246,34 @@ export interface PackageUpdateInfo {
 
 export type CheckUpdatesResponse = ApiResponse<PackageUpdateInfo[]>;
 
+// ── Known Servers ─────────────────────────────────────────────
+
+import type { KnownServer } from "./config.js";
+
+export type KnownServersListResponse = ApiResponse<KnownServer[]>;
+
+export interface AddKnownServerRequest {
+  host: string;
+  port: number;
+  label?: string;
+}
+
+export interface RemoveKnownServerRequest {
+  host: string;
+  port: number;
+}
+
+export interface DiscoveredServerInfo {
+  host: string;
+  port: number;
+  piPort: number;
+  version: string;
+  pid: number;
+  isLocal: boolean;
+}
+
+export type DiscoverServersResponse = ApiResponse<DiscoveredServerInfo[]>;
+
 /** Detected network interface for trusted networks UI. */
 export interface NetworkInterface {
   name: string;

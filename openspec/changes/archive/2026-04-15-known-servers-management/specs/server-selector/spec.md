@@ -1,3 +1,5 @@
+## MODIFIED Requirements
+
 ### Requirement: Server selector in dashboard header
 The dashboard header SHALL include a server selector dropdown showing known servers (persisted) plus localhost, instead of mDNS-discovered servers.
 

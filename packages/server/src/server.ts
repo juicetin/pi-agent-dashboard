@@ -46,6 +46,7 @@ import { registerProviderRoutes } from "./routes/provider-routes.js";
 import { PackageManagerWrapper } from "./package-manager-wrapper.js";
 import { createEditorManager, type EditorManager } from "./editor-manager.js";
 import { registerEditorRoutes } from "./routes/editor-routes.js";
+import { registerKnownServersRoutes } from "./routes/known-servers-routes.js";
 import { registerEditorProxy, handleEditorUpgrade } from "./editor-proxy.js";
 import { detectCodeServerBinary } from "./editor-detection.js";
 
@@ -342,6 +343,7 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
   registerEditorProxy(fastify, editorManager);
 
   registerProviderAuthRoutes(fastify, { piGateway });
+  registerKnownServersRoutes(fastify, { networkGuard, getPeerServers: () => peerServers });
   registerProviderRoutes(fastify, { networkGuard });
 
   // Serve static files / SPA fallback

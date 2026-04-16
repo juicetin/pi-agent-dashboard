@@ -10,20 +10,25 @@ A web-based dashboard for monitoring and interacting with [pi](https://github.co
 
 - **Real-time session mirroring** — See all active pi sessions with live streaming messages
 - **Bidirectional interaction** — Send prompts and commands from the browser
-- **Workspace management** — Organize sessions by project folder
+- **Workspace management** — Organize sessions by project folder with pinned directories and drag-to-reorder
 - **Command autocomplete** — `/` prefix triggers command dropdown with filtering
-- **Session statistics** — Token counts, costs, model info, thinking level
+- **Session statistics** — Token counts, costs, model info, thinking level, context usage bar
 - **Elapsed time tracking** — Live ticking counters on running operations, final duration on completed tool calls and reasoning blocks
-- **Mobile-friendly** — Responsive layout with swipe drawer and touch targets
+- **Mobile-friendly** — Responsive layout with swipe drawer, touch targets, and mobile action menus
 - **Session spawning** — Launch new pi sessions from the dashboard (headless by default, or via tmux)
-- **Extension UI forwarding** — Interactive dialogs (confirm/select/input) survive page refresh and server restart
+- **PromptBus architecture** — Unified prompt routing with adapters (TUI, dashboard, custom). Interactive dialogs (confirm/select/input/editor/multiselect) survive page refresh and server restart. First-response-wins semantics with cross-adapter dismissal.
 - **On-demand session loading** — Browse historical sessions with lazy-loaded content from pi session files
 - **Integrated terminal** — Full browser-based terminal emulator (xterm.js + node-pty) with ANSI color support, scrollback, and keep-alive
-- **pi-flows integration** — Live flow execution dashboard with agent cards, detail views, summary, abort/auto controls. Launch flows and create new ones from the dashboard. Fork decisions and subagent dialogs forwarded via existing UI proxy.
+- **pi-flows integration** — Live flow execution dashboard with agent cards, detail views, flow graph visualization, summary, abort/auto controls. Launch flows and design new ones with the Flow Architect — all from the browser. Fork decisions and subagent dialogs forwarded via PromptBus.
 - **Force kill escalation** — Two-click Stop button (in command bar and on running tool cards): first click sends soft abort, second click force-kills the process (SIGTERM → SIGKILL). Session preserved as "ended" for resume/fork. Repeated tool calls (e.g. health check loops) are auto-collapsed with a count badge.
 - **Searchable select dialogs** — Keyboard-navigable picker with real-time filtering for OpenSpec changes and flow commands
 - **Browser-based provider auth** — Sign in to Anthropic, OpenAI Codex, GitHub Copilot, Gemini CLI, and Antigravity directly from Settings. Enter API keys for other providers. Credentials saved to `~/.pi/agent/auth.json` and live-synced to running sessions.
 - **Package management** — Browse, install, update, and remove pi packages from the dashboard. Search the npm registry for pi-package extensions/skills/themes, install from npm or git URL, manage global packages in Settings and local packages per workspace. All active sessions auto-reload after changes.
+- **OpenSpec integration** — Browse specs, view archive history, manage changes, and create new changes from the session sidebar
+- **Diff viewer** — Side-by-side and unified diff views with file tree navigation for reviewing agent changes
+- **Editor integration** — Open files in your preferred editor (VS Code, Cursor, etc.) directly from tool call cards
+- **Markdown preview** — Rendered markdown views with search, mermaid diagrams, and syntax highlighting
+- **Network discovery** — mDNS-based auto-discovery of other dashboard servers on the local network; connect to known remote servers
 
 ## Architecture
 
@@ -57,13 +62,77 @@ The system has three components:
 
 | Component | Location | Role |
 |-----------|----------|------|
-| **Bridge Extension** | `src/extension/` | Runs in every pi session. Forwards events, relays commands, auto-starts server. |
-| **Dashboard Server** | `src/server/` | Aggregates events in-memory, persists metadata to JSON, serves the web client. |
-| **Web Client** | `src/client/` | React + Tailwind UI with real-time WebSocket updates. |
+| **Bridge Extension** | `packages/extension/` | Runs in every pi session. Forwards events, relays commands, auto-starts server, hosts PromptBus. |
+| **Dashboard Server** | `packages/server/` | Aggregates events in-memory, persists metadata to JSON, serves the web client, manages terminals. |
+| **Web Client** | `packages/client/` | React + Tailwind UI with real-time WebSocket updates. |
+| **Shared** | `packages/shared/` | TypeScript types, protocols, and utilities shared across all packages. |
 
 See [docs/architecture.md](docs/architecture.md) for detailed data flows, reconnection logic, and persistence model.
 
+## Getting Started
+
+There are three ways to use the dashboard, from simplest to most flexible:
+
+### Option A: Electron Desktop App (standalone — no prerequisites)
+
+Download a pre-built installer from [GitHub Releases](https://github.com/BlackBeltTechnology/pi-agent-dashboard/releases) for your platform:
+
+| Platform | Download |
+|----------|----------|
+| **macOS** (Apple Silicon) | `.dmg` (arm64) |
+| **macOS** (Intel) | `.dmg` (x64) |
+| **Linux** (x64) | `.deb` or `.AppImage` |
+| **Linux** (ARM64) | `.deb` |
+| **Windows** (x64) | `.exe` (NSIS installer), `.zip`, or portable `.exe` |
+| **Windows** (ARM64) | `.zip` or portable `.exe` |
+
+On first launch, a setup wizard guides you through:
+
+1. **Choose a mode:**
+   - **Standalone** — Bundles Node.js and auto-installs pi + dashboard + openspec into `~/.pi-dashboard/`. No Node.js, npm, or build tools needed.
+   - **Power User** — Uses your existing system-installed pi and dashboard.
+2. **Configure an API key** — Enter your Anthropic/OpenAI key or sign in via browser-based OAuth.
+3. **Done** — The app discovers or spawns a dashboard server automatically.
+
+> **No terminal, no npm, no Node.js required.** The Electron app is fully self-contained in standalone mode. It bundles a Node.js runtime, spawns the dashboard server internally, and manages all dependencies. System tray integration keeps it running in the background.
+
+### Option B: pi Package (recommended for CLI users)
+
+Requires [pi](https://github.com/badlogic/pi-mono) (or [Oh My Pi](https://www.npmjs.com/package/@oh-my-pi/pi-coding-agent)) and Node.js ≥ 20.
+
+```bash
+pi install npm:@blackbelt-technology/pi-dashboard
+pi
+```
+
+The bridge extension auto-starts the dashboard server on first launch. You'll see:
+
+```
+🌐 Dashboard started at http://localhost:8000
+```
+
+Open **http://localhost:8000** in any browser. All active pi sessions appear automatically.
+
+### Option C: Local development install
+
+```bash
+git clone https://github.com/BlackBeltTechnology/pi-agent-dashboard.git
+cd pi-agent-dashboard
+npm install
+pi install /path/to/pi-agent-dashboard
+```
+
+### Quick test (without installing)
+
+To try the extension in a single pi session without registering it:
+
+```bash
+pi -e /path/to/pi-agent-dashboard/packages/extension/src/bridge.ts
+```
+
 ## Prerequisites
+
+Only needed for Option B/C (the Electron app handles everything automatically).
 
 | Requirement | Why | Install |
 |-------------|-----|---------|
@@ -77,49 +146,6 @@ See [docs/architecture.md](docs/architecture.md) for detailed data flows, reconn
 |------|---------|-------------|
 | **tmux** | Spawn new pi sessions from the browser in a tmux window | When `spawnStrategy` is `"tmux"` |
 | **[zrok](https://zrok.io/)** | Expose dashboard over the internet via tunnel (auto-connects on server start). Install with `brew install zrok` (macOS) and run `zrok enable <token>` to enroll — the dashboard reads zrok's own config (`~/.zrok2/environment.json`), no keys are stored in the dashboard. Uses reserved shares for persistent URLs across restarts. | When `tunnel.enabled` is `true` (default) |
-
-## Getting Started
-
-### 1. Install the dashboard package
-
-**From npm:**
-```bash
-pi install npm:@blackbelt-technology/pi-dashboard
-```
-
-**From a local clone:**
-```bash
-git clone https://github.com/nicობ/pi-agent-dashboard.git
-cd pi-agent-dashboard
-npm install
-pi install /path/to/pi-agent-dashboard
-```
-
-### 2. Start pi
-
-```bash
-pi
-```
-
-The bridge extension auto-starts the dashboard server on first launch. You'll see:
-
-```
-🌐 Dashboard started at http://localhost:8000
-```
-
-### 3. Open the dashboard
-
-Open **http://localhost:8000** in any browser. All active pi sessions appear automatically.
-
-That's it — no manual server start, no configuration needed for basic use.
-
-### Quick test (without installing)
-
-To try the extension in a single pi session without registering it:
-
-```bash
-pi -e /path/to/pi-agent-dashboard/src/extension/bridge.ts
-```
 
 ## Configuration
 
@@ -202,7 +228,11 @@ PI_DASHBOARD_URL=ws://192.168.1.100:9999 pi
 
 ## Installation Methods
 
-### From npm (recommended)
+### Electron Desktop App (standalone)
+
+See [Getting Started — Option A](#option-a-electron-desktop-app-standalone--no-prerequisites) above. Download from [GitHub Releases](https://github.com/BlackBeltTechnology/pi-agent-dashboard/releases).
+
+### From npm (recommended for CLI users)
 
 ```bash
 # pi
@@ -264,9 +294,9 @@ To disable: set `"autoStart": false` in `~/.pi/dashboard/config.json`.
 ### Manual server start
 
 ```bash
-npx tsx src/server/cli.ts
-npx tsx src/server/cli.ts --port 8000 --pi-port 9999
-npx tsx src/server/cli.ts --dev   # proxy to Vite dev server
+npx tsx packages/server/src/cli.ts
+npx tsx packages/server/src/cli.ts --port 8000 --pi-port 9999
+npx tsx packages/server/src/cli.ts --dev   # proxy to Vite dev server
 ```
 
 ### Daemon mode
@@ -385,13 +415,13 @@ npm run reload:check # Type-check + reload all pi sessions
 
 ```bash
 # Terminal 1: Dashboard server in dev mode
-npx tsx src/server/cli.ts --dev
+npx tsx packages/server/src/cli.ts --dev
 
 # Terminal 2: Vite dev server (HMR for the web client)
 npm run dev
 
 # Terminal 3: pi with the bridge extension
-pi -e src/extension/bridge.ts   # or just `pi` if installed
+pi -e packages/extension/src/bridge.ts   # or just `pi` if installed
 
 # Open http://localhost:8000 (server proxies to Vite for SPA routes + assets)
 # Or http://localhost:3000 (Vite directly, proxies API/WS to :8000)
@@ -424,50 +454,92 @@ curl -X POST http://localhost:8000/api/restart -H 'Content-Type: application/jso
 
 ### Project Structure
 
+The project is a monorepo with npm workspaces:
+
 ```
-src/
-├── shared/           # Shared TypeScript types
-│   ├── protocol.ts        # Extension ↔ Server messages
-│   ├── browser-protocol.ts # Server ↔ Browser messages (incl. PromptBus types)
-│   ├── types.ts           # Data models
-│   ├── config.ts          # Shared config loader
-│   └── rest-api.ts        # REST API types
+packages/
+├── shared/           # Shared TypeScript types & utilities
+│   └── src/
+│       ├── protocol.ts        # Extension ↔ Server messages
+│       ├── browser-protocol.ts # Server ↔ Browser messages (incl. PromptBus types)
+│       ├── types.ts           # Data models
+│       ├── config.ts          # Shared config loader
+│       ├── rest-api.ts        # REST API types
+│       ├── session-meta.ts    # Session metadata sidecar (.meta.json) read/write
+│       ├── state-replay.ts    # Event synthesis on reconnect
+│       ├── stats-extractor.ts # Token/cost stats extraction
+│       ├── server-identity.ts # Server detection & identity
+│       ├── mdns-discovery.ts  # mDNS network auto-discovery
+│       └── openspec-poller.ts # OpenSpec change data polling
 ├── extension/        # Bridge extension (runs in pi)
-│   ├── bridge.ts          # Main extension entry
-│   ├── connection.ts      # WebSocket with reconnection
-│   ├── event-forwarder.ts # Event mapping
-│   ├── source-detector.ts # Session source detection (via .meta.json sidecar)
-│   ├── command-handler.ts # Command relay
-│   ├── server-probe.ts    # TCP probe for server detection
-│   ├── server-launcher.ts # Auto-start server as detached process
-│   ├── git-info.ts        # Git branch/remote/PR detection
-│   ├── openspec-poller.ts # OpenSpec change data polling
-│   ├── session-history.ts # Session history sync
-│   ├── state-replay.ts    # Event synthesis on reconnect
-│   ├── stats-extractor.ts # Token/cost stats extraction
-│   └── dev-build.ts       # Dev build-on-reload helper
+│   └── src/
+│       ├── bridge.ts          # Main extension entry
+│       ├── connection.ts      # WebSocket with reconnection
+│       ├── event-forwarder.ts # Event mapping
+│       ├── flow-event-wiring.ts # pi-flows event forwarding
+│       ├── prompt-bus.ts      # PromptBus — unified prompt routing with adapters
+│       ├── dashboard-default-adapter.ts # Default PromptBus adapter for dashboard UI
+│       ├── prompt-expander.ts # Prompt template expansion from disk
+│       ├── provider-register.ts # Provider auth registration & sync
+│       ├── model-tracker.ts   # Model selection tracking
+│       ├── source-detector.ts # Session source detection (via .meta.json sidecar)
+│       ├── command-handler.ts # Command relay
+│       ├── server-probe.ts    # TCP probe for server detection
+│       ├── server-auto-start.ts # Auto-start logic on session launch
+│       ├── server-launcher.ts # Spawn server as detached process
+│       ├── session-sync.ts    # Session history sync
+│       ├── process-metrics.ts # Agent process CPU/memory metrics
+│       ├── process-scanner.ts # Running process detection
+│       ├── git-info.ts        # Git branch/remote/PR detection
+│       ├── git-link-builder.ts # GitHub/GitLab permalink generation
+│       └── dev-build.ts       # Dev build-on-reload helper
 ├── server/           # Dashboard server
-│   ├── cli.ts             # CLI entry (start/stop/restart/status)
-│   ├── server.ts          # HTTP + WebSocket server
-│   ├── pi-gateway.ts      # Extension WebSocket gateway
-│   ├── browser-gateway.ts # Browser WebSocket gateway
-│   ├── memory-event-store.ts    # In-memory event buffer (LRU, per-session cap, truncation)
-│   ├── memory-session-manager.ts # In-memory session registry
-│   ├── state-store.ts   # User prefs: hidden sessions, pinned dirs, session order
-│   ├── state-store.ts     # JSON-backed user preferences
-│   ├── session-persistence.ts # Session metadata persistence
-│   ├── session-order-manager.ts # Per-cwd session ordering
-│   ├── process-manager.ts # tmux/headless session spawning
-│   ├── editor-registry.ts # Available editor detection
-│   ├── tunnel.ts          # Zrok tunnel with reserved shares for persistent URLs, binary detection, PID tracking
-│   ├── server-pid.ts      # PID file for daemon management
-│   └── json-store.ts      # Atomic JSON file helpers
-├── shared/session-meta.ts # Session metadata sidecar (.meta.json) read/write
-└── client/           # React web client
-    ├── App.tsx
-    ├── hooks/             # WebSocket hook
-    ├── lib/               # Event reducer, command filter
-    └── components/        # UI components
+│   └── src/
+│       ├── cli.ts             # CLI entry (start/stop/restart/status)
+│       ├── server.ts          # HTTP + WebSocket server
+│       ├── pi-gateway.ts      # Extension WebSocket gateway
+│       ├── browser-gateway.ts # Browser WebSocket gateway
+│       ├── memory-event-store.ts # In-memory event buffer (LRU, per-session cap, truncation)
+│       ├── memory-session-manager.ts # In-memory session registry
+│       ├── preferences-store.ts # User prefs: hidden sessions, pinned dirs
+│       ├── meta-persistence.ts # Session metadata persistence
+│       ├── session-order-manager.ts # Per-cwd session ordering
+│       ├── session-discovery.ts # Session file scanning & loading
+│       ├── process-manager.ts # tmux/headless session spawning
+│       ├── headless-pid-registry.ts # Track headless process PIDs
+│       ├── editor-registry.ts # Available editor detection
+│       ├── editor-manager.ts  # Editor launch & file opening
+│       ├── provider-auth-storage.ts # Provider credential persistence
+│       ├── provider-auth-handlers.ts # OAuth flow handlers
+│       ├── npm-search-proxy.ts # npm registry search proxy
+│       ├── package-manager-wrapper.ts # pi package install/remove
+│       ├── pending-fork-registry.ts # Flow fork decision persistence
+│       ├── tunnel.ts          # Zrok tunnel with reserved shares
+│       ├── terminal-manager.ts # Browser terminal sessions (xterm.js + node-pty)
+│       ├── server-pid.ts      # PID file for daemon management
+│       ├── auth.ts            # OAuth2 authentication
+│       └── json-store.ts      # Atomic JSON file helpers
+├── client/           # React web client
+│   └── src/
+│       ├── App.tsx
+│       ├── hooks/             # WebSocket hooks, mobile detection
+│       ├── lib/               # Event reducer, command filter
+│       └── components/        # UI components
+│           ├── FlowDashboard.tsx    # Live flow execution view
+│           ├── FlowAgentCard.tsx    # Per-agent status cards
+│           ├── FlowGraph.tsx        # DAG visualization
+│           ├── FlowArchitect.tsx    # Flow designer UI
+│           ├── FlowSummary.tsx      # Post-flow result summary
+│           ├── DiffView.tsx         # Side-by-side diff viewer
+│           ├── TerminalView.tsx     # Browser terminal emulator
+│           ├── PackageBrowser.tsx   # Package search & install
+│           ├── ProviderAuthSection.tsx # Provider sign-in UI
+│           ├── SettingsPanel.tsx    # Config editor
+│           └── ...                  # 80+ components
+└── electron/         # Electron desktop app wrapper
+    ├── src/main.ts
+    ├── scripts/
+    └── resources/
 ```
 
 ## Monitoring
@@ -502,12 +574,20 @@ Supported methods: `confirm`, `select`, `input`, `notify`.
 
 ## Electron Desktop App
 
-The project includes an Electron wrapper at `packages/electron/` that bundles the dashboard as a native desktop app.
+The project includes an Electron wrapper at `packages/electron/` that bundles the dashboard as a **fully standalone native desktop app**. Pre-built installers for all platforms are available on [GitHub Releases](https://github.com/BlackBeltTechnology/pi-agent-dashboard/releases) — see [Getting Started](#getting-started) above.
 
-### Prerequisites
+The Electron app supports two modes:
 
-- **Node.js 22.12+** (required for building — the Vite plugin and native dependencies need it)
-- Platform-specific tools are handled by Electron Forge automatically
+| Mode | Description |
+|------|-------------|
+| **Standalone** | Bundles Node.js, auto-installs pi + dashboard into `~/.pi-dashboard/`. Zero prerequisites. |
+| **Power User** | Detects and uses your existing system pi + dashboard install. |
+
+Features: first-run setup wizard, auto-update checker, system tray, splash screen, VM detection (disables GPU acceleration), mDNS server discovery, and version compatibility checks.
+
+### Building from Source
+
+> **Prerequisites for building:** Node.js 22.12+, platform-specific tools handled by Electron Forge automatically.
 
 ### Building for Your Platform
 
@@ -573,16 +653,19 @@ cd packages/electron
 npm run icons    # Generates .icns (macOS), .ico (Windows), and resized PNGs
 ```
 
-### CI Builds
+### CI Builds & GitHub Releases
 
-The Electron build workflow (`.github/workflows/electron-build.yml`) builds installers for all platforms using GitHub-hosted runners:
+The release workflow (`.github/workflows/publish.yml`) builds Electron installers for **all platforms** on every version tag (`v*`):
 
-- **macOS arm64** — `macos-14` runner → `.dmg`
-- **macOS x64** — `macos-13` runner → `.dmg`
-- **Linux x64** — `ubuntu-latest` runner → `.deb` + `.AppImage`
-- **Windows x64** — `windows-latest` runner → `.exe` (NSIS)
+| Runner | Platform | Outputs |
+|--------|----------|---------|
+| `macos-14` | macOS arm64 | `.dmg` |
+| `ubuntu-latest` | Linux x64 | `.deb` + `.AppImage` |
+| `ubuntu-24.04-arm` | Linux arm64 | `.deb` |
+| `windows-latest` | Windows x64 | `.exe` (NSIS) + `.zip` + portable |
+| `windows-latest` | Windows arm64 | `.zip` + portable (x64 Node.js via WoW64) |
 
-Triggered by version tags (`v*`) or manually via GitHub Actions → "Run workflow".
+All artifacts are uploaded to a **draft GitHub Release** for review and publishing. The same workflow also publishes the npm package.
 
 ## CI/CD
 

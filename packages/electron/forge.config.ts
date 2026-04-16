@@ -1,8 +1,10 @@
 import type { ForgeConfig } from "@electron-forge/shared-types";
 import path from "node:path";
 import fs from "node:fs";
+import { fileURLToPath } from "node:url";
 
-const __dirname = path.dirname(new URL(import.meta.url).pathname);
+// fileURLToPath handles Windows drive-letter paths correctly (new URL().pathname gives /C:/... which is invalid)
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // Only include bundled Node.js if it exists (CI downloads it; local builds skip it)
 const bundledNodePath = path.resolve(__dirname, "resources/node");

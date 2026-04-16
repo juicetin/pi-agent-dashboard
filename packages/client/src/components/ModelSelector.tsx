@@ -30,6 +30,7 @@ export function ModelSelector({ current, models, roles, onSelect, onRoleSet, onP
   const [savingPreset, setSavingPreset] = useState(false);
   const [presetName, setPresetName] = useState("");
   const [rolesCollapsed, setRolesCollapsed] = useState(true);
+  const [providerFilter, setProviderFilter] = useState("");
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const presetInputRef = useRef<HTMLInputElement>(null);
@@ -57,10 +58,18 @@ export function ModelSelector({ current, models, roles, onSelect, onRoleSet, onP
     return () => clearTimeout(timer);
   }, [pendingModel]);
 
+  const uniqueProviders = hasModels
+    ? [...new Set(models.map((m) => m.provider))].sort()
+    : [];
+
   const filtered = hasModels
     ? models.filter((m) => {
-        const q = filter.toLowerCase();
-        return `${m.provider}/${m.id}`.toLowerCase().includes(q);
+        // Provider dropdown filter
+        if (providerFilter && m.provider !== providerFilter) return false;
+        // Multi-token AND search
+        const full = `${m.provider}/${m.id}`.toLowerCase();
+        const tokens = filter.trim().toLowerCase().split(/\s+/).filter(Boolean);
+        return tokens.length === 0 || tokens.every(token => full.includes(token));
       })
     : [];
 
@@ -68,6 +77,7 @@ export function ModelSelector({ current, models, roles, onSelect, onRoleSet, onP
   useEffect(() => {
     if (open) {
       setFilter("");
+      setProviderFilter("");
       setSelectedIndex(0);
       setEditingRole(null);
       setSavingPreset(false);
@@ -265,7 +275,20 @@ export function ModelSelector({ current, models, roles, onSelect, onRoleSet, onP
           )}
 
           {/* ── Filter input ── */}
-          <div className="p-1.5 pb-1">
+          <div className="p-1.5 pb-1 space-y-1">
+            {uniqueProviders.length > 1 && (
+              <select
+                value={providerFilter}
+                onChange={(e) => { setProviderFilter(e.target.value); setSelectedIndex(0); }}
+                className="w-full px-2 py-1 text-xs bg-[var(--bg-tertiary)] border border-[var(--border-primary)] rounded text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent-blue)]"
+                data-testid="provider-filter"
+              >
+                <option value="">All Providers</option>
+                {uniqueProviders.map((p) => (
+                  <option key={p} value={p}>{p}</option>
+                ))}
+              </select>
+            )}
             <input
               ref={inputRef}
               value={filter}

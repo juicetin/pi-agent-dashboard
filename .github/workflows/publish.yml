@@ -148,14 +148,30 @@ jobs:
             node_modules/@pengx17/electron-forge-maker-appimage/scripts/patch-apprun.sh
 
       - name: Make Electron distributables
+        if: "!(matrix.platform == 'win32' && matrix.arch == 'arm64')"
         run: npm run electron:make -- --arch=${{ matrix.arch }}
+
+      - name: Package Electron (Windows arm64 — no NSIS cross-compile)
+        if: matrix.platform == 'win32' && matrix.arch == 'arm64'
+        shell: bash
+        run: |
+          cd packages/electron
+          ../../node_modules/.bin/electron-forge package --arch=arm64 --platform=win32
+          echo "Packaged output:"
+          ls -la out/ || true
 
       - name: Build Windows ZIP and portable exe
         if: matrix.platform == 'win32'
         shell: pwsh
         run: |
           $arch = "${{ matrix.arch }}"
-          $packaged = "packages/electron/out/PI-Dashboard-win32-$arch"
+          $packaged = Resolve-Path "packages/electron/out/PI-Dashboard-win32-$arch" -ErrorAction SilentlyContinue
+          if (-not $packaged) {
+            Write-Host "::error::Packaged directory not found. Contents of out/:"
+            Get-ChildItem -Path "packages/electron/out/" -ErrorAction SilentlyContinue | Format-Table
+            exit 1
+          }
+          Write-Host "Found packaged dir: $packaged"
           # ZIP archive
           $zipDir = "packages/electron/out/make/zip/$arch"
           New-Item -ItemType Directory -Force -Path $zipDir

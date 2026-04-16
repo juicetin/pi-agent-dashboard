@@ -1,6 +1,6 @@
 {
   "name": "@blackbelt-technology/pi-dashboard-extension",
-  "version": "0.2.8",
+  "version": "0.2.9",
   "description": "Pi bridge extension for pi-dashboard",
   "type": "module",
   "pi": {

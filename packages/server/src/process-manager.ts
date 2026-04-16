@@ -150,7 +150,7 @@ async function spawnHeadlessWindows(
 
   child.unref();
   (child.stdin as any)?.unref();
-  child.stderr?.unref();
+  (child.stderr as any)?.unref();
 
   // Guard: if pid is undefined, spawn failed synchronously
   if (!child.pid) {

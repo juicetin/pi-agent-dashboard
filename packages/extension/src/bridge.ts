@@ -581,8 +581,23 @@ function initBridge(pi: ExtensionAPI) {
         }
       }
 
-      // For message_start and message_end, enrich with entryId (current leaf)
-      if (eventType === "message_start" || eventType === "message_end") {
+      // For message_start, enrich with entryId immediately (current leaf)
+      if (eventType === "message_start") {
+        const entryId = ctx.sessionManager?.getLeafId?.();
+        if (entryId) {
+          const enriched = { ...event, entryId };
+          const msg = mapEventToProtocol(sessionId, enriched);
+          connection.send(msg);
+          return;
+        }
+      }
+
+      // For message_end, defer getLeafId() so it runs after pi core persists the entry.
+      // Pi core calls _emit (which invokes this handler) BEFORE appendMessage (which updates leafId).
+      // Since _emit doesn't await async handlers, yielding via queueMicrotask lets appendMessage
+      // run first, so getLeafId() returns the correct entry ID for the just-persisted message.
+      if (eventType === "message_end") {
+        await new Promise<void>(resolve => queueMicrotask(resolve));
         const entryId = ctx.sessionManager?.getLeafId?.();
         if (entryId) {
           const enriched = { ...event, entryId };

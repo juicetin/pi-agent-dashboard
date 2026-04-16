@@ -74,10 +74,11 @@ const config: ForgeConfig = {
         },
       },
     },
-    {
+    // AppImage is only supported on x64 (appimagetool has no arm64 build)
+    ...(!process.env.SKIP_APPIMAGE ? [{
       name: "@pengx17/electron-forge-maker-appimage",
       config: {},
-    },
+    }] : []),
     {
       name: "@felixrieseberg/electron-forge-maker-nsis",
       config: {

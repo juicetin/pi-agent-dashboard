@@ -43,22 +43,26 @@ if [ "$PLATFORM" = "linux" ]; then
   # Linux: copy built-from-source pty.node into prebuilds, remove other platforms
   BUILT_PTY="node_modules/node-pty/build/Release/pty.node"
   if [ -f "$BUILT_PTY" ]; then
-    PREBUILD_DIR="node_modules/node-pty/prebuilds/linux-x64"
+    PREBUILD_DIR="node_modules/node-pty/prebuilds/linux-$ARCH"
     mkdir -p "$PREBUILD_DIR"
     cp "$BUILT_PTY" "$PREBUILD_DIR/pty.node"
-    echo "  ✓ Copied pty.node to prebuilds/linux-x64"
+    echo "  ✓ Copied pty.node to prebuilds/linux-$ARCH"
   fi
   rm -rf node_modules/node-pty/prebuilds/darwin-*
   rm -rf node_modules/node-pty/prebuilds/win32-*
 elif [ "$PLATFORM" = "win32" ]; then
-  # Windows: keep win32 prebuilds (can't cross-compile native modules), remove others
-  if [ -d "node_modules/node-pty/prebuilds/win32-x64" ]; then
-    echo "  ✓ Keeping win32-x64 prebuilds for node-pty"
+  # Windows: keep win32 prebuilds for target arch, remove others
+  if [ -d "node_modules/node-pty/prebuilds/win32-$ARCH" ]; then
+    echo "  ✓ Keeping win32-$ARCH prebuilds for node-pty"
   else
-    echo "  ⚠ No win32-x64 prebuilds found for node-pty (terminal may not work)"
+    echo "  ⚠ No win32-$ARCH prebuilds found for node-pty (terminal may not work)"
   fi
   rm -rf node_modules/node-pty/prebuilds/darwin-*
   rm -rf node_modules/node-pty/prebuilds/linux-*
+  # Remove prebuilds for other Windows arches
+  for d in node_modules/node-pty/prebuilds/win32-*; do
+    [ -d "$d" ] && [[ "$d" != *"win32-$ARCH" ]] && rm -rf "$d"
+  done
   rm -rf node_modules/node-pty/build  # remove Linux build artifacts
 fi
 
@@ -91,16 +95,16 @@ fi
 if [ "$PLATFORM" = "win32" ]; then
   cd "$ELECTRON_DIR"
 
-  # Download Windows Node.js for bundling
+  # Download Windows Node.js for bundling (matching target arch)
   NODE_DIR="resources/node"
   mkdir -p "$NODE_DIR"
   VERSION="v22.12.0"
-  URL="https://nodejs.org/dist/$VERSION/node-$VERSION-win-x64.zip"
-  echo "→ Downloading Node.js $VERSION for Windows..."
+  URL="https://nodejs.org/dist/$VERSION/node-$VERSION-win-$ARCH.zip"
+  echo "→ Downloading Node.js $VERSION for Windows $ARCH..."
   curl -fsSL "$URL" -o /tmp/node-win.zip
   cd /tmp && unzip -q node-win.zip && cd /build/"$ELECTRON_DIR"
-  cp "/tmp/node-$VERSION-win-x64/node.exe" "$NODE_DIR/"
-  cp -r "/tmp/node-$VERSION-win-x64/node_modules" "$NODE_DIR/"
+  cp "/tmp/node-$VERSION-win-$ARCH/node.exe" "$NODE_DIR/"
+  cp -r "/tmp/node-$VERSION-win-$ARCH/node_modules" "$NODE_DIR/"
 
   # Package with Forge (package only — skip makers, NSIS can't run on Linux)
   cd /build/packages/electron
@@ -130,7 +134,7 @@ if [ "$PLATFORM" = "win32" ]; then
 
   # 2. Portable exe (self-extracting)
   echo "→ Building portable exe..."
-  npx electron-builder --win portable --x64 \
+  npx electron-builder --win portable --$ARCH \
     --prepackaged "$PACKAGED_DIR" \
     --config <(cat <<EOF
 {

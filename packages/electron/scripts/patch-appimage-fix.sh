@@ -6,7 +6,7 @@
 set -euo pipefail
 
 INPUT_APPIMAGE=$1
-SYSTEM_ARCH="x86_64"
+SYSTEM_ARCH="$(uname -m)"
 APPIMAGETOOL_URL="https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-$SYSTEM_ARCH.AppImage"
 
 TMP_DIR=$(mktemp -d)

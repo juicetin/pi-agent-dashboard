@@ -43,10 +43,18 @@ jobs:
             platform: linux
             arch: x64
             node-arch: x64
+          - os: ubuntu-24.04-arm
+            platform: linux
+            arch: arm64
+            node-arch: arm64
           - os: windows-latest
             platform: win32
             arch: x64
             node-arch: x64
+          - os: windows-latest
+            platform: win32
+            arch: arm64
+            node-arch: arm64
 
     runs-on: ${{ matrix.os }}
 
@@ -71,6 +79,10 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends dpkg fakeroot libarchive-tools libfuse2 squashfs-tools
+          # AppImage is only supported on x64
+          if [ "${{ matrix.arch }}" = "arm64" ]; then
+            echo "SKIP_APPIMAGE=true" >> $GITHUB_ENV
+          fi
 
       - name: Download Node.js binary (Unix)
         if: matrix.platform != 'win32'
@@ -83,13 +95,14 @@ jobs:
         shell: pwsh
         run: |
           $version = "v22.12.0"
-          $url = "https://nodejs.org/dist/$version/node-$version-win-x64.zip"
+          $arch = "${{ matrix.node-arch }}"
+          $url = "https://nodejs.org/dist/$version/node-$version-win-$arch.zip"
           $outDir = "packages/electron/resources/node"
           New-Item -ItemType Directory -Force -Path $outDir
           Invoke-WebRequest -Uri $url -OutFile node.zip
           Expand-Archive -Path node.zip -DestinationPath temp-node
-          Copy-Item "temp-node/node-$version-win-x64/node.exe" "$outDir/"
-          Copy-Item -Recurse "temp-node/node-$version-win-x64/node_modules" "$outDir/"
+          Copy-Item "temp-node/node-$version-win-$arch/node.exe" "$outDir/"
+          Copy-Item -Recurse "temp-node/node-$version-win-$arch/node_modules" "$outDir/"
           Remove-Item -Recurse -Force temp-node, node.zip
 
       - name: Build client
@@ -99,8 +112,26 @@ jobs:
         shell: bash
         run: bash packages/electron/scripts/bundle-server.sh
 
-      - name: Patch AppImage maker script (Linux)
-        if: matrix.platform == 'linux'
+      - name: Use x64 Node.js for Windows arm64 bundled server
+        if: matrix.platform == 'win32' && matrix.arch == 'arm64'
+        shell: pwsh
+        run: |
+          # node-pty has no win32-arm64 prebuilds, so bundle x64 Node.js + native modules
+          # Windows ARM64 runs x64 binaries via emulation (WoW64)
+          $version = "v22.12.0"
+          $outDir = "packages/electron/resources/node"
+          Remove-Item -Recurse -Force $outDir
+          New-Item -ItemType Directory -Force -Path $outDir
+          $url = "https://nodejs.org/dist/$version/node-$version-win-x64.zip"
+          Invoke-WebRequest -Uri $url -OutFile node-x64.zip
+          Expand-Archive -Path node-x64.zip -DestinationPath temp-node-x64
+          Copy-Item "temp-node-x64/node-$version-win-x64/node.exe" "$outDir/"
+          Copy-Item -Recurse "temp-node-x64/node-$version-win-x64/node_modules" "$outDir/"
+          Remove-Item -Recurse -Force temp-node-x64, node-x64.zip
+          Write-Host "Bundled x64 Node.js for Windows ARM64 (runs via WoW64 emulation)"
+
+      - name: Patch AppImage maker script (Linux x64)
+        if: matrix.platform == 'linux' && matrix.arch == 'x64'
         shell: bash
         run: |
           # Replace the broken patch-apprun.sh with our robust version
@@ -108,7 +139,7 @@ jobs:
             node_modules/@pengx17/electron-forge-maker-appimage/scripts/patch-apprun.sh
 
       - name: Make Electron distributables
-        run: npm run electron:make
+        run: npm run electron:make -- --arch=${{ matrix.arch }}
 
       - name: Build Windows ZIP and portable exe
         if: matrix.platform == 'win32'
@@ -127,7 +158,7 @@ jobs:
             --config.appId=com.blackbelt-technology.pi-dashboard `
             --config.productName="PI Dashboard" `
             --config.directories.output="out/make/portable/$arch" `
-            --config.portable.artifactName="PI-Dashboard-portable.exe" `
+            --config.portable.artifactName="PI-Dashboard-$arch-portable.exe" `
             --config.win.icon=resources/icon.ico
 
       - name: Upload artifacts

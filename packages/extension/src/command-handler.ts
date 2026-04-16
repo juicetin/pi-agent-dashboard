@@ -1,7 +1,8 @@
 /**
  * Handles server→extension messages by dispatching to pi API.
  */
-import { spawnSync } from "node:child_process";
+import { readdirSync } from "node:fs";
+import { join, relative } from "node:path";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import type {
   ServerToExtensionMessage,
@@ -11,46 +12,31 @@ import { killProcessByPgid } from "./process-scanner.js";
 import type { FileEntry, PiSessionInfo } from "@blackbelt-technology/pi-dashboard-shared/types.js";
 import { filterHiddenCommands } from "./bridge-context.js";
 
-/** Escape regex special characters for fd pattern */
-function escapeRegex(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
+const IGNORE_DIRS = new Set([".git", "node_modules", ".next", "dist", "build", ".cache", "__pycache__", ".venv"]);
+const MAX_RESULTS = 20;
 
-/** Search files using fd */
 function searchFiles(cwd: string, query: string): FileEntry[] {
-  const args = [
-    "--base-directory", cwd,
-    "--max-results", "20",
-    "--type", "f",
-    "--type", "d",
-    "--full-path",
-    "--hidden",
-    "--exclude", ".git",
-  ];
+  const results: FileEntry[] = [];
+  const lowerQuery = query?.toLowerCase() ?? "";
 
-  if (query) {
-    args.push(escapeRegex(query));
-  }
-
-  try {
-    const result = spawnSync("fd", args, {
-      encoding: "utf-8",
-      stdio: ["pipe", "pipe", "pipe"],
-      timeout: 5000,
-    });
-
-    if (result.status !== 0 || !result.stdout) {
-      return [];
+  function walk(dir: string, depth: number): void {
+    if (results.length >= MAX_RESULTS || depth > 6) return;
+    let entries;
+    try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const entry of entries) {
+      if (results.length >= MAX_RESULTS) return;
+      if (IGNORE_DIRS.has(entry.name)) continue;
+      const fullPath = join(dir, entry.name);
+      const relPath = relative(cwd, fullPath).replace(/\\/g, "/") + (entry.isDirectory() ? "/" : "");
+      if (!lowerQuery || relPath.toLowerCase().includes(lowerQuery)) {
+        results.push({ path: relPath, isDirectory: entry.isDirectory() });
+      }
+      if (entry.isDirectory()) walk(fullPath, depth + 1);
     }
-
-    return result.stdout.trim().split("\n").filter(Boolean).map((line) => {
-      const normalized = line.replace(/\\/g, "/");
-      const isDirectory = normalized.endsWith("/");
-      return { path: normalized, isDirectory };
-    });
-  } catch {
-    return [];
   }
+
+  walk(cwd, 0);
+  return results;
 }
 
 /** Parsed result from parseSendPrompt */

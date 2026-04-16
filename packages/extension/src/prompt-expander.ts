@@ -56,8 +56,11 @@ function readTemplate(filePath: string): string {
 /**
  * Expand a slash command by finding and reading the prompt template from disk.
  * Returns the expanded text, or the original text if no template found.
+ *
+ * @param pi Optional pi extension API — used to find globally installed skills
+ *           and package skills via pi.getCommands() when local scan misses them.
  */
-export function expandPromptTemplateFromDisk(text: string, cwd: string): string {
+export function expandPromptTemplateFromDisk(text: string, cwd: string, pi?: any): string {
   if (!text.startsWith("/")) return text;
 
   const spaceIndex = text.indexOf(" ");
@@ -70,6 +73,20 @@ export function expandPromptTemplateFromDisk(text: string, cwd: string): string 
   // Support colon as alias for hyphen (e.g. /opsx:continue → opsx-continue)
   if (!filePath && templateName.includes(":")) {
     filePath = templates.get(templateName.replace(/:/g, "-"));
+  }
+
+  // Fallback: check pi.getCommands() for globally installed skills and package skills
+  // that aren't in the local .pi/skills/ directory.
+  if (!filePath && pi?.getCommands) {
+    try {
+      const commands = pi.getCommands();
+      const skill = commands.find(
+        (c: any) => c.name === templateName && c.source === "skill" && c.path,
+      );
+      if (skill?.path && existsSync(skill.path)) {
+        filePath = skill.path;
+      }
+    } catch { /* ignore */ }
   }
 
   if (!filePath) return text;

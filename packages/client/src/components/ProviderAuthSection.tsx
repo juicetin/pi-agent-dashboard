@@ -160,10 +160,7 @@ function OAuthProviderRow({ provider, onChanged }: { provider: ProviderAuthStatu
       if (!res.ok) throw new Error((data as any).error);
       setDeviceModal(data);
 
-      // Open verification URL
-      window.open(data.verificationUri, "_blank");
-
-      // Poll for completion
+      // Poll for completion (user opens the URL manually via button)
       pollingRef.current = setInterval(async () => {
         try {
           const statusRes = await fetch(`${getApiBase()}/api/provider-auth/device-status/${data.flowId}`);
@@ -293,6 +290,12 @@ function OAuthProviderRow({ provider, onChanged }: { provider: ProviderAuthStatu
               <Icon path={mdiContentCopy} size={0.5} />
             </button>
           </div>
+          <button
+            onClick={() => window.open(deviceModal.verificationUri, "_blank")}
+            className="mt-2 px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium"
+          >
+            Open Registration Page
+          </button>
           <div className="flex items-center gap-1 mt-2 text-xs text-[var(--text-muted)]">
             <Icon path={mdiLoading} size={0.45} className="animate-spin" />
             Waiting for authorization…

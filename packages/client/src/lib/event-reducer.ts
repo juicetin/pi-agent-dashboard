@@ -424,19 +424,38 @@ export function reduceEvent(state: SessionState, event: DashboardEvent): Session
           ];
           next.streamingText = "";
         } else {
-          // Tool-only assistant turn (no prose) — add a thin separator
-          // so consecutive tool call groups don't blend together
-          const lastMsg = next.messages[next.messages.length - 1];
-          if (lastMsg?.role === "toolResult") {
+          // Replay/fork scenario: streamingText is empty but message may have content
+          const replayText = msg.content
+            ? (Array.isArray(msg.content)
+                ? msg.content.filter((c: any) => c.type === "text").map((c: any) => c.text).join("")
+                : String(msg.content))
+            : "";
+          if (replayText) {
             next.messages = [
               ...next.messages,
               {
-                id: `sep-${next.messages.length}`,
-                role: "turnSeparator",
-                content: "",
+                id: `msg-${next.messages.length}`,
+                role: "assistant",
+                content: replayText,
                 timestamp: event.timestamp,
+                entryId: data.entryId as string | undefined,
               },
             ];
+          } else {
+            // Tool-only assistant turn (no prose) — add a thin separator
+            // so consecutive tool call groups don't blend together
+            const lastMsg = next.messages[next.messages.length - 1];
+            if (lastMsg?.role === "toolResult") {
+              next.messages = [
+                ...next.messages,
+                {
+                  id: `sep-${next.messages.length}`,
+                  role: "turnSeparator",
+                  content: "",
+                  timestamp: event.timestamp,
+                },
+              ];
+            }
           }
         }
       }

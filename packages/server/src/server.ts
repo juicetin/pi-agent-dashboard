@@ -344,7 +344,7 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
 
   registerProviderAuthRoutes(fastify, { piGateway });
   registerKnownServersRoutes(fastify, { networkGuard, getPeerServers: () => peerServers });
-  registerProviderRoutes(fastify, { networkGuard });
+  registerProviderRoutes(fastify, { networkGuard, piGateway });
 
   // Serve static files / SPA fallback
   // Search order: npm package → workspace sibling → legacy dist/client

@@ -114,6 +114,32 @@ describe("shared bridge-register", () => {
       expect(packages).toContain(newPath);
     });
 
+    it("removes stale app bundle paths with spaces or mixed case (macOS PI Dashboard.app)", () => {
+      const stalePath = "/Applications/PI Dashboard.app/Contents/Resources/server/packages/extension";
+      writeSettings({ packages: [stalePath] });
+
+      const newPath = "/Applications/PI-Dashboard.app/Contents/Resources/server/packages/extension";
+      registerBridgeExtension(newPath);
+
+      const settings = readSettings();
+      const packages = settings.packages as string[];
+      expect(packages).not.toContain(stalePath);
+      expect(packages).toContain(newPath);
+    });
+
+    it("removes stale Windows-style dashboard paths with mixed case", () => {
+      const stalePath = "C:\\Program Files\\PI Dashboard\\resources\\server\\packages\\extension";
+      writeSettings({ packages: [stalePath] });
+
+      const newPath = "C:\\Program Files\\PI-Dashboard\\resources\\server\\packages\\extension";
+      registerBridgeExtension(newPath);
+
+      const settings = readSettings();
+      const packages = settings.packages as string[];
+      expect(packages).not.toContain(stalePath);
+      expect(packages).toContain(newPath);
+    });
+
     it("preserves non-dashboard paths", () => {
       writeSettings({ packages: ["/some/other/extension"] });
 

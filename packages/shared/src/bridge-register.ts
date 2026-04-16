@@ -72,7 +72,9 @@ export function registerBridgeExtension(extensionPath: string): void {
     const isLocalPath = p.startsWith("/") || /^[a-zA-Z]:[/\\]/.test(p);
     if (!isLocalPath) return true;
     // Only consider dashboard-related paths for cleanup
-    if (!p.includes("pi-dashboard") && !p.includes("pi-agent-dashboard")) return true;
+    // Normalize: lowercase + collapse spaces/hyphens so "PI Dashboard" matches "pi-dashboard"
+    const normalized = p.toLowerCase().replace(/[\s_-]/g, "");
+    if (!normalized.includes("pidashboard") && !normalized.includes("piagentdashboard")) return true;
     // Keep paths that point to existing directories with a package.json
     try {
       return fs.existsSync(p) && fs.existsSync(path.join(p, "package.json"));

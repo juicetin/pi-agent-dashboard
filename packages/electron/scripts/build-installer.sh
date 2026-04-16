@@ -232,9 +232,10 @@ docker_build() {
 
   cd "$PROJECT_DIR"
 
-  # Build Docker image (--no-cache ensures fresh build)
+  # Build Docker image for x86_64 (required for NSIS/makensis and x64 native modules)
   docker build \
     --no-cache \
+    --platform linux/amd64 \
     -f packages/electron/scripts/Dockerfile.build \
     -t "$DOCKER_IMAGE" \
     . 2>&1 | tail -20
@@ -242,6 +243,7 @@ docker_build() {
   # Run the build, copy output
   local CONTAINER_NAME="pi-electron-build-$$"
   docker run \
+    --platform linux/amd64 \
     --name "$CONTAINER_NAME" \
     "$DOCKER_IMAGE" \
     "$TARGET_PLATFORM" "$TARGET_ARCH"

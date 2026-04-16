@@ -104,7 +104,91 @@ function resolvePiCommand(): string[] | null {
   return resolver.resolvePi();
 }
 
-function spawnHeadless(cwd: string, options?: SessionOptions): SpawnResult {
+/** Windows-specific headless spawn with error detection and stderr capture.
+ *  Waits briefly to detect immediate process death (e.g., missing deps, config errors).
+ */
+async function spawnHeadlessWindows(
+  cwd: string,
+  piCmd: string[],
+  args: string[],
+  env: NodeJS.ProcessEnv,
+): Promise<SpawnResult> {
+  const [bin, ...prefixArgs] = piCmd;
+  const needsShell = bin.endsWith(".cmd");
+  const spawnBin = needsShell ? `"${bin}"` : bin;
+  const spawnArgs = needsShell
+    ? [...prefixArgs, ...args].map(a => `"${a}"`)
+    : [...prefixArgs, ...args];
+
+  const cmdForLog = `${bin} ${[...prefixArgs, ...args].join(" ")}`;
+  console.error(`[spawn] Windows headless: ${cmdForLog} (cwd=${cwd})`);
+
+  // Capture stderr for diagnostics (pi might log errors there)
+  const child = spawn(spawnBin, spawnArgs, {
+    cwd,
+    detached: false,
+    stdio: ["pipe", "ignore", "pipe"],
+    env,
+    shell: needsShell,
+    windowsHide: true,
+  });
+
+  // Collect stderr for early crash diagnostics
+  let stderrBuf = "";
+  child.stderr?.on("data", (chunk: Buffer) => {
+    stderrBuf += chunk.toString();
+    // Limit memory: keep only last 4 KB
+    if (stderrBuf.length > 4096) stderrBuf = stderrBuf.slice(-4096);
+  });
+
+  // Handle async spawn errors (e.g., ENOENT if binary disappears between check and exec)
+  let spawnError: string | null = null;
+  child.on("error", (err: Error) => {
+    spawnError = err.message;
+    console.error(`[spawn] Windows spawn error: ${err.message}`);
+  });
+
+  child.unref();
+  (child.stdin as any)?.unref();
+  child.stderr?.unref();
+
+  // Guard: if pid is undefined, spawn failed synchronously
+  if (!child.pid) {
+    // Wait briefly for the async error event
+    await new Promise(r => setTimeout(r, 200));
+    return {
+      success: false,
+      message: `Failed to spawn pi: ${spawnError || "unknown error (no PID)"}. Command: ${cmdForLog}`,
+    };
+  }
+
+  // Wait briefly to detect immediate crash (e.g., missing module, config error)
+  const exitCode = await Promise.race([
+    new Promise<number | null>(resolve => child.on("exit", resolve)),
+    new Promise<undefined>(resolve => setTimeout(() => resolve(undefined), 1500)),
+  ]);
+
+  if (exitCode !== undefined) {
+    const detail = stderrBuf.trim()
+      ? `\nstderr: ${stderrBuf.trim().split("\n").slice(-5).join("\n")}`
+      : "";
+    console.error(`[spawn] Pi exited immediately with code ${exitCode}${detail}`);
+    return {
+      success: false,
+      message: `Pi process exited immediately (code ${exitCode}).${detail}\nCommand: ${cmdForLog}`,
+    };
+  }
+
+  return {
+    success: true,
+    dashboardSpawned: true,
+    message: `Pi session spawned headless (pid ${child.pid})`,
+    pid: child.pid,
+    process: child,
+  };
+}
+
+async function spawnHeadless(cwd: string, options?: SessionOptions): Promise<SpawnResult> {
   try {
     const args = buildHeadlessArgs(options);
     const env = buildSpawnEnv();
@@ -119,31 +203,7 @@ function spawnHeadless(cwd: string, options?: SessionOptions): SpawnResult {
     }
 
     if (process.platform === "win32") {
-      // Windows: spawn node.exe directly with pi's CLI entry point (no .cmd, no cmd window)
-      const [bin, ...prefixArgs] = piCmd_;
-      const needsShell = bin.endsWith(".cmd");
-      const spawnBin = needsShell ? `"${bin}"` : bin;
-      const spawnArgs = needsShell
-        ? [...prefixArgs, ...args].map(a => `"${a}"`)
-        : [...prefixArgs, ...args];
-      const child = spawn(spawnBin, spawnArgs, {
-        cwd,
-        detached: false,
-        stdio: ["pipe", "ignore", "ignore"],
-        env,
-        shell: needsShell,
-        windowsHide: true,
-      });
-      child.unref();
-      (child.stdin as any)?.unref();
-
-      return {
-        success: true,
-        dashboardSpawned: true,
-        message: `Pi session spawned headless (pid ${child.pid})`,
-        pid: child.pid,
-        process: child,
-      };
+      return await spawnHeadlessWindows(cwd, piCmd_, args, env);
     }
 
     // Unix (macOS / Linux / WSL): wrap with "tail -f /dev/null | pi" so stdin

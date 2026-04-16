@@ -109,7 +109,7 @@ if [ "$PLATFORM" = "win32" ]; then
   # Debug: show output directory
   echo "→ Forge package output:"
   ls -la out/ 2>/dev/null || echo "  (no out/ directory)"
-  PACKAGED_DIR="out/PI Dashboard-win32-$ARCH"
+  PACKAGED_DIR="out/PI-Dashboard-win32-$ARCH"
   if [ ! -d "$PACKAGED_DIR" ]; then
     echo "❌ Expected packaged dir not found: $PACKAGED_DIR"
     echo "   Available dirs:"
@@ -125,7 +125,7 @@ if [ "$PLATFORM" = "win32" ]; then
   mkdir -p "$ZIP_DIR"
   ZIP_NAME="PI-Dashboard-$ARCH.zip"
   cd out
-  zip -r -q "../out/make/zip/$ARCH/$ZIP_NAME" "PI Dashboard-win32-$ARCH/"
+  zip -r -q "../out/make/zip/$ARCH/$ZIP_NAME" "PI-Dashboard-win32-$ARCH/"
   cd /build/packages/electron
 
   # 2. Portable exe (self-extracting)

@@ -24,7 +24,13 @@ WORKDIR /build
 COPY . .
 
 # Install ALL dependencies (including devDependencies for electron-forge)
-RUN npm install || (cat /root/.npm/_logs/*debug*.log | tail -30 && exit 1)
+# --ignore-scripts: skip phantomjs-prebuilt install (no arm64 binary, not needed for build)
+# Then rebuild only the native modules we actually need (node-pty).
+RUN npm install --ignore-scripts || (cat /root/.npm/_logs/*debug*.log | tail -50 && exit 1)
+
+# Run postinstall for packages that actually need it (electron binary download, node-pty native build)
+RUN npm rebuild node-pty 2>&1 | tail -10
+RUN cd packages/electron/node_modules/electron && node install.js 2>&1 | tail -5
 
 # Verify electron-forge is available
 RUN ls node_modules/@electron-forge/cli/package.json && echo "forge: OK" || echo "forge: MISSING"

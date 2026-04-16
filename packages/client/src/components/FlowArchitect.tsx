@@ -227,7 +227,8 @@ function ArchitectSelectPrompt({
   );
 }
 
-function ArchitectInputPrompt({
+/** @internal — exported for testing */
+export function ArchitectInputPrompt({
   prompt,
   onRespond,
 }: {
@@ -236,7 +237,7 @@ function ArchitectInputPrompt({
 }) {
   const [value, setValue] = React.useState(prompt.defaultValue || "");
   const handleSubmit = () => {
-    if (value.trim()) onRespond(value.trim());
+    onRespond(value.trim());
   };
   return (
     <div className="mt-2 pt-2 border-t border-[var(--border-subtle)]">

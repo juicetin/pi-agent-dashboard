@@ -46,13 +46,12 @@ export function InputRenderer({ params, status, result, onRespond, onCancel }: I
           type="text"
           value={text}
           onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter" && text) onRespond({ value: text }); }}
+          onKeyDown={(e) => { if (e.key === "Enter") onRespond({ value: text }); }}
           placeholder={placeholder}
           className="flex-1 px-2 py-1 text-xs rounded bg-[var(--bg-primary)] border border-[var(--border-secondary)] text-[var(--text-primary)] outline-none focus:border-blue-500"
         />
         <button
-          onClick={() => text && onRespond({ value: text })}
-          disabled={!text}
+          onClick={() => onRespond({ value: text })}
           className="px-3 py-1 text-xs rounded bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white transition-colors"
         >
           Submit

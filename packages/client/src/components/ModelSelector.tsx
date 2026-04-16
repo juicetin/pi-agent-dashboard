@@ -26,6 +26,7 @@ export function ModelSelector({ current, models, roles, onSelect, onRoleSet, onP
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [pendingModel, setPendingModel] = useState<string | null>(null);
   const [editingRole, setEditingRole] = useState<string | null>(null);
+  const [flashedRole, setFlashedRole] = useState<string | null>(null);
   const [savingPreset, setSavingPreset] = useState(false);
   const [presetName, setPresetName] = useState("");
   const [rolesCollapsed, setRolesCollapsed] = useState(true);
@@ -36,6 +37,13 @@ export function ModelSelector({ current, models, roles, onSelect, onRoleSet, onP
 
   const hasModels = models && models.length > 0;
   const hasRoles = roles && Object.keys(roles.roles).length > 0;
+
+  // Clear flash highlight after 300ms
+  useEffect(() => {
+    if (!flashedRole) return;
+    const timer = setTimeout(() => setFlashedRole(null), 300);
+    return () => clearTimeout(timer);
+  }, [flashedRole]);
 
   // Clear pending state when current model updates to match
   useEffect(() => {
@@ -91,6 +99,7 @@ export function ModelSelector({ current, models, roles, onSelect, onRoleSet, onP
     const label = `${m.provider}/${m.id}`;
     if (editingRole && onRoleSet) {
       onRoleSet(editingRole, label);
+      setFlashedRole(editingRole);
       setEditingRole(null);
       setFilter("");
     } else {
@@ -218,6 +227,7 @@ export function ModelSelector({ current, models, roles, onSelect, onRoleSet, onP
               {!rolesCollapsed && <div className="grid grid-cols-2 gap-x-0.5 gap-y-0 px-1.5 py-1">
                 {Object.entries(roles.roles).map(([role, modelId]) => {
                   const isEditing = editingRole === role;
+                  const isFlashed = flashedRole === role;
                   return (
                     <button
                       key={role}
@@ -227,10 +237,12 @@ export function ModelSelector({ current, models, roles, onSelect, onRoleSet, onP
                         setSelectedIndex(0);
                         requestAnimationFrame(() => inputRef.current?.focus());
                       }}
-                      className={`flex items-baseline gap-1 px-1.5 py-0.5 rounded text-left min-w-0 transition-colors ${
+                      className={`flex items-baseline gap-1 px-1.5 py-0.5 rounded text-left min-w-0 transition-all duration-200 ${
                         isEditing
-                          ? "bg-[color-mix(in_srgb,var(--accent-blue)_15%,transparent)] outline outline-1 outline-[var(--accent-blue)]"
-                          : "hover:bg-[var(--bg-hover)]"
+                          ? "bg-[color-mix(in_srgb,var(--accent-blue)_25%,transparent)] outline outline-2 outline-[var(--accent-blue)] shadow-[0_0_4px_var(--accent-blue)]"
+                          : isFlashed
+                            ? "bg-green-500/20"
+                            : "hover:bg-[var(--bg-hover)]"
                       }`}
                       title={modelId}
                     >
@@ -244,6 +256,11 @@ export function ModelSelector({ current, models, roles, onSelect, onRoleSet, onP
                   );
                 })}
               </div>}
+              {!rolesCollapsed && !editingRole && (
+                <div className="px-2 pb-1 text-[9px] text-[var(--text-muted)]">
+                  Click a role to assign a model
+                </div>
+              )}
             </div>
           )}
 
@@ -295,7 +312,10 @@ export function ModelSelector({ current, models, roles, onSelect, onRoleSet, onP
                       i === selectedIndex ? "bg-[var(--bg-tertiary)]" : "hover:bg-[var(--bg-hover)]"
                     } ${isCurrent || isRoleTarget ? "text-[var(--accent-blue)]" : "text-[var(--text-secondary)]"}`}
                   >
-                    {label}
+                    <span className="truncate">{label}</span>
+                    {editingRole && (
+                      <span className="ml-auto shrink-0 text-[10px] text-[var(--accent-blue)]/60">→ @{editingRole}</span>
+                    )}
                   </button>
                 );
               })

@@ -6,6 +6,7 @@ import { usePackageSearch } from "../hooks/usePackageSearch.js";
 import { useInstalledPackages } from "../hooks/useInstalledPackages.js";
 import { usePackageOperations } from "../hooks/usePackageOperations.js";
 import { PackageCard } from "./PackageCard.js";
+import { RecommendedExtensions } from "./RecommendedExtensions.js";
 import type { NpmPackageResult } from "@blackbelt-technology/pi-dashboard-shared/rest-api.js";
 
 const TYPE_PILLS = ["extension", "skill", "theme", "prompt"] as const;
@@ -143,6 +144,9 @@ export function PackageBrowser({ scope, cwd, onViewReadme, onConfirmInstall }: P
 
   return (
     <div className="flex flex-col gap-3" data-testid="package-browser">
+      {/* Recommended extensions (curated by the dashboard) — shown above search */}
+      <RecommendedExtensions scope={scope} cwd={cwd} />
+
       {/* URL input for manual install */}
       <div className="flex gap-2">
         <div className="flex-1 relative">

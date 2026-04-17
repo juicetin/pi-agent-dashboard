@@ -29,6 +29,7 @@ import { LandingPage } from "./components/LandingPage.js";
 import { SettingsPanel } from "./components/SettingsPanel.js";
 import { ZrokInstallGuide } from "./components/ZrokInstallGuide.js";
 import { InstallBanner } from "./components/InstallBanner.js";
+import { MissingRequiredBanner } from "./components/MissingRequiredBanner.js";
 import { useInstallPrompt } from "./hooks/useInstallPrompt.js";
 import { TerminalView } from "./components/TerminalView.js";
 import { TerminalsView } from "./components/TerminalsView.js";
@@ -526,7 +527,6 @@ export default function App() {
         setPinnedDirectories(paths);
         send({ type: "reorder_pinned_dirs", paths });
       }}
-      onCreateTerminal={handleCreateTerminal}
       onKillTerminal={handleKillTerminal}
       onRenameTerminal={handleRenameTerminal}
       onCollapseSidebar={sidebar.toggleCollapse}
@@ -1111,6 +1111,7 @@ export default function App() {
           listPanel={
             <div className="flex flex-col h-full">
               <InstallBanner canInstall={installPrompt.canInstall} isIOS={installPrompt.isIOS} isInstalled={installPrompt.isInstalled} prompt={installPrompt.prompt} />
+              <MissingRequiredBanner />
               {connectionBanner}
               {sessionList}
             </div>

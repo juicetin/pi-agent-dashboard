@@ -68,24 +68,38 @@ export function PackageCard({
 
   return (
     <div
-      className="border border-[var(--border-secondary)] rounded-lg p-3 hover:border-[var(--border-primary)] transition-colors cursor-pointer"
+      className="border border-[var(--border-secondary)] rounded-lg p-3 hover:border-[var(--border-primary)] transition-colors cursor-pointer h-full flex flex-col"
       onClick={onClick}
       data-testid="package-card"
     >
-      {/* Header: name + downloads */}
+      {/* Header: name + scope + downloads */}
       <div className="flex items-start justify-between gap-2 mb-1">
         <h4 className="text-xs font-semibold text-[var(--text-primary)] truncate">{pkg.name}</h4>
-        {pkg.downloads && (
-          <span className="text-[10px] text-[var(--text-muted)] whitespace-nowrap flex items-center gap-0.5">
-            <Icon path={mdiDownload} size={0.4} />
-            {formatDownloads(pkg.downloads.weekly)}/wk
-          </span>
-        )}
+        <div className="flex items-center gap-1 flex-shrink-0">
+          {installed && installedScope && (
+            <span
+              className="text-[10px] px-1.5 py-0.5 rounded border border-green-500/40 bg-green-500/10 text-green-400 whitespace-nowrap"
+              title={`Installed in ${installedScope === "both" ? "Global + Local" : installedScope} scope`}
+            >
+              {installedScope === "both" ? "Global + Local"
+                : installedScope === "global" ? "Global"
+                : "Local"}
+            </span>
+          )}
+          {pkg.downloads && (
+            <span className="text-[10px] text-[var(--text-muted)] whitespace-nowrap flex items-center gap-0.5">
+              <Icon path={mdiDownload} size={0.4} />
+              {formatDownloads(pkg.downloads.weekly)}/wk
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Description */}
-      {pkg.description && (
-        <p className="text-[11px] text-[var(--text-secondary)] line-clamp-2 mb-2">{pkg.description}</p>
+      {pkg.description ? (
+        <p className="text-[11px] leading-snug text-[var(--text-secondary)] line-clamp-2 min-h-[2lh] mb-2">{pkg.description}</p>
+      ) : (
+        <p aria-hidden="true" className="text-[11px] leading-snug line-clamp-2 min-h-[2lh] mb-2" />
       )}
 
       {/* Type badges */}
@@ -112,7 +126,7 @@ export function PackageCard({
       )}
 
       {/* Actions */}
-      <div className="flex items-center gap-1.5 flex-wrap" onClick={(e) => e.stopPropagation()}>
+      <div className="flex items-center gap-1.5 flex-wrap mt-auto" onClick={(e) => e.stopPropagation()}>
         {installed ? (
           <>
             <span className="inline-flex items-center gap-0.5 text-[10px] text-green-400 font-medium">

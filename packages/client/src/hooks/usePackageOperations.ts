@@ -25,12 +25,17 @@ export function usePackageOperations(
   const opIdRef = useRef<string | null>(null);
 
   const startOperation = useCallback(
-    async (action: "install" | "remove" | "update", source: string) => {
+    async (
+      action: "install" | "remove" | "update",
+      source: string,
+      scopeOverride?: "global" | "local",
+    ) => {
       try {
+        const effectiveScope = scopeOverride ?? scope;
         const res = await fetch(`${getApiBase()}/api/packages/${action}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ source, scope, cwd }),
+          body: JSON.stringify({ source, scope: effectiveScope, cwd }),
         });
         const body = await res.json();
         if (!body.success) {
@@ -47,9 +52,21 @@ export function usePackageOperations(
     [scope, cwd],
   );
 
-  const install = useCallback((source: string) => startOperation("install", source), [startOperation]);
-  const remove = useCallback((source: string) => startOperation("remove", source), [startOperation]);
-  const update = useCallback((source: string) => startOperation("update", source), [startOperation]);
+  const install = useCallback(
+    (source: string, scopeOverride?: "global" | "local") =>
+      startOperation("install", source, scopeOverride),
+    [startOperation],
+  );
+  const remove = useCallback(
+    (source: string, scopeOverride?: "global" | "local") =>
+      startOperation("remove", source, scopeOverride),
+    [startOperation],
+  );
+  const update = useCallback(
+    (source: string, scopeOverride?: "global" | "local") =>
+      startOperation("update", source, scopeOverride),
+    [startOperation],
+  );
 
   const clearOperation = useCallback(() => {
     opIdRef.current = null;

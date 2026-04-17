@@ -63,9 +63,13 @@ function readTemplate(filePath: string): string {
 export function expandPromptTemplateFromDisk(text: string, cwd: string, pi?: any): string {
   if (!text.startsWith("/")) return text;
 
-  const spaceIndex = text.indexOf(" ");
-  const templateName = spaceIndex === -1 ? text.slice(1) : text.slice(1, spaceIndex);
-  const argsString = spaceIndex === -1 ? "" : text.slice(spaceIndex + 1);
+  // Split template name from args on first whitespace (space OR newline).
+  // Using indexOf(" ") alone breaks multi-line payloads like "/skill:foo\nargs"
+  // because the first space can lie inside the args, producing a name such as
+  // "skill:foo\nargs-first-word" that never matches a template.
+  const m = text.slice(1).match(/^(\S+)\s*([\s\S]*)$/);
+  const templateName = m?.[1] ?? text.slice(1);
+  const argsString = m?.[2] ?? "";
 
   const templates = findPromptTemplates(cwd);
   let filePath = templates.get(templateName);

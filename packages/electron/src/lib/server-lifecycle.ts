@@ -355,7 +355,9 @@ async function launchServer(port: number, piPort: number): Promise<void> {
   }
 
   // Ensure NODE_PATH includes bundled server's node_modules
-  const serverRoot = path.resolve(path.dirname(cliPath), "..", "..");
+  // cli.ts is at <serverRoot>/packages/server/src/cli.ts — go up 3 levels to the workspace root
+  // where node_modules/ and package.json live (created by bundle-server.sh)
+  const serverRoot = path.resolve(path.dirname(cliPath), "..", "..", "..");
   const bundledModules = path.join(serverRoot, "node_modules");
   const managedModules = path.join(MANAGED_DIR, "node_modules");
   env.NODE_PATH = [bundledModules, managedModules, env.NODE_PATH || ""].filter(Boolean).join(path.delimiter);

@@ -39,6 +39,7 @@ export interface MessageHandlerDeps {
   pendingTerminalCwdRef: React.MutableRefObject<string | null>;
   lastCreatedTerminalIdRef: React.MutableRefObject<string | null>;
   maxSeqMapRef: React.MutableRefObject<Map<string, number>>;
+  selectedSessionIdRef: React.MutableRefObject<string | undefined>;
 }
 
 export function useMessageHandler(
@@ -51,7 +52,7 @@ export function useMessageHandler(
     setSessionOrderMap, setPinnedDirectories, setTerminals, setEditorStatuses,
     setDiscoveredServers, setSpawnErrors, setResumeErrors,
   } = setters;
-  const { send, navigate, clearSpawningCwd, spawningCwdsRef, subscribedRef, pendingTerminalCwdRef, lastCreatedTerminalIdRef, maxSeqMapRef } = deps;
+  const { send, navigate, clearSpawningCwd, spawningCwdsRef, subscribedRef, pendingTerminalCwdRef, lastCreatedTerminalIdRef, maxSeqMapRef, selectedSessionIdRef } = deps;
 
   return useCallback((msg: ServerToBrowserMessage) => {
     switch (msg.type) {
@@ -382,6 +383,13 @@ export function useMessageHandler(
       case "servers_updated":
         setDiscoveredServers(msg.servers as DiscoveredServerInfo[]);
         break;
+
+      case "models_refreshed":
+        setModelsMap(new Map());
+        if (selectedSessionIdRef.current) {
+          send({ type: "request_models", sessionId: selectedSessionIdRef.current });
+        }
+        break;
     }
-  }, [send, clearSpawningCwd, navigate, setSessions, setSessionStates, setSessionCommands, setSessionFlows, setFileResults, setOpenspecMap, setModelsMap, setRolesMap, setSpawnResult, setSessionOrderMap, setPinnedDirectories, setTerminals, setEditorStatuses, setDiscoveredServers, spawningCwdsRef, subscribedRef, pendingTerminalCwdRef, maxSeqMapRef]);
+  }, [send, clearSpawningCwd, navigate, setSessions, setSessionStates, setSessionCommands, setSessionFlows, setFileResults, setOpenspecMap, setModelsMap, setRolesMap, setSpawnResult, setSessionOrderMap, setPinnedDirectories, setTerminals, setEditorStatuses, setDiscoveredServers, spawningCwdsRef, subscribedRef, pendingTerminalCwdRef, maxSeqMapRef, selectedSessionIdRef]);
 }

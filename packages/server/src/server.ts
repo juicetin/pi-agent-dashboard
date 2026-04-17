@@ -342,9 +342,9 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
   registerEditorRoutes(fastify, editorManager, { networkGuard });
   registerEditorProxy(fastify, editorManager);
 
-  registerProviderAuthRoutes(fastify, { piGateway });
+  registerProviderAuthRoutes(fastify, { piGateway, browserGateway });
   registerKnownServersRoutes(fastify, { networkGuard, getPeerServers: () => peerServers });
-  registerProviderRoutes(fastify, { networkGuard, piGateway });
+  registerProviderRoutes(fastify, { networkGuard, piGateway, browserGateway });
 
   // Serve static files / SPA fallback
   // Search order: npm package → workspace sibling → legacy dist/client

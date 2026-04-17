@@ -7,6 +7,7 @@ import { homedir } from "node:os";
 import { join, dirname } from "node:path";
 import type { NetworkGuard } from "./route-deps.js";
 import type { PiGateway } from "../pi-gateway.js";
+import type { BrowserGateway } from "../browser-gateway.js";
 
 const REDACTED = "***";
 const CONFIG_PATH = join(homedir(), ".pi", "agent", "providers.json");
@@ -45,7 +46,7 @@ function redactProviders(
   return redacted;
 }
 
-export function registerProviderRoutes(fastify: FastifyInstance, deps: { networkGuard: NetworkGuard; piGateway?: PiGateway }): void {
+export function registerProviderRoutes(fastify: FastifyInstance, deps: { networkGuard: NetworkGuard; piGateway?: PiGateway; browserGateway?: BrowserGateway }): void {
   const { networkGuard, piGateway } = deps;
   fastify.get(
     "/api/providers",
@@ -99,6 +100,9 @@ export function registerProviderRoutes(fastify: FastifyInstance, deps: { network
       // Broadcast credentials_updated so all sessions refresh their model registries
       if (piGateway) {
         piGateway.broadcast({ type: "credentials_updated" });
+      }
+      if (deps.browserGateway) {
+        deps.browserGateway.broadcastToAll({ type: "models_refreshed" });
       }
 
       return { success: true };

@@ -21,6 +21,7 @@ import {
 } from "../provider-auth-storage.js";
 import { startCallbackServer } from "../oauth-callback-server.js";
 import type { PiGateway } from "../pi-gateway.js";
+import type { BrowserGateway } from "../browser-gateway.js";
 
 // ── In-memory flow store (short-lived PKCE + device code state) ──────────────
 
@@ -81,12 +82,13 @@ function openInBrowser(url: string): void {
 
 export function registerProviderAuthRoutes(
   fastify: FastifyInstance,
-  deps: { piGateway: PiGateway },
+  deps: { piGateway: PiGateway; browserGateway: BrowserGateway },
 ) {
-  const { piGateway } = deps;
+  const { piGateway, browserGateway } = deps;
 
   function notifyBridges() {
     piGateway.broadcast({ type: "credentials_updated" });
+    browserGateway.broadcastToAll({ type: "models_refreshed" });
   }
 
   // List OAuth providers

@@ -92,6 +92,10 @@ export interface BrowserModelsListMessage {
   models: ModelInfo[];
 }
 
+export interface ModelsRefreshedMessage {
+  type: "models_refreshed";
+}
+
 export interface BrowserRolesListMessage {
   type: "roles_list";
   sessionId: string;
@@ -252,7 +256,8 @@ export type ServerToBrowserMessage =
   | ServersUpdatedMessage
   | BrowserPromptRequestMessage
   | BrowserPromptDismissMessage
-  | BrowserPromptCancelMessage;
+  | BrowserPromptCancelMessage
+  | ModelsRefreshedMessage;
 
 // ── Browser → Server ────────────────────────────────────────────────
 

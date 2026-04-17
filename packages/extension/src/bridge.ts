@@ -220,7 +220,7 @@ function initBridge(pi: ExtensionAPI) {
         try {
           cachedModelRegistry?.authStorage?.reload?.();
           cachedModelRegistry?.refresh?.();
-        } catch { /* ignore */ }
+        } catch (err) { console.error("[dashboard] credentials reload failed:", err); }
         // Push updated models list to dashboard client
         if (cachedModelRegistry && sessionReady) {
           try {
@@ -229,7 +229,7 @@ function initBridge(pi: ExtensionAPI) {
               id: m.id,
             }));
             connection.send({ type: "models_list", sessionId, models });
-          } catch { /* ignore */ }
+          } catch (err) { console.error("[dashboard] models_list push failed:", err); }
         }
         return;
       }

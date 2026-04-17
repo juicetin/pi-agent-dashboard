@@ -44,14 +44,22 @@ function createMockPiGateway() {
   } as any;
 }
 
+function createMockBrowserGateway() {
+  return {
+    broadcastToAll: vi.fn(),
+  } as any;
+}
+
 describe("provider-auth-routes", () => {
   let app: ReturnType<typeof Fastify>;
   let piGateway: ReturnType<typeof createMockPiGateway>;
+  let browserGateway: ReturnType<typeof createMockBrowserGateway>;
 
   beforeEach(async () => {
     app = Fastify();
     piGateway = createMockPiGateway();
-    registerProviderAuthRoutes(app, { piGateway });
+    browserGateway = createMockBrowserGateway();
+    registerProviderAuthRoutes(app, { piGateway, browserGateway });
     await app.ready();
   });
 
@@ -106,7 +114,7 @@ describe("provider-auth-routes", () => {
 
   // /exchange endpoint removed — token exchange happens in the callback server's onCode
 
-  it("PUT /api/provider-auth/api-key saves and notifies", async () => {
+  it("PUT /api/provider-auth/api-key saves and notifies bridges and browsers", async () => {
     const { writeCredential } = await import("../provider-auth-storage.js");
     const res = await app.inject({
       method: "PUT",
@@ -117,9 +125,10 @@ describe("provider-auth-routes", () => {
     expect(JSON.parse(res.payload).ok).toBe(true);
     expect(writeCredential).toHaveBeenCalledWith("openai", { type: "api_key", key: "sk-test" });
     expect(piGateway.broadcast).toHaveBeenCalledWith({ type: "credentials_updated" });
+    expect(browserGateway.broadcastToAll).toHaveBeenCalledWith({ type: "models_refreshed" });
   });
 
-  it("DELETE /api/provider-auth/:provider removes and notifies", async () => {
+  it("DELETE /api/provider-auth/:provider removes and notifies bridges and browsers", async () => {
     const { removeCredential } = await import("../provider-auth-storage.js");
     const res = await app.inject({
       method: "DELETE",
@@ -128,6 +137,7 @@ describe("provider-auth-routes", () => {
     expect(res.statusCode).toBe(200);
     expect(removeCredential).toHaveBeenCalledWith("anthropic");
     expect(piGateway.broadcast).toHaveBeenCalledWith({ type: "credentials_updated" });
+    expect(browserGateway.broadcastToAll).toHaveBeenCalledWith({ type: "models_refreshed" });
   });
 
   // /callback/:provider route removed — temp callback server handles this directly

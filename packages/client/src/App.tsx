@@ -117,6 +117,8 @@ export default function App() {
   const [settingsMatch] = useRoute("/settings");
   const [tunnelSetupMatch] = useRoute("/tunnel-setup");
   const selectedId = match ? params?.id : undefined;
+  const selectedSessionIdRef = useRef<string | undefined>(selectedId);
+  selectedSessionIdRef.current = selectedId;
   const selectedTerminalId = termMatch ? termParams?.id : undefined;
   const folderTermCwd = folderTermMatch ? decodeFolderPath(folderTermParams?.encodedCwd ?? "") : null;
   const folderEditorCwd = folderEditorMatch ? decodeFolderPath(folderEditorParams?.encodedCwd ?? "") : null;
@@ -242,7 +244,7 @@ export default function App() {
 
   const handleMessage = useMessageHandler(
     { setSessions, setSessionStates, setSessionCommands, setSessionFlows, setFileResults, setOpenspecMap, setModelsMap, setRolesMap, setSpawnResult, setSessionOrderMap, setPinnedDirectories, setTerminals, setEditorStatuses, setDiscoveredServers, setSpawnErrors, setResumeErrors },
-    { send, navigate, clearSpawningCwd, spawningCwdsRef, subscribedRef, pendingTerminalCwdRef, lastCreatedTerminalIdRef, maxSeqMapRef },
+    { send, navigate, clearSpawningCwd, spawningCwdsRef, subscribedRef, pendingTerminalCwdRef, lastCreatedTerminalIdRef, maxSeqMapRef, selectedSessionIdRef },
   );
 
   useEffect(() => {

@@ -2,7 +2,8 @@ import React, { useState, useCallback, useRef, useEffect, useMemo, type ReactNod
 import { Icon } from "@mdi/react";
 import { mdiFlash, mdiClipboardText, mdiWrench, mdiFolder, mdiFile, mdiPlay, mdiStop, mdiAlert, mdiConsole, mdiClose } from "@mdi/js";
 import type { CommandInfo, ImageContent, FileEntry } from "@blackbelt-technology/pi-dashboard-shared/types.js";
-import { ImageLightbox } from "./ImageLightbox.js";
+import { useImagePaste } from "../hooks/useImagePaste.js";
+import { ImagePreviewStrip } from "./ImagePreviewStrip.js";
 
 /** Built-in pi commands available from the dashboard */
 const BUILTIN_COMMANDS: CommandInfo[] = [
@@ -30,9 +31,6 @@ const sourceIcons: Record<string, ReactNode> = {
   skill: <Icon path={mdiWrench} size={0.6} />,
   builtin: <Icon path={mdiConsole} size={0.6} />,
 };
-
-const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10MB base64
-const SUPPORTED_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
 
 type DropdownMode = "command" | "file" | null;
 
@@ -75,9 +73,7 @@ export function CommandInput({ commands: externalCommands, onSend, onListFiles, 
   useEffect(() => {
     if (sessionStatus !== "streaming") setStopState("idle");
   }, [sessionStatus]);
-  const [pendingImages, setPendingImages] = useState<ImageContent[]>([]);
-  const [imageError, setImageError] = useState<string | null>(null);
-  const [lightboxSrc, setLightboxSrc] = useState<{ src: string; alt: string } | null>(null);
+  const { pendingImages, imageError, handlePaste, removeImage, clearImages } = useImagePaste();
   const [dismissed, setDismissed] = useState<string | null>(null); // text value when Escape was pressed
   const prevDropdownKeyRef = useRef<string>(""); // tracks mode+filter to reset selectedIndex
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -174,14 +170,14 @@ export function CommandInput({ commands: externalCommands, onSend, onListFiles, 
   const handleSend = useCallback(() => {
     if (text.trim()) {
       onSend(text.trim(), pendingImages.length > 0 ? pendingImages : undefined);
+      clearImages();
       setText("");
-      setPendingImages([]);
       // Reset textarea height
       if (inputRef.current) {
         inputRef.current.style.height = "38px";
       }
     }
-  }, [text, pendingImages, onSend]);
+  }, [text, pendingImages, onSend, clearImages]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -241,46 +237,9 @@ export function CommandInput({ commands: externalCommands, onSend, onListFiles, 
     [dropdownMode, dropdownLength, filteredCommands, fileItems, selectedIndex, selectCommand, selectFile, handleSend, text, pendingPrompt, onCancelPending]
   );
 
-  const handlePaste = useCallback(async (e: React.ClipboardEvent) => {
-    const items = e.clipboardData.items;
-    for (const item of items) {
-      if (item.type.startsWith("image/")) {
-        e.preventDefault();
-        // Capture mimeType eagerly - DataTransferItem may become invalid after event
-        const mimeType = item.type;
-        if (!SUPPORTED_IMAGE_TYPES.has(mimeType)) {
-          setImageError(`Unsupported image type: ${mimeType}. Use JPEG, PNG, GIF, or WebP.`);
-          setTimeout(() => setImageError(null), 3000);
-          continue;
-        }
-        const blob = item.getAsFile();
-        if (!blob) continue;
-
-        const reader = new FileReader();
-        reader.onload = () => {
-          const dataUrl = reader.result as string;
-          const base64 = dataUrl.split(",")[1];
-          if (!base64) return;
-
-          if (base64.length > MAX_IMAGE_SIZE) {
-            setImageError("Image too large (max 10MB)");
-            setTimeout(() => setImageError(null), 3000);
-            return;
-          }
-
-          setPendingImages((prev) => [
-            ...prev,
-            { type: "image", data: base64, mimeType },
-          ]);
-        };
-        reader.readAsDataURL(blob);
-      }
-    }
-  }, []);
-
-  const removeImage = useCallback((index: number) => {
-    setPendingImages((prev) => prev.filter((_, i) => i !== index));
-  }, []);
+  // Clipboard paste + preview-strip are delegated to the shared hook +
+  // component (useImagePaste / ImagePreviewStrip) so the OpenSpec
+  // Explore dialog can reuse the exact same behavior.
 
   return (
     <div className="border-t border-[var(--border-primary)] p-3 relative">
@@ -330,34 +289,8 @@ export function CommandInput({ commands: externalCommands, onSend, onListFiles, 
         </div>
       )}
 
-      {/* Image error */}
-      {imageError && (
-        <div className="mb-2 text-xs text-red-400 bg-red-900/20 px-3 py-1 rounded">
-          {imageError}
-        </div>
-      )}
-
-      {/* Image previews */}
-      {pendingImages.length > 0 && (
-        <div className="mb-2 flex gap-2 flex-wrap">
-          {pendingImages.map((img, i) => (
-            <div key={i} className="relative group">
-              <img
-                src={`data:${img.mimeType};base64,${img.data}`}
-                alt={`Attachment ${i + 1}`}
-                className="h-16 w-16 object-cover rounded border border-[var(--border-secondary)] cursor-pointer"
-                onClick={() => setLightboxSrc({ src: `data:${img.mimeType};base64,${img.data}`, alt: `Attachment ${i + 1}` })}
-              />
-              <button
-                onClick={() => removeImage(i)}
-                className="absolute -top-1 -right-1 w-5 h-5 bg-red-600 rounded-full text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-              >
-                <Icon path={mdiClose} size={0.45} />
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
+      {/* Pasted-image error banner + thumbnail strip (shared component). */}
+      <ImagePreviewStrip images={pendingImages} error={imageError} onRemove={removeImage} />
 
       <div className="flex gap-2">
         <textarea
@@ -424,9 +357,7 @@ export function CommandInput({ commands: externalCommands, onSend, onListFiles, 
           </button>
         )}
       </div>
-      {lightboxSrc && (
-        <ImageLightbox src={lightboxSrc.src} alt={lightboxSrc.alt} onClose={() => setLightboxSrc(null)} />
-      )}
+      {/* ImageLightbox is rendered inside ImagePreviewStrip now. */}
     </div>
   );
 }

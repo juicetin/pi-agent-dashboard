@@ -2,7 +2,7 @@ import React, { useState, useEffect, type ReactNode } from "react";
 import { getApiBase } from "../lib/api-context.js";
 import { Icon } from "@mdi/react";
 import { mdiFlash, mdiOpenInNew, mdiPencil, mdiPencilOutline, mdiSourceBranch, mdiClose, mdiEyeOffOutline, mdiEyeOutline, mdiConsoleLine, mdiRobotOutline, mdiCodeTags, mdiApplicationOutline, mdiCommentQuestion, mdiPlayCircleOutline, mdiSourceFork } from "@mdi/js";
-import type { DashboardSession } from "@blackbelt-technology/pi-dashboard-shared/types.js";
+import type { DashboardSession, ImageContent } from "@blackbelt-technology/pi-dashboard-shared/types.js";
 import { getSessionDisplayName } from "../lib/session-display-name.js";
 import { formatRelativeTime, formatTokens } from "../lib/format.js";
 import type { DetectedEditor } from "../lib/editor-api.js";
@@ -305,7 +305,7 @@ export function SessionCard({
   onUnhide: (id: string) => void;
   contextUsage?: ContextUsageInfo;
   openspecChanges?: OpenSpecChange[];
-  onSendPrompt?: (text: string) => void;
+  onSendPrompt?: (text: string, images?: ImageContent[]) => void;
   onFlowAction?: (action: string, opts?: { flowName?: string; task?: string; description?: string }) => void;
   onAttachProposal?: (changeName: string) => void;
   onDetachProposal?: () => void;

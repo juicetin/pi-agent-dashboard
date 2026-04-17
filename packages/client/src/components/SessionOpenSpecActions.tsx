@@ -12,7 +12,7 @@ import {
   mdiPlus,
   mdiPaperclip,
 } from "@mdi/js";
-import type { DashboardSession, OpenSpecChange } from "@blackbelt-technology/pi-dashboard-shared/types.js";
+import type { DashboardSession, OpenSpecChange, ImageContent } from "@blackbelt-technology/pi-dashboard-shared/types.js";
 import { ChangeState, deriveChangeState } from "@blackbelt-technology/pi-dashboard-shared/types.js";
 import { ExploreDialog } from "./ExploreDialog.js";
 import { ConfirmDialog } from "./ConfirmDialog.js";
@@ -39,7 +39,7 @@ interface Props {
   changes: OpenSpecChange[];
   onAttach: (changeName: string) => void;
   onDetach: () => void;
-  onSendPrompt: (text: string) => void;
+  onSendPrompt: (text: string, images?: ImageContent[]) => void;
   onReadArtifact?: (changeName: string, artifactId: string) => void;
   onBulkArchive?: () => void;
 }
@@ -149,8 +149,8 @@ export function SessionOpenSpecActions({ session, changes, onAttach, onDetach, o
         {exploreOpen && (
           <DialogPortal><ExploreDialog
             changeName=""
-            onSend={(text) => {
-              onSendPrompt(`/skill:openspec-explore\n${text}`);
+            onSend={(text, images) => {
+              onSendPrompt(`/skill:openspec-explore\n${text}`, images);
               setExploreOpen(false);
             }}
             onClose={() => setExploreOpen(false)}
@@ -232,8 +232,8 @@ export function SessionOpenSpecActions({ session, changes, onAttach, onDetach, o
       {exploreOpen && (
         <DialogPortal><ExploreDialog
           changeName={attached}
-          onSend={(text) => {
-            onSendPrompt(`/skill:openspec-explore ${attached}\n${text}`);
+          onSend={(text, images) => {
+            onSendPrompt(`/skill:openspec-explore ${attached}\n${text}`, images);
             setExploreOpen(false);
           }}
           onClose={() => setExploreOpen(false)}

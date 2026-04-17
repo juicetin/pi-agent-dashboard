@@ -125,9 +125,12 @@ export function useSessionActions(deps: SessionActionDeps) {
     send({ type: "kill_process", sessionId, pgid });
   }, [send]);
 
-  const handleSendPromptToSession = useCallback((sessionId: string, text: string) => {
-    send({ type: "send_prompt", sessionId, text });
-  }, [send]);
+  const handleSendPromptToSession = useCallback(
+    (sessionId: string, text: string, images?: ImageContent[]) => {
+      send({ type: "send_prompt", sessionId, text, images });
+    },
+    [send],
+  );
 
   const handleResumeSession = useCallback((sessionId: string, mode: "continue" | "fork", entryId?: string) => {
     setSessions((prev) => {

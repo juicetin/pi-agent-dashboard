@@ -9,7 +9,7 @@ import { DndContext, closestCenter, PointerSensor, TouchSensor, useSensor, useSe
 import { SortableContext, verticalListSortingStrategy, arrayMove } from "@dnd-kit/sortable";
 import { SortableSessionCard } from "./SortableSessionCard.js";
 import { SortablePinnedGroup } from "./SortablePinnedGroup.js";
-import type { DashboardSession, OpenSpecData, CommandInfo, FlowInfo } from "@blackbelt-technology/pi-dashboard-shared/types.js";
+import type { DashboardSession, OpenSpecData, CommandInfo, FlowInfo, ImageContent } from "@blackbelt-technology/pi-dashboard-shared/types.js";
 import type { TerminalSession } from "@blackbelt-technology/pi-dashboard-shared/terminal-types.js";
 import {
   groupSessionsByDirectory,
@@ -56,7 +56,7 @@ interface Props {
   openspecMap?: Map<string, OpenSpecData>;
   sessionOrderMap?: Map<string, string[]>;
   onReorderSessions?: (cwd: string, sessionIds: string[]) => void;
-  onSendPrompt?: (sessionId: string, text: string) => void;
+  onSendPrompt?: (sessionId: string, text: string, images?: ImageContent[]) => void;
   onFlowAction?: (sessionId: string, action: string, opts?: { flowName?: string; task?: string; description?: string }) => void;
   onOpenSpecRefresh?: (cwd: string) => void;
   onAttachProposal?: (sessionId: string, changeName: string) => void;
@@ -78,7 +78,6 @@ interface Props {
   onUnpinDirectory?: (dirPath: string) => void;
   onReorderPinnedDirs?: (paths: string[]) => void;
   terminals?: TerminalSession[];
-  onCreateTerminal?: (cwd: string) => void;
   onKillTerminal?: (terminalId: string) => void;
   onRenameTerminal?: (terminalId: string, title: string) => void;
   onCollapseSidebar?: () => void;
@@ -132,7 +131,7 @@ function ToggleButton({
   );
 }
 
-export function SessionList({ sessions, selectedId, onSelect, contextUsageMap, openspecMap, sessionOrderMap, onReorderSessions, onSendPrompt, onFlowAction, onOpenSpecRefresh, onAttachProposal, onDetachProposal, onBulkArchive, onReadArtifact, onOpenPiResources, onRename, onShutdown, onResume, onHideSession, onUnhideSession, onSpawnSession, spawningCwds, spawnResult, onSpawnResultSeen, pinnedDirectories, onPinDirectory, onUnpinDirectory, onReorderPinnedDirs, terminals, onCreateTerminal, onKillTerminal, onRenameTerminal, onCollapseSidebar, commandsMap, flowsMap, onKillProcess, onOpenSpecs, onOpenArchive, onViewReadme, onOpenTerminals, onOpenEditor, editorStatuses, editorAvailable, headerExtra, errorSessionIds, spawnErrors, onDismissSpawnError, resumeErrors, onDismissResumeError }: Props) {
+export function SessionList({ sessions, selectedId, onSelect, contextUsageMap, openspecMap, sessionOrderMap, onReorderSessions, onSendPrompt, onFlowAction, onOpenSpecRefresh, onAttachProposal, onDetachProposal, onBulkArchive, onReadArtifact, onOpenPiResources, onRename, onShutdown, onResume, onHideSession, onUnhideSession, onSpawnSession, spawningCwds, spawnResult, onSpawnResultSeen, pinnedDirectories, onPinDirectory, onUnpinDirectory, onReorderPinnedDirs, terminals, onKillTerminal, onRenameTerminal, onCollapseSidebar, commandsMap, flowsMap, onKillProcess, onOpenSpecs, onOpenArchive, onViewReadme, onOpenTerminals, onOpenEditor, editorStatuses, editorAvailable, headerExtra, errorSessionIds, spawnErrors, onDismissSpawnError, resumeErrors, onDismissResumeError }: Props) {
   const now = Date.now();
   const [, navigate] = useLocation();
   const { messages, showToast, dismissToast } = useToast();
@@ -359,10 +358,6 @@ export function SessionList({ sessions, selectedId, onSelect, contextUsageMap, o
               nativeEditors={editorMap.get(group.cwd) ?? []}
               spawningDisabled={spawningCwds?.has(group.cwd)}
               onSpawnSession={() => onSpawnSession?.(group.cwd)}
-              onCreateTerminal={() => {
-                onCreateTerminal?.(group.cwd);
-                onOpenTerminals?.(group.cwd);
-              }}
               onOpenTerminals={() => onOpenTerminals?.(group.cwd)}
               onOpenEditor={() => onOpenEditor?.(group.cwd)}
               onOpenNativeEditor={(editorId) => handleOpenEditor(group.cwd, editorId)}
@@ -427,7 +422,7 @@ export function SessionList({ sessions, selectedId, onSelect, contextUsageMap, o
 
                         contextUsage={contextUsageMap?.get(session.id)}
                         openspecChanges={openspecMap?.get(session.cwd)?.changes}
-                        onSendPrompt={onSendPrompt ? (text) => onSendPrompt(session.id, text) : undefined}
+                        onSendPrompt={onSendPrompt ? (text, images) => onSendPrompt(session.id, text, images) : undefined}
                         onFlowAction={onFlowAction ? (action, opts) => onFlowAction(session.id, action, opts) : undefined}
                         onAttachProposal={onAttachProposal ? (changeName) => onAttachProposal(session.id, changeName) : undefined}
                         onDetachProposal={onDetachProposal ? () => onDetachProposal(session.id) : undefined}

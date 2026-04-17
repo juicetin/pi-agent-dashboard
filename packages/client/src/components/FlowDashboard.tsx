@@ -29,7 +29,7 @@ export function FlowDashboard({
   onAbort: () => void;
   onToggleAutonomous: () => void;
   onDismiss: () => void;
-  onSendPrompt?: (text: string) => void;
+  onSendPrompt?: (text: string, images?: import("@blackbelt-technology/pi-dashboard-shared/types.js").ImageContent[]) => void;
   onViewYaml?: () => void;
   onViewAgentSource?: (sourcePath: string, agentName: string) => void;
   sourceOpenAgent?: string | null;

@@ -19,7 +19,7 @@ import {
   mdiChevronRight,
   mdiRefresh,
 } from "@mdi/js";
-import type { DashboardSession, OpenSpecChange } from "@blackbelt-technology/pi-dashboard-shared/types.js";
+import type { DashboardSession, OpenSpecChange, ImageContent } from "@blackbelt-technology/pi-dashboard-shared/types.js";
 import { ChangeState, deriveChangeState } from "@blackbelt-technology/pi-dashboard-shared/types.js";
 import type { DetectedEditor } from "../lib/editor-api.js";
 import { ExploreDialog } from "./ExploreDialog.js";
@@ -38,7 +38,7 @@ interface Props {
   onOpenEditor?: (editorId: string) => void;
   onAttachProposal?: (changeName: string) => void;
   onDetachProposal?: () => void;
-  onSendPrompt?: (text: string) => void;
+  onSendPrompt?: (text: string, images?: ImageContent[]) => void;
   onReadArtifact?: (changeName: string, artifactId: string) => void;
   onRefresh?: () => void;
 }
@@ -249,8 +249,8 @@ export function MobileActionMenu({ session, editors, openspecChanges, onRename, 
       {exploreOpen && (
         <DialogPortal><ExploreDialog
           changeName=""
-          onSend={(text) => {
-            onSendPrompt?.(`/skill:openspec-explore\n${text}`);
+          onSend={(text, images) => {
+            onSendPrompt?.(`/skill:openspec-explore\n${text}`, images);
             setExploreOpen(false);
           }}
           onClose={() => setExploreOpen(false)}

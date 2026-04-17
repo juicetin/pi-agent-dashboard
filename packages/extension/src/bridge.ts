@@ -26,7 +26,6 @@ import { PromptBus } from "./prompt-bus.js";
 import { DashboardDefaultAdapter } from "./dashboard-default-adapter.js";
 import { registerAskUserTool } from "./ask-user-tool.js";
 import { activate as activateProviderRegister, onProviderChanged } from "./provider-register.js";
-import { activateAnthropicTransform } from "./anthropic-transform.js";
 import type { FlowInfo } from "@blackbelt-technology/pi-dashboard-shared/types.js";
 import { startMetricsMonitor, stopMetricsMonitor, collectMetrics } from "./process-metrics.js";
 import { scanChildProcesses } from "./process-scanner.js";
@@ -75,10 +74,9 @@ export default function (pi: ExtensionAPI) {
     // registered before session_start fires and models_list is sent.
     activateProviderRegister(pi);
 
-    // Activate Anthropic payload transform (system prompt rewrite + tool filtering)
-    // for all anthropic-messages providers (direct OAuth, API key, and proxies).
-    // Replaces @benvargas/pi-claude-code-use for the main session.
-    activateAnthropicTransform(pi);
+    // Anthropic-messages payload transforms (system prompt rewrite + tool
+    // filter/remap) are handled by the installed @benvargas/pi-claude-code-use
+    // package when present. No local duplication here.
 
     initBridge(pi);
   } catch (err) {

@@ -136,8 +136,79 @@ export class PackageNotFoundError extends Error {
   }
 }
 
+// ── Lightweight metadata helpers for recommended-extensions enrichment ──
+
+export interface PackageMeta {
+  description?: string;
+  version?: string;
+}
+
+const metaCache = new Map<string, CacheEntry<PackageMeta | null>>();
+
+/**
+ * Fetch a minimal package.json-ish blob for an npm package (description,
+ * version) from the registry's `/<name>/latest` endpoint. Returns `null`
+ * on any network or parse failure.
+ */
+export async function fetchPackageMeta(packageName: string): Promise<PackageMeta | null> {
+  const cached = metaCache.get(`npm:${packageName}`);
+  if (isFresh(cached)) return cached.data;
+  try {
+    const url = `${NPM_REGISTRY_URL}/${encodeURIComponent(packageName)}/latest`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(10_000) });
+    if (!res.ok) {
+      metaCache.set(`npm:${packageName}`, { data: null, timestamp: Date.now() });
+      return null;
+    }
+    const json: any = await res.json();
+    const meta: PackageMeta = {
+      description: typeof json?.description === "string" ? json.description : undefined,
+      version: typeof json?.version === "string" ? json.version : undefined,
+    };
+    metaCache.set(`npm:${packageName}`, { data: meta, timestamp: Date.now() });
+    return meta;
+  } catch {
+    metaCache.set(`npm:${packageName}`, { data: null, timestamp: Date.now() });
+    return null;
+  }
+}
+
+/**
+ * Fetch `package.json` from a public GitHub repository's default branch
+ * via `raw.githubusercontent.com`. Returns `{description, version}` or
+ * `null` on any failure.
+ */
+export async function fetchGithubPackageJson(
+  owner: string,
+  repo: string,
+): Promise<PackageMeta | null> {
+  const key = `gh:${owner}/${repo}`;
+  const cached = metaCache.get(key);
+  if (isFresh(cached)) return cached.data;
+  // HEAD resolves to the default branch on raw.githubusercontent.com.
+  const url = `https://raw.githubusercontent.com/${owner}/${repo}/HEAD/package.json`;
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(10_000) });
+    if (!res.ok) {
+      metaCache.set(key, { data: null, timestamp: Date.now() });
+      return null;
+    }
+    const json: any = await res.json();
+    const meta: PackageMeta = {
+      description: typeof json?.description === "string" ? json.description : undefined,
+      version: typeof json?.version === "string" ? json.version : undefined,
+    };
+    metaCache.set(key, { data: meta, timestamp: Date.now() });
+    return meta;
+  } catch {
+    metaCache.set(key, { data: null, timestamp: Date.now() });
+    return null;
+  }
+}
+
 /** Clear all caches (for testing). */
 export function clearCaches() {
   searchCache.clear();
   readmeCache.clear();
+  metaCache.clear();
 }

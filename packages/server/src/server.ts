@@ -42,6 +42,7 @@ import { registerOpenSpecRoutes } from "./routes/openspec-routes.js";
 import { registerSystemRoutes } from "./routes/system-routes.js";
 import { registerProviderAuthRoutes } from "./routes/provider-auth-routes.js";
 import { registerPackageRoutes } from "./routes/package-routes.js";
+import { registerRecommendedRoutes, invalidateRecommendedCache } from "./routes/recommended-routes.js";
 import { registerProviderRoutes } from "./routes/provider-routes.js";
 import { PackageManagerWrapper } from "./package-manager-wrapper.js";
 import { createEditorManager, type EditorManager } from "./editor-manager.js";
@@ -304,7 +305,7 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
     browserGateway.broadcastToAll({ type: "package_progress", operationId, event } as any);
   });
 
-  // On completion: broadcast to browsers
+  // On completion: broadcast to browsers + invalidate the recommended cache
   packageManagerWrapper.setCompleteListener((result) => {
     browserGateway.broadcastToAll({
       type: "package_operation_complete",
@@ -316,6 +317,7 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
       error: result.error,
       sessionsReloaded: (result as any).sessionsReloaded,
     } as any);
+    if (result.success) invalidateRecommendedCache();
   });
 
   // Reload all active sessions after a successful package operation
@@ -337,6 +339,7 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
   });
 
   registerPackageRoutes(fastify, { packageManagerWrapper });
+  registerRecommendedRoutes(fastify, { packageManagerWrapper });
 
   // Editor (code-server) routes and proxy
   registerEditorRoutes(fastify, editorManager, { networkGuard });

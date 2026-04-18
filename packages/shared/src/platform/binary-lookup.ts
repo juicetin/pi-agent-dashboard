@@ -160,8 +160,8 @@ export class ToolResolver {
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
 
-/** Run `where|which` and return the first line of stdout, or null. */
-function whereFirstLine(whichCmd: string, target: string): string | null {
+/** Run `where|which` and return ALL stdout lines (trimmed, non-empty), or []. */
+function whereAllLines(whichCmd: string, target: string): string[] {
   try {
     const raw = execSync(`${whichCmd} ${target}`, {
       encoding: "utf-8",
@@ -169,55 +169,72 @@ function whereFirstLine(whichCmd: string, target: string): string | null {
       windowsHide: true,
     });
     const text = typeof raw === "string" ? raw : String(raw);
-    const first = text.split(/\r?\n/)[0]?.trim();
-    return first || null;
+    return text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   } catch {
-    return null;
+    return [];
   }
+}
+
+/** Extract the file extension (lower-cased, including the dot) from a path, or "". */
+function extOf(p: string): string {
+  const slash = Math.max(p.lastIndexOf("\\"), p.lastIndexOf("/"));
+  const dot = p.lastIndexOf(".");
+  return dot > slash ? p.slice(dot).toLowerCase() : "";
 }
 
 /**
  * Resolve a command on PATH.
  *
- * Unix: a single `which <name>` is authoritative.
+ * Unix: the first `which <name>` hit is authoritative.
  *
- * Windows: `where <name>` can return multiple hits when a directory on PATH
- * contains both a bash shim (extensionless) AND a Windows-executable form
- * (`.cmd`/`.bat`/`.exe`). A common npm-global case: `pi` (sh script) next
- * to `pi.cmd`. Node's `spawn()` cannot execute extensionless shims on
- * Windows (gets ENOENT), so we explicitly search for each Windows-native
- * extension in priority order and take the first that `where` finds. Only
- * if NO native extension is found do we fall back to the bare `where`
- * result (respecting PATHEXT and allowing scripts the user has set up).
+ * Windows: `where <name>` lists ALL PATH matches — a directory may contain
+ * both a bash shim (extensionless, e.g. `pi`) and a Windows-native form
+ * (`pi.cmd`). Node's `spawn()` cannot execute extensionless shims on
+ * Windows without `shell: true`, so we pick the first line whose extension
+ * is in PATHEXT. Falls back to the first line if none match (preserves
+ * whatever the user set up).
+ *
+ * Single `where` invocation — no per-extension probe loop — to keep
+ * resolution fast (especially when the command is missing entirely).
  */
 function whichSync(cmd: string): string | null {
   const isWin = process.platform === "win32";
   if (!isWin) {
-    return whereFirstLine("which", cmd);
+    const lines = whereAllLines("which", cmd);
+    return lines[0] ?? null;
   }
 
-  // Derive the preferred extension search order from PATHEXT when set,
-  // falling back to the standard Windows list. Lower-cased for matching.
+  const lines = whereAllLines("where", cmd);
+  if (lines.length === 0) return null;
+
+  // If the caller already specified an extension, trust their pick.
+  const callerHasExt = /\.[A-Za-z0-9]+$/.test(cmd);
+  if (callerHasExt) return lines[0];
+
+  // Preference order: PATHEXT (user's actual Windows search path) or a
+  // standard default. Lower-cased for case-insensitive matching.
   const pathextRaw = process.env.PATHEXT || ".COM;.EXE;.BAT;.CMD;.VBS;.VBE;.JS;.JSE;.WSF;.WSH;.MSC;.PS1";
   const pathext = pathextRaw.split(";").map((e) => e.trim().toLowerCase()).filter(Boolean);
 
-  // If the caller already passed an extension, respect it verbatim.
-  const hasExt = /\.[A-Za-z0-9]+$/.test(cmd);
-  if (hasExt) {
-    return whereFirstLine("where", cmd);
+  // Pick the first line whose extension matches PATHEXT, scanning by
+  // preference order (lower index = more preferred).
+  let best: string | null = null;
+  let bestRank = Infinity;
+  for (const line of lines) {
+    const rank = pathext.indexOf(extOf(line));
+    if (rank === -1) continue;
+    if (rank < bestRank) {
+      best = line;
+      bestRank = rank;
+    }
   }
+  if (best) return best;
 
-  // Probe each known Windows-native extension; take the first actual hit.
-  for (const ext of pathext) {
-    const hit = whereFirstLine("where", `${cmd}${ext}`);
-    if (hit) return hit;
-  }
-
-  // Fallback: bare `where <cmd>` picks up scripts in PATHEXT and any other
-  // matches. This is a last resort — when it returns an extensionless bash
-  // shim, `spawn()` will ENOENT, but we've exhausted the Windows-native
-  // options.
-  return whereFirstLine("where", cmd);
+  // No PATHEXT-matching entry — fall back to first line (could be a bash
+  // shim). The runner layer handles the `.cmd` / `.bat` spawn-via-shell
+  // case separately; extensionless shims will still ENOENT but that's
+  // the right signal to the caller.
+  return lines[0];
 }
 
 /** Resolve a command via login shell (picks up nvm/volta/homebrew paths). */

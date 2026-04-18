@@ -124,6 +124,22 @@ export function run<Input, Output>(
 
   const timeout = ctx.timeout ?? recipe.timeout ?? DEFAULT_TIMEOUT_MS;
 
+  // Node >= 20.12 (CVE-2024-27980 fix) blocks spawning .cmd/.bat files
+  // without `shell: true` — we get EINVAL otherwise. This is the canonical
+  // Windows problem for npm.cmd, pi.cmd, tsx.cmd, openspec.cmd, etc.
+  //
+  // Handle it here so every Recipe (and every caller) works uniformly:
+  //   - On Windows, if the resolved binary ends in .cmd/.bat, set
+  //     `shell: true` so Node invokes it through cmd.exe.
+  //   - With `shell: true` on modern Node, arguments are escape-safe
+  //     because we pass argv via the `args` array (Node handles the
+  //     shell-escaping internally; this is the supported path after
+  //     the CVE fix).
+  //
+  // This is the single place that knows about .cmd spawning; every
+  // Recipe benefits automatically (see change: platform-command-executor).
+  const needsShell = process.platform === "win32" && /\.(cmd|bat)$/i.test(resolved);
+
   try {
     const result = spawnSync(resolved, args, {
       cwd: ctx.cwd,
@@ -131,7 +147,11 @@ export function run<Input, Output>(
       encoding: "utf-8",
       timeout,
       stdio: ["pipe", "pipe", "pipe"],
-      // windowsHide: true comes from exec.ts by default; no shell interpolation.
+      // windowsHide: true comes from exec.ts by default.
+      // shell: true is required on Node >= 20.12 (CVE-2024-27980 fix) to
+      // spawn .cmd/.bat files. Node handles the shell-escape internally;
+      // args are still passed as an array, preserving safety.
+      shell: needsShell,
     });
 
     // spawnSync error path: either it set .error (e.g. spawn failure) or

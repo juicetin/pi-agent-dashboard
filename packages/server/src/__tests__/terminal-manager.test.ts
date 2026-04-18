@@ -55,7 +55,9 @@ describe("TerminalManager", () => {
       expect(session.shell).toBeDefined();
     });
 
-    it("detects shell from env", () => {
+    // Shell selection: Unix uses $SHELL with /bin/bash fallback; Windows
+    // uses %COMSPEC% with powershell.exe fallback. Both branches tested.
+    it.skipIf(process.platform === "win32")("detects shell from $SHELL env (unix)", () => {
       const original = process.env.SHELL;
       process.env.SHELL = "/bin/zsh";
       const session = manager.spawn("/tmp");
@@ -63,12 +65,28 @@ describe("TerminalManager", () => {
       process.env.SHELL = original;
     });
 
-    it("falls back to /bin/bash when SHELL not set", () => {
+    it.skipIf(process.platform === "win32")("falls back to /bin/bash when $SHELL not set (unix)", () => {
       const original = process.env.SHELL;
       delete process.env.SHELL;
       const session = manager.spawn("/tmp");
       expect(session.shell).toBe("/bin/bash");
       process.env.SHELL = original;
+    });
+
+    it.skipIf(process.platform !== "win32")("detects shell from %COMSPEC% env (win32)", () => {
+      const original = process.env.COMSPEC;
+      process.env.COMSPEC = "C:\\Windows\\System32\\cmd.exe";
+      const session = manager.spawn(".");
+      expect(session.shell).toBe("C:\\Windows\\System32\\cmd.exe");
+      if (original === undefined) delete process.env.COMSPEC; else process.env.COMSPEC = original;
+    });
+
+    it.skipIf(process.platform !== "win32")("falls back to powershell.exe when %COMSPEC% not set (win32)", () => {
+      const original = process.env.COMSPEC;
+      delete process.env.COMSPEC;
+      const session = manager.spawn(".");
+      expect(session.shell).toBe("powershell.exe");
+      if (original !== undefined) process.env.COMSPEC = original;
     });
 
     it("spawns node-pty with correct args", async () => {

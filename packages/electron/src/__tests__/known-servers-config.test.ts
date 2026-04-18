@@ -10,18 +10,22 @@ import os from "node:os";
 describe("Electron knownServers config parsing", () => {
   let testDir: string;
   let configFile: string;
-  let origHome: string;
+  let origHome: string | undefined;
+  let origUserProfile: string | undefined;
 
   beforeEach(() => {
     testDir = path.join(os.tmpdir(), `test-electron-config-${Date.now()}`);
     fs.mkdirSync(path.join(testDir, ".pi", "dashboard"), { recursive: true });
     configFile = path.join(testDir, ".pi", "dashboard", "config.json");
-    origHome = process.env.HOME!;
+    origHome = process.env.HOME;
+    origUserProfile = process.env.USERPROFILE;
     process.env.HOME = testDir;
+    process.env.USERPROFILE = testDir;
   });
 
   afterEach(() => {
-    process.env.HOME = origHome;
+    if (origHome === undefined) delete process.env.HOME; else process.env.HOME = origHome;
+    if (origUserProfile === undefined) delete process.env.USERPROFILE; else process.env.USERPROFILE = origUserProfile;
     if (fs.existsSync(testDir)) fs.rmSync(testDir, { recursive: true });
   });
 

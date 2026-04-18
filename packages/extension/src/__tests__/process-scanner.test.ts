@@ -40,7 +40,8 @@ describe("captureChildPgids", () => {
       return fail();
     };
     const tracked = new Set<number>();
-    captureChildPgids(100, tracked, { _spawnSync: mock });
+    // Force Unix code path; default would short-circuit on Windows.
+    captureChildPgids(100, tracked, { _spawnSync: mock, _platform: "linux" } as any);
     expect(tracked.has(200)).toBe(true);
   });
 
@@ -68,7 +69,7 @@ describe("scanTrackedProcesses", () => {
       return fail();
     };
     const tracked = new Set([200]);
-    const result = scanTrackedProcesses(tracked, 0, { _spawnSync: mock });
+    const result = scanTrackedProcesses(tracked, 0, { _spawnSync: mock, _platform: "linux" } as any);
     expect(result.some((p) => p.command === "node vitest")).toBe(true);
     expect(result.some((p) => p.command.includes("bash"))).toBe(false);
     expect(result.some((p) => p.pgid === 400)).toBe(false);
@@ -80,7 +81,7 @@ describe("scanTrackedProcesses", () => {
       return fail();
     };
     const tracked = new Set([300]);
-    scanTrackedProcesses(tracked, 0, { _spawnSync: mock });
+    scanTrackedProcesses(tracked, 0, { _spawnSync: mock, _platform: "linux" } as any);
     expect(tracked.has(300)).toBe(false);
   });
 
@@ -90,7 +91,7 @@ describe("scanTrackedProcesses", () => {
       return fail();
     };
     const tracked = new Set([200]);
-    const result = scanTrackedProcesses(tracked, 30000, { _spawnSync: mock });
+    const result = scanTrackedProcesses(tracked, 30000, { _spawnSync: mock, _platform: "linux" } as any);
     expect(result).toHaveLength(0);
   });
 
@@ -132,7 +133,7 @@ describe("scanChildProcesses (combined)", () => {
     };
 
     const tracked = new Set<number>();
-    const result = scanChildProcesses(100, tracked, 0, { _spawnSync: mock });
+    const result = scanChildProcesses(100, tracked, 0, { _spawnSync: mock, _platform: "linux" } as any);
     expect(tracked.has(200)).toBe(true);
     expect(result.some(p => p.command === "node vitest")).toBe(true);
     expect(result.some(p => p.pgid === 888)).toBe(false); // unrelated PGID not tracked

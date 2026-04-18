@@ -7,19 +7,21 @@ import path from "node:path";
 import os from "node:os";
 import fs from "node:fs";
 
+// Monorepo: packages/server/src/__tests__ → repo root is 4 levels up.
+// Pre-monorepo this was 3 levels (src/__tests__); updated for the current layout.
+const REPO_ROOT = path.resolve(import.meta.dirname, "../../../..");
+
 describe("listDirectories", () => {
   it("should return directory entries for a valid path", async () => {
-    // Use the project root — known to have subdirectories
-    const projectRoot = path.resolve(import.meta.dirname, "../../..");
-    const result = await listDirectories(projectRoot);
+    const result = await listDirectories(REPO_ROOT);
 
-    expect(result.current).toBe(projectRoot);
-    expect(result.parent).toBe(path.dirname(projectRoot));
+    expect(result.current).toBe(REPO_ROOT);
+    expect(result.parent).toBe(path.dirname(REPO_ROOT));
     expect(result.entries.length).toBeGreaterThan(0);
 
-    // Should contain known subdirectories
+    // Should contain known subdirectories of the monorepo root
     const names = result.entries.map((e) => e.name);
-    expect(names).toContain("src");
+    expect(names).toContain("packages");
     expect(names).toContain("node_modules");
   });
 
@@ -29,8 +31,7 @@ describe("listDirectories", () => {
   });
 
   it("should return entries sorted alphabetically", async () => {
-    const projectRoot = path.resolve(import.meta.dirname, "../../..");
-    const result = await listDirectories(projectRoot);
+    const result = await listDirectories(REPO_ROOT);
     const names = result.entries.map((e) => e.name);
     const sorted = [...names].sort((a, b) => a.localeCompare(b));
     expect(names).toEqual(sorted);
@@ -45,24 +46,22 @@ describe("listDirectories", () => {
   });
 
   it("should detect isGit flag for git repos", async () => {
-    const projectRoot = path.resolve(import.meta.dirname, "../../..");
-    const parentDir = path.dirname(projectRoot);
+    const parentDir = path.dirname(REPO_ROOT);
     const result = await listDirectories(parentDir);
 
     const projectEntry = result.entries.find(
-      (e) => e.name === path.basename(projectRoot)
+      (e) => e.name === path.basename(REPO_ROOT)
     );
     expect(projectEntry).toBeDefined();
     expect(projectEntry!.isGit).toBe(true);
   });
 
   it("should detect isPi flag for pi projects", async () => {
-    const projectRoot = path.resolve(import.meta.dirname, "../../..");
-    const parentDir = path.dirname(projectRoot);
+    const parentDir = path.dirname(REPO_ROOT);
     const result = await listDirectories(parentDir);
 
     const projectEntry = result.entries.find(
-      (e) => e.name === path.basename(projectRoot)
+      (e) => e.name === path.basename(REPO_ROOT)
     );
     expect(projectEntry).toBeDefined();
     expect(projectEntry!.isPi).toBe(true);

@@ -17,6 +17,11 @@ vi.mock("node:fs", () => ({
 
 import { detectPi, detectOpenSpec, detectSystemNode, detectDashboardPackage, detectBridgeExtension, detectPiDashboardCli } from "../lib/dependency-detector.js";
 
+// Path-containment helper that normalizes separators so tests work on
+// Windows (backslashes) and Unix (forward slashes) identically.
+const includesPath = (p: unknown, needle: string): boolean =>
+  String(p).replace(/\\/g, "/").includes(needle);
+
 describe("dependency-detector", () => {
   beforeEach(() => {
     vi.resetAllMocks();
@@ -30,7 +35,8 @@ describe("dependency-detector", () => {
       expect(result).toEqual({ found: true, path: "/usr/local/bin/pi", source: "system" });
     });
 
-    it("finds pi via login shell when not on process PATH", () => {
+    // Unix-only: login shell fallback is skipped on Windows (no POSIX shell).
+    it.skipIf(process.platform === "win32")("finds pi via login shell when not on process PATH", () => {
       let callCount = 0;
       mockExecSync.mockImplementation(() => {
         callCount++;
@@ -82,7 +88,7 @@ describe("dependency-detector", () => {
   describe("detectDashboardPackage", () => {
     it("finds in managed install", () => {
       mockExistsSync.mockImplementation((p: string) =>
-        String(p).includes(".pi-dashboard") && String(p).includes("pi-agent-dashboard/package.json")
+        includesPath(p, ".pi-dashboard") && includesPath(p, "pi-agent-dashboard/package.json")
       );
       const result = detectDashboardPackage();
       expect(result.found).toBe(true);
@@ -131,9 +137,9 @@ describe("dependency-detector", () => {
     it("falls back to npm global when not in settings.json", () => {
       // settings.json exists but no pi-dashboard entry
       mockExistsSync.mockImplementation((p: string) => {
-        if (String(p).includes("settings.json")) return true;
+        if (includesPath(p, "settings.json")) return true;
         // Global npm package exists
-        if (String(p).includes("pi-agent-dashboard/package.json") && !String(p).includes(".pi-dashboard")) return true;
+        if (includesPath(p, "pi-agent-dashboard/package.json") && !includesPath(p, ".pi-dashboard")) return true;
         return false;
       });
       mockReadFileSync.mockReturnValue(JSON.stringify({ packages: ["npm:other-pkg"] }));
@@ -148,8 +154,8 @@ describe("dependency-detector", () => {
 
     it("falls back to managed install when not in settings.json", () => {
       mockExistsSync.mockImplementation((p: string) => {
-        if (String(p).includes("settings.json")) return true;
-        if (String(p).includes(".pi-dashboard") && String(p).includes("pi-agent-dashboard/package.json")) return true;
+        if (includesPath(p, "settings.json")) return true;
+        if (includesPath(p, ".pi-dashboard") && includesPath(p, "pi-agent-dashboard/package.json")) return true;
         return false;
       });
       mockReadFileSync.mockReturnValue(JSON.stringify({ packages: [] }));

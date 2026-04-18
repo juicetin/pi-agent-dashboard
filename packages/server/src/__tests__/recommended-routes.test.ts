@@ -161,6 +161,8 @@ describe("GET /api/packages/recommended", () => {
 	let fastify: FastifyInstance;
 	let tmpHome: string;
 	let origCwd: string;
+	let origHome: string | undefined;
+	let origUserProfile: string | undefined;
 
 	beforeEach(() => {
 		invalidateRecommendedCache();
@@ -168,7 +170,10 @@ describe("GET /api/packages/recommended", () => {
 		vi.mocked(fetchGithubPackageJson).mockReset();
 
 		tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), "pi-rec-"));
+		origHome = process.env.HOME;
+		origUserProfile = process.env.USERPROFILE;
 		process.env.HOME = tmpHome;
+		process.env.USERPROFILE = tmpHome;
 
 		// chdir to a clean subdirectory so the route's CWD-based local
 		// settings read doesn't pick up the host repo's .pi/settings.json.
@@ -181,6 +186,8 @@ describe("GET /api/packages/recommended", () => {
 	afterEach(async () => {
 		if (fastify) await fastify.close();
 		process.chdir(origCwd);
+		if (origHome === undefined) delete process.env.HOME; else process.env.HOME = origHome;
+		if (origUserProfile === undefined) delete process.env.USERPROFILE; else process.env.USERPROFILE = origUserProfile;
 		if (fs.existsSync(tmpHome)) fs.rmSync(tmpHome, { recursive: true, force: true });
 	});
 

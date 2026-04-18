@@ -29,11 +29,14 @@ describe("client static file discovery", () => {
       path.join(serverDir, "../../client/dist"),
       path.join(serverDir, "../../dist/client"),
     ];
+    // Normalize to posix separators so assertions are platform-agnostic
+    // (path.join returns `\` on Windows, `/` on Unix).
+    const normalized = searchPaths.map(p => p.split(path.sep).join("/"));
     // npm package path should be first
-    expect(searchPaths[0]).toContain("pi-dashboard-web/dist");
+    expect(normalized[0]).toContain("pi-dashboard-web/dist");
     // workspace sibling second
-    expect(searchPaths[1]).toContain("client/dist");
+    expect(normalized[1]).toContain("client/dist");
     // legacy third
-    expect(searchPaths[2]).toContain("dist/client");
+    expect(normalized[2]).toContain("dist/client");
   });
 });

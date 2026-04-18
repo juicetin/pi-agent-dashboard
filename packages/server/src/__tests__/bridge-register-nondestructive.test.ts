@@ -14,13 +14,16 @@ describe("non-destructive bridge registration", () => {
   let tmpDir: string;
   let settingsPath: string;
   let origHome: string | undefined;
+  let origUserProfile: string | undefined;
   let fakeExtensionDir: string;
 
   beforeEach(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "bridge-reg-test-"));
     settingsPath = path.join(tmpDir, ".pi", "agent", "settings.json");
     origHome = process.env.HOME;
+    origUserProfile = process.env.USERPROFILE;
     process.env.HOME = tmpDir;
+    process.env.USERPROFILE = tmpDir;
 
     // Create a fake "existing valid" extension dir that looks like a dev install
     fakeExtensionDir = path.join(tmpDir, "dev-project", "pi-agent-dashboard", "packages", "extension");
@@ -29,7 +32,8 @@ describe("non-destructive bridge registration", () => {
   });
 
   afterEach(() => {
-    process.env.HOME = origHome;
+    if (origHome === undefined) delete process.env.HOME; else process.env.HOME = origHome;
+    if (origUserProfile === undefined) delete process.env.USERPROFILE; else process.env.USERPROFILE = origUserProfile;
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 

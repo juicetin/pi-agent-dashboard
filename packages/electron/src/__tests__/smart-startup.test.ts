@@ -108,13 +108,13 @@ describe("detection integration", () => {
   });
 
   it("detects pi + bridge from settings.json for power-user auto-skip", () => {
-    // Pi on PATH
+    // Pi on PATH (match both `which pi` on Unix and `where pi` on Windows)
     mockExecSync.mockImplementation((cmd: string) => {
-      if (String(cmd).includes("which pi")) return "/usr/local/bin/pi\n";
+      if (/\b(which|where)\s+pi\b/.test(String(cmd))) return "/usr/local/bin/pi\n";
       throw new Error("not found");
     });
-    // Bridge in settings.json
-    mockExistsSync.mockImplementation((p: string) => String(p).includes("settings.json"));
+    // Bridge in settings.json (normalize backslashes for Windows)
+    mockExistsSync.mockImplementation((p: string) => String(p).replace(/\\/g, "/").includes("settings.json"));
     mockReadFileSync.mockReturnValue(JSON.stringify({
       packages: ["../../Project/pi-agent-dashboard"],
     }));
@@ -135,11 +135,11 @@ describe("detection integration", () => {
 
   it("detects pi without bridge → targeted wizard", () => {
     mockExecSync.mockImplementation((cmd: string) => {
-      if (String(cmd).includes("which pi")) return "/usr/local/bin/pi\n";
+      if (/\b(which|where)\s+pi\b/.test(String(cmd))) return "/usr/local/bin/pi\n";
       throw new Error("not found");
     });
-    // Settings exists but no pi-dashboard entry
-    mockExistsSync.mockImplementation((p: string) => String(p).includes("settings.json"));
+    // Settings exists but no pi-dashboard entry (normalize backslashes for Windows)
+    mockExistsSync.mockImplementation((p: string) => String(p).replace(/\\/g, "/").includes("settings.json"));
     mockReadFileSync.mockReturnValue(JSON.stringify({ packages: ["npm:some-other"] }));
 
     const pi = detectPi();

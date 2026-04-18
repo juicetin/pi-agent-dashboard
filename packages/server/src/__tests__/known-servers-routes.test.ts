@@ -9,19 +9,23 @@ import type { DiscoveredServer } from "@blackbelt-technology/pi-dashboard-shared
 describe("known-servers CRUD", () => {
   let testDir: string;
   let configFile: string;
-  let origHome: string;
+  let origHome: string | undefined;
+  let origUserProfile: string | undefined;
 
   beforeEach(() => {
     testDir = path.join(os.tmpdir(), `test-known-servers-${Date.now()}`);
     fs.mkdirSync(path.join(testDir, ".pi", "dashboard"), { recursive: true });
     configFile = path.join(testDir, ".pi", "dashboard", "config.json");
     fs.writeFileSync(configFile, JSON.stringify({}));
-    origHome = process.env.HOME!;
+    origHome = process.env.HOME;
+    origUserProfile = process.env.USERPROFILE;
     process.env.HOME = testDir;
+    process.env.USERPROFILE = testDir;
   });
 
   afterEach(() => {
-    process.env.HOME = origHome;
+    if (origHome === undefined) delete process.env.HOME; else process.env.HOME = origHome;
+    if (origUserProfile === undefined) delete process.env.USERPROFILE; else process.env.USERPROFILE = origUserProfile;
     if (fs.existsSync(testDir)) fs.rmSync(testDir, { recursive: true });
   });
 

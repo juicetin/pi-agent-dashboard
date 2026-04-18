@@ -12,16 +12,20 @@ describe("bridge extension registration (server context)", () => {
   let tmpDir: string;
   let settingsPath: string;
   let origHome: string | undefined;
+  let origUserProfile: string | undefined;
 
   beforeEach(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "ext-reg-test-"));
     settingsPath = path.join(tmpDir, ".pi", "agent", "settings.json");
     origHome = process.env.HOME;
+    origUserProfile = process.env.USERPROFILE;
     process.env.HOME = tmpDir;
+    process.env.USERPROFILE = tmpDir;
   });
 
   afterEach(() => {
-    process.env.HOME = origHome;
+    if (origHome === undefined) delete process.env.HOME; else process.env.HOME = origHome;
+    if (origUserProfile === undefined) delete process.env.USERPROFILE; else process.env.USERPROFILE = origUserProfile;
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 

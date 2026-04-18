@@ -5,6 +5,11 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import { pathToFileURL } from "node:url";
+
+// resolveJitiFromPi() returns a file:// URL (not a raw path) — required for
+// node --import on Windows. See change: fix-windows-server-parity.
+const asFileUrl = (p: string) => pathToFileURL(p).href;
 
 const { mockExecSync, mockExistsSync, mockReadFileSync } = vi.hoisted(() => ({
   mockExecSync: vi.fn(),
@@ -55,7 +60,7 @@ describe("resolveJitiFromPi", () => {
       throw new Error("not found");
     });
 
-    expect(resolveJitiFromPi()).toBe(jitiRegister);
+    expect(resolveJitiFromPi()).toBe(asFileUrl(jitiRegister));
   });
 
   it("returns jiti path from system pi when managed not available", () => {
@@ -68,9 +73,9 @@ describe("resolveJitiFromPi", () => {
       if (p === jitiRegister) return true;
       return false;
     });
-    // detectPi() — system PATH succeeds
+    // detectPi() — system PATH succeeds (match both `which pi` and `where pi`)
     mockExecSync.mockImplementation((cmd: string) => {
-      if (typeof cmd === "string" && cmd.includes("which pi")) return piBin;
+      if (typeof cmd === "string" && /\b(which|where)\s+pi\b/.test(cmd)) return piBin;
       throw new Error("not found");
     });
     mockResolve.mockImplementation((pkg: string) => {
@@ -78,7 +83,7 @@ describe("resolveJitiFromPi", () => {
       throw new Error("not found");
     });
 
-    expect(resolveJitiFromPi()).toBe(jitiRegister);
+    expect(resolveJitiFromPi()).toBe(asFileUrl(jitiRegister));
   });
 
   it("returns null when neither managed nor system pi has jiti", () => {
@@ -111,6 +116,6 @@ describe("resolveJitiFromPi", () => {
       throw new Error("not found");
     });
 
-    expect(resolveJitiFromPi()).toBe(jitiRegister);
+    expect(resolveJitiFromPi()).toBe(asFileUrl(jitiRegister));
   });
 });

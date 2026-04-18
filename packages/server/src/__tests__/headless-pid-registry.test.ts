@@ -84,7 +84,11 @@ describe("HeadlessPidRegistry", () => {
     registry.linkSession("session-1", "/projects/app");
     const killed = registry.killBySessionId("session-1");
     expect(killed).toBe(true);
-    expect(killSpy).toHaveBeenCalledWith(-process.pid, "SIGTERM");
+    // Production branches on platform: Unix uses negative PID to signal the
+    // whole process group; Windows has no process groups and uses the PID
+    // directly. Assert the platform-correct behavior.
+    const expectedPid = process.platform === "win32" ? process.pid : -process.pid;
+    expect(killSpy).toHaveBeenCalledWith(expectedPid, "SIGTERM");
     expect(registry.size()).toBe(0);
 
     killSpy.mockRestore();
@@ -223,8 +227,10 @@ describe("HeadlessPidRegistry orphan cleanup", () => {
     const registry = createHeadlessPidRegistry({ pidFilePath: pidFile });
     registry.cleanupOrphans();
 
-    // Should have tried to kill the process group
-    expect(killSpy).toHaveBeenCalledWith(-process.pid, "SIGTERM");
+    // Unix signals the process group (-pid); Windows has no process groups
+    // and targets the PID directly.
+    const expectedPid = process.platform === "win32" ? process.pid : -process.pid;
+    expect(killSpy).toHaveBeenCalledWith(expectedPid, "SIGTERM");
     // Should NOT be reclaimed
     expect(registry.size()).toBe(0);
 

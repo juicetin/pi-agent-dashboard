@@ -73,11 +73,11 @@ describe("editor-registry", () => {
   });
 
   describe("detectEditors", () => {
-    it("should return editor when process is running AND CLI is available", () => {
+    // Unix: fixture uses Zed, which has no Windows process pattern.
+    it.skipIf(process.platform === "win32")("should return editor when process is running AND CLI is available (unix: Zed)", () => {
       mockedExecSync.mockImplementation((cmd) => {
         const s = String(cmd);
         if (s.includes("pgrep")) {
-          // Only Zed is running
           if (s.includes("Zed")) return Buffer.from("12345\n");
           throw new Error("not found");
         }
@@ -90,6 +90,27 @@ describe("editor-registry", () => {
 
       const result = detectEditors("/some/project");
       expect(result).toEqual([{ id: "zed", name: "Zed" }]);
+    });
+
+    // Windows equivalent: VS Code is in EDITORS.processPattern.win32, Zed is not.
+    it.skipIf(process.platform !== "win32")("should return editor when process is running AND CLI is available (win32: VS Code)", () => {
+      mockedExecSync.mockImplementation((cmd) => {
+        const s = String(cmd);
+        if (s.includes("tasklist")) {
+          if (s.includes("Code.exe")) {
+            return Buffer.from("Code.exe                    12345 Console                    1    50,000 K\n");
+          }
+          throw new Error("not found");
+        }
+        if (s.includes("where")) {
+          if (s.includes("code.cmd") || s.includes("code")) return Buffer.from("C:\\Program Files\\Microsoft VS Code\\bin\\code.cmd\n");
+          throw new Error("not found");
+        }
+        throw new Error("unexpected command");
+      });
+
+      const result = detectEditors("C:\\some\\project");
+      expect(result).toEqual([{ id: "vscode", name: "VS Code" }]);
     });
 
     it("should return empty when process not running even if CLI available", () => {
@@ -116,7 +137,11 @@ describe("editor-registry", () => {
       expect(result).toEqual([]);
     });
 
-    it("should return multiple editors when multiple are running", () => {
+    // Unix path: Zed + VS Code. Zed has no Windows process pattern so this
+    // specific fixture can't run on Windows (production code skips Zed on
+    // win32). A Windows-equivalent test below uses VS Code + IntelliJ — both
+    // of which do have win32 process patterns.
+    it.skipIf(process.platform === "win32")("should return multiple editors when multiple are running (unix: Zed + VS Code)", () => {
       mockedExecSync.mockImplementation((cmd) => {
         const s = String(cmd);
         if (s.includes("pgrep")) {
@@ -136,6 +161,34 @@ describe("editor-registry", () => {
       expect(result).toEqual([
         { id: "zed", name: "Zed" },
         { id: "vscode", name: "VS Code" },
+      ]);
+    });
+
+    it.skipIf(process.platform !== "win32")("should return multiple editors when multiple are running (win32: VS Code + IntelliJ)", () => {
+      mockedExecSync.mockImplementation((cmd) => {
+        const s = String(cmd);
+        // tasklist output needs to include the image name for isProcessRunningWin32's .includes() check
+        if (s.includes("tasklist")) {
+          if (s.includes("Code.exe")) {
+            return Buffer.from("Code.exe                    12345 Console                    1    50,000 K\n");
+          }
+          if (s.includes("idea64.exe")) {
+            return Buffer.from("idea64.exe                  67890 Console                    1   100,000 K\n");
+          }
+          throw new Error("not found");
+        }
+        if (s.includes("where")) {
+          if (s.includes("code.cmd") || s.includes("code")) return Buffer.from("C:\\Program Files\\Microsoft VS Code\\bin\\code.cmd\n");
+          if (s.includes("idea64.exe") || s.includes("idea")) return Buffer.from("C:\\Program Files\\JetBrains\\IntelliJ\\bin\\idea64.exe\n");
+          throw new Error("not found");
+        }
+        throw new Error("unexpected command");
+      });
+
+      const result = detectEditors("C:\\some\\project");
+      expect(result).toEqual([
+        { id: "vscode", name: "VS Code" },
+        { id: "idea", name: "IntelliJ" },
       ]);
     });
 

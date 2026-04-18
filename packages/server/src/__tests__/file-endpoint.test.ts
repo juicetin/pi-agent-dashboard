@@ -14,36 +14,43 @@ function isPathContained(cwd: string, relPath: string): boolean {
   return resolved.startsWith(cwd + path.sep) || resolved === cwd;
 }
 
+// Platform-agnostic absolute paths. On Windows `path.resolve("/project")`
+// prepends the current drive letter; using path.resolve for both fixture
+// inputs keeps the test cwd and the containment check consistent.
+const PROJECT = path.resolve("/project");
+const PROJECT_SUB = path.resolve("/project/sub");
+const OUTSIDE_ABS = path.resolve("/etc/passwd");
+
 describe("file endpoint path validation", () => {
   it("should allow a simple relative path", () => {
-    expect(isPathContained("/project", "readme.md")).toBe(true);
+    expect(isPathContained(PROJECT, "readme.md")).toBe(true);
   });
 
   it("should allow a nested relative path", () => {
-    expect(isPathContained("/project", "openspec/changes/foo/proposal.md")).toBe(true);
+    expect(isPathContained(PROJECT, "openspec/changes/foo/proposal.md")).toBe(true);
   });
 
   it("should allow a subdirectory path", () => {
-    expect(isPathContained("/project", "openspec/changes/foo/specs")).toBe(true);
+    expect(isPathContained(PROJECT, "openspec/changes/foo/specs")).toBe(true);
   });
 
   it("should reject path traversal with ../", () => {
-    expect(isPathContained("/project", "../../etc/passwd")).toBe(false);
+    expect(isPathContained(PROJECT, "../../etc/passwd")).toBe(false);
   });
 
   it("should reject path traversal that resolves outside cwd", () => {
-    expect(isPathContained("/project/sub", "../other/file.md")).toBe(false);
+    expect(isPathContained(PROJECT_SUB, "../other/file.md")).toBe(false);
   });
 
   it("should allow path with ../ that stays inside cwd", () => {
-    expect(isPathContained("/project", "a/../b/file.md")).toBe(true);
+    expect(isPathContained(PROJECT, "a/../b/file.md")).toBe(true);
   });
 
   it("should reject absolute path outside cwd", () => {
-    expect(isPathContained("/project", "/etc/passwd")).toBe(false);
+    expect(isPathContained(PROJECT, OUTSIDE_ABS)).toBe(false);
   });
 
   it("should allow cwd itself", () => {
-    expect(isPathContained("/project", ".")).toBe(true);
+    expect(isPathContained(PROJECT, ".")).toBe(true);
   });
 });

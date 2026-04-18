@@ -160,27 +160,64 @@ export class ToolResolver {
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
 
-/** Resolve a command on the current process PATH via which/where. */
-function whichSync(cmd: string): string | null {
-  const whichCmd = process.platform === "win32" ? "where" : "which";
+/** Run `where|which` and return the first line of stdout, or null. */
+function whereFirstLine(whichCmd: string, target: string): string | null {
   try {
-    // Coerce to string — execSync returns Buffer without encoding, string with
-    // it, and test mocks vary between the two. String() handles both safely.
-    const raw = execSync(`${whichCmd} ${cmd}`, {
+    const raw = execSync(`${whichCmd} ${target}`, {
       encoding: "utf-8",
       stdio: ["pipe", "pipe", "pipe"],
-      // Suppress any cmd.exe window flash when a resolved binary is a .cmd shim.
       windowsHide: true,
     });
     const text = typeof raw === "string" ? raw : String(raw);
-    // Split on any newline (\n or \r\n) and trim each line — Windows `where`
-    // emits CRLF-terminated lines; without the per-line trim, a trailing \r
-    // sneaks into the resolved path and causes ENOENT.
     const first = text.split(/\r?\n/)[0]?.trim();
     return first || null;
   } catch {
     return null;
   }
+}
+
+/**
+ * Resolve a command on PATH.
+ *
+ * Unix: a single `which <name>` is authoritative.
+ *
+ * Windows: `where <name>` can return multiple hits when a directory on PATH
+ * contains both a bash shim (extensionless) AND a Windows-executable form
+ * (`.cmd`/`.bat`/`.exe`). A common npm-global case: `pi` (sh script) next
+ * to `pi.cmd`. Node's `spawn()` cannot execute extensionless shims on
+ * Windows (gets ENOENT), so we explicitly search for each Windows-native
+ * extension in priority order and take the first that `where` finds. Only
+ * if NO native extension is found do we fall back to the bare `where`
+ * result (respecting PATHEXT and allowing scripts the user has set up).
+ */
+function whichSync(cmd: string): string | null {
+  const isWin = process.platform === "win32";
+  if (!isWin) {
+    return whereFirstLine("which", cmd);
+  }
+
+  // Derive the preferred extension search order from PATHEXT when set,
+  // falling back to the standard Windows list. Lower-cased for matching.
+  const pathextRaw = process.env.PATHEXT || ".COM;.EXE;.BAT;.CMD;.VBS;.VBE;.JS;.JSE;.WSF;.WSH;.MSC;.PS1";
+  const pathext = pathextRaw.split(";").map((e) => e.trim().toLowerCase()).filter(Boolean);
+
+  // If the caller already passed an extension, respect it verbatim.
+  const hasExt = /\.[A-Za-z0-9]+$/.test(cmd);
+  if (hasExt) {
+    return whereFirstLine("where", cmd);
+  }
+
+  // Probe each known Windows-native extension; take the first actual hit.
+  for (const ext of pathext) {
+    const hit = whereFirstLine("where", `${cmd}${ext}`);
+    if (hit) return hit;
+  }
+
+  // Fallback: bare `where <cmd>` picks up scripts in PATHEXT and any other
+  // matches. This is a last resort — when it returns an extensionless bash
+  // shim, `spawn()` will ENOENT, but we've exhausted the Windows-native
+  // options.
+  return whereFirstLine("where", cmd);
 }
 
 /** Resolve a command via login shell (picks up nvm/volta/homebrew paths). */

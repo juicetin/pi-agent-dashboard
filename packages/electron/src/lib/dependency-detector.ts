@@ -7,6 +7,15 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { MANAGED_DIR, MANAGED_BIN } from "./managed-paths.js";
+import { ToolResolver } from "@blackbelt-technology/pi-dashboard-shared/platform/binary-lookup.js";
+
+// Shared platform primitive handles where/which + managed-bin + login-shell.
+// Single cached instance — `ToolResolver` is stateless beyond its ctx object.
+// See change: consolidate-platform-handlers (Section 10).
+const resolver = new ToolResolver({
+  processExecPath: process.execPath,
+  useLoginShell: true,
+});
 
 export interface DetectionResult {
   found: boolean;
@@ -14,53 +23,19 @@ export interface DetectionResult {
   source?: "system" | "managed" | "settings";
 }
 
-/** Resolve a command on PATH. Returns the absolute path or null.
- *  On macOS/Linux, falls back to a login shell to pick up nvm/volta/homebrew paths
- *  that GUI apps don't inherit from the system PATH.
+/**
+ * Check system PATH (with login-shell fallback on Unix), then managed install.
+ * Uses the shared `ToolResolver` primitive; source-classification is derived
+ * from the returned path prefix.
  */
-function whichSync(cmd: string): string | null {
-  const whichCmd = process.platform === "win32" ? "where" : "which";
-  // 1. Try current process PATH
-  try {
-    return execSync(`${whichCmd} ${cmd}`, { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] }).trim().split("\n")[0];
-  } catch { /* not on process PATH */ }
-
-  // 2. On macOS/Linux, try a login shell to get the full user PATH
-  //    (GUI apps don't inherit shell rc files where nvm/volta/homebrew are configured)
-  if (process.platform !== "win32") {
-    const shell = process.env.SHELL || "/bin/zsh";
-    try {
-      const output = execSync(`${shell} -ilc "which ${cmd}"`, {
-        encoding: "utf-8",
-        stdio: ["pipe", "pipe", "pipe"],
-        timeout: 5000,
-      }).trim();
-      // Extract the absolute path from output (login shells may emit session
-      // restore noise like "Restored session:..." and "Saving session...")
-      const pathLine = output.split("\n").find(l => l.trim().startsWith("/"));
-      return pathLine?.trim() || null;
-    } catch { /* not found in login shell either */ }
-  }
-
-  return null;
-}
-
-/** Check system PATH, then managed install. */
 function detect(binaryName: string): DetectionResult {
-  // 1. System PATH
-  const systemPath = whichSync(binaryName);
-  if (systemPath) {
-    return { found: true, path: systemPath, source: "system" };
-  }
+  const resolved = resolver.which(binaryName);
+  if (!resolved) return { found: false };
 
-  // 2. Managed install
-  const ext = process.platform === "win32" ? ".cmd" : "";
-  const managedPath = path.join(MANAGED_BIN, binaryName + ext);
-  if (existsSync(managedPath)) {
-    return { found: true, path: managedPath, source: "managed" };
-  }
-
-  return { found: false };
+  // Classify: paths under MANAGED_BIN are "managed", everything else "system".
+  const source: DetectionResult["source"] =
+    resolved.startsWith(MANAGED_BIN) ? "managed" : "system";
+  return { found: true, path: resolved, source };
 }
 
 export function detectPi(): DetectionResult {
@@ -72,7 +47,7 @@ export function detectOpenSpec(): DetectionResult {
 }
 
 export function detectSystemNode(): DetectionResult {
-  const nodePath = whichSync("node");
+  const nodePath = resolver.which("node");
   if (!nodePath) return { found: false };
 
   // Check version >= 20.6
@@ -143,7 +118,7 @@ export function detectBridgeExtension(): DetectionResult {
  * Excludes npx cache shims (.npm/_npx/) to avoid matching ephemeral installs.
  */
 export function detectPiDashboardCli(): DetectionResult {
-  const cliPath = whichSync("pi-dashboard");
+  const cliPath = resolver.which("pi-dashboard");
   if (!cliPath) return { found: false };
 
   // Exclude npx cache paths

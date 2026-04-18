@@ -177,28 +177,17 @@ export function resolveJitiFromPi(): string | null {
  *  On Unix: returns ["path/to/tsx"]
  *  On Windows: returns ["path/to/node.exe", "path/to/tsx/dist/cli.mjs"]
  *  This avoids spawning .cmd batch files which need shell:true and flash a console window.
+ *
+ *  Delegates the cross-platform lookup to the shared `ToolResolver` primitive,
+ *  passing the bundled-Node path (or system Node) as `processExecPath` so the
+ *  Windows branch returns `[bundled-node.exe, tsx/dist/cli.mjs]`.
+ *  See change: consolidate-platform-handlers (Section 10).
  */
 function resolveTsxCommand(): string[] | null {
-  // Try managed install first
-  const managedTsxCli = path.join(MANAGED_DIR, "node_modules", "tsx", "dist", "cli.mjs");
-  if (process.platform === "win32" && existsSync(managedTsxCli)) {
-    // On Windows, find node.exe and run tsx's entry point directly
-    const nodePath = getBundledNodePath() || detectSystemNode().path;
-    if (nodePath) return [nodePath, managedTsxCli];
-  }
-
-  // Unix or fallback: use the tsx binary directly
-  const ext = process.platform === "win32" ? ".cmd" : "";
-  const managed = path.join(MANAGED_DIR, "node_modules", ".bin", "tsx" + ext);
-  if (existsSync(managed)) return [managed];
-
-  // System PATH
-  try {
-    const { execSync } = require("node:child_process");
-    const whichCmd = process.platform === "win32" ? "where" : "which";
-    const result = execSync(`${whichCmd} tsx`, { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] }).trim();
-    if (result) return [result.split("\n")[0]];
-  } catch { /* not found */ }
+  const nodePath = getBundledNodePath() || detectSystemNode().path || process.execPath;
+  const tsxResolver = new ToolResolver({ processExecPath: nodePath });
+  const resolved = tsxResolver.resolveTsx();
+  if (resolved) return resolved;
 
   return null;
 }

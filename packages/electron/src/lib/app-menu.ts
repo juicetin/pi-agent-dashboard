@@ -5,6 +5,7 @@
  */
 import { app, Menu, clipboard, dialog, BrowserWindow, type MenuItemConstructorOptions } from "electron";
 import { runDoctor, formatDoctorReport } from "./doctor.js";
+import { usesMacMenuLayout } from "../platform/menu.js";
 
 function showAboutDialog(): void {
   dialog.showMessageBox({
@@ -39,7 +40,7 @@ function showDoctorDialog(): void {
 }
 
 export function setupAppMenu(): void {
-  if (process.platform === "darwin") {
+  if (usesMacMenuLayout()) {
     const template: MenuItemConstructorOptions[] = [
       {
         label: app.name,

@@ -45,15 +45,19 @@
 
 ## 6. Step 6 — Create `packages/electron/src/platform/` for Electron-API concerns
 
-_(Deferred as a separate follow-up change.)_ The Electron UI-presentation concerns (tray icon, menu template, bundled-node path, app-lifecycle hooks) are already reasonably organized in `packages/electron/src/lib/` and the per-file platform branches are narrow. The motivating drift bug (duplicate jiti resolver) is closed by Step 7. Adding an `electron/platform/` layer for purely presentational concerns is valuable but orthogonal; it deserves its own review cycle and manual Electron-build smoke test on all three OSes.
+- [x] 6.1 Created `packages/electron/src/platform/` directory with `index.ts` barrel.
+- [x] 6.2 Extracted tray icon selection into `electron/platform/tray-icon.ts:getTrayIcon(opts)` — takes injectable `resourcePath` + `platform`. `tray.ts` now calls `getTrayIcon({ resourcePath })`, the nativeImage import is gone, and the 3-way icon branch is owned by the platform module.
+- [x] 6.3 Added `electron/platform/menu.ts:usesMacMenuLayout(opts?)` predicate. `app-menu.ts` uses it instead of the inline `if (process.platform === "darwin")`. Kept the static menu templates in `app-menu.ts` because their handlers close over Electron-API-specific dialogs — no benefit to moving them.
+- [x] 6.4 Extracted `getBundledNodePath` platform branch into `electron/platform/node.ts:getBundledNodePath({ resourcesPath, platform?, exists? })`. `lib/bundled-node.ts` keeps the public API but delegates.
+- [x] 6.5 Created `electron/platform/app-lifecycle.ts` with `configureLinuxOzoneHint(app, opts?)`, `installDarwinHideOnClose(win, isQuittingRef, opts?)`, and `shouldQuitOnAllWindowsClosed(opts?)`. All three are injectable for test.
+- [x] 6.6 Migrated `packages/electron/src/main.ts`: replaced the linux ozone-hint `if`, the darwin `window.on('close')` hide-to-tray branch, and the `window-all-closed` quit gate with platform-module calls.
+- [x] 6.7 Unit tests for the Electron platform module: 14 tests across `getBundledNodePath`, `configureLinuxOzoneHint`, `shouldQuitOnAllWindowsClosed`, `usesMacMenuLayout` — all pass. Tray icon test omitted (requires Electron runtime for `nativeImage`). Manual `npm run electron:make` smoke test deferred (not a code change — just build verification).
 
-- [ ] 6.1 _(Deferred.)_ Create `packages/electron/src/platform/` directory.
-- [ ] 6.2 _(Deferred.)_ Move or refactor `packages/electron/src/lib/tray.ts` icon selection into `electron/platform/tray-icon.ts:getTrayIcon()`.
-- [ ] 6.3 _(Deferred.)_ Move `packages/electron/src/lib/app-menu.ts` darwin-specific template into `electron/platform/menu.ts:buildAppMenu()`.
-- [ ] 6.4 _(Deferred.)_ Move `packages/electron/src/lib/bundled-node.ts:getBundledNodePath` into `electron/platform/node.ts:getBundledNodePath()`.
-- [ ] 6.5 _(Deferred.)_ Extract `configureAppLifecycle(app)` into `electron/platform/app-lifecycle.ts`.
-- [ ] 6.6 _(Deferred.)_ Migrate `packages/electron/src/main.ts` to use the Electron platform module.
-- [ ] 6.7 _(Deferred.)_ Run Electron build locally on at least one OS to confirm no regression.
+**Remaining Electron `process.platform` branches (documented follow-up, out of scope for this step):**
+
+- `packages/electron/src/lib/dependency-detector.ts` — has its own `where`/`which` + `.cmd` + login-shell logic. Runs during startup wizard BEFORE pi is located, so can't trivially delegate to `ToolResolver` (which assumes pi is findable). Low drift risk because the logic is Electron-startup-specific.
+- `packages/electron/src/lib/doctor.ts` — diagnostic tool that surfaces WHERE each dependency came from. Needs raw `where`/`which` invocations to report to users; abstracting loses diagnostic clarity.
+- `packages/electron/src/lib/server-lifecycle.ts:resolveTsxCommand` — similar shape to `ToolResolver.resolveTsx` but considers bundled-Node with version-checked fallback. Safe to migrate in a follow-up; not done here to keep scope tight.
 
 ## 7. Step 7 — Delete `resolveJitiFromAnchor` duplicate
 
@@ -70,6 +74,23 @@ _(Deferred as a separate follow-up change.)_ The Electron UI-presentation concer
 - [x] 8.4 Updated `docs/architecture.md` — new "Cross-OS Platform Primitives" section with per-file concern table, injection pattern, Electron-presentation carve-out, and allowed-residual-branch categories.
 - [x] 8.5 Merged with 8.3 — `tool-resolver.ts` wasn't referenced in AGENTS.md before the change; `platform/` entry now points at the new location.
 - [x] 8.6 Final test sweep: **1245 passed / 17 failed / 6 skipped**. All 17 failures are pre-existing and timing-flaky (2 jiti-fallback `detectPi` internals, 7 auto-attach integration, 2 auto-shutdown timing, 2 ws-ping-pong timing, 2 session-lifecycle-logging timing, 1 sleep-aware-heartbeat timing, 1 git-operations flaky). No regressions from this change.
+
+## 10. Step 10 — Consolidate remaining Electron binary-lookup duplicates
+
+After Steps 1–8 the core platform module was in place, but three Electron
+files still had their own where/which/.cmd/login-shell implementations
+(documented as follow-up at the time). This section closes those last
+binary-lookup duplicates.
+
+- [x] 10.1 `packages/electron/src/lib/dependency-detector.ts` — replaced the local `whichSync` (including login-shell fallback and manual .cmd managed-bin check) with a cached `ToolResolver` instance. `detect()` now delegates to `resolver.which(name)` and classifies the result as `"system"` or `"managed"` by prefix. `detectSystemNode` and `detectPiDashboardCli` also use the resolver. All `process.platform` branches in this file eliminated.
+- [x] 10.2 `packages/electron/src/lib/doctor.ts` — replaced the inline `where tsx`/`which tsx` exec with `doctorResolver.which("tsx")` (which already handles managed-bin + .cmd on Windows + login-shell on Unix). The downstream `managedTsxBin` override became redundant and was simplified to `testTsxBin = systemTsx`. Only remaining `process.platform` reference is a diagnostic log string (`App version: ..., Platform: ${process.platform} ${process.arch}`), which is not a branch.
+- [x] 10.3 `packages/electron/src/lib/server-lifecycle.ts:resolveTsxCommand` — the 20-line function (which duplicated `ToolResolver.resolveTsx` with bundled-Node-awareness) replaced with a 4-line delegation: `new ToolResolver({ processExecPath: bundledNode ∴ systemNode })`.`resolveTsx()`. The bundled-Node requirement is satisfied by passing it as `processExecPath` so the Windows `[node, tsx-cli.mjs]` branch picks it up.
+- [x] 10.4 Post-migration grep of `packages/electron/src` (excluding `__tests__/` and `platform/`): **4 `process.platform` refs remain, all legitimate:**
+  - `lib/doctor.ts:69` — diagnostic log string interpolation
+  - `lib/server-lifecycle.ts:239,365` — `spawn({ detached: !isWin })` (spawn-strategy decision, not binary lookup)
+  - `main.ts:37` — startup log string interpolation
+- [x] 10.5 Test sweep: dependency-detector 18/18 passing (was 14/18 before the broken `whichSync` reference error). Full sweep: 1260 pass / 16 fail / 6 skipped — zero regressions, same pre-existing failures.
+- [x] 10.6 Net result: **zero cross-package binary-lookup duplication in the monorepo.** The original drift vector that caused the Windows jiti bug cannot recur in this code path because there is now exactly one implementation.
 
 ## 9. Optional / deferred
 

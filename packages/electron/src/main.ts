@@ -10,11 +10,15 @@
  */
 
 import { app, BrowserWindow, dialog } from "electron";
+import {
+  configureLinuxOzoneHint,
+  installDarwinHideOnClose,
+  shouldQuitOnAllWindowsClosed,
+} from "./platform/app-lifecycle.js";
 
-// Enable Wayland support on Linux (auto-detect X11 vs Wayland)
-if (process.platform === "linux" && !process.env.ELECTRON_OZONE_PLATFORM_HINT) {
-  app.commandLine.appendSwitch("ozone-platform-hint", "auto");
-}
+// Enable Wayland support on Linux (auto-detect X11 vs Wayland).
+// Must run before app.whenReady().
+configureLinuxOzoneHint(app);
 import { mkdirSync, appendFileSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
@@ -224,14 +228,10 @@ function createMainWindow(serverUrl: string): BrowserWindow {
   mainWindow.on("resize", () => mainWindow && saveWindowState(mainWindow));
   mainWindow.on("move", () => mainWindow && saveWindowState(mainWindow));
 
-  // macOS: minimize to tray on close (standard macOS behavior)
-  // Linux/Windows: quit on close (tray may not be visible)
-  mainWindow.on("close", (event) => {
-    if (!isQuitting && process.platform === "darwin") {
-      event.preventDefault();
-      mainWindow?.hide();
-    }
-  });
+  // macOS: hide-to-tray on close (standard macOS behavior).
+  // Linux/Windows: quit on close (tray may not be visible).
+  // Platform branch lives in electron/platform/app-lifecycle.ts.
+  installDarwinHideOnClose(mainWindow, () => isQuitting);
 
   mainWindow.on("closed", () => {
     mainWindow = null;
@@ -434,10 +434,10 @@ app.on("activate", () => {
   }
 });
 
-// Linux/Windows: quit when all windows are closed (but not during startup/wizard)
-// macOS: keep running (hide to tray)
+// Linux/Windows: quit when all windows are closed (but not during startup/wizard).
+// macOS: keep running (hide to tray). Platform predicate from platform/app-lifecycle.
 app.on("window-all-closed", () => {
-  if (process.platform !== "darwin" && mainWindow === null && !isStartingUp) {
+  if (shouldQuitOnAllWindowsClosed() && mainWindow === null && !isStartingUp) {
     quit();
   }
 });

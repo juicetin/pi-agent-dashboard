@@ -12,6 +12,14 @@ import { detectPi, detectOpenSpec, detectSystemNode, detectDashboardPackage } fr
 import { getBundledNodePath, getBundledNpmPath } from "./bundled-node.js";
 import { isApiKeyConfigured, readModeFile } from "./wizard-state.js";
 import { MANAGED_DIR } from "./managed-paths.js";
+import { ToolResolver } from "@blackbelt-technology/pi-dashboard-shared/platform/binary-lookup.js";
+
+// Shared binary-lookup primitive (where/which + managed-bin + login-shell).
+// See change: consolidate-platform-handlers (Section 10).
+const doctorResolver = new ToolResolver({
+  processExecPath: process.execPath,
+  useLoginShell: true,
+});
 
 export interface DoctorCheck {
   name: string;
@@ -179,14 +187,12 @@ export function runDoctor(): DoctorReport {
   const tsxVersion = getPkgVersion(managedTsx);
   let systemTsx: string | null = null;
   let systemTsxVersion: string | null = null;
-  try {
-    systemTsx = execSync(process.platform === "win32" ? "where tsx" : "which tsx", {
-      encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"],
-    }).trim().split("\n")[0];
-    if (systemTsx) {
-      systemTsxVersion = getVersion(`"${systemTsx}" --version 2>/dev/null`);
-    }
-  } catch { /* not found */ }
+  // Shared primitive handles the where/which split and login-shell fallback.
+  const resolvedTsx = doctorResolver.which("tsx");
+  if (resolvedTsx) {
+    systemTsx = resolvedTsx;
+    systemTsxVersion = getVersion(`"${systemTsx}" --version 2>/dev/null`);
+  }
 
   const tsxFound = !!tsxVersion || !!systemTsx;
   const tsxDisplayVersion = tsxVersion || systemTsxVersion;
@@ -273,10 +279,11 @@ export function runDoctor(): DoctorReport {
   // If server not running, try a test launch to capture the error
   if (!serverRunning) {
     const testCli = hasBundledServer ? bundledServerCli : null;
-    // Use tsx binary (not --import register.js — that doesn't shim __dirname)
-    const ext = process.platform === "win32" ? ".cmd" : "";
-    const managedTsxBin = path.join(MANAGED_DIR, "node_modules", ".bin", "tsx" + ext);
-    const testTsxBin = existsSync(managedTsxBin) ? managedTsxBin : systemTsx;
+    // Use tsx binary (not --import register.js — that doesn't shim __dirname).
+    // `doctorResolver.which("tsx")` already checks managed bin first (with .cmd
+    // extension on Windows) before falling through to PATH, so `systemTsx`
+    // already is the preferred binary.
+    const testTsxBin = systemTsx;
 
     if (testCli && testTsxBin) {
       let testError = "";

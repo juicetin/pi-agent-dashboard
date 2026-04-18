@@ -10,6 +10,7 @@
 import path from "node:path";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { getBundledNodePath as platformGetBundledNodePath } from "../platform/node.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -30,18 +31,12 @@ function getResourcesPath(): string {
 }
 
 /**
- * Returns the absolute path to the bundled Node.js binary, or null if not present.
+ * Returns the absolute path to the bundled Node.js binary, or null if not
+ * present. Platform-specific path resolution is delegated to the Electron
+ * platform module. See change: consolidate-platform-handlers.
  */
 export function getBundledNodePath(): string | null {
-  const resources = getResourcesPath();
-
-  if (process.platform === "win32") {
-    const p = path.join(resources, "node", "node.exe");
-    return existsSync(p) ? p : null;
-  }
-
-  const p = path.join(resources, "node", "bin", "node");
-  return existsSync(p) ? p : null;
+  return platformGetBundledNodePath({ resourcesPath: getResourcesPath() });
 }
 
 /**

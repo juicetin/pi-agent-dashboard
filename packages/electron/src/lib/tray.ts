@@ -2,9 +2,10 @@
  * System tray integration.
  * Minimizes to tray on window close, with Show/Quit context menu.
  */
-import { app, Tray, Menu, nativeImage, type BrowserWindow } from "electron";
+import { app, Tray, Menu, type BrowserWindow } from "electron";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { getTrayIcon } from "../platform/tray-icon.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -28,18 +29,8 @@ export function createTray(
   getWindow: () => BrowserWindow | null,
   onQuit: () => void,
 ): Tray {
-  // macOS: use template images that auto-adapt to dark/light menu bar.
-  // Windows/Linux: use the full app icon.
-  let icon: Electron.NativeImage;
-  if (process.platform === "darwin") {
-    icon = nativeImage.createFromPath(resourcePath("trayTemplate.png"));
-    icon.setTemplateImage(true);
-  } else if (process.platform === "win32") {
-    icon = nativeImage.createFromPath(resourcePath("icon.ico"));
-  } else {
-    icon = nativeImage.createFromPath(resourcePath("icon.png"));
-  }
-  tray = new Tray(icon);
+  // Platform-specific icon selection lives in electron/platform/tray-icon.ts.
+  tray = new Tray(getTrayIcon({ resourcePath }));
   tray.setToolTip("PI Dashboard");
 
   const contextMenu = Menu.buildFromTemplate([

@@ -3,11 +3,31 @@
  * Replaces scattered whichSync/resolvePiCommand/resolveTsxCommand implementations
  * with a single configurable resolver.
  */
-import { execSync } from "./exec.js";
+import { execSync, spawnSync, buildSafeArgv } from "./exec.js";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { MANAGED_BIN, MANAGED_DIR } from "../managed-paths.js";
+
+/**
+ * Well-known globalThis symbol for the default `ToolRegistry`.
+ *
+ * The registry publishes itself here when first constructed (see
+ * `tool-registry/index.ts::getDefaultRegistry`). Delegation avoids a
+ * static import cycle (tool-registry strategies already import from
+ * this file).
+ *
+ * See change: consolidate-windows-spawn-and-platform-handlers.
+ */
+const GLOBAL_REGISTRY_KEY = Symbol.for("pi-dashboard.tool-registry");
+interface LazyRegistry {
+  has(n: string): boolean;
+  resolveExecutor(n: string): { ok: boolean; argv: string[] };
+}
+function tryGetRegistry(): LazyRegistry | null {
+  const reg = (globalThis as unknown as { [k: symbol]: LazyRegistry | undefined })[GLOBAL_REGISTRY_KEY];
+  return reg ?? null;
+}
 
 export interface ResolverContext {
   /** Extra bin dirs to search before system PATH (e.g., bundled Node dir). */
@@ -59,25 +79,27 @@ export class ToolResolver {
   }
 
   /**
-   * Resolve pi as [cmd, ...prefixArgs].
-   * On Windows, avoids .cmd by returning [node.exe, cli.js].
+   * Resolve pi as spawn-ready argv `[cmd, ...prefixArgs]`.
+   *
+   * Fully delegates to `ToolRegistry.resolveExecutor("pi")`, which
+   * owns per-OS discovery + interpreter assembly (on Windows: find
+   * `pi-coding-agent/dist/cli.js` via managed/bare-import/npm-global
+   * and prepend `node.exe`; on Unix: find `pi` binary on PATH).
+   *
+   * Returns null when the registry is not yet constructed AND pi is
+   * not on PATH (very early boot / standalone tests). Production code
+   * always has the registry available before spawn.
    */
   resolvePi(): string[] | null {
-    if (process.platform === "win32") {
-      // Avoid .cmd — resolve pi's JS entry point directly
-      const piCli = path.join(MANAGED_BIN, "..", "@mariozechner", "pi-coding-agent", "dist", "cli.js");
-      if (existsSync(piCli)) {
-        const node = this.resolveNode();
-        if (node) return [node, piCli];
-      }
-      // Fallback to .cmd
-      const cmd = path.join(MANAGED_BIN, "pi.cmd");
-      if (existsSync(cmd)) return [cmd];
+    const registry = tryGetRegistry();
+    if (registry?.has("pi")) {
+      const exec = registry.resolveExecutor("pi");
+      if (exec.ok && exec.argv.length > 0) return exec.argv;
     }
-
+    // No registry in this process (e.g. legacy bootstrap) — fall back
+    // to PATH lookup so the method still works for non-server callers.
     const piPath = this.which("pi");
-    if (piPath) return [piPath];
-    return null;
+    return piPath ? [piPath] : null;
   }
 
   /**
@@ -160,15 +182,27 @@ export class ToolResolver {
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
 
-/** Run `where|which` and return ALL stdout lines (trimmed, non-empty), or []. */
+/**
+ * Run `where|which <target>` and return ALL stdout lines (trimmed,
+ * non-empty), or `[]`.
+ *
+ * Uses `spawnSync` via `buildSafeArgv` — no shell interpretation at
+ * all. `execSync("where tmux")` used to route through cmd.exe (because
+ * execSync takes a shell command string); spawnSync with argv bypasses
+ * that entirely. Guaranteed no cmd.exe console flash.
+ *
+ * See change: consolidate-windows-spawn-and-platform-handlers.
+ */
 function whereAllLines(whichCmd: string, target: string): string[] {
   try {
-    const raw = execSync(`${whichCmd} ${target}`, {
+    const { argv, spawnOptions } = buildSafeArgv(whichCmd, [target]);
+    const result = spawnSync<string>(argv[0], argv.slice(1), {
       encoding: "utf-8",
       stdio: ["pipe", "pipe", "pipe"],
-      windowsHide: true,
+      ...spawnOptions,
     });
-    const text = typeof raw === "string" ? raw : String(raw);
+    if (result.status !== 0) return [];
+    const text = typeof result.stdout === "string" ? result.stdout : String(result.stdout ?? "");
     return text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   } catch {
     return [];

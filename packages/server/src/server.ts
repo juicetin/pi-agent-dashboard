@@ -43,6 +43,8 @@ import { registerSystemRoutes } from "./routes/system-routes.js";
 import { registerProviderAuthRoutes } from "./routes/provider-auth-routes.js";
 import { registerPackageRoutes } from "./routes/package-routes.js";
 import { registerRecommendedRoutes, invalidateRecommendedCache } from "./routes/recommended-routes.js";
+import { registerToolRoutes } from "./routes/tool-routes.js";
+import { getDefaultRegistry } from "@blackbelt-technology/pi-dashboard-shared/tool-registry/index.js";
 import { registerProviderRoutes } from "./routes/provider-routes.js";
 import { PackageManagerWrapper } from "./package-manager-wrapper.js";
 import { createEditorManager, type EditorManager } from "./editor-manager.js";
@@ -297,6 +299,7 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
   registerFileRoutes(fastify, { sessionManager, preferencesStore, networkGuard });
   registerOpenSpecRoutes(fastify, { sessionManager, preferencesStore, directoryService, networkGuard });
   registerSystemRoutes(fastify, { sessionManager, preferencesStore, metaPersistence, config, networkGuard, version: pkgVersion });
+  registerToolRoutes(fastify, { registry: getDefaultRegistry(), networkGuard });
   // Package management
   const packageManagerWrapper = new PackageManagerWrapper();
 
@@ -315,6 +318,7 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
       scope: result.scope,
       success: result.success,
       error: result.error,
+      diagnostics: result.diagnostics,
       sessionsReloaded: (result as any).sessionsReloaded,
     } as any);
     if (result.success) invalidateRecommendedCache();
@@ -340,6 +344,17 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
 
   registerPackageRoutes(fastify, { packageManagerWrapper });
   registerRecommendedRoutes(fastify, { packageManagerWrapper });
+
+  // Warm pi-coding-agent module import + DefaultPackageManager instances
+  // on startup so the first user request to /api/packages/* doesn't pay
+  // the 3-5s cold-load cost. Runs in background; errors are swallowed
+  // (user-visible flow surfaces any real problem with the full diagnostic
+  // trail via the OperationResult.diagnostics field).
+  // See change: consolidate-tool-resolution.
+  void Promise.allSettled([
+    packageManagerWrapper.listInstalled("global"),
+    packageManagerWrapper.listInstalled("local"),
+  ]);
 
   // Editor (code-server) routes and proxy
   registerEditorRoutes(fastify, editorManager, { networkGuard });

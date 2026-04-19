@@ -58,6 +58,39 @@ describe("createEditorManager", () => {
     await expect(mgr.start("/tmp/test")).rejects.toThrow("max_instances_reached");
   });
 
+  it("accepts an injected pidRegistry without affecting back-compat behavior", () => {
+    const calls: string[] = [];
+    const stubRegistry = {
+      register: () => calls.push("register"),
+      remove: () => calls.push("remove"),
+      size: () => 0,
+      cleanupOrphans: async () => {},
+    };
+    const mgr = createEditorManager({ config: DEFAULT_CONFIG, detection: DETECTED, pidRegistry: stubRegistry });
+    expect(mgr.list()).toEqual([]);
+    // stop on unknown id is a no-op and must not call registry.remove
+    expect(() => mgr.stop("nonexistent")).not.toThrow();
+    expect(calls).toEqual([]);
+  });
+
+  it("start failure path does not call pidRegistry.register", async () => {
+    const calls: string[] = [];
+    const stubRegistry = {
+      register: () => calls.push("register"),
+      remove: () => calls.push("remove"),
+      size: () => 0,
+      cleanupOrphans: async () => {},
+    };
+    const mgr = createEditorManager({
+      config: DEFAULT_CONFIG,
+      detection: NOT_DETECTED,
+      allowRedetection: false,
+      pidRegistry: stubRegistry,
+    });
+    await expect(mgr.start("/tmp/test")).rejects.toThrow("binary_not_found");
+    expect(calls).toEqual([]);
+  });
+
   it("calls onStatusChange callback", async () => {
     const statusChanges: Array<{ cwd: string; id: string; status: string }> = [];
     const mgr = createEditorManager({

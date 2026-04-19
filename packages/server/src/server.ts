@@ -373,7 +373,17 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
       message: event.message,
     });
   });
-  registerPiCoreRoutes(fastify, { piCoreChecker, piCoreUpdater });
+  registerPiCoreRoutes(fastify, {
+    piCoreChecker,
+    piCoreUpdater,
+    onUpdateComplete: (payload) => {
+      browserGateway.broadcastToAll({
+        type: "pi_core_update_complete",
+        results: payload.results,
+        sessionsReloaded: payload.sessionsReloaded,
+      });
+    },
+  });
 
   // Editor (code-server) routes and proxy
   registerEditorRoutes(fastify, editorManager, { networkGuard });

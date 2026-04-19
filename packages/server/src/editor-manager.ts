@@ -12,6 +12,7 @@ import type { EditorInstanceStatus, EditorDetectionResult } from "@blackbelt-tec
 import type { EditorConfig } from "@blackbelt-technology/pi-dashboard-shared/config.js";
 import { detectCodeServerBinary, resetDetectionCache } from "./editor-detection.js";
 import { buildSpawnEnv } from "./process-manager.js";
+import type { EditorPidRegistry } from "./editor-pid-registry.js";
 
 export interface EditorInstanceInfo {
   id: string;
@@ -37,6 +38,8 @@ export interface EditorManagerOptions {
   onStatusChange?: (cwd: string, id: string, status: EditorInstanceStatus) => void;
   /** Override re-detection (for testing). When false, skip runtime re-detection. */
   allowRedetection?: boolean;
+  /** Optional persistent PID registry for orphan cleanup across restarts. */
+  pidRegistry?: EditorPidRegistry;
 }
 
 export interface EditorManager {
@@ -141,7 +144,7 @@ function toInfo(inst: InternalInstance): EditorInstanceInfo {
 }
 
 export function createEditorManager(options: EditorManagerOptions): EditorManager {
-  const { config, detection, onStatusChange, allowRedetection = true } = options;
+  const { config, detection, onStatusChange, allowRedetection = true, pidRegistry } = options;
   const instances = new Map<string, InternalInstance>();
   const cwdIndex = new Map<string, string>(); // cwd → id
   const idleTimeoutMs = (config.idleTimeoutMinutes ?? 10) * 60 * 1000;
@@ -279,6 +282,7 @@ export function createEditorManager(options: EditorManagerOptions): EditorManage
     child.on("error", (err) => {
       console.error(`[editor-manager] code-server error for ${cwd}:`, err.message);
       setStatus(inst, "stopped");
+      pidRegistry?.remove(id);
       cleanup(id);
     });
 
@@ -287,6 +291,7 @@ export function createEditorManager(options: EditorManagerOptions): EditorManage
         console.log(`[editor-manager] code-server exited (code=${code}) for ${cwd}`);
         setStatus(inst, "stopped");
       }
+      pidRegistry?.remove(id);
       cleanup(id);
     });
 
@@ -298,6 +303,16 @@ export function createEditorManager(options: EditorManagerOptions): EditorManage
     }
 
     setStatus(inst, "ready");
+    if (pidRegistry && typeof child.pid === "number") {
+      pidRegistry.register({
+        id,
+        pid: child.pid,
+        port,
+        cwd,
+        dataDir,
+        spawnedAt: inst.lastHeartbeat,
+      });
+    }
     startIdleTimer(inst);
     return toInfo(inst);
   }
@@ -305,6 +320,10 @@ export function createEditorManager(options: EditorManagerOptions): EditorManage
   function stop(id: string) {
     const inst = instances.get(id);
     if (!inst) return;
+
+    // Remove from persistent registry FIRST so a crash mid-stop
+    // leaves the registry consistent on the next boot.
+    pidRegistry?.remove(id);
 
     clearIdleTimer(inst);
     setStatus(inst, "stopped");

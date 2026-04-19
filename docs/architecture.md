@@ -652,6 +652,19 @@ Browser                     Dashboard Server              code-server
 
 All code-server traffic is proxied through `/editor/:id/*` on the dashboard server. This provides same-origin access (no CORS/iframe issues) and works transparently through zrok tunnels.
 
+### Orphan Cleanup
+
+`EditorManager` state is purely in-memory. On graceful shutdown, `editorManager.stopAll()` SIGTERMs every child. On non-graceful shutdown (SIGKILL, crash, OOM, force-quit), spawned code-server processes get reparented to init/launchd and continue holding their port and `--user-data-dir` lockfile.
+
+To recover, every spawn is recorded in `~/.pi/dashboard/editor-pids.json` (`editor-pid-registry.ts`). On the next server boot, `editorPidRegistry.cleanupOrphans()` runs at the top of `server.start()` (before `fastify.listen`) and:
+
+1. Reads the persisted PIDs.
+2. For each entry whose PID is alive AND whose OS-reported command line contains `--user-data-dir <~/.pi/dashboard/editors/...>`, sends `SIGTERM`.
+3. After a 1 second grace period, sends `SIGKILL` to any survivor.
+4. Rewrites the file empty.
+
+The cmdline ownership check prevents killing unrelated `code-server` instances the user may run themselves. Cleanup completes before any `POST /api/editor/start` request can be served, so a new spawn for the same folder cannot race with a surviving orphan on the same `--user-data-dir` lockfile.
+
 ### Configuration
 
 ```json

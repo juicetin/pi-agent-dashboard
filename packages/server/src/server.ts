@@ -49,6 +49,7 @@ import { PiCoreUpdater } from "./pi-core-updater.js";
 import { registerProviderRoutes } from "./routes/provider-routes.js";
 import { PackageManagerWrapper } from "./package-manager-wrapper.js";
 import { createEditorManager, type EditorManager } from "./editor-manager.js";
+import { createEditorPidRegistry } from "./editor-pid-registry.js";
 import { registerEditorRoutes } from "./routes/editor-routes.js";
 import { registerKnownServersRoutes } from "./routes/known-servers-routes.js";
 import { registerEditorProxy, handleEditorUpgrade } from "./editor-proxy.js";
@@ -194,9 +195,11 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
 
   // Create editor manager for code-server instances
   const editorDetection = detectCodeServerBinary(config.editor);
+  const editorPidRegistry = createEditorPidRegistry();
   const editorManager = createEditorManager({
     config: config.editor,
     detection: editorDetection,
+    pidRegistry: editorPidRegistry,
     onStatusChange: (cwd, id, status) => {
       browserGateway.broadcastToAll({ type: "editor_status", cwd, id, status });
     },
@@ -385,7 +388,11 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
     },
   });
 
-  // Editor (code-server) routes and proxy
+  // Editor (code-server) routes and proxy.
+  // NOTE: routes are *registered* here but cannot dispatch until fastify.listen runs
+  // inside server.start(). The orphan sweep in editorPidRegistry.cleanupOrphans()
+  // runs at the top of server.start() BEFORE fastify.listen, so any
+  // POST /api/editor/start call is guaranteed to see a post-sweep clean state.
   registerEditorRoutes(fastify, editorManager, { networkGuard });
   registerEditorProxy(fastify, editorManager);
 
@@ -485,6 +492,10 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
     async start() {
       // Clean up orphan headless processes from a previous server instance
       browserGateway.headlessPidRegistry.cleanupOrphans();
+
+      // Clean up orphan code-server processes from a previous server instance.
+      // Runs before fastify.listen, so no editor start request can race with the sweep.
+      await editorPidRegistry.cleanupOrphans();
 
       piGateway.start(config.piPort);
 

@@ -147,6 +147,7 @@ make clean              # Destroy all cloned VMs
 | `src/server/process-manager.ts` | Session spawning via tmux or headless mode |
 | `src/server/editor-registry.ts` | Detects available native editors (running processes + CLI) |
 | `src/server/editor-manager.ts` | Lifecycle manager for code-server child processes (spawn, stop, idle, heartbeat) |
+| `packages/server/src/editor-pid-registry.ts` | Persists spawned code-server PIDs to `~/.pi/dashboard/editor-pids.json` and sweeps orphaned code-server processes on server boot (runs in `server.start()` before `fastify.listen`). Verifies ownership via cmdline check against `~/.pi/dashboard/editors/` prefix to avoid killing unrelated user-run code-server instances. SIGTERM → 1s grace → SIGKILL escalation. |
 | `src/server/editor-proxy.ts` | Reverse proxy for `/editor/:id/*` to code-server instances |
 | `src/server/editor-detection.ts` | Auto-detect code-server/openvscode-server binary on PATH |
 | `src/server/routes/editor-routes.ts` | REST routes: editor start, stop, heartbeat, status, detect |

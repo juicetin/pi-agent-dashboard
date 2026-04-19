@@ -267,6 +267,7 @@ make clean              # Destroy all cloned VMs
 | `packages/server/src/test-env-guard.ts` | `isUnsafeTestHomeScan()` — returns true when `VITEST=true` AND HOME matches `os.userInfo().homedir`. Gates destructive sweeps in `headlessPidRegistry.cleanupOrphans/killAll` and `editorPidRegistry.cleanupOrphans` so tests never SIGTERM live pi processes even if higher isolation layers are bypassed. |
 | `packages/server/src/test-support/test-server.ts` | `createTestServer(overrides)` helper — boots a real `DashboardServer` on OS-assigned ports (`port: 0`, `piPort: 0`) with safe defaults (no auto-shutdown, no tunnel). Returns `{ server, httpPort, piPort, stop }`. Prefer over hard-coded `19xxx` port constants in new integration tests. |
 | `docs/release-process.md` | Canonical how-to for cutting a release: commit conventions, Unreleased promotion, version bump, tag + push, CI behavior, manual fallback. |
+| `docs/release-process.md` | Canonical how-to for cutting a release: commit conventions, Unreleased promotion, version bump, tag + push, CI behavior, manual fallback. |
 | `src/client/components/PiResourcesView.tsx` | Content area view for browsing pi extensions, skills, and prompts (with Installed/Packages tabs) |
 | `src/client/components/PackageBrowser.tsx` | Reusable inline package browser: npm search, type filters, install/uninstall, manual URL input |
 | `src/client/components/PackageCard.tsx` | Package card with type badges, downloads, install/uninstall actions |

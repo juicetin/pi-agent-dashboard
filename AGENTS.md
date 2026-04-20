@@ -341,6 +341,8 @@ make clean              # Destroy all cloned VMs
 | `src/client/lib/diff-tree.ts` | Directory tree builder from flat file paths |
 | `src/server/session-api.ts` | REST wrappers for WebSocket-only session operations (prompt, abort, spawn, resume, etc.) |
 | `.pi/skills/pi-dashboard/SKILL.md` | Bundled skill: monitor and control the dashboard from any pi session |
+| `.pi/skills/release-cut/SKILL.md` | Skill: cut a new release — pre-flight (clean tree, tests, build), CHANGELOG `[Unreleased]` → versioned promotion, workspace version bump, `chore(release): v<version>` commit, tag + push develop. Stops at the CI-generated draft GitHub Release per `docs/release-process.md`. |
+| `.pi/skills/release-revoke/SKILL.md` | Skill: revoke/rollback a release — delete GitHub Release (draft or published) via `gh release delete`, remove git tag locally + on origin, `npm deprecate` the version (never `npm unpublish` — blocked after 72h / with dependents), optionally revert the `chore(release): v<version>` commit. Handles partial CI failures gracefully. |
 | `.pi/skills/pi-dashboard/references/api-reference.md` | Complete REST API reference for the skill |
 | `.pi/skills/pi-dashboard/references/recipes.md` | Multi-step orchestration recipes |
 | `.pi/skills/pi-dashboard/scripts/dashboard-api.sh` | Helper script with port auto-detection and auth |

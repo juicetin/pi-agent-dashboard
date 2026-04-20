@@ -110,7 +110,7 @@ git commit -m "chore(release): v<version>"
 
 ```bash
 git tag v<version>
-git push origin main
+git push origin develop
 git push origin v<version>
 ```
 

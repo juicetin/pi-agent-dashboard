@@ -7,9 +7,9 @@ autoinstall:
   identity:
     hostname: qa-ubuntu
     username: qa
-    # Password: "qa" (hashed). Change for production use.
-    # Generated with: mkpasswd --method=SHA-512 qa
-    password: "$6$rounds=4096$randomsalt$LzP0pSViMGkQ5YMGxH8.JQhZBnN8KmYbpEicLS8W0K3t3bGJQ3kXFZrPkYwXJA3SjcNqPqBnNExjXQ1Wdk9D."
+    # Password: "qa" (SHA-512 crypt).
+    # Regenerate with: openssl passwd -6 qa
+    password: "$6$qasalt123$l0kJUY7NELAwLRkhV5xnDQaYcuesbKc/HPSj7l3nYospJGY4UL526HwbvREhqeWTdsi4Jk.L8IqEH/eabm4Em0"
   ssh:
     install-server: true
     allow-pw: true

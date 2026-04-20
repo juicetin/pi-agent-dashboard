@@ -149,7 +149,7 @@ make clean              # Destroy all cloned VMs
 | `src/extension/prompt-bus.ts` | PromptBus — unified prompt routing to registered adapters (TUI, dashboard, custom). First-response-wins, cross-adapter dismissal. |
 | `src/extension/dashboard-default-adapter.ts` | Built-in PromptBus adapter that renders prompts as generic interactive dialogs in dashboard chat |
 | `src/client/lib/prompt-component-registry.ts` | Client-side component registry mapping prompt type strings to render metadata (placement, component) |
-| `src/extension/ask-user-tool.ts` | `ask_user` tool registration (bundled in bridge, registered at session_start to avoid static tool-name conflicts with other extensions) |
+| `src/extension/ask-user-tool.ts` | `ask_user` tool registration (bundled in bridge, registered at session_start to avoid static tool-name conflicts with other extensions). Supports five methods: `confirm`, `select`, `multiselect`, `input`, and `batch` (multiple related questions in one call, answers returned as ordered array; cancel mid-batch returns partial results + `cancelled: true`). `prepareArguments` rescues common LLM drift: stringified `params`/`questions`/`options`, `question`/`header` → `title`, `input_type` wrapper flattening, `{label,value}[]` → `label[]` with warning surfaced via `details.warnings`. |
 | `src/shared/openspec-activity-detector.ts` | Detects OpenSpec activity from tool events; auto-attach requires only changeName (phase optional) |
 | `src/shared/openspec-poller.ts` | OpenSpec CLI polling (shared, used by server DirectoryService) |
 | `src/shared/state-replay.ts` | Synthesizes events from pi entries (shared, used by server + bridge) |

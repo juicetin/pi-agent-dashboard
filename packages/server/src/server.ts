@@ -355,7 +355,16 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
   registerSessionRoutes(fastify, { sessionManager, eventStore, networkGuard });
   registerGitRoutes(fastify, { networkGuard });
   registerFileRoutes(fastify, { sessionManager, preferencesStore, networkGuard });
-  registerOpenSpecRoutes(fastify, { sessionManager, preferencesStore, directoryService, networkGuard });
+  registerOpenSpecRoutes(fastify, {
+    sessionManager,
+    preferencesStore,
+    directoryService,
+    networkGuard,
+    onOpenSpecChanged: (cwd) => {
+      const data = directoryService.getOpenSpecData(cwd);
+      if (data) browserGateway.broadcastToAll({ type: "openspec_update", cwd, data });
+    },
+  });
   registerSystemRoutes(fastify, { sessionManager, preferencesStore, metaPersistence, config, networkGuard, version: pkgVersion });
   registerToolRoutes(fastify, { registry: getDefaultRegistry(), networkGuard });
   // Package management

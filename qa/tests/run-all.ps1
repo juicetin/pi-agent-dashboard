@@ -65,5 +65,7 @@ Write-Host "========================================"
 Write-Host "  Total: $total  Passed: $passed  Failed: $failed  Skipped: $skipped"
 Write-Host "========================================"
 
-if ($failed -gt 0) { exit 1 }
+# Fail the suite if anything was skipped or failed — skipped tests mean the
+# suite is incomplete and could hide real breakage on Windows.
+if ($failed -gt 0 -or $skipped -gt 0) { exit 1 }
 exit 0

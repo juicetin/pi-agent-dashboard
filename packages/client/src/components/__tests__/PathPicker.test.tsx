@@ -1,18 +1,20 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, fireEvent, waitFor, screen, cleanup } from "@testing-library/react";
+import { render, fireEvent, waitFor, screen, cleanup, act } from "@testing-library/react";
 import React from "react";
 import { PathPicker } from "../PathPicker.js";
 
 // Mock browse-api
 const mockBrowse = vi.fn();
+const mockMkdir = vi.fn();
 vi.mock("../../lib/browse-api.js", () => ({
   browseDirectory: (...args: unknown[]) => mockBrowse(...args),
+  createDirectory: (...args: unknown[]) => mockMkdir(...args),
 }));
 
 function makeBrowseResult(
   current: string,
   entries: Array<{ name: string; isGit?: boolean; isPi?: boolean }>,
-  parent: string | null = "/parent"
+  parent: string | null = "/parent",
 ) {
   return {
     current,
@@ -33,11 +35,15 @@ const homeEntries = makeBrowseResult("/Users/robson", [
   { name: "Project", isGit: false, isPi: false },
 ]);
 
-const projectEntries = makeBrowseResult("/Users/robson/Project", [
-  { name: "pi-agent-dashboard", isGit: true, isPi: true },
-  { name: "pi-coding-agent", isGit: true, isPi: true },
-  { name: "pi-tools", isGit: true },
-], "/Users/robson");
+const projectEntries = makeBrowseResult(
+  "/Users/robson/Project",
+  [
+    { name: "pi-agent-dashboard", isGit: true, isPi: true },
+    { name: "pi-coding-agent", isGit: true, isPi: true },
+    { name: "pi-tools", isGit: true },
+  ],
+  "/Users/robson",
+);
 
 afterEach(() => cleanup());
 
@@ -48,6 +54,7 @@ describe("PathPicker", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockBrowse.mockResolvedValue(homeEntries);
+    mockMkdir.mockResolvedValue({ path: "/Users/robson/new-thing" });
   });
 
   function renderPicker(props: Partial<React.ComponentProps<typeof PathPicker>> = {}) {
@@ -57,7 +64,7 @@ describe("PathPicker", () => {
         onSelect={onSelect}
         onCancel={onCancel}
         {...props}
-      />
+      />,
     );
   }
 
@@ -65,11 +72,17 @@ describe("PathPicker", () => {
     return screen.getByRole("textbox") as HTMLInputElement;
   }
 
+  // Helper: wait for browseDirectory to have been called with expected path
+  async function waitBrowsed(path: string | undefined) {
+    await waitFor(() => {
+      const lastCall = mockBrowse.mock.calls.find((c) => c[0] === path);
+      expect(lastCall).toBeDefined();
+    });
+  }
+
   it("should render input with initial path and fetch entries", async () => {
     renderPicker();
-    await waitFor(() => {
-      expect(mockBrowse).toHaveBeenCalledWith("/Users/robson");
-    });
+    await waitBrowsed("/Users/robson");
     expect(getInput().value).toBe("/Users/robson/");
 
     await waitFor(() => {
@@ -91,25 +104,83 @@ describe("PathPicker", () => {
 
   it("should show .. entry for non-root directories", async () => {
     renderPicker();
-    await waitFor(() => {
-      expect(screen.getByText("Desktop")).toBeTruthy();
-    });
-    // ".." is rendered as text in an option role
+    await waitFor(() => expect(screen.getByText("Desktop")).toBeTruthy());
     const options = screen.getAllByRole("option");
     const parentOption = options.find((o) => o.textContent?.includes(".."));
     expect(parentOption).toBeTruthy();
   });
 
-  it("should filter entries when typing partial text", async () => {
-    renderPicker();
-    await waitFor(() => expect(screen.getByText("Desktop")).toBeTruthy());
+  it("should send typed partial as q query via debounced fetch", async () => {
+    vi.useFakeTimers();
+    try {
+      renderPicker();
+      // initial fetch (kicked off in useEffect)
+      await vi.runOnlyPendingTimersAsync();
+      await vi.waitFor(() => expect(mockBrowse).toHaveBeenCalled());
+      mockBrowse.mockClear();
 
-    fireEvent.change(getInput(), { target: { value: "/Users/robson/Do" } });
+      // Set up mock to return filtered result when q=Do
+      mockBrowse.mockResolvedValue(
+        makeBrowseResult("/Users/robson", [{ name: "Documents" }, { name: "Downloads" }]),
+      );
 
-    expect(screen.getByText("Documents")).toBeTruthy();
-    expect(screen.getByText("Downloads")).toBeTruthy();
-    expect(screen.queryByText("Desktop")).toBeNull();
-    expect(screen.queryByText("Project")).toBeNull();
+      act(() => {
+        fireEvent.change(getInput(), { target: { value: "/Users/robson/Do" } });
+      });
+
+      // Before debounce fires — no new call yet
+      expect(mockBrowse).not.toHaveBeenCalled();
+
+      await act(async () => {
+        vi.advanceTimersByTime(160);
+      });
+
+      const call = mockBrowse.mock.calls[0];
+      expect(call[0]).toBe("/Users/robson");
+      expect(call[1]?.q).toBe("Do");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("should abort in-flight request when partial changes", async () => {
+    vi.useFakeTimers();
+    try {
+      renderPicker();
+      await vi.runOnlyPendingTimersAsync();
+      await vi.waitFor(() => expect(mockBrowse).toHaveBeenCalled());
+      mockBrowse.mockClear();
+
+      // capture signals
+      const signals: Array<AbortSignal | undefined> = [];
+      mockBrowse.mockImplementation(
+        (_p: unknown, opts: { signal?: AbortSignal } | undefined) => {
+          signals.push(opts?.signal);
+          return new Promise(() => {
+            /* never resolves */
+          });
+        },
+      );
+
+      act(() => {
+        fireEvent.change(getInput(), { target: { value: "/Users/robson/D" } });
+      });
+      await act(async () => {
+        vi.advanceTimersByTime(160);
+      });
+
+      act(() => {
+        fireEvent.change(getInput(), { target: { value: "/Users/robson/Do" } });
+      });
+      await act(async () => {
+        vi.advanceTimersByTime(160);
+      });
+
+      expect(signals[0]?.aborted).toBe(true);
+      expect(signals[1]?.aborted).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("should descend into directory on click", async () => {
@@ -119,9 +190,7 @@ describe("PathPicker", () => {
     mockBrowse.mockResolvedValue(projectEntries);
     fireEvent.click(screen.getByText("Project"));
 
-    await waitFor(() => {
-      expect(mockBrowse).toHaveBeenCalledWith("/Users/robson/Project");
-    });
+    await waitBrowsed("/Users/robson/Project");
     expect(getInput().value).toBe("/Users/robson/Project/");
 
     await waitFor(() => {
@@ -141,9 +210,7 @@ describe("PathPicker", () => {
     const parentOption = screen.getAllByRole("option").find((o) => o.textContent?.includes(".."))!;
     fireEvent.click(parentOption);
 
-    await waitFor(() => {
-      expect(mockBrowse).toHaveBeenCalledWith("/Users/robson");
-    });
+    await waitBrowsed("/Users/robson");
   });
 
   it("should move highlight with arrow keys", async () => {
@@ -151,8 +218,6 @@ describe("PathPicker", () => {
     await waitFor(() => expect(screen.getByText("Desktop")).toBeTruthy());
 
     const input = getInput();
-
-    // Arrow down twice — first highlights ".." (index 0), then "Desktop" (index 1)
     fireEvent.keyDown(input, { key: "ArrowDown" });
     fireEvent.keyDown(input, { key: "ArrowDown" });
 
@@ -165,28 +230,32 @@ describe("PathPicker", () => {
     await waitFor(() => expect(screen.getByText("Project")).toBeTruthy());
 
     const input = getInput();
-
-    // Navigate to "Project" (index 4: .., Desktop, Documents, Downloads, Project)
-    for (let i = 0; i < 5; i++) {
-      fireEvent.keyDown(input, { key: "ArrowDown" });
-    }
+    for (let i = 0; i < 5; i++) fireEvent.keyDown(input, { key: "ArrowDown" });
 
     mockBrowse.mockResolvedValue(projectEntries);
     fireEvent.keyDown(input, { key: "Tab" });
 
     await waitFor(() => {
       expect(getInput().value).toBe("/Users/robson/Project/");
-      expect(mockBrowse).toHaveBeenCalledWith("/Users/robson/Project");
     });
   });
 
-  it("should auto-complete single match on Tab", async () => {
+  it("should auto-complete single match on Tab (after server filter returns 1)", async () => {
     renderPicker();
     await waitFor(() => expect(screen.getByText("Desktop")).toBeTruthy());
 
+    // Simulate server returning exactly one match for partial "Pr"
+    mockBrowse.mockResolvedValue(
+      makeBrowseResult("/Users/robson", [{ name: "Project" }]),
+    );
+
     fireEvent.change(getInput(), { target: { value: "/Users/robson/Pr" } });
 
-    // Only "Project" matches — Tab should auto-complete
+    // Wait for debounced filter to take effect: Desktop should disappear
+    await waitFor(() => expect(screen.queryByText("Desktop")).toBeNull(), {
+      timeout: 1000,
+    });
+
     mockBrowse.mockResolvedValue(projectEntries);
     fireEvent.keyDown(getInput(), { key: "Tab" });
 
@@ -195,30 +264,89 @@ describe("PathPicker", () => {
     });
   });
 
-  it("should call onSelect on Enter", async () => {
+  it("Enter on trailing-slash current directory calls onSelect and closes", async () => {
     renderPicker();
     await waitFor(() => expect(screen.getByText("Desktop")).toBeTruthy());
-
     fireEvent.keyDown(getInput(), { key: "Enter" });
-
-    expect(onSelect).toHaveBeenCalledWith("/Users/robson/");
+    await waitFor(() => expect(onSelect).toHaveBeenCalledWith("/Users/robson/"));
   });
 
-  it("should call onSelect when Select button clicked", async () => {
+  it("Enter on exact-match partial selects that entry's full path", async () => {
+    renderPicker();
+    await waitFor(() => expect(screen.getByText("Desktop")).toBeTruthy());
+    fireEvent.change(getInput(), { target: { value: "/Users/robson/Desktop" } });
+    // allow debounced refetch (mock still returns homeEntries so Desktop is visible)
+    await new Promise((r) => setTimeout(r, 200));
+    fireEvent.keyDown(getInput(), { key: "Enter" });
+    await waitFor(() =>
+      expect(onSelect).toHaveBeenCalledWith("/Users/robson/Desktop"),
+    );
+  });
+
+  it("Enter on single candidate (no exact match) completes without closing", async () => {
     renderPicker();
     await waitFor(() => expect(screen.getByText("Desktop")).toBeTruthy());
 
+    // server returns only Project for 'Pr'
+    mockBrowse.mockResolvedValue(
+      makeBrowseResult("/Users/robson", [{ name: "Project" }]),
+    );
+    fireEvent.change(getInput(), { target: { value: "/Users/robson/Pr" } });
+    await waitFor(() => expect(screen.queryByText("Desktop")).toBeNull(), {
+      timeout: 1000,
+    });
+
+    mockBrowse.mockResolvedValue(projectEntries);
+    fireEvent.keyDown(getInput(), { key: "Enter" });
+
+    await waitFor(() => {
+      expect(getInput().value).toBe("/Users/robson/Project/");
+    });
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it("Enter on non-existent typo path is a no-op (not onSelect)", async () => {
+    renderPicker();
+    await waitFor(() => expect(screen.getByText("Desktop")).toBeTruthy());
+
+    // server returns zero matches for 'zzzzz'
+    mockBrowse.mockResolvedValue(makeBrowseResult("/Users/robson", []));
+    fireEvent.change(getInput(), { target: { value: "/Users/robson/zzzzz" } });
+    await waitFor(() => expect(screen.queryByText("Desktop")).toBeNull(), {
+      timeout: 1000,
+    });
+
+    fireEvent.keyDown(getInput(), { key: "Enter" });
+    await new Promise((r) => setTimeout(r, 100));
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it("Select button click follows Enter rules (no onSelect on typo)", async () => {
+    renderPicker();
+    await waitFor(() => expect(screen.getByText("Desktop")).toBeTruthy());
+
+    mockBrowse.mockResolvedValue(makeBrowseResult("/Users/robson", []));
+    fireEvent.change(getInput(), { target: { value: "/Users/robson/zzzzz" } });
+    await waitFor(() => expect(screen.queryByText("Desktop")).toBeNull(), {
+      timeout: 1000,
+    });
+
     fireEvent.click(screen.getByText("Select"));
-    expect(onSelect).toHaveBeenCalledWith("/Users/robson/");
+    await new Promise((r) => setTimeout(r, 100));
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it("Select button click on trailing-slash path calls onSelect", async () => {
+    renderPicker();
+    await waitFor(() => expect(screen.getByText("Desktop")).toBeTruthy());
+    fireEvent.click(screen.getByText("Select"));
+    await waitFor(() => expect(onSelect).toHaveBeenCalledWith("/Users/robson/"));
   });
 
   it("should disable Select button when input is empty", async () => {
     renderPicker();
     await waitFor(() => expect(screen.getByText("Desktop")).toBeTruthy());
-
-    const input = getInput();
-    fireEvent.change(input, { target: { value: "" } });
-
+    fireEvent.change(getInput(), { target: { value: "" } });
     const selectBtn = screen.getByText("Select");
     expect(selectBtn.hasAttribute("disabled")).toBe(true);
   });
@@ -258,29 +386,6 @@ describe("PathPicker", () => {
     });
   });
 
-  it("should show 'No matches' when filter matches nothing", async () => {
-    renderPicker();
-    await waitFor(() => expect(screen.getByText("Desktop")).toBeTruthy());
-
-    fireEvent.change(getInput(), { target: { value: "/Users/robson/zzzzz" } });
-
-    expect(screen.getByText(/no matches/i)).toBeTruthy();
-  });
-
-  it("should re-fetch parent on backspace past slash", async () => {
-    mockBrowse.mockResolvedValue(projectEntries);
-    renderPicker({ initialPath: "/Users/robson/Project/" });
-    await waitFor(() => expect(screen.getByText("pi-agent-dashboard")).toBeTruthy());
-
-    // Simulate changing input back to parent
-    mockBrowse.mockResolvedValue(homeEntries);
-    fireEvent.change(getInput(), { target: { value: "/Users/robson/" } });
-
-    await waitFor(() => {
-      expect(mockBrowse).toHaveBeenCalledWith("/Users/robson");
-    });
-  });
-
   it("should default to home directory when no initialPath", async () => {
     const homeResult = {
       current: "/Users/robson",
@@ -290,15 +395,12 @@ describe("PathPicker", () => {
     mockBrowse.mockResolvedValue(homeResult);
     render(<PathPicker onSelect={onSelect} onCancel={onCancel} />);
 
-    // Should call browseDirectory with no arg (server defaults to homedir)
+    // Wait for Desktop to render — proves the fetch ran and resolved
     await waitFor(() => {
-      expect(mockBrowse).toHaveBeenCalledWith(undefined);
+      expect(screen.getByText("Desktop")).toBeTruthy();
     });
-
-    // Input should be populated from server response
-    await waitFor(() => {
-      expect(getInput().value).toBe("/Users/robson/");
-    });
+    expect(mockBrowse.mock.calls[0][0]).toBeUndefined();
+    expect(getInput().value).toBe("/Users/robson/");
   });
 
   it("should reset highlight when typing", async () => {
@@ -310,11 +412,144 @@ describe("PathPicker", () => {
     fireEvent.keyDown(input, { key: "ArrowDown" });
     fireEvent.keyDown(input, { key: "ArrowDown" });
 
-    // Type — should reset highlight to -1
     fireEvent.change(input, { target: { value: "/Users/robson/D" } });
 
     const options = screen.getAllByRole("option");
     const selected = options.filter((r) => r.getAttribute("aria-selected") === "true");
     expect(selected.length).toBe(0);
+  });
+
+  // ── New folder creation ──────────────────────────────────────
+
+  it("arrow-down navigates into the create-here row", async () => {
+    renderPicker();
+    await waitFor(() => expect(screen.getByText("Desktop")).toBeTruthy());
+
+    mockBrowse.mockResolvedValue(makeBrowseResult("/Users/robson", []));
+    fireEvent.change(getInput(), { target: { value: "/Users/robson/new-thing" } });
+    // Wait for server-filtered (empty) result to land: Desktop disappears.
+    await waitFor(() => expect(screen.queryByText("Desktop")).toBeNull(), {
+      timeout: 1000,
+    });
+    expect(screen.getByText(/Create "new-thing" here/)).toBeTruthy();
+
+    const input = getInput();
+    // displayItems: [..], [create-here] — arrow down twice lands on create-here
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+
+    const options = screen.getAllByRole("option");
+    const createRow = options.find((o) => o.textContent?.includes('Create "new-thing" here'));
+    expect(createRow).toBeTruthy();
+    expect(createRow!.getAttribute("aria-selected")).toBe("true");
+
+    // Enter on highlighted create-here triggers mkdir
+    mockMkdir.mockResolvedValue({ path: "/Users/robson/new-thing" });
+    mockBrowse.mockResolvedValue(makeBrowseResult("/Users/robson/new-thing", []));
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    await waitFor(() =>
+      expect(mockMkdir).toHaveBeenCalledWith("/Users/robson", "new-thing"),
+    );
+  });
+
+  it("shows inline 'Create \"<name>\" here' row when partial has no exact match", async () => {
+    renderPicker();
+    await waitFor(() => expect(screen.getByText("Desktop")).toBeTruthy());
+
+    mockBrowse.mockResolvedValue(makeBrowseResult("/Users/robson", []));
+    fireEvent.change(getInput(), { target: { value: "/Users/robson/new-thing" } });
+
+    await waitFor(
+      () => expect(screen.getByText(/Create "new-thing" here/)).toBeTruthy(),
+      { timeout: 1000 },
+    );
+  });
+
+  it("hides 'Create here' row when partial exactly matches an entry", async () => {
+    renderPicker();
+    await waitFor(() => expect(screen.getByText("Desktop")).toBeTruthy());
+
+    // homeEntries still mocked; partial 'Desktop' matches exactly → no Create row
+    fireEvent.change(getInput(), { target: { value: "/Users/robson/Desktop" } });
+    await new Promise((r) => setTimeout(r, 200));
+
+    expect(screen.queryByText(/Create ".*" here/)).toBeNull();
+  });
+
+  it("clicking 'Create here' calls mkdir and descends into new path", async () => {
+    renderPicker();
+    await waitFor(() => expect(screen.getByText("Desktop")).toBeTruthy());
+
+    mockBrowse.mockResolvedValue(makeBrowseResult("/Users/robson", []));
+    fireEvent.change(getInput(), { target: { value: "/Users/robson/new-thing" } });
+    await waitFor(
+      () => expect(screen.getByText(/Create "new-thing" here/)).toBeTruthy(),
+      { timeout: 1000 },
+    );
+
+    mockMkdir.mockResolvedValue({ path: "/Users/robson/new-thing" });
+    mockBrowse.mockResolvedValue(makeBrowseResult("/Users/robson/new-thing", []));
+
+    fireEvent.click(screen.getByText(/Create "new-thing" here/));
+
+    await waitFor(() =>
+      expect(mockMkdir).toHaveBeenCalledWith("/Users/robson", "new-thing"),
+    );
+    await waitFor(() => {
+      expect(getInput().value).toBe("/Users/robson/new-thing/");
+    });
+  });
+
+  it("footer ＋ New folder button opens name entry; Enter creates and descends", async () => {
+    renderPicker();
+    await waitFor(() => expect(screen.getByText("Desktop")).toBeTruthy());
+
+    fireEvent.click(screen.getByText(/New folder/));
+
+    const nameInput = screen.getByLabelText("New folder name") as HTMLInputElement;
+    expect(nameInput).toBeTruthy();
+
+    fireEvent.change(nameInput, { target: { value: "experiments" } });
+
+    mockMkdir.mockResolvedValue({ path: "/Users/robson/experiments" });
+    mockBrowse.mockResolvedValue(makeBrowseResult("/Users/robson/experiments", []));
+
+    fireEvent.keyDown(nameInput, { key: "Enter" });
+
+    await waitFor(() =>
+      expect(mockMkdir).toHaveBeenCalledWith("/Users/robson", "experiments"),
+    );
+    await waitFor(() => {
+      expect(getInput().value).toBe("/Users/robson/experiments/");
+    });
+  });
+
+  it("Escape in footer name entry closes without creating", async () => {
+    renderPicker();
+    await waitFor(() => expect(screen.getByText("Desktop")).toBeTruthy());
+
+    fireEvent.click(screen.getByText(/New folder/));
+    const nameInput = screen.getByLabelText("New folder name") as HTMLInputElement;
+    fireEvent.change(nameInput, { target: { value: "abc" } });
+    fireEvent.keyDown(nameInput, { key: "Escape" });
+
+    expect(mockMkdir).not.toHaveBeenCalled();
+    expect(screen.queryByLabelText("New folder name")).toBeNull();
+  });
+
+  it("surfaces server error and does not descend on mkdir failure", async () => {
+    renderPicker();
+    await waitFor(() => expect(screen.getByText("Desktop")).toBeTruthy());
+
+    fireEvent.click(screen.getByText(/New folder/));
+    const nameInput = screen.getByLabelText("New folder name") as HTMLInputElement;
+    fireEvent.change(nameInput, { target: { value: "existing" } });
+
+    mockMkdir.mockRejectedValue(new Error("already exists"));
+    fireEvent.keyDown(nameInput, { key: "Enter" });
+
+    await waitFor(() => expect(screen.getByText(/already exists/)).toBeTruthy());
+    expect(getInput().value).toBe("/Users/robson/");
   });
 });

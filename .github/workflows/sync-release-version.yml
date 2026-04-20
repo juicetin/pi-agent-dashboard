@@ -1,7 +1,7 @@
 name: Sync Release Version
 
 # Writes the latest release metadata into
-# `site/src/data/latest-release.json` and commits it to main.
+# `site/src/data/latest-release.json` and commits it to develop.
 #
 # Triggers:
 #   - `release: { types: [published, edited] }` — the normal path.
@@ -71,4 +71,4 @@ jobs:
 
           git add site/src/data/latest-release.json
           git commit -m "chore(site): sync latest-release.json to ${GITHUB_REF_NAME:-manual-refresh}"
-          git push origin HEAD:main
+          git push origin HEAD:develop

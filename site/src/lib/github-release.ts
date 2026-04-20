@@ -5,7 +5,7 @@
  *   1. Live GitHub API fetch — freshest, picked on every build.
  *   2. Static cache at `site/src/data/latest-release.json` — updated on
  *      every release by `.github/workflows/sync-release-version.yml`,
- *      committed back to main. Survives offline / rate-limited builds
+ *      committed back to develop. Survives offline / rate-limited builds
  *      and is human-inspectable in git history.
  *   3. `null` — components fall back to a generic "releases" link.
  *

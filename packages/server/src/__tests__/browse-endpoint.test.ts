@@ -11,16 +11,16 @@ import fsp from "node:fs/promises";
 describe("listDirectories", () => {
   it("should return directory entries for a valid path", async () => {
     // Use the project root — known to have subdirectories
-    const projectRoot = path.resolve(import.meta.dirname, "../../..");
+    const projectRoot = path.resolve(import.meta.dirname, "../../../..");
     const result = await listDirectories(projectRoot);
 
     expect(result.current).toBe(projectRoot);
     expect(result.parent).toBe(path.dirname(projectRoot));
     expect(result.entries.length).toBeGreaterThan(0);
 
-    // Should contain known subdirectories
+    // Should contain known subdirectories at the monorepo root
     const names = result.entries.map((e) => e.name);
-    expect(names).toContain("src");
+    expect(names).toContain("packages");
     expect(names).toContain("node_modules");
   });
 
@@ -30,7 +30,7 @@ describe("listDirectories", () => {
   });
 
   it("should return entries sorted alphabetically", async () => {
-    const projectRoot = path.resolve(import.meta.dirname, "../../..");
+    const projectRoot = path.resolve(import.meta.dirname, "../../../..");
     const result = await listDirectories(projectRoot);
     const names = result.entries.map((e) => e.name);
     const sorted = [...names].sort((a, b) => a.localeCompare(b));
@@ -46,7 +46,7 @@ describe("listDirectories", () => {
   });
 
   it("should detect isGit flag for git repos", async () => {
-    const projectRoot = path.resolve(import.meta.dirname, "../../..");
+    const projectRoot = path.resolve(import.meta.dirname, "../../../..");
     const parentDir = path.dirname(projectRoot);
     const result = await listDirectories(parentDir);
 
@@ -58,7 +58,7 @@ describe("listDirectories", () => {
   });
 
   it("should detect isPi flag for pi projects", async () => {
-    const projectRoot = path.resolve(import.meta.dirname, "../../..");
+    const projectRoot = path.resolve(import.meta.dirname, "../../../..");
     const parentDir = path.dirname(projectRoot);
     const result = await listDirectories(parentDir);
 
@@ -87,7 +87,7 @@ describe("listDirectories", () => {
   });
 
   it("should only return directories, not files", async () => {
-    const projectRoot = path.resolve(import.meta.dirname, "../../..");
+    const projectRoot = path.resolve(import.meta.dirname, "../../../..");
     const result = await listDirectories(projectRoot);
     const names = result.entries.map((e) => e.name);
     // package.json is a file, should not appear
@@ -96,7 +96,7 @@ describe("listDirectories", () => {
   });
 
   it("should include full path in each entry", async () => {
-    const projectRoot = path.resolve(import.meta.dirname, "../../..");
+    const projectRoot = path.resolve(import.meta.dirname, "../../../..");
     const result = await listDirectories(projectRoot);
     for (const entry of result.entries) {
       expect(entry.path).toBe(path.join(projectRoot, entry.name));

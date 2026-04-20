@@ -27,7 +27,7 @@ describe("loadConfig", () => {
     expect(config.port).toBe(8000);
     expect(config.piPort).toBe(9999);
     expect(config.autoStart).toBe(true);
-    expect(config.autoShutdown).toBe(true);
+    expect(config.autoShutdown).toBe(false);
     expect(config.lastServer).toBeUndefined();
     expect(config.shutdownIdleSeconds).toBe(300);
   });
@@ -52,7 +52,7 @@ describe("loadConfig", () => {
     expect(config.port).toBe(3000);
     expect(config.piPort).toBe(9999);
     expect(config.autoStart).toBe(true);
-    expect(config.autoShutdown).toBe(true);
+    expect(config.autoShutdown).toBe(false);
     expect(config.shutdownIdleSeconds).toBe(300);
   });
 
@@ -333,7 +333,7 @@ describe("ensureConfig", () => {
     expect(content.port).toBe(8000);
     expect(content.piPort).toBe(9999);
     expect(content.autoStart).toBe(true);
-    expect(content.autoShutdown).toBe(true);
+    expect(content.autoShutdown).toBe(false);
     expect(content.shutdownIdleSeconds).toBe(300);
     expect(content.devBuildOnReload).toBe(false);
     expect(content.electronMode).toBeUndefined();

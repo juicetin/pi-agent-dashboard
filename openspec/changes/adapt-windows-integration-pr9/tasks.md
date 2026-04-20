@@ -1,13 +1,13 @@
 ## 0. Preflight on `windows-integration-v2`
 
-- [ ] 0.1 Create `windows-integration-v2` branch from today's `origin/windows-integration` (`de695e1`)
-- [ ] 0.2 Read and internalize `MERGE-PLAN.md` and `BRANCH-COMPARISON.md` from the PR branch
-- [ ] 0.3 Execute MERGE-PLAN §0.1a: revert uncommitted preload-fastify-cjs work via `git checkout HEAD --` + `rm -rf`; commit as `chore(server): remove abandoned preload-fastify-cjs workaround`
-- [ ] 0.4 Execute MERGE-PLAN §0.1b: add `packages/server/src/node-guard.ts` + `packages/server/src/__tests__/node-guard.test.ts` + `engines.node >=22.18.0` in `packages/server/package.json` + preflight call in `cmdStart` and `runForeground`; commit as `feat(server): refuse to start on Node versions affected by nodejs/node#58515`
-- [ ] 0.5 Execute MERGE-PLAN §0.2: add `detach?: boolean` to `SpawnDetachedOptions` in `packages/shared/src/platform/detached-spawn.ts` (default `true`); tighten `useWindowsRedirect` gate with `stdinMode === "ignore"`; pass `detach: false` from `spawnHeadlessDetached` in `packages/server/src/process-manager.ts`; add regression test; commit as `fix(windows): restore d331850 no-flash pi-session spawn`
-- [ ] 0.6 Manual Windows validation: fresh start, no flash on ×3 session spawn, `server.log` populated, `/api/restart` works, `pi-dashboard stop` frees port 8888 when PID stale
+- [x] 0.1 Create `windows-integration-v2` branch from today's `origin/windows-integration` (`de695e1`) — done, proposal cherry-picked as `337e5c4`
+- [x] 0.2 Read and internalize `MERGE-PLAN.md` and `BRANCH-COMPARISON.md` from the PR branch — lazy-read basis per proposal §Task 0.2 answer
+- [x] 0.3 ~~MERGE-PLAN §0.1a revert~~ — **NO-OP**: preload-fastify-cjs / node-version-check / 4 openspec folders never existed on the pushed PR branch (`de695e1`). Verified via `git ls-tree -r origin/windows-integration | grep -iE "preload|node-version-check"` → only unrelated `packages/electron/src/preload.ts`
+- [x] 0.4 Add `packages/server/src/node-guard.ts` + `packages/server/src/__tests__/node-guard.test.ts` + preflight call in `cmdStart` and `runForeground` — committed as `4c564fc feat(server): refuse to start on Node versions affected by nodejs/node#58515`. `engines.node >=22.18.0` already in `packages/server/package.json` (commit `8c2cde5` pre-existing)
+- [x] 0.5 ~~MERGE-PLAN §0.2 regression fixes~~ — **ALREADY APPLIED** on branch. `detach?: boolean` option added by `9c497b8`; `detach: false` for pi-session spawn applied by `26e033e`. `useWindowsRedirect` branch was removed entirely during the `a73178d` platform/ consolidation (spawn.ts now routes `.cmd` shims through cmd.exe only for `.cmd`/`.bat` lookups, independent of logPath). Tests 41/41 green (`packages/shared/src/__tests__/spawn.test.ts`)
+- [ ] 0.6 Manual Windows validation: fresh start, no flash on ×3 session spawn, `server.log` populated, `/api/restart` works, `pi-dashboard stop` frees port 8888 when PID stale — **HUMAN ACTION, PAUSED HERE**
 - [ ] 0.7 If any of 0.6 fails, STOP and fix before proceeding
-- [ ] 0.8 Tag `git tag -a pre-develop-merge -m "windows-integration-v2, all regressions fixed"` as rollback anchor
+- [x] 0.8 Tag `git tag -a pre-develop-merge` rollback anchor — done (points to `4c564fc`)
 
 ## 0.5 Safety commits (NEW, not in MERGE-PLAN)
 

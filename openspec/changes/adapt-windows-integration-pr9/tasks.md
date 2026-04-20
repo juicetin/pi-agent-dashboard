@@ -27,27 +27,27 @@
 
 Cherry-pick in MERGE-PLAN §2 order, SKIPPING `8737249` (already in Phase 0.5):
 
-- [ ] 1.1 `ee838d0` marketing site + GH Pages workflow
-- [ ] 1.2 `e95491b` error-banner collapse + Retry + Copy
-- [ ] 1.3 `f2ec691` CHANGELOG.md + release process docs
-- [ ] 1.4 `97dd4bd` persistent editor PID registry (merge with our editor-manager changes per MERGE-PLAN §3.7)
-- [ ] 1.5 `15da6a8` site download section + theme toggle
-- [ ] 1.6 `c0bd183` inline SVG brand + barber-pole + pin-folder label
-- [ ] 1.7 `4143d49` CORS tunnel-origin allowlist
-- [ ] 1.8 `a343efa` docs: CORS allowlist + pre-compressed static
-- [ ] 1.9 `144301c` QA verification fixes
-- [ ] 1.10 `89d3bf6` landing-page onboarding
-- [ ] 1.11 `c004806` OpenSpec card state pill + Tasks popover
-- [ ] 1.12 `d192513` README marketing site link (resolve README conflict: merge both sections)
-- [ ] 1.13 `889d71a` archive add-marketing-site
-- [ ] 1.14 `7c5ff18` archive 2 parallel changes
-- [ ] 1.15 `9510702` archive cross-platform-qa-vms (inspect for QA-work overlap)
-- [ ] 1.16 `852ccf8` archive fix-portable-windows-package-manager
-- [ ] 1.17 `7a0e926` ask-user batch method (merge with our ask-user-tool edits per MERGE-PLAN §3.10)
-- [ ] 1.18 `b2c7d90` session-header image paste propagation
-- [ ] 1.19 `cee0c58` release-cut + release-revoke skills
-- [ ] 1.20 `36bd96d` ask-user batch title backfill (depends on 1.17)
-- [ ] 1.21 Run `npm test` + `npm run build`; must be green before Phase 2
+- [x] 1.1 `ee838d0` marketing site + GH Pages workflow — clean
+- [x] 1.2 `e95491b` error-banner collapse + Retry + Copy — clean
+- [x] 1.3 `f2ec691` CHANGELOG.md + release process — AGENTS.md + CHANGELOG.md conflicts resolved (take develop)
+- [x] 1.4 `97dd4bd` persistent editor PID registry — `editor-pid-registry.ts` AA resolved (keep ours; already superset via 6a1b1d8 tripwire overlay)
+- [x] 1.5 `15da6a8` site download section + theme — clean
+- [x] 1.6 `c0bd183` inline SVG + barber-pole — AGENTS.md pure-additive take-develop
+- [x] 1.7 `4143d49` CORS tunnel-origin allowlist — `server.ts` tunnel imports + CORS/compress blocks take-develop; added `@fastify/compress` dep
+- [x] 1.8 `a343efa` docs: CORS + pre-compressed — architecture.md take-develop
+- [x] 1.9 `144301c` QA verification fixes — clean
+- [x] 1.10 `89d3bf6` landing-page onboarding — CHANGELOG take-develop
+- [x] 1.11 `c004806` OpenSpec card state pill — `openspec-poller.ts` merge: dropped develop's dev-era `runOpenSpecSync`/`runOpenSpecAsync` helpers (redundant with our platform/openspec.ts Recipe system); kept the `export` keyword change on `buildOpenSpecData`
+- [x] 1.12 `d192513` README site link — clean
+- [x] 1.13 `889d71a` archive add-marketing-site — clean
+- [x] 1.14 `7c5ff18` archive 2 parallel changes — clean
+- [x] 1.15 `9510702` archive cross-platform-qa-vms — 3 main-spec conflicts (Robert's parallel archive used delta format; take-develop's main-spec format)
+- [x] 1.16 `852ccf8` archive fix-portable-windows-package-manager — duplicate archive (our 2026-04-20 vs develop's 2026-04-19); accept 2026-04-19, delete 2026-04-20 duplicate, union AGENTS.md ToolRegistry + package-manager-wrapper entries
+- [x] 1.17 `7a0e926` ask-user batch method — ask-user-tool.ts + tests take-develop (entire new schema + batch + prepareArguments rewrite); extension registration plumbing preserved
+- [x] 1.18 `b2c7d90` session-header image paste — CHANGELOG take-develop
+- [x] 1.19 `cee0c58` release skills — clean
+- [x] 1.20 `36bd96d` ask-user batch title backfill — clean
+- [ ] 1.21 Test gate: `npm run build` + `npm test` — 765/773 pass. 8 failures split: 3 lint-style (expected, need to route new code through platform/ per MERGE-PLAN §2.8), 5 isolated regressions (binary-lookup `which` fallback, resolve-jiti Windows drive letter, recommended-extensions SSH URLs ×3). Fix before Phase 2.
 
 ## 2. Phase 2 — Category B (trivial reconcile, 8 commits)
 

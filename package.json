@@ -1,6 +1,6 @@
 {
   "name": "@blackbelt-technology/pi-agent-dashboard",
-  "version": "0.2.9",
+  "version": "0.3.0",
   "description": "Web dashboard for monitoring and interacting with pi agent sessions",
   "repository": {
     "type": "git",
@@ -46,17 +46,22 @@
     "LICENSE"
   ],
   "scripts": {
+    "postinstall": "node packages/server/scripts/fix-pty-permissions.cjs",
     "dev": "npm run dev --workspace=@blackbelt-technology/pi-dashboard-web",
     "build": "npm run build --workspace=@blackbelt-technology/pi-dashboard-web",
-    "test": "vitest run",
-    "test:watch": "vitest",
+    "test": "HOME=$(mktemp -d -t pi-test-XXXXXX) vitest run",
+    "test:watch": "HOME=$(mktemp -d -t pi-test-XXXXXX) vitest",
     "lint": "tsc --noEmit",
     "reload": "./scripts/reload-all.sh",
     "reload:check": "./scripts/reload-all.sh --check",
     "electron:dev": "npm run start:dev --workspace=@blackbelt-technology/pi-dashboard-electron",
     "electron:start": "npm run start --workspace=@blackbelt-technology/pi-dashboard-electron",
     "electron:make": "npm run make --workspace=@blackbelt-technology/pi-dashboard-electron",
-    "electron:build": "bash packages/electron/scripts/build-installer.sh"
+    "electron:build": "bash packages/electron/scripts/build-installer.sh",
+    "site:dev": "npm --prefix site run dev",
+    "site:build": "npm --prefix site run build",
+    "site:preview": "npm --prefix site run preview",
+    "screenshots": "npm --prefix site run screenshots"
   },
   "dependencies": {
     "@blackbelt-technology/pi-dashboard-extension": "*",

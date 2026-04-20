@@ -26,7 +26,7 @@
 - [x] 5.2 Extract unique provider names from the models list into a sorted array
 - [x] 5.3 Add a `providerFilter` state and a `<select>` dropdown above or beside the text filter input with "All Providers" as default + one option per unique provider
 - [x] 5.4 Apply provider filter before text filter: when a provider is selected, pre-filter models to that provider, then apply multi-token text search
-- [x] 5.5 Add the same provider filter + multi-token search to the Default Model selector in `packages/client/src/components/SettingsPanel.tsx` (replace the flat SelectField with a `DefaultModelSelector` component that has provider dropdown + text filter)
+- [x] 5.5 Reuse the enhanced `ModelSelector` (with provider dropdown + multi-token search from 5.1–5.4) for the Default Model field in `packages/client/src/components/SettingsPanel.tsx` so both selectors share identical search UX (no separate `DefaultModelSelector` wrapper needed — DRY)
 
 ## 6. Fork Loses Last Assistant Message
 

@@ -1,7 +1,15 @@
 ## ADDED Requirements
 
 ### Requirement: Directory browse API
-The server SHALL expose `GET /api/browse?path=<dir>` (localhost-only) that returns directory entries for the given path. The response SHALL include `{ success: true, data: { entries: Array<{ name, path, isGit, isPi }>, parent: string | null, current: string } }`. Only directories SHALL be listed (no files). Hidden directories (names starting with `.`) SHALL be excluded. Entries SHALL be sorted alphabetically. If `path` is omitted, it SHALL default to the user's home directory. The entry limit SHALL be 200.
+The server SHALL expose `GET /api/browse?path=<dir>&q=<query>` (localhost-only) that returns directory entries for the given path. The response SHALL include `{ success: true, data: { entries: Array<{ name, path, isGit, isPi }>, parent: string | null, current: string } }`. Only directories SHALL be listed (no files). Hidden directories (names starting with `.`) SHALL be excluded. If `path` is omitted, it SHALL default to the user's home directory. The entry limit SHALL be 200, applied AFTER filtering and ranking so best matches are never truncated.
+
+When `q` is omitted or empty, entries SHALL be sorted alphabetically (case-insensitive).
+
+When `q` is provided, entries SHALL be filtered case-insensitively by substring on `name` and SHALL be ranked into the following tiers, alphabetical within each tier:
+- **Tier 0** — exact case-insensitive match of `name` against `q`.
+- **Tier 1** — `name` starts with `q` (case-insensitive).
+- **Tier 2** — `q` occurs in `name` at a word boundary (preceded by the start of the string or by one of `-`, `_`, `.`, ` `, `/`), case-insensitive.
+- **Tier 3** — `q` occurs anywhere in `name` (case-insensitive).
 
 #### Scenario: Browse valid directory
 - **WHEN** a GET request is made to `/api/browse?path=/home/user/projects`
@@ -31,9 +39,72 @@ The server SHALL expose `GET /api/browse?path=<dir>` (localhost-only) that retur
 - **WHEN** a directory contains subdirectories like `.config`, `.cache`, `projects`
 - **THEN** only `projects` SHALL appear in the entries (hidden dirs excluded)
 
-#### Scenario: Entry limit
-- **WHEN** a directory contains more than 200 subdirectories
-- **THEN** only the first 200 (alphabetically sorted) SHALL be returned
+#### Scenario: Entry limit applies after filtering
+- **WHEN** a directory contains 300 subdirectories and `q=pi` is supplied
+- **THEN** the server SHALL filter and rank first, then return at most 200 entries
+- **AND** a directory named `pi-dashboard` SHALL appear in the results even if alphabetically past position 200
+
+#### Scenario: Substring filter returns non-prefix matches
+- **WHEN** a GET request is made with `q=dash` against a directory containing `pi-dashboard`, `my-dashboard-old`, and `readme`
+- **THEN** `pi-dashboard` and `my-dashboard-old` SHALL appear in the results
+- **AND** `readme` SHALL NOT appear
+
+#### Scenario: Ranking by tier
+- **WHEN** a GET request is made with `q=pi` against a directory containing `pi` (tier 0), `pi-core` (tier 1), `my-pi-tools` (tier 2), and `epiphany` (tier 3)
+- **THEN** the entries SHALL be returned in the order `pi`, `pi-core`, `my-pi-tools`, `epiphany`
+
+#### Scenario: Alphabetical order within tier
+- **WHEN** two entries are in the same rank tier (e.g. both match `pi` as prefix)
+- **THEN** they SHALL appear in case-insensitive alphabetical order
+
+#### Scenario: Empty query treated as no filter
+- **WHEN** `q` is an empty string or only whitespace
+- **THEN** the server SHALL behave as if `q` were omitted (alphabetical, unfiltered)
+
+### Requirement: Directory create API
+The server SHALL expose `POST /api/browse/mkdir` (localhost-only) that creates a new directory under a specified parent. The request body SHALL be `{ parent: string, name: string }`. On success the response SHALL be `{ success: true, data: { path: string } }` where `path` is the absolute path of the created directory.
+
+The server SHALL validate:
+- `parent` is an absolute path, exists on disk, and is a directory.
+- `name` is non-empty after trimming, is not `.` or `..`, contains no `/` or backslash or `\0`, and has no leading or trailing whitespace.
+
+Directory creation SHALL be non-recursive (`fs.mkdir` without `recursive: true`): if the target already exists the server SHALL fail rather than silently succeed.
+
+#### Scenario: Create a new folder
+- **WHEN** a POST request is made to `/api/browse/mkdir` with body `{ parent: "/home/user/projects", name: "new-thing" }` and `/home/user/projects/new-thing` does not exist
+- **THEN** the server SHALL create the directory and return `{ success: true, data: { path: "/home/user/projects/new-thing" } }`
+
+#### Scenario: Parent does not exist
+- **WHEN** `parent` points to a non-existent path
+- **THEN** the server SHALL return `{ success: false, error: "parent not found" }`
+
+#### Scenario: Parent is a file
+- **WHEN** `parent` points to a regular file
+- **THEN** the server SHALL return `{ success: false, error: "parent is not a directory" }`
+
+#### Scenario: Target already exists
+- **WHEN** a directory with that `name` already exists under `parent`
+- **THEN** the server SHALL return `{ success: false, error: "already exists" }`
+
+#### Scenario: Invalid name - path separator
+- **WHEN** `name` contains `/` or backslash (e.g. `"foo/bar"`)
+- **THEN** the server SHALL return `{ success: false, error: "invalid name" }` and SHALL NOT create any directory
+
+#### Scenario: Invalid name - traversal
+- **WHEN** `name` is `.` or `..`
+- **THEN** the server SHALL return `{ success: false, error: "invalid name" }` and SHALL NOT create any directory
+
+#### Scenario: Invalid name - null byte
+- **WHEN** `name` contains a null byte (`\0`)
+- **THEN** the server SHALL return `{ success: false, error: "invalid name" }` and SHALL NOT create any directory
+
+#### Scenario: Invalid name - empty or whitespace
+- **WHEN** `name` is empty, whitespace-only, or has leading/trailing whitespace
+- **THEN** the server SHALL return `{ success: false, error: "invalid name" }` and SHALL NOT create any directory
+
+#### Scenario: Remote access blocked
+- **WHEN** a POST request originates from a non-loopback address
+- **THEN** the server SHALL return `{ success: false, error: "localhost only" }` and SHALL NOT create any directory
 
 ### Requirement: PathPicker component
 The web client SHALL provide a reusable `PathPicker` component combining a text input with a fixed-height scrollable directory list for keyboard-first filesystem navigation.
@@ -44,6 +115,10 @@ The component SHALL display:
 - `..` entry at the top of the list for parent navigation (except at root)
 - Visual indicators for git repos (`isGit`) and pi projects (`isPi`)
 - Highlight on the currently selected list entry
+- A footer with **Cancel**, **＋ New folder**, and **Select** buttons
+- When the typed partial has no exact match, an inline **"＋ Create \"&lt;name&gt;\" here"** row at the end of the list
+
+The component SHALL send the typed partial to the server as the `q` query parameter so filtering and ranking happen server-side. Requests SHALL be debounced at 150ms and older in-flight requests SHALL be cancelled when a newer input state is sent.
 
 #### Scenario: Open PathPicker
 - **WHEN** PathPicker mounts with `initialPath="/Users/robson/"`
@@ -53,14 +128,15 @@ The component SHALL display:
 - **WHEN** PathPicker mounts without `initialPath`
 - **THEN** it SHALL default to the user's home directory
 
-#### Scenario: Type to filter
+#### Scenario: Type to filter (substring, server-side)
 - **WHEN** the user types characters after the last `/` in the input
-- **THEN** the list SHALL filter entries client-side to those matching the typed partial (case-insensitive prefix match)
-- **AND** the highlight SHALL reset to the first matching entry
+- **THEN** the component SHALL send the typed partial to `/api/browse` as `q` (debounced 150ms)
+- **AND** the list SHALL display the server's ranked substring-filtered results in returned order
+- **AND** the highlight SHALL reset to the first list entry
 
 #### Scenario: Arrow key navigation
 - **WHEN** the user presses ↓ or ↑
-- **THEN** the highlight SHALL move through the filtered list entries
+- **THEN** the highlight SHALL move through the filtered list entries (including the inline "Create here" row when present)
 - **AND** focus SHALL remain in the text input
 
 #### Scenario: Tab descends into directory
@@ -68,13 +144,35 @@ The component SHALL display:
 - **THEN** the input SHALL become `parentPath + highlightedEntry + /`
 - **AND** the list SHALL fetch and show the contents of that directory
 
-#### Scenario: Single match auto-select
+#### Scenario: Single match auto-complete
 - **WHEN** only one entry matches the typed partial
 - **THEN** Tab SHALL complete that entry without requiring arrow key selection first
 
-#### Scenario: Enter confirms path
-- **WHEN** the user presses Enter
-- **THEN** `onSelect` SHALL be called with the current input path
+#### Scenario: Enter on exact match selects and closes
+- **WHEN** the user presses Enter AND the trimmed partial matches a visible entry name (case-insensitive)
+- **THEN** `onSelect` SHALL be called with that entry's absolute path
+- **AND** the picker SHALL close
+
+#### Scenario: Enter on trailing-slash current directory selects and closes
+- **WHEN** the user presses Enter AND the input ends with `/` AND the parsed parent equals the currently-fetched directory
+- **THEN** `onSelect` SHALL be called with the current input value
+- **AND** the picker SHALL close
+
+#### Scenario: Enter on single candidate completes (does not close)
+- **WHEN** the user presses Enter AND there is exactly one filtered candidate AND the partial is NOT an exact match
+- **THEN** the input SHALL become `candidate.path + "/"`
+- **AND** the list SHALL refetch for the new directory
+- **AND** `onSelect` SHALL NOT be called
+
+#### Scenario: Enter on non-existent path is a no-op
+- **WHEN** the user presses Enter AND none of the above rules apply (no exact match, zero or multiple candidates, input does not end with `/`)
+- **THEN** `onSelect` SHALL NOT be called
+- **AND** the picker SHALL remain open
+- **AND** the input SHALL show a brief visual "invalid" indicator (e.g. red outline or shake)
+
+#### Scenario: Select button follows Enter rules
+- **WHEN** the user clicks the footer Select button
+- **THEN** the component SHALL apply the same rules as Enter above (never confirming a non-existent path)
 
 #### Scenario: Escape cancels
 - **WHEN** the user presses Escape
@@ -94,7 +192,7 @@ The component SHALL display:
 - **WHEN** the user backspaces past a `/` separator
 - **THEN** the resolved parent SHALL change to the grandparent directory
 - **AND** the list SHALL fetch the grandparent's contents
-- **AND** the remaining text after the new last `/` SHALL filter the list
+- **AND** the remaining text after the new last `/` SHALL be sent as `q`
 
 #### Scenario: Paste full path
 - **WHEN** the user pastes a full path like `/Users/robson/Project/pi-agent-dashboard`
@@ -107,7 +205,7 @@ The component SHALL display:
 
 #### Scenario: No filter matches
 - **WHEN** the typed partial matches no entries
-- **THEN** the list SHALL show `..` and a "No matches" hint
+- **THEN** the list SHALL show `..`, a "No matches" hint, and the inline "Create \"&lt;partial&gt;\" here" row
 
 #### Scenario: Loading state
 - **WHEN** the PathPicker is fetching directory contents from the API
@@ -120,3 +218,41 @@ The component SHALL display:
 #### Scenario: Pi project indicator
 - **WHEN** a directory entry has `isPi: true`
 - **THEN** it SHALL show a visual pi indicator
+
+### Requirement: PathPicker new folder creation
+The `PathPicker` component SHALL let users create a new directory inside the currently-browsed parent directory via two affordances:
+1. A footer **＋ New folder** button that opens an inline name-entry row at the top of the list.
+2. An inline **＋ Create "<name>" here** row shown at the bottom of the list when the typed partial is non-empty AND no visible entry exactly matches the partial.
+
+Both SHALL call `POST /api/browse/mkdir` with `{ parent: <currently-browsed directory>, name: <entered name> }`. On success the picker SHALL refresh the list and descend into the newly created directory (input becomes `<newPath>/`). On failure the server error SHALL be displayed inline in the existing error slot and the picker SHALL remain on the current directory.
+
+#### Scenario: Inline create from typed partial
+- **WHEN** the user types `new-thing` into the input, no existing entry matches exactly, and presses Enter while the "Create \"new-thing\" here" row is highlighted
+- **THEN** the picker SHALL call `POST /api/browse/mkdir` with `parent` = the currently-browsed directory and `name="new-thing"`
+- **AND** on success the input SHALL become `<parent>/new-thing/` and the list SHALL show the new (empty) directory's contents
+
+#### Scenario: Footer New folder button
+- **WHEN** the user clicks **＋ New folder** and types `experiments` then presses Enter
+- **THEN** the picker SHALL call `POST /api/browse/mkdir` with `parent` = the currently-browsed directory and `name="experiments"`
+- **AND** on success the input SHALL become `<parent>/experiments/` and the list SHALL show the new directory's contents
+
+#### Scenario: Footer name entry cancelled
+- **WHEN** the user opens the footer name entry and presses Escape
+- **THEN** no directory SHALL be created
+- **AND** focus SHALL return to the main input
+- **AND** the inline name entry row SHALL close
+
+#### Scenario: Create fails with existing name
+- **WHEN** the server returns `{ success: false, error: "already exists" }`
+- **THEN** the error SHALL be displayed in the PathPicker's error slot
+- **AND** the input SHALL remain unchanged
+- **AND** the picker SHALL NOT descend
+
+#### Scenario: Create fails with invalid name
+- **WHEN** the user enters a name containing `/` and submits
+- **THEN** the server SHALL reject the request with `"invalid name"` and the error SHALL be shown inline
+- **AND** no directory SHALL be created
+
+#### Scenario: Inline create hidden on exact match
+- **WHEN** the typed partial exactly matches an existing visible entry name (case-insensitive)
+- **THEN** the inline "Create here" row SHALL NOT be shown

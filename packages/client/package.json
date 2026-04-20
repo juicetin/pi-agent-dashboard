@@ -1,6 +1,6 @@
 {
   "name": "@blackbelt-technology/pi-dashboard-web",
-  "version": "0.2.9",
+  "version": "0.3.0",
   "description": "Web client for pi-dashboard",
   "type": "module",
   "files": [
@@ -8,8 +8,8 @@
   ],
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
-    "prepare": "vite build"
+    "build": "vite build && node scripts/precompress.mjs",
+    "prepare": "vite build && node scripts/precompress.mjs"
   },
   "dependencies": {
     "@blackbelt-technology/pi-dashboard-shared": "*",

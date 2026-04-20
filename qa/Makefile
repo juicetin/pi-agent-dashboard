@@ -38,28 +38,54 @@ VMRUN := /Applications/VMware\ Fusion.app/Contents/Library/vmrun
 
 # ─── Build targets ───────────────────────────────────────────────
 
+# Preflight: reject var files that still contain REPLACE_WITH_ placeholders
+# and missing user-data SSH key, with a helpful message.
+define check_placeholders
+	@if grep -l 'REPLACE_WITH_' $(1) >/dev/null 2>&1; then \
+		echo "ERROR: $(1) contains placeholder values (REPLACE_WITH_...)."; \
+		echo "       Fill in ISO URL/checksum (or source_vmx) before building."; \
+		grep -n 'REPLACE_WITH_' $(1); \
+		exit 1; \
+	fi
+endef
+
+define check_user_data
+	@if grep -q 'REPLACE_WITH_YOUR_PUBLIC_KEY' $(PACKER_DIR)/http/user-data 2>/dev/null; then \
+		echo "ERROR: $(PACKER_DIR)/http/user-data still has a placeholder SSH key."; \
+		echo "       Replace REPLACE_WITH_YOUR_PUBLIC_KEY with the contents of ~/.ssh/qa_vm_key.pub"; \
+		exit 1; \
+	fi
+endef
+
 .PHONY: build-linux-x86
 build-linux-x86:
+	$(call check_placeholders,$(PACKER_DIR)/vars/ubuntu-24.pkrvars.hcl)
+	$(call check_user_data)
 	cd $(PACKER_DIR) && packer init . && \
 	packer build -var-file=vars/ubuntu-24.pkrvars.hcl ubuntu-x86.pkr.hcl
 
 .PHONY: build-linux-arm
 build-linux-arm:
+	$(call check_placeholders,$(PACKER_DIR)/vars/ubuntu-24-arm.pkrvars.hcl)
+	$(call check_user_data)
 	cd $(PACKER_DIR) && packer init . && \
 	packer build -var-file=vars/ubuntu-24-arm.pkrvars.hcl ubuntu-arm.pkr.hcl
 
 .PHONY: build-windows
 build-windows:
+	$(call check_placeholders,$(PACKER_DIR)/vars/win-11.pkrvars.hcl)
 	cd $(PACKER_DIR) && packer init . && \
 	packer build -var-file=vars/win-11.pkrvars.hcl windows.pkr.hcl
 
 .PHONY: build-macos-x86
 build-macos-x86:
+	$(call check_placeholders,$(PACKER_DIR)/vars/macos-14.pkrvars.hcl)
 	cd $(PACKER_DIR) && packer init . && \
 	packer build -var-file=vars/macos-14.pkrvars.hcl macos-x86.pkr.hcl
 
 .PHONY: build-macos-arm
 build-macos-arm:
+	$(call check_placeholders,$(PACKER_DIR)/vars/macos-14-arm.pkrvars.hcl)
 	cd $(PACKER_DIR) && packer init . && \
 	packer build -var-file=vars/macos-14-arm.pkrvars.hcl macos-arm.pkr.hcl
 

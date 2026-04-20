@@ -4,6 +4,7 @@
 import Fastify from "fastify";
 import fastifyStatic from "@fastify/static";
 import cors from "@fastify/cors";
+import compress from "@fastify/compress";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import os from "node:os";
@@ -29,7 +30,7 @@ import { createIdleTimer } from "./idle-timer.js";
 import { discoverAndBroadcastSessions } from "./session-bootstrap.js";
 import { scanAllSessions } from "./session-scanner.js";
 import { needsMigration, runMigration } from "./migrate-persistence.js";
-import { detectZrokBinary, cleanupStaleZrok, createTunnel, deleteTunnel } from "./tunnel.js";
+import { detectZrokBinary, cleanupStaleZrok, createTunnel, deleteTunnel, scavengeOrphanZrokProcesses, getTunnelUrl } from "./tunnel.js";
 import { registerAuthPlugin, validateWsUpgrade } from "./auth-plugin.js";
 import { findBundledExtension, registerBridgeExtension } from "@blackbelt-technology/pi-dashboard-shared/bridge-register.js";
 import { createNetworkGuard, isLoopback, isBypassedHost } from "./localhost-guard.js";
@@ -45,9 +46,13 @@ import { registerPackageRoutes } from "./routes/package-routes.js";
 import { registerRecommendedRoutes, invalidateRecommendedCache } from "./routes/recommended-routes.js";
 import { registerToolRoutes } from "./routes/tool-routes.js";
 import { getDefaultRegistry } from "@blackbelt-technology/pi-dashboard-shared/tool-registry/index.js";
+import { registerPiCoreRoutes } from "./routes/pi-core-routes.js";
+import { PiCoreChecker } from "./pi-core-checker.js";
+import { PiCoreUpdater } from "./pi-core-updater.js";
 import { registerProviderRoutes } from "./routes/provider-routes.js";
 import { PackageManagerWrapper } from "./package-manager-wrapper.js";
 import { createEditorManager, type EditorManager } from "./editor-manager.js";
+import { createEditorPidRegistry } from "./editor-pid-registry.js";
 import { registerEditorRoutes } from "./routes/editor-routes.js";
 import { registerKnownServersRoutes } from "./routes/known-servers-routes.js";
 import { registerEditorProxy, handleEditorUpgrade } from "./editor-proxy.js";
@@ -82,6 +87,10 @@ export interface DashboardServer {
   sessionManager: SessionManager;
   eventStore: EventStore;
   browserGateway: BrowserGateway;
+  /** Resolved HTTP port after start() (useful for port:0 in tests). Returns null if not listening. */
+  httpPort(): number | null;
+  /** Resolved pi gateway port after start(). Returns null if not listening. */
+  piPort(): number | null;
 }
 
 export async function createServer(config: ServerConfig): Promise<DashboardServer> {
@@ -204,9 +213,11 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
 
   // Create editor manager for code-server instances
   const editorDetection = detectCodeServerBinary(config.editor);
+  const editorPidRegistry = createEditorPidRegistry();
   const editorManager = createEditorManager({
     config: config.editor,
     detection: editorDetection,
+    pidRegistry: editorPidRegistry,
     onStatusChange: (cwd, id, status) => {
       browserGateway.broadcastToAll({ type: "editor_status", cwd, id, status });
     },
@@ -257,23 +268,62 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
     connectionTimeout: 10_000,
   });
 
-  // CORS: allow localhost by default + configured origins
+  // Compression: gzip/deflate for HTTP responses. Critical for large client
+  // bundles (~3 MB JS) served over tunnels like zrok which abort big transfers.
+  // Brotli is intentionally disabled — zrok's free public proxy has been
+  // observed to truncate/stream-reset `content-encoding: br` responses under
+  // parallel browser load (curl succeeds, Chrome reports ERR_ABORTED 500).
+  // gzip is universally supported and round-trips cleanly through zrok.
+  // threshold=1024 skips tiny responses; global=true compresses all routes.
+  await fastify.register(compress, {
+    global: true,
+    threshold: 1024,
+    encodings: ["gzip", "deflate"],
+  });
+
+  // CORS: allow localhost, the active zrok tunnel URL, any *.share.zrok.io
+  // host (so tunnel URL rotation doesn't break loads), and configured origins.
+  //
+  // Two critical correctness notes:
+  // (1) Vite emits `<script type="module" crossorigin>` tags, which browsers
+  //     always request in CORS mode — even when same-origin. If the server
+  //     doesn't emit `Access-Control-Allow-Origin` for the request's own
+  //     origin, the browser aborts the script with ERR_ABORTED 500. So when
+  //     accessed via a tunnel URL, that URL MUST be in the allow list or all
+  //     asset loads fail in the browser (while curl — which sends no Origin
+  //     header — works fine). This is the exact failure mode that looked
+  //     like a zrok problem for hours of debugging.
+  // (2) On origin mismatch, return `cb(null, false)` (no CORS headers) rather
+  //     than `cb(new Error(…), false)`. The latter causes @fastify/cors to
+  //     surface the error as HTTP 500 on every asset — far worse than
+  //     silently omitting CORS headers and letting the browser enforce its
+  //     own same-origin policy.
   const corsAllowedOrigins = config.corsAllowedOrigins ?? [];
   await fastify.register(cors, {
     origin: (origin, cb) => {
-      // Same-origin (no Origin header) — always allow
+      // Same-origin navigation (no Origin header) — always allow.
       if (!origin) return cb(null, true);
-      // Localhost / 127.0.0.1 / [::1] — any port
       try {
         const u = new URL(origin);
         const host = u.hostname;
+        // Loopback — any port.
         if (host === "localhost" || host === "127.0.0.1" || host === "[::1]" || host === "::1") {
           return cb(null, true);
         }
-      } catch { /* ignore parse errors */ }
-      // Configured origins
+        // Active zrok tunnel URL — checked dynamically so URL rotation is
+        // picked up without a server restart.
+        const tunnelUrl = getTunnelUrl();
+        if (tunnelUrl && origin === tunnelUrl) return cb(null, true);
+        // Any *.share.zrok.io host — covers the brief window between a new
+        // reservation being created and the in-memory `activeTunnelUrl`
+        // being populated, plus any other zrok share the user points at us.
+        if (host.endsWith(".share.zrok.io")) return cb(null, true);
+      } catch { /* ignore URL parse errors */ }
+      // Explicitly configured origins.
       if (corsAllowedOrigins.includes(origin)) return cb(null, true);
-      cb(new Error("CORS origin not allowed"), false);
+      // Unknown cross-origin request — don't emit CORS headers, but don't
+      // 500 either. Browser will block the request for us.
+      cb(null, false);
     },
     credentials: true,
   });
@@ -308,7 +358,16 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
   registerSessionRoutes(fastify, { sessionManager, eventStore, networkGuard });
   registerGitRoutes(fastify, { networkGuard });
   registerFileRoutes(fastify, { sessionManager, preferencesStore, networkGuard });
-  registerOpenSpecRoutes(fastify, { sessionManager, preferencesStore, directoryService, networkGuard });
+  registerOpenSpecRoutes(fastify, {
+    sessionManager,
+    preferencesStore,
+    directoryService,
+    networkGuard,
+    onOpenSpecChanged: (cwd) => {
+      const data = directoryService.getOpenSpecData(cwd);
+      if (data) browserGateway.broadcastToAll({ type: "openspec_update", cwd, data });
+    },
+  });
   registerSystemRoutes(fastify, { sessionManager, preferencesStore, metaPersistence, config, networkGuard, version: pkgVersion });
   registerToolRoutes(fastify, { registry: getDefaultRegistry(), networkGuard });
   // Package management
@@ -367,7 +426,52 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
     packageManagerWrapper.listInstalled("local"),
   ]);
 
-  // Editor (code-server) routes and proxy
+  // Pi core version check + update (complements the extension package manager).
+  const piCoreChecker = new PiCoreChecker();
+  const piCoreUpdater = new PiCoreUpdater({
+    packageManagerWrapper,
+    onAllComplete: async () => {
+      const connectedIds = piGateway.getConnectedSessionIds();
+      let count = 0;
+      for (const sid of connectedIds) {
+        const session = sessionManager.get(sid);
+        if (session && session.status !== "ended") {
+          piGateway.sendToSession(sid, {
+            type: "send_prompt",
+            sessionId: sid,
+            text: "/reload",
+          });
+          count++;
+        }
+      }
+      return count;
+    },
+  });
+  piCoreUpdater.setProgressListener((event) => {
+    browserGateway.broadcastToAll({
+      type: "pi_core_update_progress",
+      name: event.name,
+      phase: event.phase,
+      message: event.message,
+    });
+  });
+  registerPiCoreRoutes(fastify, {
+    piCoreChecker,
+    piCoreUpdater,
+    onUpdateComplete: (payload) => {
+      browserGateway.broadcastToAll({
+        type: "pi_core_update_complete",
+        results: payload.results,
+        sessionsReloaded: payload.sessionsReloaded,
+      });
+    },
+  });
+
+  // Editor (code-server) routes and proxy.
+  // NOTE: routes are *registered* here but cannot dispatch until fastify.listen runs
+  // inside server.start(). The orphan sweep in editorPidRegistry.cleanupOrphans()
+  // runs at the top of server.start() BEFORE fastify.listen, so any
+  // POST /api/editor/start call is guaranteed to see a post-sweep clean state.
   registerEditorRoutes(fastify, editorManager, { networkGuard });
   registerEditorProxy(fastify, editorManager);
 
@@ -421,6 +525,13 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
     await fastify.register(fastifyStatic, {
       root: clientDir,
       prefix: "/",
+      // Serve pre-compressed sibling files (assets/foo.js.gz alongside foo.js)
+      // directly when the client accepts gzip. This gives every compressed
+      // response a stable Content-Length header — dynamic compression via
+      // @fastify/compress streams responses without Content-Length, which
+      // some HTTP/2 proxy chains (notably zrok free-tier) occasionally
+      // stream-reset as ERR_ABORTED 500 in browsers.
+      preCompressed: true,
       setHeaders: (res, filePath) => {
         if (filePath.endsWith(".html")) {
           res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
@@ -485,9 +596,22 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
     eventStore,
     browserGateway,
 
+    httpPort() {
+      const addr = fastify.server.address();
+      if (addr && typeof addr === "object") return addr.port;
+      return null;
+    },
+    piPort() {
+      return piGateway.address();
+    },
+
     async start() {
       // Clean up orphan headless processes from a previous server instance
       browserGateway.headlessPidRegistry.cleanupOrphans();
+
+      // Clean up orphan code-server processes from a previous server instance.
+      // Runs before fastify.listen, so no editor start request can race with the sweep.
+      await editorPidRegistry.cleanupOrphans();
 
       piGateway.start(config.piPort);
 
@@ -551,10 +675,19 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
         console.warn(`mDNS browser failed (peer discovery disabled):`, err);
       }
 
+      // Always sweep leftover zrok processes on startup, even when tunnel is
+      // disabled (--no-tunnel). Orphans from a previous run hold reservations
+      // on the zrok edge and keep old URLs "alive but broken" until their
+      // agents are killed. Scavenge runs unconditionally when the binary is
+      // present; the tunnel-creation branch below is gated separately.
+      const hasZrok = detectZrokBinary();
+      if (hasZrok) {
+        cleanupStaleZrok();
+        scavengeOrphanZrokProcesses(config.port);
+      }
+
       if (config.tunnel) {
-        const hasZrok = detectZrokBinary();
         if (hasZrok) {
-          await cleanupStaleZrok();
           const tunnelUrl = await createTunnel(config.port, config.tunnelReservedToken);
           if (tunnelUrl) {
             console.log(`🌐 Tunnel: ${tunnelUrl}`);
@@ -584,7 +717,7 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
       preferencesStore.flush();
       preferencesStore.dispose();
 
-      await deleteTunnel();
+      await deleteTunnel(config.port);
       piGateway.stop();
       for (const client of browserGateway.wss.clients) {
         client.terminate();

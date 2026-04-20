@@ -6,6 +6,8 @@ import type {
   DashboardEvent,
   ApiResponse,
 } from "./types.js";
+
+export type { ApiResponse } from "./types.js";
 import type { EnrichedRecommendedExtension } from "./recommended-extensions.js";
 
 export type { EnrichedRecommendedExtension } from "./recommended-extensions.js";
@@ -66,6 +68,14 @@ export interface BrowseEntry {
   isPi: boolean;
 }
 
+/**
+ * Response shape for `GET /api/browse?path=<dir>&q=<query>`.
+ *
+ * The optional `q` query parameter, when present and non-empty, causes the
+ * server to filter entries by case-insensitive substring on `name` and rank
+ * them (exact → prefix → word-boundary → substring) before the 200-entry cap.
+ * When omitted or whitespace-only, entries are sorted alphabetically.
+ */
 export interface BrowseResult {
   entries: BrowseEntry[];
   parent: string | null;
@@ -83,6 +93,18 @@ export interface BrowseResult {
 }
 
 export type BrowseResponse = ApiResponse<BrowseResult>;
+
+/** Request body for `POST /api/browse/mkdir`. */
+export interface MkdirRequest {
+  parent: string;
+  name: string;
+}
+
+export interface MkdirResult {
+  path: string;
+}
+
+export type MkdirResponse = ApiResponse<MkdirResult>;
 
 // ── Tunnel Status ───────────────────────────────────────────────────
 
@@ -258,6 +280,46 @@ export interface PackageUpdateInfo {
 }
 
 export type CheckUpdatesResponse = ApiResponse<PackageUpdateInfo[]>;
+
+// ── Pi core version check ────────────────────────────────────
+
+/** A core pi ecosystem CLI package (not managed by pi's PackageManager). */
+export interface PiCorePackage {
+  name: string;
+  displayName: string;
+  currentVersion: string;
+  latestVersion: string | null;
+  updateAvailable: boolean;
+  installSource: "global" | "managed";
+}
+
+export interface PiCoreStatus {
+  packages: PiCorePackage[];
+  updatesAvailable: number;
+  lastChecked: string;
+}
+
+export type PiCoreVersionsResponse = ApiResponse<PiCoreStatus>;
+
+/** Request body for POST /api/pi-core/update. Empty packages = update all. */
+export interface PiCoreUpdateRequest {
+  packages?: string[];
+}
+
+/** Result of a single package update. */
+export interface PiCoreUpdateResult {
+  name: string;
+  success: boolean;
+  error?: string;
+}
+
+/** Response from POST /api/pi-core/update (completes synchronously). */
+export interface PiCoreUpdateResponse {
+  results: PiCoreUpdateResult[];
+  sessionsReloaded: number;
+}
+
+export type PiCoreUpdateApiResponse = ApiResponse<PiCoreUpdateResponse>;
 
 // ── Known Servers ─────────────────────────────────────────────
 

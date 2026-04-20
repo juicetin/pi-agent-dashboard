@@ -21,6 +21,7 @@ import { useOpenSpecReader } from "./hooks/useOpenSpecReader.js";
 import type { OpenSpecArtifact } from "@blackbelt-technology/pi-dashboard-shared/types.js";
 import { SessionHeader } from "./components/SessionHeader.js";
 import { ServerSelector } from "./components/ServerSelector.js";
+import { PiUpdateBadge } from "./components/PiUpdateBadge.js";
 import { TokenStatsBar } from "./components/TokenStatsBar.js";
 
 import { CommandInput } from "./components/CommandInput.js";
@@ -46,6 +47,9 @@ import { useOpenSpecActions } from "./hooks/useOpenSpecActions.js";
 import type { DashboardSession, CommandInfo, FlowInfo, FileEntry, OpenSpecData, ModelInfo, RoleInfo, ImageContent } from "@blackbelt-technology/pi-dashboard-shared/types.js";
 import { SearchableSelectDialog, type SelectOption } from "./components/SearchableSelectDialog.js";
 import { FlowLaunchDialog } from "./components/FlowLaunchDialog.js";
+import { PinDirectoryDialog } from "./components/PinDirectoryDialog.js";
+import { DialogPortal } from "./components/DialogPortal.js";
+import { useProvidersReady } from "./hooks/useProvidersReady.js";
 import type { TerminalSession } from "@blackbelt-technology/pi-dashboard-shared/terminal-types.js";
 import type { EditorInstanceStatus } from "@blackbelt-technology/pi-dashboard-shared/editor-types.js";
 import { ErrorBoundary } from "./components/ErrorBoundary.js";
@@ -145,6 +149,8 @@ export default function App() {
   const spawnTimeoutsRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const [sessionOrderMap, setSessionOrderMap] = useState<Map<string, string[]>>(new Map());
   const [pinnedDirectories, setPinnedDirectories] = useState<string[]>([]);
+  const [pinDialogOpen, setPinDialogOpen] = useState(false);
+  const providersReady = useProvidersReady();
   const [terminals, setTerminals] = useState<Map<string, TerminalSession>>(new Map());
   const pendingTerminalCwdRef = useRef<string | null>(null);
   const lastCreatedTerminalIdRef = useRef<string | null>(null);
@@ -515,6 +521,7 @@ export default function App() {
       spawnResult={spawnResult}
       onSpawnResultSeen={() => setSpawnResult(null)}
       pinnedDirectories={pinnedDirectories}
+      onOpenPinDialog={() => setPinDialogOpen(true)}
       onPinDirectory={(dirPath) => {
         setPinnedDirectories((prev) => prev.includes(dirPath) ? prev : [...prev, dirPath]);
         send({ type: "pin_directory", path: dirPath });
@@ -543,13 +550,16 @@ export default function App() {
       resumeErrors={resumeErrors}
       onDismissResumeError={(id) => setResumeErrors((prev) => { const next = new Map(prev); next.delete(id); return next; })}
       headerExtra={
-        <ServerSelector
-          currentHost={currentServerHost}
-          currentPort={currentServerPort}
-          connected={status === "connected"}
-          onSwitch={handleServerSwitch}
-          onManageServers={() => navigate("/settings?tab=servers")}
-        />
+        <div className="flex items-center gap-2">
+          <PiUpdateBadge />
+          <ServerSelector
+            currentHost={currentServerHost}
+            currentPort={currentServerPort}
+            connected={status === "connected"}
+            onSwitch={handleServerSwitch}
+            onManageServers={() => navigate("/settings?tab=servers")}
+          />
+        </div>
       }
     />
   );
@@ -834,7 +844,7 @@ export default function App() {
               </div>
             </div>
           }>
-            <ChatView ref={chatViewRef} sessionId={selectedId} state={selectedState} toolContext={toolContext} onCancelPending={handleCancelPending} onRespondToUi={handleRespondToUi} onAbort={handleAbort} onForceKill={handleForceKill} onForkFromMessage={selectedId ? (entryId) => handleResumeSession(selectedId, "fork", entryId) : undefined} onDismissError={selectedId ? () => {
+            <ChatView ref={chatViewRef} sessionId={selectedId} state={selectedState} toolContext={toolContext} onCancelPending={handleCancelPending} onRespondToUi={handleRespondToUi} onAbort={handleAbort} onForceKill={handleForceKill} onForkFromMessage={selectedId ? (entryId) => handleResumeSession(selectedId, "fork", entryId) : undefined} onRetryAfterError={selectedId ? () => handleResumeSession(selectedId, "continue") : undefined} onDismissError={selectedId ? () => {
               setSessionStates((prev) => {
                 const next = new Map(prev);
                 const current = next.get(selectedId!);
@@ -1188,9 +1198,31 @@ export default function App() {
               <div className="flex-1 flex flex-col min-w-0 h-full">
                 {terminalViews}
               </div>
-            ) : sessionDetail ?? <LandingPage />
+            ) : sessionDetail ?? (
+              <LandingPage
+                providersReady={providersReady.ready}
+                pinnedCount={pinnedDirectories.length}
+                sessionsCount={sessions.size}
+                firstPinnedCwd={pinnedDirectories[0] ?? null}
+                onOpenPinDialog={() => setPinDialogOpen(true)}
+                onSpawnSession={handleSpawnSession}
+                navigate={navigate}
+              />
+            )
           }
         />
+        {pinDialogOpen && (
+          <DialogPortal>
+            <PinDirectoryDialog
+              onPin={(dirPath) => {
+                setPinnedDirectories((prev) => prev.includes(dirPath) ? prev : [...prev, dirPath]);
+                send({ type: "pin_directory", path: dirPath });
+                setPinDialogOpen(false);
+              }}
+              onCancel={() => setPinDialogOpen(false)}
+            />
+          </DialogPortal>
+        )}
       </div>
     );
   }
@@ -1260,7 +1292,17 @@ export default function App() {
               onBack={() => setPreviewState(null)}
             />
           ) : (
-            sessionDetail ?? <LandingPage />
+            sessionDetail ?? (
+              <LandingPage
+                providersReady={providersReady.ready}
+                pinnedCount={pinnedDirectories.length}
+                sessionsCount={sessions.size}
+                firstPinnedCwd={pinnedDirectories[0] ?? null}
+                onOpenPinDialog={() => setPinDialogOpen(true)}
+                onSpawnSession={handleSpawnSession}
+                navigate={navigate}
+              />
+            )
           )
         )}
         {settingsMatch && <SettingsPanel availableModels={(() => {
@@ -1276,6 +1318,18 @@ export default function App() {
         })()} />}
         {tunnelSetupMatch && <ZrokInstallGuide onBack={() => navigate("/")} />}
       </div>
+      {pinDialogOpen && (
+        <DialogPortal>
+          <PinDirectoryDialog
+            onPin={(dirPath) => {
+              setPinnedDirectories((prev) => prev.includes(dirPath) ? prev : [...prev, dirPath]);
+              send({ type: "pin_directory", path: dirPath });
+              setPinDialogOpen(false);
+            }}
+            onCancel={() => setPinDialogOpen(false)}
+          />
+        </DialogPortal>
+      )}
     </div>
   );
 }

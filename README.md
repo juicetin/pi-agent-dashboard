@@ -6,6 +6,12 @@
 
 A web-based dashboard for monitoring and interacting with [pi](https://github.com/badlogic/pi-mono) agent sessions from any browser, including mobile.
 
+**Website:** [blackbelttechnology.github.io/pi-agent-dashboard](https://blackbelttechnology.github.io/pi-agent-dashboard) — animated tour, screenshots, and install guide.
+
+**Changelog:** see [`CHANGELOG.md`](CHANGELOG.md) for release notes.
+
+**Releasing:** see [`docs/release-process.md`](docs/release-process.md) for the cut-a-release workflow.
+
 ## Features
 
 - **Real-time session mirroring** — See all active pi sessions with live streaming messages
@@ -750,13 +756,13 @@ The release workflow (`.github/workflows/publish.yml`) builds Electron installer
 | `windows-latest` | Windows x64 | `.exe` (NSIS) + `.zip` + portable |
 | `windows-latest` | Windows arm64 | `.zip` + portable (x64 Node.js via WoW64) |
 
-All artifacts are uploaded to a **draft GitHub Release** for review and publishing. The same workflow also publishes the npm package.
+All artifacts are uploaded to a **draft GitHub Release** for review and publishing. The same workflow also publishes the npm package. Release notes for the draft are extracted automatically from the matching `## [<version>]` section of [`CHANGELOG.md`](CHANGELOG.md) — see [`docs/release-process.md`](docs/release-process.md) for the full cut-a-release workflow.
 
 ## CI/CD
 
 ### Continuous Integration
 
-Every push to `main` and every pull request triggers the CI workflow (`.github/workflows/ci.yml`):
+Every push to `develop` and every pull request against `develop` triggers the CI workflow (`.github/workflows/ci.yml`):
 
 1. `npm ci` — install dependencies
 2. `npm run lint` — type check

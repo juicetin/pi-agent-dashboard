@@ -4,6 +4,7 @@
 import Fastify from "fastify";
 import fastifyStatic from "@fastify/static";
 import cors from "@fastify/cors";
+import compress from "@fastify/compress";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import os from "node:os";
@@ -29,7 +30,7 @@ import { createIdleTimer } from "./idle-timer.js";
 import { discoverAndBroadcastSessions } from "./session-bootstrap.js";
 import { scanAllSessions } from "./session-scanner.js";
 import { needsMigration, runMigration } from "./migrate-persistence.js";
-import { detectZrokBinary, cleanupStaleZrok, createTunnel, deleteTunnel } from "./tunnel.js";
+import { detectZrokBinary, cleanupStaleZrok, createTunnel, deleteTunnel, scavengeOrphanZrokProcesses, getTunnelUrl } from "./tunnel.js";
 import { registerAuthPlugin, validateWsUpgrade } from "./auth-plugin.js";
 import { findBundledExtension, registerBridgeExtension } from "@blackbelt-technology/pi-dashboard-shared/bridge-register.js";
 import { createNetworkGuard, isLoopback, isBypassedHost } from "./localhost-guard.js";
@@ -264,23 +265,62 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
     connectionTimeout: 10_000,
   });
 
-  // CORS: allow localhost by default + configured origins
+  // Compression: gzip/deflate for HTTP responses. Critical for large client
+  // bundles (~3 MB JS) served over tunnels like zrok which abort big transfers.
+  // Brotli is intentionally disabled — zrok's free public proxy has been
+  // observed to truncate/stream-reset `content-encoding: br` responses under
+  // parallel browser load (curl succeeds, Chrome reports ERR_ABORTED 500).
+  // gzip is universally supported and round-trips cleanly through zrok.
+  // threshold=1024 skips tiny responses; global=true compresses all routes.
+  await fastify.register(compress, {
+    global: true,
+    threshold: 1024,
+    encodings: ["gzip", "deflate"],
+  });
+
+  // CORS: allow localhost, the active zrok tunnel URL, any *.share.zrok.io
+  // host (so tunnel URL rotation doesn't break loads), and configured origins.
+  //
+  // Two critical correctness notes:
+  // (1) Vite emits `<script type="module" crossorigin>` tags, which browsers
+  //     always request in CORS mode — even when same-origin. If the server
+  //     doesn't emit `Access-Control-Allow-Origin` for the request's own
+  //     origin, the browser aborts the script with ERR_ABORTED 500. So when
+  //     accessed via a tunnel URL, that URL MUST be in the allow list or all
+  //     asset loads fail in the browser (while curl — which sends no Origin
+  //     header — works fine). This is the exact failure mode that looked
+  //     like a zrok problem for hours of debugging.
+  // (2) On origin mismatch, return `cb(null, false)` (no CORS headers) rather
+  //     than `cb(new Error(…), false)`. The latter causes @fastify/cors to
+  //     surface the error as HTTP 500 on every asset — far worse than
+  //     silently omitting CORS headers and letting the browser enforce its
+  //     own same-origin policy.
   const corsAllowedOrigins = config.corsAllowedOrigins ?? [];
   await fastify.register(cors, {
     origin: (origin, cb) => {
-      // Same-origin (no Origin header) — always allow
+      // Same-origin navigation (no Origin header) — always allow.
       if (!origin) return cb(null, true);
-      // Localhost / 127.0.0.1 / [::1] — any port
       try {
         const u = new URL(origin);
         const host = u.hostname;
+        // Loopback — any port.
         if (host === "localhost" || host === "127.0.0.1" || host === "[::1]" || host === "::1") {
           return cb(null, true);
         }
-      } catch { /* ignore parse errors */ }
-      // Configured origins
+        // Active zrok tunnel URL — checked dynamically so URL rotation is
+        // picked up without a server restart.
+        const tunnelUrl = getTunnelUrl();
+        if (tunnelUrl && origin === tunnelUrl) return cb(null, true);
+        // Any *.share.zrok.io host — covers the brief window between a new
+        // reservation being created and the in-memory `activeTunnelUrl`
+        // being populated, plus any other zrok share the user points at us.
+        if (host.endsWith(".share.zrok.io")) return cb(null, true);
+      } catch { /* ignore URL parse errors */ }
+      // Explicitly configured origins.
       if (corsAllowedOrigins.includes(origin)) return cb(null, true);
-      cb(new Error("CORS origin not allowed"), false);
+      // Unknown cross-origin request — don't emit CORS headers, but don't
+      // 500 either. Browser will block the request for us.
+      cb(null, false);
     },
     credentials: true,
   });
@@ -432,6 +472,13 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
     await fastify.register(fastifyStatic, {
       root: clientDir,
       prefix: "/",
+      // Serve pre-compressed sibling files (assets/foo.js.gz alongside foo.js)
+      // directly when the client accepts gzip. This gives every compressed
+      // response a stable Content-Length header — dynamic compression via
+      // @fastify/compress streams responses without Content-Length, which
+      // some HTTP/2 proxy chains (notably zrok free-tier) occasionally
+      // stream-reset as ERR_ABORTED 500 in browsers.
+      preCompressed: true,
       setHeaders: (res, filePath) => {
         if (filePath.endsWith(".html")) {
           res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");

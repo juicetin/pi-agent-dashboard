@@ -11,6 +11,7 @@ see [`docs/release-process.md`](docs/release-process.md).
 ## [Unreleased]
 
 ### Added
+- **`ask_user` batch method:** the `ask_user` tool now accepts `{method: "batch", title, questions: [...], message?}` to ask multiple related questions in one call. Sub-questions execute sequentially via existing `ctx.ui.*` primitives (no adapter changes). Mid-batch cancellation returns partial results with `cancelled: true`. `prepareArguments` rescues the common LLM drift shapes Opus 4.7 emits: stringified `questions` arrays, explicit `method: "batch"` without an outer `title` (backfilled from the first sub-question), `input_type` wrapper flattening, `header`/`question` → `title`, `{label,value}[]` options normalized to labels with a warning surfaced in `details.warnings`. Schema forbids nesting (batches cannot contain batches). Backward compatible — all existing single-method shapes unchanged.
 - **LandingPage onboarding:** empty-state main pane now renders three
   guided steps (① Setup credentials → ② Add folder → ③ Start session)
   with live state (pending / done / locked). Each step collapses to a

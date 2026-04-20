@@ -176,3 +176,8 @@ The `ask_user` tool's `prepareArguments` SHALL repair known malformed batch shap
 - **AND** SHALL rename `header` or `question` to `title`
 - **AND** the resulting sub-question SHALL match one of the single-question schema branches
 
+#### Scenario: explicit method=batch call missing outer title
+- **WHEN** an LLM calls `ask_user` with `{method: "batch", questions: [{method: "confirm", question: "Proceed?"}, ...]}` (explicit `method: "batch"` but no outer `title`)
+- **THEN** `prepareArguments` SHALL backfill `title` from the first sub-question's `title`, `question`, or `header` (or `"Questions"` as a last-resort fallback)
+- **AND** the resulting call SHALL validate against the `batch` schema branch
+

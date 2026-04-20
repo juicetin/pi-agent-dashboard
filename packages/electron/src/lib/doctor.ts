@@ -13,7 +13,7 @@ import { getBundledNodePath, getBundledNpmPath } from "./bundled-node.js";
 import { isApiKeyConfigured, readModeFile } from "./wizard-state.js";
 import { MANAGED_DIR } from "./managed-paths.js";
 import { isDashboardRunning } from "./health-check.js";
-import { ToolResolver } from "@blackbelt-technology/pi-dashboard-shared/platform/binary-lookup.js";
+import { ToolResolver } from "@blackbelt-technology/pi-dashboard-shared/platform/tools.js";
 import { isKnownBadNode } from "@blackbelt-technology/pi-dashboard-shared/platform/node-version-check.js";
 
 // Shared binary-lookup primitive (where/which + managed-bin + login-shell).

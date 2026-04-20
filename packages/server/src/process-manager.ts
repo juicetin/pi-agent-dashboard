@@ -21,7 +21,7 @@ import os from "node:os";
 import type { ChildProcess } from "@blackbelt-technology/pi-dashboard-shared/platform/spawn.js";
 import type { SpawnStrategy } from "@blackbelt-technology/pi-dashboard-shared/config.js";
 import { MANAGED_BIN } from "@blackbelt-technology/pi-dashboard-shared/managed-paths.js";
-import { ToolResolver } from "@blackbelt-technology/pi-dashboard-shared/platform/binary-lookup.js";
+import { ToolResolver } from "@blackbelt-technology/pi-dashboard-shared/platform/tools.js";
 import { execSync, spawnSync, buildSafeArgv } from "@blackbelt-technology/pi-dashboard-shared/platform/spawn.js";
 import {
   spawnDetached,

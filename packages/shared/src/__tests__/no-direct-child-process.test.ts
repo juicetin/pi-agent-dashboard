@@ -20,8 +20,10 @@ const ALLOWLIST: readonly string[] = [
   // spawn.ts is the merged process-creation primitives module (exec +
   // subprocess-adapter + detached-spawn + spawn-mechanism).
   "packages/shared/src/platform/spawn.ts",
-  // runner.ts is the Recipe engine that also needs child_process.
-  "packages/shared/src/platform/runner.ts",
+  // tools.ts is the merged binary-lookup + Recipe engine + typed tool
+  // wrappers (git / npm / openspec). Needs child_process for the
+  // runner's spawnSync/spawn and binary-lookup's where/which.
+  "packages/shared/src/platform/tools.ts",
 ];
 
 /**

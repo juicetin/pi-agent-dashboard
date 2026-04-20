@@ -6,7 +6,7 @@
  * See change: platform-command-executor.
  */
 import { describe, it, expect, beforeEach } from "vitest";
-import { run, unwrap, resetResolverCache, type Recipe } from "../platform/runner.js";
+import { run, unwrap, resetResolverCache, type Recipe } from "../platform/tools.js";
 
 // A trivial Recipe that runs `node --version` and returns the version string.
 const NODE_VERSION: Recipe<Record<string, never>, string> = {

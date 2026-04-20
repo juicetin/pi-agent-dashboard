@@ -13,7 +13,7 @@ const { mockExecSync, mockExistsSync } = vi.hoisted(() => ({
 vi.mock("node:child_process", () => ({ execSync: mockExecSync }));
 vi.mock("node:fs", () => ({ existsSync: mockExistsSync }));
 
-import { ToolResolver } from "../platform/binary-lookup.js";
+import { ToolResolver } from "../platform/tools.js";
 
 const MANAGED_BIN = path.join(os.homedir(), ".pi-dashboard", "node_modules", ".bin");
 

@@ -21,7 +21,7 @@
  * See change: consolidate-tool-resolution.
  */
 import { listOr, statusOr, OPENSPEC_LIST, OPENSPEC_STATUS } from "./platform/openspec.js";
-import { runAsync, unwrap } from "./platform/runner.js";
+import { runAsync, unwrap } from "./platform/tools.js";
 import type { OpenSpecData, OpenSpecChange, OpenSpecArtifact } from "./types.js";
 
 const EMPTY_DATA: OpenSpecData = { initialized: false, changes: [] };

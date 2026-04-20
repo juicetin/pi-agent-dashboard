@@ -5,7 +5,7 @@
  * place. See change: consolidate-platform-handlers.
  */
 import { isProcessRunning as platformIsProcessRunning } from "@blackbelt-technology/pi-dashboard-shared/platform/process.js";
-import { ToolResolver } from "@blackbelt-technology/pi-dashboard-shared/platform/binary-lookup.js";
+import { ToolResolver } from "@blackbelt-technology/pi-dashboard-shared/platform/tools.js";
 
 export interface EditorEntry {
   id: string;

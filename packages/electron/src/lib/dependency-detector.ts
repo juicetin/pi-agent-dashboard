@@ -18,7 +18,7 @@ import {
   getDefaultRegistry,
   type Resolution,
 } from "@blackbelt-technology/pi-dashboard-shared/tool-registry/index.js";
-import { ToolResolver } from "@blackbelt-technology/pi-dashboard-shared/platform/binary-lookup.js";
+import { ToolResolver } from "@blackbelt-technology/pi-dashboard-shared/platform/tools.js";
 import { MANAGED_BIN, MANAGED_DIR } from "./managed-paths.js";
 
 // Local resolver for inline lookups (pi-dashboard existence check).

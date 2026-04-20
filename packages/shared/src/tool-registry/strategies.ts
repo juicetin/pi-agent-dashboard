@@ -11,7 +11,7 @@
 import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
-import { ToolResolver } from "../platform/binary-lookup.js";
+import { ToolResolver } from "../platform/tools.js";
 import { MANAGED_BIN, MANAGED_DIR } from "../managed-paths.js";
 import * as npm from "../platform/npm.js";
 import type { Strategy, StrategyResult } from "./types.js";

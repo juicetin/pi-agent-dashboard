@@ -5,8 +5,14 @@
 - [x] 0.3 ~~MERGE-PLAN §0.1a revert~~ — **NO-OP**: preload-fastify-cjs / node-version-check / 4 openspec folders never existed on the pushed PR branch (`de695e1`). Verified via `git ls-tree -r origin/windows-integration | grep -iE "preload|node-version-check"` → only unrelated `packages/electron/src/preload.ts`
 - [x] 0.4 Add `packages/server/src/node-guard.ts` + `packages/server/src/__tests__/node-guard.test.ts` + preflight call in `cmdStart` and `runForeground` — committed as `4c564fc feat(server): refuse to start on Node versions affected by nodejs/node#58515`. `engines.node >=22.18.0` already in `packages/server/package.json` (commit `8c2cde5` pre-existing)
 - [x] 0.5 ~~MERGE-PLAN §0.2 regression fixes~~ — **ALREADY APPLIED** on branch. `detach?: boolean` option added by `9c497b8`; `detach: false` for pi-session spawn applied by `26e033e`. `useWindowsRedirect` branch was removed entirely during the `a73178d` platform/ consolidation (spawn.ts now routes `.cmd` shims through cmd.exe only for `.cmd`/`.bat` lookups, independent of logPath). Tests 41/41 green (`packages/shared/src/__tests__/spawn.test.ts`)
-- [ ] 0.6 Manual Windows validation: fresh start, no flash on ×3 session spawn, `server.log` populated, `/api/restart` works, `pi-dashboard stop` frees port 8888 when PID stale — **HUMAN ACTION, PAUSED HERE**
-- [ ] 0.7 If any of 0.6 fails, STOP and fix before proceeding
+- [x] 0.6 Manual Windows validation — **COMPLETE** on Windows 10.0.26200.7840:
+  - ✓ Fresh start from `npx pi-dashboard start` in repo root
+  - ✓ No cmd.exe flash on ×3 session spawn (MERGE-PLAN §0.2 regression gate SATISFIED)
+  - ✓ `server.log` populated with timestamped startup + diagnostics
+  - ✓ `/api/restart` works (Node-based orchestrator, no sh/lsof/curl)
+  - ✓ `npx pi-dashboard stop` frees :8000 + :9999 after Task Manager kill
+  - **Bonus fix:** `40a1319 fix(server): bridge auto-registration path math was off by one` — `createServer()` used `resolve(__serverDir, '..', '..')` (gives `packages/`) instead of `'..', '..', '..'` (repo root). `findBundledExtension(packages/)` looked for `packages/packages/extension` which doesn't exist → `~/.pi/agent/settings.json` was never created → pi spawned in RPC mode but bridge never loaded → UI stayed empty. Silent failure; surfaced only because Windows box had no stale settings.json from prior installs. Fix adds explicit log lines so future regressions fail loudly.
+- [x] 0.7 N/A — 0.6 passed, proceeding to Phase 0.5
 - [x] 0.8 Tag `git tag -a pre-develop-merge` rollback anchor — done (points to `4c564fc`)
 
 ## 0.5 Safety commits (NEW, not in MERGE-PLAN)

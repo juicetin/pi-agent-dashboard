@@ -219,7 +219,7 @@ export function scavengeOrphanZrokProcesses(port: number): number[] {
     if (!Number.isFinite(pid) || pid <= 0) continue;
     if (pid === process.pid) continue; // never kill ourselves
     try {
-      process.kill(pid, "SIGTERM");
+      killPidWithGroup(pid, "SIGTERM");
       killed.push(pid);
       console.log(`Scavenged orphan zrok process (PID ${pid})`);
     } catch {

@@ -762,7 +762,7 @@ All artifacts are uploaded to a **draft GitHub Release** for review and publishi
 
 ### Continuous Integration
 
-Every push to `main` and every pull request triggers the CI workflow (`.github/workflows/ci.yml`):
+Every push to `develop` and every pull request against `develop` triggers the CI workflow (`.github/workflows/ci.yml`):
 
 1. `npm ci` — install dependencies
 2. `npm run lint` — type check

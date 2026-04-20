@@ -378,6 +378,12 @@ make clean              # Destroy all cloned VMs
 | `packages/electron/scripts/test-electron-install-inner.sh` | Inner test script run inside Docker container |
 | `packages/electron/resources/icon.png` | Master 1024×1024 app icon (π on dark navy) |
 | `.github/workflows/publish.yml` | CI: builds DMG (macOS), DEB+AppImage (Linux), NSIS+ZIP+portable (Windows) on native runners; publishes npm + GitHub Release |
+| `.github/workflows/deploy-site.yml` | CI: builds marketing site in `/site` with Astro, enforces 50 KB gzipped JS budget, deploys to GitHub Pages via `actions/deploy-pages@v4` on push to `develop` when `site/**` changes |
+| `site/` | Public marketing site (Astro + Tailwind + MDX + Preact). Self-contained, published at `BlackBeltTechnology.github.io/pi-agent-dashboard` (later `pi-dashboard.dev`). Uses Pi-blue palette, Supabase-style playful bento grid, 4-state storytelling hero animation. |
+| `site/src/components/HeroAnimation.tsx` | Preact island — the only hydrated hero component. Cycles through dashboard state screenshots every 6s with motion-one crossfade; pauses on hover/touch; respects `prefers-reduced-motion`. |
+| `site/src/content/features.ts` | Data-driven feature list rendered by `BentoGrid.astro` into the 12-card bento layout. |
+| `site/scripts/screenshots/capture.ts` | Playwright screenshot pipeline. Two modes: `SCREENSHOT_TARGET_URL=<url> npm run screenshots` captures against an existing dashboard (recommended); plain `npm run screenshots` spawns a temp `pi-dashboard` with fixture sessions, captures desktop (1440) + mobile (390), and cleans up. Outputs to `site/public/screenshots/{desktop,mobile}/`. |
+| `site/scripts/check-js-size.mjs` | Enforces the 50 KB gzipped JavaScript budget on `site/dist/**/*.js` (wired to `npm run size` and to the deploy workflow). |
 
 ## Build & Restart Workflow
 

@@ -31,7 +31,7 @@ When a user clicks "Sign In" for an auth-code provider, the UI SHALL call `POST 
 - **THEN** the UI SHALL display the error message and a "Try Again" button
 
 ### Requirement: Device code login flow
-When a user clicks "Sign In" for GitHub Copilot, the UI SHALL call `POST /api/provider-auth/device-code`, display the verification URL and user code in a modal, open the verification URL in a new tab, and poll `GET /api/provider-auth/device-status/:flowId` until authorization completes or the code expires.
+When a user clicks "Sign In" for GitHub Copilot, the UI SHALL call `POST /api/provider-auth/device-code`, display the verification URL and user code in a modal, and poll `GET /api/provider-auth/device-status/:flowId` until authorization completes or the code expires. The UI SHALL NOT automatically open the verification URL; the user must click an explicit "Open Registration Page" button (see "Device code flow requires explicit user action to open browser").
 
 #### Scenario: Successful device code login
 - **WHEN** the user enters the code on GitHub and authorizes
@@ -69,3 +69,16 @@ The UI SHALL fetch provider status from `GET /api/provider-auth/status` when the
 #### Scenario: Status refresh after login
 - **WHEN** the user completes an OAuth login
 - **THEN** the UI SHALL re-fetch `/api/provider-auth/status` and update all provider statuses
+
+### Requirement: Device code flow requires explicit user action to open browser
+When the device code flow is initiated, the system SHALL NOT automatically open the verification URL in a new browser tab. Instead, the system SHALL display the verification URL as a clickable link and a dedicated "Open Registration Page" button. The user MUST manually click the button to open the URL.
+
+#### Scenario: Device code flow shows button instead of auto-opening
+- **WHEN** the user initiates a device code login (e.g., GitHub Copilot)
+- **THEN** the device code modal displays the user code and verification URL
+- **AND** a "Open Registration Page" button is shown
+- **AND** no browser tab is opened automatically
+
+#### Scenario: User clicks button to open registration
+- **WHEN** the user clicks the "Open Registration Page" button in the device code modal
+- **THEN** the verification URL opens in a new browser tab

@@ -77,8 +77,9 @@ describe("editor-registry", () => {
       mockedExecSync.mockImplementation((cmd) => {
         const s = String(cmd);
         if (s.includes("pgrep")) {
-          // Only Zed is running
-          if (s.includes("Zed")) return Buffer.from("12345\n");
+          // Only Zed is running — match on both the macOS pattern
+          // ("/Applications/Zed.app") and the Linux pattern ("zed").
+          if (s.includes("Zed") || s.includes("zed")) return Buffer.from("12345\n");
           throw new Error("not found");
         }
         if (s.includes("which")) {

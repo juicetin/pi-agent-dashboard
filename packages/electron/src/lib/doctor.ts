@@ -14,7 +14,22 @@ import { isApiKeyConfigured, readModeFile } from "./wizard-state.js";
 import { MANAGED_DIR } from "./managed-paths.js";
 import { isDashboardRunning } from "./health-check.js";
 import { ToolResolver } from "@blackbelt-technology/pi-dashboard-shared/platform/tools.js";
-import { isKnownBadNode } from "@blackbelt-technology/pi-dashboard-shared/platform/node-version-check.js";
+/**
+ * Local copy of `isAffectedNode` from `packages/server/src/node-guard.ts`.
+ * Inlined to avoid a cross-package import (electron→server) — adding an
+ * `exports` field to the server package just for one helper is overkill,
+ * and this regex hasn't needed to change since nodejs/node#58515 landed.
+ * Keep in sync with the server copy.
+ */
+function isAffectedNode(version: string): boolean {
+  const m = version.match(/^v?(\d+)\.(\d+)\.(\d+)/);
+  if (!m) return false;
+  const major = Number(m[1]);
+  const minor = Number(m[2]);
+  if (major === 22 && minor < 18) return true;
+  if (major === 24 && minor >= 1 && minor < 3) return true;
+  return false;
+}
 
 // Shared binary-lookup primitive (where/which + managed-bin + login-shell).
 // See change: consolidate-platform-handlers (Section 10).
@@ -105,14 +120,14 @@ export async function runDoctor(): Promise<DoctorReport> {
   // Node (used when detected), else the bundled Node, else this Electron's
   // embedded Node (process.versions.node).
   const runtimeVersion = systemNodeVersion ?? bundledNodeVersion ?? `v${process.versions.node}`;
-  const runtimeCheck = isKnownBadNode(runtimeVersion);
+  const runtimeBad = isAffectedNode(runtimeVersion);
   checks.push({
     name: "Node runtime compatibility",
-    status: runtimeCheck.bad ? "warning" : "ok",
-    message: runtimeCheck.bad
+    status: runtimeBad ? "warning" : "ok",
+    message: runtimeBad
       ? `${runtimeVersion} is affected by nodejs/node#58515 (Fastify ajv-compiler crash)`
       : `${runtimeVersion} is compatible`,
-    detail: runtimeCheck.bad
+    detail: runtimeBad
       ? "Upgrade to Node >=22.18.0 or >=24.3.0 to avoid server-launch crashes on Windows."
       : undefined,
   });

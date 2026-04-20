@@ -69,6 +69,7 @@
     "@blackbelt-technology/pi-dashboard-web": "*"
   },
   "devDependencies": {
+    "@mariozechner/pi-tui": "^0.67.68",
     "jsdom": "^29.0.2",
     "tsx": "^4.21.0",
     "typescript": "^5.7.0",

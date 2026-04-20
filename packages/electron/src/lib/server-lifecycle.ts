@@ -8,6 +8,7 @@
  * on the ESM module resolution path. All config reading and health checking is inlined.
  */
 import { spawnDetached, waitForReady } from "@blackbelt-technology/pi-dashboard-shared/platform/spawn.js";
+import { ToolResolver } from "@blackbelt-technology/pi-dashboard-shared/platform/tools.js";
 import { existsSync, mkdirSync, openSync, writeFileSync, readFileSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";

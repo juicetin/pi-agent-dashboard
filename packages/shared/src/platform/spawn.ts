@@ -127,11 +127,18 @@ function withHide<T extends AnyOptions>(opts: T): T & { windowsHide: boolean } {
 
 // ── Synchronous wrappers ────────────────────────────────────────────────────
 
-/** Wrapped `execSync`. Always `windowsHide: true` unless overridden. */
-export function execSync(
-  command: string,
-  options?: ExecSyncOptions,
-): Buffer | string {
+/**
+ * Wrapped `execSync`. Always `windowsHide: true` unless overridden.
+ *
+ * Overloaded to match Node's own signature: callers that pass a string
+ * `encoding` get `string` back; callers that pass no encoding (or `buffer`)
+ * get `Buffer`. Without these overloads every consumer would have to cast
+ * `.toString()` even when they explicitly requested utf-8 — which is what
+ * broke CI after the develop merge (dozens of `.trim()` on `string | Buffer`).
+ */
+export function execSync(command: string, options: ExecSyncOptions & { encoding: BufferEncoding }): string;
+export function execSync(command: string, options?: ExecSyncOptions): Buffer;
+export function execSync(command: string, options?: ExecSyncOptions): Buffer | string {
   return nodeExecSync(command, withHide(options));
 }
 
@@ -202,14 +209,20 @@ export function spawn(
 
 // ── Promise-returning variants ──────────────────────────────────────────────
 
-/** Promise-returning exec. */
-export const execAsync = promisify(exec) as (
+/**
+ * Promise-returning exec. We cast via `unknown` because `promisify` picks up
+ * our overloaded signature (which includes a callback variant returning
+ * void), producing a type incompatible with the final Promise shape. The
+ * runtime behavior is correct — the cast just tells TS to trust the final
+ * {stdout,stderr} contract.
+ */
+export const execAsync = promisify(exec) as unknown as (
   command: string,
   options?: ExecOptions,
 ) => Promise<{ stdout: string | Buffer; stderr: string | Buffer }>;
 
-/** Promise-returning execFile. */
-export const execFileAsync = promisify(execFile) as (
+/** Promise-returning execFile (see execAsync comment for why `unknown` cast). */
+export const execFileAsync = promisify(execFile) as unknown as (
   file: string,
   args?: readonly string[],
   options?: ExecFileOptions,

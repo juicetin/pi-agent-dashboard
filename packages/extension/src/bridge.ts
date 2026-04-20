@@ -987,11 +987,16 @@ function initBridge(pi: ExtensionAPI) {
         };
         ctx.ui.setWidget(
           "pi-dashboard-launch",
-          (tui, theme) => {
+          // Explicit parameter types — pi-coding-agent's setWidget callback
+          // signature references pi-tui's TUI/Theme which TS can't always
+          // narrow through the overload. Typed as `any` to avoid a hard
+          // dependency on pi-tui's exported type surface (the extension
+          // still runs against whatever pi-tui pi ships at runtime).
+          (tui: any, theme: any) => {
             const loader = new Loader(
               tui,
-              (s) => theme.fg("accent", s),
-              (s) => theme.fg("muted", s),
+              (s: string) => theme.fg("accent", s),
+              (s: string) => theme.fg("muted", s),
               buildMessage(),
             );
             activeLoader = loader;

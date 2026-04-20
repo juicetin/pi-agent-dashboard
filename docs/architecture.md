@@ -528,18 +528,19 @@ This is a **race-independent fix**: it doesn't try to close the timing window, i
 
 ### Cross-OS Platform Primitives
 
-Cross-OS behavior (`process.platform === "win32"` branches) is centralized in `packages/shared/src/platform/` (pure Node, consumed by server + extension + Electron). The module has an `index.ts` barrel plus per-concern files:
+Cross-OS behavior (`process.platform === "win32"` branches) is centralized in `packages/shared/src/platform/` (pure Node, consumed by server + extension + Electron). As of `prep-for-develop-merge`, the module consolidates into **5 concern-aligned modules + 1 barrel + 3 namespace shims** (was 18 files pre-consolidation):
 
 | File | Concerns |
 |---|---|
-| `binary-lookup.ts` | `where`/`which` dispatch, `.cmd` extension on Windows, managed-bin search, login-shell fallback. Exports `ToolResolver` class + pi/tsx/node resolve helpers. |
-| `process.ts` | `findPortHolders` (netstat vs lsof), `killProcess` (taskkill tree on Windows, SIGTERM→SIGKILL on Unix), `isProcessAlive`, `killPidWithGroup` (negative-pid on Unix, positive on Windows). |
-| `process-scan.ts` | `isProcessRunning` (tasklist vs pgrep), pure `parseEtime`. |
-| `shell.ts` | `detectShell` (COMSPEC on Windows, SHELL on Unix, with fallbacks), `getTerminalEnvHints` (TERM=cygwin hint for node-pty on Windows). |
-| `commands.ts` | `openBrowser` (`open`/`start`/`xdg-open`), `isVirtualMachine` (`sysctl`/`systemd-detect-virt`/`wmic`). |
-| `detached-spawn.ts` | `spawnDetached` (libuv-correct detached defaults on every OS — on Windows, `detached: true` excludes the child from the parent's kill-on-close job for PGID-equivalent lifecycle), `waitForNoCrash` (short window: did the child survive?), `waitForReady` (positive probe: is it serving HTTP yet?). |
-| `spawn-mechanism.ts` | `SpawnMechanism` enum (`tmux`/`wt`/`wsl-tmux`/`headless`) and pure `selectMechanism` selector. `buildWtArgs` builds argv for Windows Terminal `new-tab`. `sessionFlagsToArgv` is the uniform `--session`/`--fork` builder every mechanism MUST use so no branch drops options. |
-| `process-identify.ts` | `findPidByMarker` + `isProcessLikePi` + `isPiCommandLine`. Unix implementations run `ps`/`/proc`; Windows stubs return empty/true because command-line lookup is delegated to `headlessPidRegistry`. |
+| `spawn.ts` | **Process creation**. `spawn`/`spawnSync`/`exec`/`execFile`/`execSync` wrappers with `windowsHide:true` default, `buildSafeArgv` (cmd.exe routing for `.cmd`/extensionless names on Windows), `spawnDetached` (libuv-correct detached defaults, optional `detach:boolean` per-call to keep child in parent's Job Object when lifecycle is tied — used by pi-session spawn to avoid console flash), `waitForNoCrash`/`waitForReady` lifecycle primitives, `SubprocessAdapter` DI shim for package-manager-wrapper, `selectMechanism`/`buildWtArgs`/`sessionFlagsToArgv` for `tmux`/`wt`/`wsl-tmux`/`headless` selection. |
+| `process.ts` | **Process observation + termination**. `findPortHolders` (netstat vs lsof), `killProcess` (`taskkill /F /T` tree kill on Windows, SIGTERM→SIGKILL on POSIX), `isProcessAlive`, `killPidWithGroup` (negative-pid on POSIX, direct kill on Windows), `isProcessRunning` (tasklist vs pgrep), pure `parseEtime`, `findPidByMarker`, `isProcessLikePi`, `isPiCommandLine`. |
+| `tools.ts` | **Tool resolution + Recipe engine + typed wrappers**. `ToolResolver` class (`which`/`resolvePi`/`resolveTsx`/`resolveNode`/`buildSpawnEnv`), Recipe engine (`Recipe<I,O>` / `Result<T>` / `run` / `runAsync` / `unwrap` with timeout + tolerated-exit handling + uniform error normalization), and typed wrappers for git (`isGitRepo`, `currentBranch`, `diff`, `prNumber`, etc.), npm (`rootGlobal`, `install`, `viewVersion`, etc.), and openspec (`list`, `status`, `archiveCompleted`). |
+| `git.ts` / `npm.ts` / `openspec.ts` | **Thin namespace shims** that re-export subsets of `tools.ts`. Exist only to preserve the `import * as git from ".../platform/git.js"` call pattern used by consumers (`session-diff.ts`, `git-info.ts`, `update-checker.ts`, `pi-resource-scanner.ts`). |
+| `paths.ts` | OS-aware path primitives: `normalizePath`, `samePath`, `parsePathInput`, `withTrailingSep`, `isFilesystemRoot`. Windows multi-drive invariant (A:\, B:\ never merge; bare `B:` treated as drive root). |
+| `system.ts` | **OS miscellany**. `openBrowser` (`open`/`start`/`xdg-open`), `isVirtualMachine` (`sysctl`/`systemd-detect-virt`/`wmic`), `detectShell` (COMSPEC/SHELL with fallbacks), `getTerminalEnvHints` (`TERM=cygwin` for node-pty on Windows). |
+| `index.ts` | Barrel — re-exports `process`, `spawn`, `system`, `tools` as top-level names and `git`/`npm`/`openspec`/`paths` as namespaces. |
+
+Exactly **2 files** are allowed to import `node:child_process` directly: `spawn.ts` and `tools.ts`. The rest consume via the wrappers. Enforced by `packages/shared/src/__tests__/no-direct-child-process.test.ts`.
 
 Every exported helper that depends on OS takes an optional `platform: NodeJS.Platform` parameter (and usually `exec`/`kill`/`env` for full injection). Tests exercise both branches via these parameters rather than mutating `process.platform`. This is the pattern to follow for any new cross-OS primitives.
 

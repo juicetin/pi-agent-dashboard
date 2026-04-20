@@ -53,14 +53,14 @@ Cherry-pick in MERGE-PLAN §2 order, SKIPPING `8737249` (already in Phase 0.5):
 
 Skipping `8737249` (Phase 0.5):
 
-- [ ] 2.1 `f037530` ask-user spec scenario + changelog (merge with our spec edits)
-- [ ] 2.2 `381dbfe` CHANGELOG Unreleased consolidation
-- [ ] 2.3 `93e0bb8` CI: switch main branch trigger to develop (merge publish.yml)
-- [ ] 2.4 `ca9d76f` CI: sync-release-version pushes to develop
-- [ ] 2.5 `2e50ebe` CI: deploy-site configure-pages enablement
-- [ ] 2.6 `2ef37c6` harden ask_user argument validation (depends on 1.17)
-- [ ] 2.7 `cf3ab84` pi core version checker (may conflict with our routes index)
-- [ ] 2.8 Run `npm test` + `npm run build`; must be green before Phase 3
+- [x] 2.1 `f037530` ask-user spec scenario + changelog — clean
+- [x] 2.2 `381dbfe` CHANGELOG Unreleased consolidation — clean
+- [x] 2.3 `93e0bb8` CI: switch main branch trigger to develop — AGENTS.md pure-additive take-develop
+- [x] 2.4 `ca9d76f` sync-release-version workflow — clean
+- [x] 2.5 `2e50ebe` deploy-site configure-pages — clean
+- [x] 2.6 `2ef37c6` harden ask_user argument validation — take-theirs for spec+test+impl (builds on 7a0e926 we already took fully)
+- [x] 2.7 `cf3ab84` pi core version checker — `server.ts` union (both import blocks + both content blocks). Added `ban:child_process-ok` markers to `pi-core-checker.ts` + `pi-core-updater.ts` (tech debt: refactor to platform/spawn.ts Recipe engine in Phase 4)
+- [x] 2.8 Test gate: 761/761 shared+extension tests pass.
 
 ## 3. Phase 3 — Category C (manual merge, 5 commits)
 

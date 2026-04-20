@@ -11,6 +11,14 @@ see [`docs/release-process.md`](docs/release-process.md).
 ## [Unreleased]
 
 ### Added
+
+### Changed
+
+### Fixed
+
+## [0.3.0] - 2026-04-20
+
+### Added
 - **LandingPage onboarding** — empty-state main pane renders three
   guided steps (① Setup credentials → ② Add folder → ③ Start session)
   with live state; each step collapses to a compact ✔ row once

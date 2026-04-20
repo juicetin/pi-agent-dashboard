@@ -69,7 +69,7 @@ function makeFlowId(): string {
 // (open/start/xdg-open) and URL escaping live in
 // `packages/shared/src/platform/commands.ts`.
 // See change: consolidate-platform-handlers.
-import { openBrowser as platformOpenBrowser } from "@blackbelt-technology/pi-dashboard-shared/platform/commands.js";
+import { openBrowser as platformOpenBrowser } from "@blackbelt-technology/pi-dashboard-shared/platform/system.js";
 
 /** Open a URL in the system's default browser */
 function openInBrowser(url: string): void {

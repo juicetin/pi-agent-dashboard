@@ -5,7 +5,7 @@
  * See change: consolidate-platform-handlers.
  */
 import { describe, it, expect } from "vitest";
-import { detectShell, getTerminalEnvHints } from "../platform/shell.js";
+import { detectShell, getTerminalEnvHints } from "../platform/system.js";
 
 describe("detectShell", () => {
   it("uses COMSPEC on Windows when present", () => {

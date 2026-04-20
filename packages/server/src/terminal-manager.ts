@@ -15,7 +15,7 @@ const DEFAULT_BUFFER_SIZE = 256 * 1024; // 256KB
 import {
   detectShell as platformDetectShell,
   getTerminalEnvHints as platformTerminalEnvHints,
-} from "@blackbelt-technology/pi-dashboard-shared/platform/shell.js";
+} from "@blackbelt-technology/pi-dashboard-shared/platform/system.js";
 
 /** Detect the appropriate shell for the current platform. */
 export function detectShell(platform?: string): string {

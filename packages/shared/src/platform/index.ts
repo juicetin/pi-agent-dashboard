@@ -1,7 +1,6 @@
 export * from "./process.js";
-export * from "./shell.js";
-export * from "./commands.js";
 export * from "./spawn.js";
+export * from "./system.js";
 export * from "./tools.js";
 export * as git from "./git.js";
 export * as openspec from "./openspec.js";

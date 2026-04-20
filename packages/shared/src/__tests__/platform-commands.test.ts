@@ -4,7 +4,7 @@
  * See change: consolidate-platform-handlers.
  */
 import { describe, it, expect, vi } from "vitest";
-import { openBrowser, isVirtualMachine } from "../platform/commands.js";
+import { openBrowser, isVirtualMachine } from "../platform/system.js";
 
 describe("openBrowser", () => {
   it("uses `open` on macOS", () => {

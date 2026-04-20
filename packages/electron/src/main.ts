@@ -41,7 +41,7 @@ log(`execPath=${process.execPath}`);
 // Disable GPU acceleration in VMs (prevents white screen on VMware/VirtualBox).
 // VM detection now lives in the shared platform primitive.
 // See change: consolidate-platform-handlers.
-import { isVirtualMachine } from "@blackbelt-technology/pi-dashboard-shared/platform/commands.js";
+import { isVirtualMachine } from "@blackbelt-technology/pi-dashboard-shared/platform/system.js";
 
 const isVM = isVirtualMachine();
 const disableGpu = process.env.ELECTRON_DISABLE_GPU || isVM;

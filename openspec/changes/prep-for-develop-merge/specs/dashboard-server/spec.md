@@ -1,37 +1,20 @@
 ## ADDED Requirements
 
-### Requirement: Preflight Node-version guard before any Fastify import
-
-The dashboard server entry points — foreground mode (`runForeground` in `packages/server/src/cli.ts`), daemon mode (`cmdStart` in the same file), and any other startup path that eventually imports Fastify — SHALL invoke `isAffectedNode(process.version)` from `packages/server/src/node-guard.ts` as their first action. When the predicate returns `true`, the server SHALL print `buildNodeUpgradeMessage(process.version)` to stderr and call `process.exit(1)` BEFORE any import of `fastify`, `@fastify/*`, or the `createServer` factory is reached. This guarantees that users on Node versions affected by [nodejs/node#58515](https://github.com/nodejs/node/issues/58515) see a clear upgrade message instead of the cryptic `ERR_INTERNAL_ASSERTION: Unexpected module status 3` crash.
-
-#### Scenario: Foreground guard fires before Fastify import
-- **WHEN** `node packages/server/src/cli.ts` is run with Node v22.17.1 (foreground mode)
-- **THEN** the process SHALL print the Node upgrade message
-- **AND** SHALL exit with code 1
-- **AND** no `import from "fastify"` statement SHALL have been reached (verifiable by instrumenting a test import hook)
-
-#### Scenario: Daemon guard fires before child spawn
-- **WHEN** `pi-dashboard start` is run with Node v24.2.0 (daemon mode)
-- **THEN** the guard SHALL fire in the PARENT process before it spawns the detached child
-- **AND** no child process SHALL be spawned
-
-#### Scenario: Guard does not fire on supported Node
-- **WHEN** the server is started with Node v22.22.2
-- **THEN** the guard SHALL NOT fire
-- **AND** normal startup SHALL proceed (Fastify import, server bind, etc.)
-
 ### Requirement: engines.node in packages/server/package.json
 
-The `packages/server/package.json` file SHALL declare `"engines": { "node": ">=22.18.0" }` as its sole Node version constraint. This triggers npm's `EBADENGINE` warning on install and integrates with package managers (pnpm, yarn) that honor the field more strictly.
+The `packages/server/package.json` file SHALL declare `"engines": { "node": ">=22.18.0" }` as its sole Node version constraint. This triggers npm's `EBADENGINE` warning on install against affected Node ranges and integrates with package managers (pnpm, yarn) that honor the field more strictly. No runtime preflight guard is added — users who override the install-time warning and hit the Fastify crash ([nodejs/node#58515](https://github.com/nodejs/node/issues/58515)) are a self-selecting audience sufficiently served by the crash error message + GitHub issue tracker.
 
 #### Scenario: npm install warns on affected Node
 - **WHEN** a user on Node v22.17.1 runs `npm install @blackbelt-technology/pi-dashboard-server`
 - **THEN** npm SHALL emit an `EBADENGINE` warning naming `>=22.18.0` as required
 
-#### Scenario: engines.node is consistent with node-guard
-- **WHEN** the engines.node constraint is parsed
-- **THEN** every Node version `v` for which `isAffectedNode(v) === true` SHALL fail the engines constraint
-- **AND** every version `v >= 22.18.0` SHALL satisfy it
+#### Scenario: npm install succeeds on supported Node
+- **WHEN** a user on Node v22.22.2 runs `npm install @blackbelt-technology/pi-dashboard-server`
+- **THEN** no `EBADENGINE` warning SHALL be emitted
+
+#### Scenario: pnpm with engine-strict blocks affected Node
+- **WHEN** a pnpm user has `engine-strict=true` in `.npmrc` and is on Node v24.2.0
+- **THEN** `pnpm install` SHALL fail with a clear engines-violation error
 
 ### Requirement: preload-fastify-cjs workaround is NOT shipped
 
@@ -47,6 +30,19 @@ The dashboard server SHALL NOT ship any `preload-fastify.cjs` file, any `--requi
 - **THEN** none SHALL include a `--require` flag pointing at a Fastify preload
 - **AND** none SHALL include a call to a `resolvePreloadFastifyPath()` function
 
-#### Scenario: No node-version-check.ts platform helper
+#### Scenario: No node-version-check.ts or preload-fastify.ts platform helper
 - **WHEN** `packages/shared/src/platform/` is enumerated
-- **THEN** no file named `node-version-check.ts` or `preload-fastify.ts` SHALL be present (these belonged to the rejected workaround; their functionality moves to `packages/server/src/node-guard.ts`)
+- **THEN** no file named `node-version-check.ts` or `preload-fastify.ts` SHALL be present (these belonged to the rejected workaround)
+
+### Requirement: No runtime node-version preflight guard
+
+The dashboard server SHALL NOT contain a `node-guard.ts` module or equivalent runtime check that refuses to start based on `process.version`. The `engines.node` field in `package.json` is the sole signal for Node-version compatibility. This avoids the cost of maintaining a runtime feature (module + test + message builder + cli.ts wiring) for users who chose to override an install-time warning.
+
+#### Scenario: No node-guard module in the server package
+- **WHEN** `packages/server/src/` is enumerated
+- **THEN** no file named `node-guard.ts` SHALL be present
+- **AND** no `isAffectedNode()` function SHALL be exported by any server module
+
+#### Scenario: No version-based process.exit in cli entry points
+- **WHEN** `packages/server/src/cli.ts` `runForeground()` and `cmdStart()` are inspected
+- **THEN** neither SHALL contain a `process.version` check or a `process.exit(1)` that fires based on Node version

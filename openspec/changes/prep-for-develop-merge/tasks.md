@@ -63,7 +63,7 @@ git log -${PHASE_COMMIT_COUNT} --format="  %h %s"
 
 **Commit message style — one-line only. NO body paragraphs, NO bullet lists in messages. Examples:**
 - `fix(windows): restore detach:false for pi-session spawn`
-- `feat(server): add node-guard refuse-to-start`
+- `chore(server): require Node >=22.18.0 via engines field`
 - `refactor(platform): merge exec + subprocess-adapter + detached-spawn + spawn-mechanism into spawn.ts`
 - `docs: add branch-comparison analysis`
 - `chore(openspec): archive consolidate-platform-handlers`
@@ -95,23 +95,18 @@ Prerequisite for everything else. Removing the dead code first avoids any risk o
   Script is idempotent — detects and reverts any prior run via `git reset --mixed HEAD~3`, then re-applies.
   Print the one-liner: `bash B:/tmp/pi-commit-0-drop-preload.sh`
 
-## Phase 1 — Add node-guard refuse-to-start
+## Phase 1 — Add engines.node constraint
 
-- [ ] 1.1 Create `packages/server/src/node-guard.ts` exporting pure `isAffectedNode(version: string): boolean` and `buildNodeUpgradeMessage(version: string): string`
-  - `isAffectedNode`: true for v22.0.0–v22.17.x and v24.1.0–v24.2.x; false otherwise; tolerates `v` prefix absence; returns false for malformed input (fail-open)
-  - `buildNodeUpgradeMessage`: deterministic string with GitHub issue link, upgrade target, nvm/brew/nodejs.org commands
-- [ ] 1.2 Create `packages/server/src/__tests__/node-guard.test.ts` covering: 22.17.999 true, 22.18.0 false, 24.2.999 true, 24.3.0 false, 25.0.0 false, 20.19.0 false, 23.5.0 false, malformed false, deterministic message
-- [ ] 1.3 Targeted test: `npx vitest run packages/server/src/__tests__/node-guard.test.ts` — must pass
-- [ ] 1.4 Add `import { isAffectedNode, buildNodeUpgradeMessage } from "./node-guard.js"` at the top of `packages/server/src/cli.ts`
-- [ ] 1.5 Insert guard block at the top of `runForeground()` and at the top of `cmdStart()` — BEFORE any other code in those functions, especially before any `import` that transitively loads `fastify`
-- [ ] 1.6 Add `"engines": { "node": ">=22.18.0" }` to `packages/server/package.json`
-- [ ] 1.7 Manually verify on Node 22.22.2: `pi-dashboard start` works normally (guard does not fire)
-- [ ] 1.8 Manually verify on Node 22.17.1 via `nvm install 22.17.1 && nvm use 22.17.1`: `pi-dashboard start` prints upgrade message and exits code 1. Restore `nvm use 22.22.2` after test.
-- [ ] 1.9 **Write commit script** `/tmp/pi-commit-1-node-guard.sh` (stages `node-guard.ts`, its test, `cli.ts` edit, `package.json` edit) with message:
+No runtime guard. Just the `engines` declaration in the server's `package.json`.
+
+- [ ] 1.1 Add `"engines": { "node": ">=22.18.0" }` to `packages/server/package.json` (top-level object, after `"version"`).
+- [ ] 1.2 Manually verify the JSON parses: `node -e "JSON.parse(require('fs').readFileSync('packages/server/package.json','utf8'))" && echo OK`
+- [ ] 1.3 Manually verify the constraint is live: `cd packages/server && npm install --dry-run 2>&1 | grep -i engine` (on Node 22.22.2 no warning expected; on Node 22.17.1 you'd see `EBADENGINE`)
+- [ ] 1.4 **Write commit script** `B:/tmp/pi-commit-1-engines.sh` (stages just `packages/server/package.json`) with message:
   ```
-  feat(server): refuse to start on Node versions affected by nodejs/node#58515
+  chore(server): require Node >=22.18.0 via engines field
   ```
-  Print the one-liner: `bash /tmp/pi-commit-1-node-guard.sh`
+  Print the one-liner: `bash B:/tmp/pi-commit-1-engines.sh`
 
 ## Phase 2 — Fix the spawnDetached regressions
 
@@ -251,7 +246,6 @@ Full `npm test` is known-flaky in this repo. Instead, run the specific test file
 - [ ] 5.1 Targeted test sweep:
   ```
   npx vitest run \
-    packages/server/src/__tests__/node-guard.test.ts \
     packages/shared/src/__tests__/detached-spawn.test.ts \
     packages/server/src/__tests__/process-manager.test.ts \
     packages/shared/src/__tests__/spawn.test.ts \
@@ -317,7 +311,6 @@ This is THE merge. It stays local — no push. The user opens the PR from `windo
 - [ ] 6.10 Targeted tests (same as phase 5.1):
   ```
   npx vitest run \
-    packages/server/src/__tests__/node-guard.test.ts \
     packages/shared/src/__tests__/detached-spawn.test.ts \
     packages/server/src/__tests__/process-manager.test.ts \
     packages/shared/src/__tests__/spawn.test.ts \

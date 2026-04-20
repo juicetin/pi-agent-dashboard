@@ -62,23 +62,20 @@ The merge into develop needs to produce a mainline that has:
 - **Use named pipes instead of inherited stdin:** Technically possible on Windows but adds a pipe-server dependency and a keeper process. 10× the complexity for no additional benefit over `detach: false`.
 - **Accept the flash as cosmetic:** Flashing console windows are the single most-reported Windows UX complaint about node-based CLI tools. Unacceptable for a dashboard product.
 
-### D2. Refuse-to-start replaces the preload-fastify workaround
+### D2. engines.node replaces the preload-fastify workaround (no runtime guard)
 
-**Decision:** Delete all uncommitted preload-fastify work. Add `packages/server/src/node-guard.ts` exporting pure `isAffectedNode(version)` and `buildNodeUpgradeMessage(version)`. Guard fires at the top of `runForeground()` and `cmdStart()`, exits code 1 with a clear upgrade message. Declare `"engines": { "node": ">=22.18.0" }` in `packages/server/package.json`.
+**Decision:** Delete all uncommitted preload-fastify work. Declare `"engines": { "node": ">=22.18.0" }` in `packages/server/package.json`. Do NOT add a runtime `node-guard.ts` module.
 
 **Rationale:**
 - The bug is fixed in Node 22.18.0 (Sep 2024) and 24.3.0. As of 2026-04, affected users are specifically those on Windows who installed Node manually ≥ 18 months ago. That population is shrinking, self-correcting via routine Node updates, and fixable by the user in 2 minutes (`nvm install 22`).
-- The workaround's permanent costs are real: hard-codes Fastify's internal dependency chain (future Fastify versions regress silently without test coverage), silent try/catch swallows resolution failures (reproduces the exact crash we're working around), four argv injection sites with no structural enforcement, no deprecation plan.
-- A refuse-to-start with a clear error message produces strictly better UX than a cryptic `ERR_INTERNAL_ASSERTION`. The user learns the root cause and the fix in one line.
-- `engines.node` in `package.json` triggers npm's warning at install time; the runtime guard catches the "npm --force" and "downloaded ZIP" paths.
+- The preload workaround's permanent costs are real: hard-codes Fastify's internal dependency chain (future Fastify versions regress silently without test coverage), silent try/catch swallows resolution failures (reproduces the exact crash we're working around), four argv injection sites with no structural enforcement, no deprecation plan.
+- `engines.node` in `package.json` triggers npm's `EBADENGINE` warning at install time — that's the signal. Users who override the warning and hit the crash can find the root cause from the error message + GitHub issue tracker.
+- A runtime refuse-to-start guard (initially proposed) was rejected as belt-and-suspenders by the maintainer: it adds a feature (~50 LOC including tests + message builder) for a shrinking audience already served by `engines.node` at install time.
 
 **Alternatives considered:**
-- **Ship the preload anyway:** Rejected (see `BRANCH-COMPARISON.md §10`). Five concrete reasons against; only one speculative reason for (hypothetical enterprise users on locked Node versions — not our audience).
-- **Hard `engines.node` with no runtime guard:** Some users run with `--ignore-engines`; the runtime guard catches them too. Two layers of defense, ~15 LOC.
-- **Warning only (no refuse):** Warning-then-crash is worse UX than refuse-with-clear-message. The refuse happens before any Fastify import, so the crash can't follow.
-
-**Location of node-guard.ts:**
-- `packages/server/src/node-guard.ts` (NOT `packages/shared/src/`) because: (a) it's server-startup-specific, (b) nothing in it depends on `process.platform`, (c) it isn't a cross-OS primitive. Keeping it in the server package matches where it runs.
+- **Ship the preload anyway:** Rejected (see `BRANCH-COMPARISON.md §10`). Five concrete reasons against; only one speculative reason for.
+- **Runtime `node-guard.ts` with clear refuse-to-start message:** Rejected by maintainer. Adds an actual feature for users who ignore install-time warnings; those users can find the fix via the crash error message.
+- **Do nothing — not even `engines.node`:** Rejected. The `engines` field is a 1-line passive declaration with positive install-time UX; removing the preload's implicit Node-version awareness without replacing it with ANY signal would be a regression for fresh installers.
 
 ### D3. 18 → 5 files in `packages/shared/src/platform/`
 
@@ -160,7 +157,7 @@ Plus the two preload-related files (`preload-fastify.ts`, `node-version-check.ts
 
 ## Risks / Trade-offs
 
-**[Risk] Developer working on a second session accidentally re-introduces preload-fastify** → Mitigation: Delete ALL uncommitted preload files in task 1 of the implementation. Add explicit "do not resurrect" text to `BRANCH-COMPARISON.md §10`. `engines.node: ">=22.18.0"` makes the workaround obsolete.
+**[Risk] Developer working on a second session accidentally re-introduces preload-fastify** → Mitigation: Delete ALL uncommitted preload files in Phase 0. Add explicit "do not resurrect" text to `BRANCH-COMPARISON.md §10`. `engines.node: ">=22.18.0"` in the server package.json makes the workaround obsolete.
 
 **[Risk] `detach: false` causes some future scenario where we want pi to outlive the server** → Mitigation: The option is opt-in (default `true`). Only pi-session spawn passes `detach: false`. If a future use case needs detached pi, it passes `detach: true`. The comment on the call site documents the trade-off.
 
@@ -168,7 +165,9 @@ Plus the two preload-related files (`preload-fastify.ts`, `node-version-check.ts
 
 **[Risk] Path-reconciliation breaks develop's in-progress work when merged** → Mitigation: The reconciliation only ADDS correctness — it doesn't remove any develop-side feature. Post-merge behavior on POSIX is identical to develop-at-HEAD. Post-merge behavior on Windows is a strict improvement.
 
-**[Risk] `engines.node: ">=22.18.0"` breaks some users' install** → Mitigation: That's the intent. Those users' dashboard was crashing at runtime anyway. The error message points at the fix.
+**[Risk] `engines.node: ">=22.18.0"` breaks some users' install** → Mitigation: That's the intent. Those users' dashboard was crashing at runtime anyway. npm emits `EBADENGINE` with the required range; users who override with `--force` and hit the crash can find the fix via the GitHub issue tracker.
+
+**[Risk] Users who `npm install --force` past the engines warning hit the Fastify crash with a cryptic error message** → Accepted. This is a deliberate trade-off: adding a runtime guard to catch this edge case costs ~50 LOC + ongoing maintenance for a self-selecting audience (users who chose to ignore a clear warning). The `ERR_INTERNAL_ASSERTION` message plus the GitHub issue is sufficient for them.
 
 **[Risk] Vitest 4 migration from develop conflicts with platform/ test consolidation** → Mitigation: The platform-consolidation tests keep their existing vitest config. Vitest 4's config migration happens in the subsequent develop merge, at which point the consolidated test files are already in place. No interaction.
 
@@ -190,7 +189,7 @@ This change is a series of additive/refactor commits followed by a local merge. 
 
 **Rollback (per-commit):**
 - Phase 0 preload deletions are pure deletes of uncommitted work; revert is `git reflog` + `git checkout` (unlikely to be needed).
-- Phase 1 node-guard is 40 LOC in an isolated file; revert by deleting the file + removing two `import` lines + removing the `engines.node` field.
+- Phase 1 is a one-line `engines.node` addition to `packages/server/package.json`; revert with a one-line edit.
 - Phase 2 `detach: false` is one line; revert via `git checkout <previous>~1 -- packages/server/src/process-manager.ts packages/shared/src/platform/detached-spawn.ts`.
 - Phase 3 file-consolidations are per-sub-phase; each is a pure git-mv + import-rewrite commit and reverts cleanly.
 - Phase 4 path-picker reconciliation touches ~30 LOC across 3 files; straightforward revert.

@@ -6,7 +6,7 @@ import type { SessionManager } from "../memory-session-manager.js";
 import type { PreferencesStore } from "../preferences-store.js";
 import type { ApiResponse } from "@blackbelt-technology/pi-dashboard-shared/types.js";
 import type { NetworkGuard } from "./route-deps.js";
-import { listDirectories } from "../browse.js";
+import { listDirectories, createDirectory } from "../browse.js";
 import path from "node:path";
 import fs from "node:fs/promises";
 
@@ -21,15 +21,42 @@ export function registerFileRoutes(
   const { sessionManager, preferencesStore, networkGuard } = deps;
 
   // Directory browse endpoint
-  fastify.get<{ Querystring: { path?: string } }>(
+  fastify.get<{ Querystring: { path?: string; q?: string } }>(
     "/api/browse",
     { preHandler: networkGuard },
     async (request) => {
       try {
-        const result = await listDirectories(request.query.path || undefined);
+        const result = await listDirectories(
+          request.query.path || undefined,
+          request.query.q || undefined,
+        );
         return { success: true, data: result } satisfies ApiResponse;
       } catch {
         return { success: false, error: "directory not found" } satisfies ApiResponse;
+      }
+    },
+  );
+
+  // Directory create endpoint
+  fastify.post<{ Body: { parent?: unknown; name?: unknown } }>(
+    "/api/browse/mkdir",
+    { preHandler: networkGuard },
+    async (request, reply) => {
+      const body = request.body ?? {};
+      const parent = typeof body.parent === "string" ? body.parent : "";
+      const name = typeof body.name === "string" ? body.name : "";
+      try {
+        const newPath = await createDirectory(parent, name);
+        return { success: true, data: { path: newPath } } satisfies ApiResponse;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "mkdir failed";
+        // Map known errors to status codes; unknown → 500
+        if (msg === "invalid name") reply.code(400);
+        else if (msg === "parent not found") reply.code(404);
+        else if (msg === "parent is not a directory") reply.code(400);
+        else if (msg === "already exists") reply.code(409);
+        else reply.code(500);
+        return { success: false, error: msg } satisfies ApiResponse;
       }
     },
   );

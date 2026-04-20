@@ -66,6 +66,14 @@ export interface BrowseEntry {
   isPi: boolean;
 }
 
+/**
+ * Response shape for `GET /api/browse?path=<dir>&q=<query>`.
+ *
+ * The optional `q` query parameter, when present and non-empty, causes the
+ * server to filter entries by case-insensitive substring on `name` and rank
+ * them (exact → prefix → word-boundary → substring) before the 200-entry cap.
+ * When omitted or whitespace-only, entries are sorted alphabetically.
+ */
 export interface BrowseResult {
   entries: BrowseEntry[];
   parent: string | null;
@@ -73,6 +81,18 @@ export interface BrowseResult {
 }
 
 export type BrowseResponse = ApiResponse<BrowseResult>;
+
+/** Request body for `POST /api/browse/mkdir`. */
+export interface MkdirRequest {
+  parent: string;
+  name: string;
+}
+
+export interface MkdirResult {
+  path: string;
+}
+
+export type MkdirResponse = ApiResponse<MkdirResult>;
 
 // ── Tunnel Status ───────────────────────────────────────────────────
 

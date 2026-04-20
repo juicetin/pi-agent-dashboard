@@ -1,4 +1,4 @@
-## ADDED Requirements
+## MODIFIED Requirements
 
 ### Requirement: Directory browse API
 The server SHALL expose `GET /api/browse?path=<dir>&q=<query>` (localhost-only) that returns directory entries for the given path. The response SHALL include `{ success: true, data: { entries: Array<{ name, path, isGit, isPi }>, parent: string | null, current: string } }`. Only directories SHALL be listed (no files). Hidden directories (names starting with `.`) SHALL be excluded. If `path` is omitted, it SHALL default to the user's home directory. The entry limit SHALL be 200, applied AFTER filtering and ranking so best matches are never truncated.
@@ -60,6 +60,8 @@ When `q` is provided, entries SHALL be filtered case-insensitively by substring 
 #### Scenario: Empty query treated as no filter
 - **WHEN** `q` is an empty string or only whitespace
 - **THEN** the server SHALL behave as if `q` were omitted (alphabetical, unfiltered)
+
+## ADDED Requirements
 
 ### Requirement: Directory create API
 The server SHALL expose `POST /api/browse/mkdir` (localhost-only) that creates a new directory under a specified parent. The request body SHALL be `{ parent: string, name: string }`. On success the response SHALL be `{ success: true, data: { path: string } }` where `path` is the absolute path of the created directory.

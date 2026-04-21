@@ -20,6 +20,8 @@ See [docs/architecture.md](docs/architecture.md) for full details.
 npm install          # Install dependencies
 npm test             # Run all tests (vitest)
 npm run test:watch   # Watch mode
+npm run test:bootstrap       # Run the bootstrap resolution harness only
+npm run test:bootstrap:watch # Bootstrap harness in watch mode
 npm run build        # Build web client (Vite)
 npm run dev          # Start Vite dev server
 npm run reload       # Reload all connected pi sessions
@@ -156,6 +158,7 @@ make clean              # Destroy all cloned VMs
 | `src/shared/platform/process-identify.ts` | `findPidByMarker` + `isProcessLikePi` + `isPiCommandLine` — consolidates the three `process.platform === "win32"` branches that previously lived inside `session-action-handler.ts`. Windows stubs are documented (command-line lookup goes via `headlessPidRegistry` instead). |
 | `src/shared/platform/process.ts` | **Sole source of process termination + liveness primitives**: `isProcessAlive(pid)` (signal 0), `killProcess(pid, {timeoutMs})` (Windows `taskkill /F /T /PID`, POSIX `SIGTERM` → wait → `SIGKILL` tree kill), `killPidWithGroup(pid, sig)` (POSIX `kill(-pid, sig)`, Windows direct kill). Every `process.kill(...)` call outside this file is banned by `no-direct-process-kill.test.ts`. See change: route-kill-paths-through-platform. |
 | `src/shared/__tests__/no-direct-process-kill.test.ts` | Repo-level lint: scans `packages/*/src/` (excluding platform/ and `__tests__/`) for `process.kill(` calls and fails with file:line if any are found. Mirrors `no-direct-child-process.test.ts`. |
+| `src/shared/__tests__/bootstrap/` | In-memory bootstrap resolution harness (memfs-backed). `harness.ts` (withFakeEnv + layer), `fixtures/` (managed/npm-g/electron/dev-monorepo/settings-json layouts), `assertions.ts` (snapshotTrail + snapshotSettingsDelta with `<HOME>` / `<NPM_ROOT>` normalization), `scenarios.ts` (1080-cell cube: platform × dash × pi × settings × env), `scenarios-skipped.ts` (bulk-skip manifest with documented reasons), `cube.test.ts` (fail-closed sweep), `families/*.test.ts` (30+ registered scenario cells across A-K). Run via `npm run test:bootstrap`. See change: bootstrap-resolution-harness. |
 | `src/server/editor-registry.ts` | Detects available native editors (running processes + CLI) |
 | `src/server/editor-manager.ts` | Lifecycle manager for code-server child processes (spawn, stop, idle, heartbeat) |
 | `src/server/editor-proxy.ts` | Reverse proxy for `/editor/:id/*` to code-server instances |

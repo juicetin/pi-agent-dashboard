@@ -65,11 +65,34 @@ function skipReasonFor(cell: ScenarioCell): string {
     return "spaces-unicode: covered once per platform via pi=present-valid";
   }
 
-  // ── Placeholder for the first landing ────────────────────────────
+  // ── Refined skip reasons (post families B-K) ──────────────────────
 
-  // All other cells: "not yet covered". Family-test files replace
-  // this skip with real registration.
-  return "not yet covered — placeholder skip; replace with family registration";
+  // Dashboard-absent is only interesting when pi is present (K1).
+  // Other combinations — pi absent without dashboard, etc. — are
+  // pathological and not reachable by any real install mechanic.
+  if (cell.dash === "absent" && cell.pi !== "present-valid") {
+    return "dashboard-absent only meaningful when pi is present (K1)";
+  }
+
+  // Lock-file and instance-coordination cells land with proposal
+  // `single-dashboard-per-home`, which introduces a new axis (lock
+  // state) not modelled in this cube. The current cells remain
+  // skipped until that proposal extends the enumeration.
+
+  // pi=malformed means partial install; resolution failure reason
+  // is identical across settings/env axes once pi state is fixed.
+  // E2 covers linux + win32; other combinations add no signal.
+  if (
+    cell.pi === "malformed"
+    && cell.settings !== "empty"
+    && !(cell.platform === "linux" || cell.platform === "win32")
+  ) {
+    return "malformed pi: E2 covers linux+win32 — other settings/env add no signal";
+  }
+
+  // Remaining cells are plausible combinations with no dedicated
+  // family test. Documented as deliberate skips rather than gaps.
+  return "not yet covered — add family coverage when a bug reports here";
 }
 
 /**

@@ -975,6 +975,33 @@ Settings → General → **Tools** renders one row per registered tool: status b
 
 See change: `consolidate-tool-resolution`.
 
+### Testing the bootstrap state space
+
+Resolution behavior intersects with HOME, platform, install layout, and pi's `settings.json` state across ~1000 combinations. Rather than hope CI on three runners plus manual QA cover all of them, the dashboard ships an in-memory harness at `packages/shared/src/__tests__/bootstrap/` that models the full cube:
+
+```
+  3 platforms  (win32, darwin, linux)
+× 5 dash-locations  (electron, npm-g, dev, managed, absent)
+× 6 pi-states  (absent, present-no-ext, present-stale-ext, present-valid, malformed, appimage-tmp)
+× 4 settings-states  (missing, empty, valid, malformed)
+× 3 env-states  (normal, spaces-unicode, home-drift)
+= 1080 cells
+```
+
+Each cell is **either** a registered test (writing a trail snapshot via `snapshotTrail`) **or** an explicit skip with a documented reason (in `scenarios-skipped.ts`). `cube.test.ts` fails CI when any cell is neither — a forcing function so that adding a new platform, a new install mechanic, or a new pi-state silently never happens.
+
+The harness is memfs-backed (no real fs, no subprocesses, no network) and runs in ~2 seconds via `npm run test:bootstrap`. The primary assertion is a normalized trail snapshot that captures strategy order, failure reasons, and `toArgv` output — which catches most bootstrap regressions before CI even reaches a real OS.
+
+Key locked-in invariants (from current snapshots):
+
+- Unix pi chain: `override → managed-bin → where` (no bare-import, no npm-g — a real limitation for GUI-launched minimal-PATH scenarios).
+- Win32 pi chain: 5-level fallback including the no-cmd-flash `.cmd` probe and `node.exe` prepend for `.js` targets.
+- Override strategy is first in every chain; invalid overrides fall through with `invalid: ...` reason.
+- Path normalization cross-OS via `<HOME>` / `<NPM_ROOT>` placeholders — snapshots stable on macOS and Linux CI.
+- **Windows bug captured**: `npm i -g pi-dashboard` + no pi → pi unresolved. Trail snapshot locks in the current broken state; `unified-bootstrap-install` will update it when the fix lands.
+
+See change: `bootstrap-resolution-harness`. Full walkthrough in `packages/shared/src/__tests__/bootstrap/README.md`.
+
 ## Path Handling (`platform/paths.ts`)
 
 Filesystem paths are OS-aware, and the dashboard touches them in three user-visible places: pin-directory storage (server), session-grouping (client), and the path picker UI (client). All three go through a single module — `packages/shared/src/platform/paths.ts` — rather than inventing their own logic.

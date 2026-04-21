@@ -51,7 +51,9 @@ Additionally, the Electron wizard today is synchronously blocking: the user sees
 This proposal assumes BOTH:
 
 1. `merge-windows-integration-linear` has landed on `develop`. Verify `platform/spawn.ts`, `tool-registry/`, and `isDashboardRunning()` identity-verified health check exist.
-2. `bootstrap-resolution-harness` has landed. This proposal REUSES the harness for testing the installer's effect on pi-resolution (scenario B1 flips from "unresolved" to "resolves via managed after install").
+2. `bootstrap-resolution-harness` has landed. This proposal REUSES the harness for testing the installer's effect on pi-resolution. Specifically:
+   - **Scenario B1** (`packages/shared/src/__tests__/bootstrap/families/b-npm-global.test.ts`) currently snapshots the "pi unresolved on npm-g-dash-only" state across 3 platforms. When this proposal's degraded-mode first-run bootstrap lands, B1's assertion flips from `expect(res.ok).toBe(false)` to `expect(res.ok).toBe(true)` with `source === "managed"`. Update the snapshot as part of this proposal's task list — the FIXED-BY marker is in the B1 test file.
+   - **Harness primitives are available**: `withFakeEnv`, `managedInstall` fixture, `registerDefaultTools(registry, deps)`, `snapshotTrail(res, ctx)`. Use them for any new scenarios this proposal adds (e.g., "degraded mode during install", "bootstrap failure → retry").
 
 Before starting implementation:
 

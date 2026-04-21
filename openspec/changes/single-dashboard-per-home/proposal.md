@@ -85,7 +85,12 @@ When an instance finds a live lock:
 This proposal assumes BOTH have landed:
 
 1. `merge-windows-integration-linear` — provides `isDashboardRunning()` identity-verified, `platform/spawn.ts` unified child process APIs.
-2. `bootstrap-resolution-harness` — provides the in-memory harness needed to test lock scenarios (new scenario family L).
+2. `bootstrap-resolution-harness` — provides the in-memory harness. Note that the harness's current cube (`platform × dash × pi × settings × env`) does NOT model lock state. This proposal introduces a new **Family L** test set for lock scenarios, which may either:
+   - Add a new axis to the cube (e.g. `lock: "none" | "acquired" | "held-alive" | "stale"`) and regenerate `scenarios-skipped.ts` — larger surface area but stays within the fail-closed sweep, or
+   - Register Family L cells as a separate enumeration outside the main cube (simpler; decouples lock scenarios from the tool-resolution cube but forgoes the sweep's forcing function for lock states).
+   Decision belongs in this proposal's `design.md` when implementation starts.
+
+Harness primitives available from (1): `withFakeEnv`, fs fixtures, `registerDefaultTools`. The lock-file state itself (`proper-lockfile` data) is not covered by memfs — integration tests using real tmp directories are the right layer for lock liveness/release scenarios.
 
 Before starting implementation:
 

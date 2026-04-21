@@ -29,6 +29,11 @@ for (const cell of G) {
 
 describe("Family G — Windows specifics", () => {
   it("G1 — pi.cmd resolved + toArgv prepends node.exe (no-cmd-flash)", async () => {
+    // Managed install with pi-coding-agent at a real module path, NOT
+    // the .bin/pi.cmd shim. This forces resolution through
+    // managedModuleStrategy (matches `@mariozechner/pi-coding-agent/
+    // dist/cli.js`), which is a Node script — `toArgv` prepends
+    // node.exe. That's the no-cmd-flash invariant.
     const homedir = "C:\\Users\\R";
     await withFakeEnv(
       {
@@ -36,11 +41,8 @@ describe("Family G — Windows specifics", () => {
         homedir,
         env: { PATH: "C:\\Program Files\\nodejs" },
         fs: layer(
-          fixtures.managedInstall({ homedir, platform: "win32", pi: false, openspec: false, tsx: false }),
+          fixtures.managedInstall({ homedir, platform: "win32" }),
           {
-            // Explicit pi.cmd shim — this is what Windows produces.
-            "C:\\Users\\R\\.pi-dashboard\\node_modules\\.bin\\pi.cmd":
-              "@node %~dp0\\..\\@mariozechner\\pi-coding-agent\\dist\\cli.js %*",
             // node.exe must be resolvable for toArgv to prepend it.
             "C:\\Program Files\\nodejs\\node.exe": "\x7fELF",
           },
@@ -49,33 +51,65 @@ describe("Family G — Windows specifics", () => {
       (ctx) => {
         const registry = ctx.createRegistry();
         registerDefaultTools(registry, ctx.createStrategyDeps());
-        const res = registry.resolve("pi");
-        expect(res.ok).toBe(true);
-        expect(res.path?.endsWith("pi.cmd")).toBe(true);
-        expect(snapshotTrail(res, ctx)).toMatchSnapshot();
+        const executor = registry.resolveExecutor("pi");
+        expect(executor.ok).toBe(true);
+        expect(executor.path?.endsWith("cli.js")).toBe(true);
+        // No-cmd-flash invariant: argv[0] MUST be node.exe, NOT the
+        // .cmd shim or cmd.exe. The snapshot locks this in.
+        expect(executor.argv[0]).toBe("C:\\Program Files\\nodejs\\node.exe");
+        expect(executor.argv).toHaveLength(2);
+        expect(snapshotTrail(executor, ctx)).toMatchSnapshot();
       },
     );
   });
 
-  it("G2 — npm-g at %APPDATA%\\Roaming\\npm", async () => {
+  it("G2 — npm-g at %APPDATA%\\Roaming\\npm (argv prepends node.exe)", async () => {
     const homedir = "C:\\Users\\R";
     await withFakeEnv(
       {
         platform: "win32",
         homedir,
         env: {
-          PATH: "C:\\Users\\R\\AppData\\Roaming\\npm",
+          PATH: "C:\\Users\\R\\AppData\\Roaming\\npm;C:\\Program Files\\nodejs",
           APPDATA: "C:\\Users\\R\\AppData\\Roaming",
         },
-        fs: fixtures.npmGlobalWindowsAppData(homedir, { dashboard: false }),
+        fs: layer(
+          fixtures.npmGlobalWindowsAppData(homedir, { dashboard: false }),
+          { "C:\\Program Files\\nodejs\\node.exe": "\x7fELF" },
+        ),
+      },
+      (ctx) => {
+        const registry = ctx.createRegistry();
+        registerDefaultTools(registry, ctx.createStrategyDeps());
+        const executor = registry.resolveExecutor("pi");
+        expect(executor.ok).toBe(true);
+        expect(executor.source).toBe("npm-global");
+        // Same no-cmd-flash invariant: even for npm-g, argv routes
+        // through node.exe.
+        expect(executor.argv[0]).toBe("C:\\Program Files\\nodejs\\node.exe");
+        expect(snapshotTrail(executor, ctx)).toMatchSnapshot();
+      },
+    );
+  });
+
+  it("G3 — cwd under Program Files (x86) does not affect resolution", async () => {
+    // Spec requires this cell tested; covered structurally by F1-win,
+    // but a dedicated block documents the invariant alongside the
+    // other G cells.
+    const homedir = "C:\\Users\\R";
+    await withFakeEnv(
+      {
+        platform: "win32",
+        homedir,
+        cwd: "C:\\Program Files (x86)\\Pi Dashboard",
+        fs: fixtures.managedInstall({ homedir, platform: "win32" }),
       },
       (ctx) => {
         const registry = ctx.createRegistry();
         registerDefaultTools(registry, ctx.createStrategyDeps());
         const res = registry.resolve("pi");
         expect(res.ok).toBe(true);
-        expect(res.source).toBe("npm-global");
-        expect(snapshotTrail(res, ctx)).toMatchSnapshot();
+        expect(res.source).toBe("managed");
       },
     );
   });
@@ -97,9 +131,11 @@ describe("Family G — Windows specifics", () => {
       (ctx) => {
         const registry = ctx.createRegistry();
         registerDefaultTools(registry, ctx.createStrategyDeps());
-        const nodeRes = registry.resolve("node");
+        const nodeRes = registry.resolveExecutor("node");
         expect(nodeRes.ok).toBe(true);
         expect(nodeRes.path).toBe("C:\\Program Files\\nodejs\\node.exe");
+        // Binary-kind tool: argv = [path] (no interpreter prepended).
+        expect(nodeRes.argv).toEqual(["C:\\Program Files\\nodejs\\node.exe"]);
         expect(snapshotTrail(nodeRes, ctx)).toMatchSnapshot();
       },
     );

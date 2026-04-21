@@ -72,7 +72,10 @@ tried:
   bare-import  cannot resolve @oh-my-pi/pi-coding-agent/package.json
   managed      missing: <HOME>/.pi-dashboard/node_modules/@mariozechner/pi-coding-agent/dist/cli.js
   managed      missing: <HOME>/.pi-dashboard/node_modules/@oh-my-pi/pi-coding-agent/dist/cli.js
-  npm-global   ok"
+  npm-global   ok
+argv:
+  - C:/Program Files/nodejs/node.exe
+  - <NPM_ROOT>/@mariozechner/pi-coding-agent/dist/cli.js"
 `;
 
 exports[`Family B — npm-global > B3 — npm-g pi-installed-first (bridge needs registration) > settings.json present but lacks bridge entry (linux) 1`] = `

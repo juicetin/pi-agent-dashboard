@@ -33,7 +33,7 @@
 
 ## 4. Assertions
 
-- [x] 4.1 `snapshotTrail(resolution, ctx)` normalizes paths via `normalizePath` (replaces `<HOME>`/`<NPM_ROOT>`, flips backslashes). Applies to both the resolved `path` field AND every `tried[].result` reason string so snapshots are stable cross-OS.
+- [x] 4.1 `snapshotTrail(resolution, ctx)` normalizes paths via `normalizePath` (replaces `<HOME>`/`<NPM_ROOT>`, flips backslashes). Applies to both the resolved `path` field AND every `tried[].result` reason string so snapshots are stable cross-OS. Accepts both `Resolution` and `ExecutorResolution`; when argv is present (via `registry.resolveExecutor()`), emits an `argv:` section — locks in the Windows no-cmd-flash invariant (argv[0] MUST be node.exe, not the .cmd shim).
 - [x] 4.2 `snapshotSettings(settings, ctx)` emits a sorted package list with normalized paths.
 - [x] 4.3 `snapshotSettingsDelta(before, after, ctx)` shows added/removed/preserved with normalized paths.
 
@@ -80,10 +80,10 @@ Note: one family scaffold landed alongside (Family A1+A2 × 3 platforms = 6 regi
 
 ## 12. Family G — Windows specifics
 
-- [x] 12.1 `g-windows-specifics.test.ts` G1 — pi.cmd found via managed-bin; trail snapshot proves `.cmd` resolution path.
-- [x] 12.2 G2 — npm-g at `%APPDATA%\Roaming\npm`; `source === "npm-global"`.
-- [x] 12.3 G3 — covered by F1-win (Program Files (x86) cwd). No standalone file.
-- [x] 12.4 G4 — node.exe at `C:\Program Files\nodejs\node.exe`; resolution finds it via PATH walk.
+- [x] 12.1 `g-windows-specifics.test.ts` G1 — managed pi-coding-agent on win32; `resolveExecutor` produces argv `[node.exe, cli.js]`. Snapshot locks in no-cmd-flash invariant.
+- [x] 12.2 G2 — npm-g at `%APPDATA%\Roaming\npm`; `source === "npm-global"`; argv asserts node.exe prepend.
+- [x] 12.3 G3 — dedicated block in `g-windows-specifics.test.ts`: cwd under `C:\Program Files (x86)` does not affect resolution.
+- [x] 12.4 G4 — node.exe at `C:\Program Files\nodejs\node.exe`; binary-kind tool: argv === [path] (no interpreter prepended).
 
 ## 13. Family H — HOME drift
 
@@ -119,6 +119,7 @@ Note: one family scaffold landed alongside (Family A1+A2 × 3 platforms = 6 regi
 - [x] 19.1 `AGENTS.md` key-files table gains a row for `src/shared/__tests__/bootstrap/`; Commands section adds `test:bootstrap` / `test:bootstrap:watch`.
 - [x] 19.2 `docs/architecture.md` gains a "Testing the bootstrap state space" subsection under Tool Resolution, with cube shape + locked-in invariants.
 - [x] 19.3 `CHANGELOG.md` `[Unreleased]` gains an "Added" entry describing the harness and the Windows bug capture.
+- [x] 19.4 Dedicated unit tests for `getManagedDir` / `getManagedBin` / `getPiSettingsPath` getters in `packages/shared/src/__tests__/managed-paths.test.ts` (7 tests). Verifies default-no-arg matches live constants and that `{ homedir }` override composes correctly.
 
 ## 20. Handoff to downstream proposals
 

@@ -4,8 +4,17 @@
  *
  * See openspec/changes/bootstrap-resolution-harness/design.md §8, §9.
  */
-import type { Resolution } from "../../tool-registry/types.js";
+import type { ExecutorResolution, Resolution } from "../../tool-registry/types.js";
 import type { HarnessContext } from "./harness.js";
+
+/**
+ * A resolution that may carry executor argv. Trail snapshots accept
+ * both plain `Resolution` (from `registry.resolve()`) and
+ * `ExecutorResolution` (from `registry.resolveExecutor()`) — when argv
+ * is present, it's rendered in the snapshot to lock in the
+ * no-cmd-flash / node-prepend invariant on Windows.
+ */
+type MaybeExecutor = Resolution | ExecutorResolution;
 
 /**
  * Normalize a path for snapshot stability:
@@ -36,9 +45,15 @@ export function normalizePath(
 /**
  * Trail snapshot. Primary assertion for ToolRegistry resolution tests.
  * Output is a multiline string ready for `toMatchSnapshot()`.
+ *
+ * When passed an `ExecutorResolution` (from `registry.resolveExecutor`),
+ * renders an `argv:` section proving the `toArgv` transform. On
+ * Windows this locks in the no-cmd-flash invariant — argv for a
+ * resolved `.js` target MUST be `[<node.exe>, <cli.js>]`, not the
+ * `.cmd` shim that would allocate a console.
  */
 export function snapshotTrail(
-  resolution: Resolution,
+  resolution: MaybeExecutor,
   ctx: Pick<HarnessContext, "homedir" | "npmRootGlobal">,
 ): string {
   const lines: string[] = [];
@@ -53,6 +68,15 @@ export function snapshotTrail(
     // stable across OS CI runners.
     const result = normalizePath(entry.result, ctx) ?? entry.result;
     lines.push(`  ${entry.strategy.padEnd(12)} ${result}`);
+  }
+  // argv section — present only when the caller invoked
+  // registry.resolveExecutor() (ExecutorResolution has `argv`).
+  const argv = (resolution as ExecutorResolution).argv;
+  if (Array.isArray(argv) && argv.length > 0) {
+    lines.push("argv:");
+    for (const a of argv) {
+      lines.push(`  - ${normalizePath(a, ctx) ?? a}`);
+    }
   }
   return lines.join("\n");
 }

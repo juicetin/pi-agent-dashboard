@@ -105,18 +105,24 @@ describe("Family B — npm-global", () => {
         {
           platform: "win32",
           homedir,
-          env: { PATH: "C:\\Users\\R\\AppData\\Roaming\\npm" },
+          env: {
+            PATH: "C:\\Users\\R\\AppData\\Roaming\\npm;C:\\Program Files\\nodejs",
+          },
           fs: layer(
             fixtures.npmGlobalWindowsAppData(homedir, { dashboard: true }),
+            { "C:\\Program Files\\nodejs\\node.exe": "\x7fELF" },
           ),
         },
         (ctx) => {
           const registry = ctx.createRegistry();
           registerDefaultTools(registry, ctx.createStrategyDeps());
-          const res = registry.resolve("pi");
-          expect(res.ok).toBe(true);
-          expect(res.source).toBe("npm-global");
-          expect(snapshotTrail(res, ctx)).toMatchSnapshot();
+          const executor = registry.resolveExecutor("pi");
+          expect(executor.ok).toBe(true);
+          expect(executor.source).toBe("npm-global");
+          // No-cmd-flash invariant for npm-g on Windows: argv[0] is
+          // node.exe, argv[1] is cli.js. The snapshot locks this in.
+          expect(executor.argv[0]).toBe("C:\\Program Files\\nodejs\\node.exe");
+          expect(snapshotTrail(executor, ctx)).toMatchSnapshot();
         },
       );
     });

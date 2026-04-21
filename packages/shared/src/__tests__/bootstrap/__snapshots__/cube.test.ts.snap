@@ -154,7 +154,10 @@ tried:
   bare-import  cannot resolve @oh-my-pi/pi-coding-agent/package.json
   managed      missing: <HOME>/.pi-dashboard/node_modules/@mariozechner/pi-coding-agent/dist/cli.js
   managed      missing: <HOME>/.pi-dashboard/node_modules/@oh-my-pi/pi-coding-agent/dist/cli.js
-  npm-global   ok"
+  npm-global   ok
+argv:
+  - C:/Program Files/nodejs/node.exe
+  - <NPM_ROOT>/@mariozechner/pi-coding-agent/dist/cli.js"
 `;
 
 exports[`Family B — npm-global > B3 — npm-g pi-installed-first (bridge needs registration) > settings.json present but lacks bridge entry (linux) 1`] = `
@@ -314,19 +317,18 @@ exports[`Family G — Windows specifics > G1 — pi.cmd resolved + toArgv prepen
 "name:   pi
 ok:     true
 source: managed
-path:   <HOME>/.pi-dashboard/node_modules/.bin/pi.cmd
+path:   <HOME>/.pi-dashboard/node_modules/@mariozechner/pi-coding-agent/dist/cli.js
 tried:
   override     no override set
   bare-import  cannot resolve @mariozechner/pi-coding-agent/package.json
   bare-import  cannot resolve @oh-my-pi/pi-coding-agent/package.json
-  managed      missing: <HOME>/.pi-dashboard/node_modules/@mariozechner/pi-coding-agent/dist/cli.js
-  managed      missing: <HOME>/.pi-dashboard/node_modules/@oh-my-pi/pi-coding-agent/dist/cli.js
-  npm-global   missing: <NPM_ROOT>/@mariozechner/pi-coding-agent/dist/cli.js
-  npm-global   missing: <NPM_ROOT>/@oh-my-pi/pi-coding-agent/dist/cli.js
-  managed      ok"
+  managed      ok
+argv:
+  - C:/Program Files/nodejs/node.exe
+  - <HOME>/.pi-dashboard/node_modules/@mariozechner/pi-coding-agent/dist/cli.js"
 `;
 
-exports[`Family G — Windows specifics > G2 — npm-g at %APPDATA%\\Roaming\\npm 1`] = `
+exports[`Family G — Windows specifics > G2 — npm-g at %APPDATA%\\Roaming\\npm (argv prepends node.exe) 1`] = `
 "name:   pi
 ok:     true
 source: npm-global
@@ -337,7 +339,10 @@ tried:
   bare-import  cannot resolve @oh-my-pi/pi-coding-agent/package.json
   managed      missing: <HOME>/.pi-dashboard/node_modules/@mariozechner/pi-coding-agent/dist/cli.js
   managed      missing: <HOME>/.pi-dashboard/node_modules/@oh-my-pi/pi-coding-agent/dist/cli.js
-  npm-global   ok"
+  npm-global   ok
+argv:
+  - C:/Program Files/nodejs/node.exe
+  - <NPM_ROOT>/@mariozechner/pi-coding-agent/dist/cli.js"
 `;
 
 exports[`Family G — Windows specifics > G4 — node.exe at C:\\Program Files\\nodejs\\node.exe 1`] = `
@@ -348,7 +353,9 @@ path:   C:/Program Files/nodejs/node.exe
 tried:
   override     no override set
   managed      missing: <HOME>/.pi-dashboard/node_modules/.bin/node.cmd
-  where        ok"
+  where        ok
+argv:
+  - C:/Program Files/nodejs/node.exe"
 `;
 
 exports[`Family J — minimal PATH > J1 — GUI-launched minimal PATH: pi does NOT resolve on posix (limitation) 1`] = `

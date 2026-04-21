@@ -1,14 +1,21 @@
 /**
- * Installs pi, dashboard, openspec, and tsx into the managed location.
- * Uses system npm when available, falls back to bundled npm.
- * All installs run async (child_process.exec) to avoid blocking Electron's main process.
+ * Electron-specific wrapper over the shared bootstrap installer.
+ *
+ * The core registry-install loop (resolve npm, run `npm install <pkg>`,
+ * stream progress) lives in `@blackbelt-technology/pi-dashboard-shared/bootstrap-install.js`
+ * and is called from here with Electron-specific concerns layered on top:
+ *   - bundled Node + npm-cli.js for fresh installs with no system Node
+ *   - offline cacache bundle (resourcesPath/offline-packages/)
+ *   - bundled-extensions activation in pi's git cache
+ *
+ * See change: unified-bootstrap-install.
  */
 import { exec, spawn as cpSpawn } from "@blackbelt-technology/pi-dashboard-shared/platform/exec.js";
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { detectSystemNode } from "./dependency-detector.js";
 import { getBundledNodePath, getBundledNpmPath } from "./bundled-node.js";
+import { getDefaultRegistry } from "@blackbelt-technology/pi-dashboard-shared/tool-registry/index.js";
 import { MANAGED_DIR } from "./managed-paths.js";
 import {
   resolveOfflinePackages,
@@ -17,6 +24,17 @@ import {
   selectInstallStrategy,
 } from "./offline-packages.js";
 import { rmSync } from "node:fs";
+import {
+  bootstrapInstall as sharedBootstrapInstall,
+  type InstallProgress as SharedInstallProgress,
+} from "@blackbelt-technology/pi-dashboard-shared/bootstrap-install.js";
+
+/**
+ * Re-export the shared installer for back-compat. Consumers that imported
+ * `bootstrapInstall` from this module continue to work; new code should
+ * import directly from `@blackbelt-technology/pi-dashboard-shared/bootstrap-install.js`.
+ */
+export { bootstrapInstall } from "@blackbelt-technology/pi-dashboard-shared/bootstrap-install.js";
 
 export interface InstallProgress {
   step: string;
@@ -53,10 +71,13 @@ function resolveNpm(): string {
   if (process.platform === "win32" && nodePath && npmPath) {
     return `"${nodePath}" "${npmPath}"`;
   }
-  // System npm on Unix (posix has no extension issue).
-  const systemNode = detectSystemNode();
-  if (systemNode.found) {
-    return "npm";
+  // System npm on Unix (posix has no extension issue). Use the shared
+  // registry so the same node-resolution strategy applies across Electron
+  // and the CLI. See change: unified-bootstrap-install.
+  const registry = getDefaultRegistry();
+  if (registry.has("node")) {
+    const nodeRes = registry.resolve("node");
+    if (nodeRes.ok) return "npm";
   }
   // Fallback: bundled even on non-Windows.
   if (nodePath && npmPath) {
@@ -186,26 +207,40 @@ export async function installStandalone(onProgress?: ProgressCallback, skipPacka
   }
 
   // Registry fallback (no bundle, or bundle incomplete).
+  //
+  // Delegate to the shared `bootstrapInstall`. We still need to emit
+  // per-package "Already installed (system)" ticks for skipped packages
+  // because the shared installer isn't aware of the Electron-specific
+  // `skipPackages` semantics.
   for (const pkg of packages) {
     const step = pkg.split("/").pop() || pkg;
-
-    // Skip packages already installed on the system
     if (skipSet.has(pkg)) {
       onProgress?.({ step, status: "done", output: "Already installed (system)" });
-      continue;
-    }
-
-    onProgress?.({ step, status: "running" });
-    try {
-      await runNpmInstall([pkg], MANAGED_DIR, npmCmd, (output) => {
-        onProgress?.({ step, status: "running", output });
-      });
-      onProgress?.({ step, status: "done" });
-    } catch (err: any) {
-      onProgress?.({ step, status: "error", error: err.message });
-      throw err;
     }
   }
+
+  const toInstall = packages.filter((p) => !skipSet.has(p));
+  if (toInstall.length === 0) return;
+
+  const argvBase = parseNpmArgv(npmCmd);
+  const env = buildInstallEnv();
+  const res = await sharedBootstrapInstall({
+    packages: toInstall,
+    managedDir: MANAGED_DIR,
+    npmArgv: argvBase,
+    env,
+    progress: onProgress as unknown as (p: SharedInstallProgress) => void,
+  });
+  if (!res.ok) {
+    throw new Error(res.error);
+  }
+}
+
+/** Parse an `npmCmd` string (may contain quoted paths) into an argv array. */
+function parseNpmArgv(npmCmd: string): string[] {
+  return (
+    npmCmd.match(/"[^"]+"|\S+/g)?.map((s) => s.replace(/^"|"$/g, "")) ?? [npmCmd]
+  );
 }
 
 /**

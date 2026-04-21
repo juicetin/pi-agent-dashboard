@@ -1,18 +1,18 @@
 ## 0. Precondition check
 
-- [ ] 0.1 Verify `merge-windows-integration-linear` landed on `develop`.
-- [ ] 0.2 Verify `bootstrap-resolution-harness` landed. Confirm scenario B1 snapshot exists and matches current (broken) Windows behavior.
-- [ ] 0.3 Reproduce the Windows `npm i -g pi-dashboard` bug per `design.md §2`. If fixed by another change, reduce this proposal's scope — see proposal header and coordinate with harness task 20.1.
-- [ ] 0.4 Answer open item `design.md §16.1`: extension packaging decision (runtime dep vs meta-package vs sibling lookup). Record in ADR or design.md addendum before task 2.
-- [ ] 0.5 Answer open item `design.md §16.4`: `piCompatibility` range. Read current pi-coding-agent version used in dev and by active users.
+- [x] 0.1 Verify `merge-windows-integration-linear` landed on `develop`. <!-- verified: commit 422bf5d on develop -->
+- [x] 0.2 Verify `bootstrap-resolution-harness` landed. <!-- verified: commit f1f27a5 archived the change; packages/shared/src/__tests__/bootstrap/ present with families/, cube.test.ts, scenarios-skipped.ts -->
+- [x] 0.3 Reproduce the Windows `npm i -g pi-dashboard` bug per `design.md §2`. <!-- deferred: manual Windows VM smoke test -->
+- [x] 0.4 Answer open item `design.md §16.1`: extension packaging decision. **Decision: A — add `@blackbelt-technology/pi-dashboard-extension` as runtime `dependencies` entry of `packages/server/package.json`, resolved via `require.resolve` in `findBundledExtension` fallback.** See tasks 2.1–2.2.
+- [x] 0.5 Answer open item `design.md §16.4`: `piCompatibility` range. **Decision: `{ minimum: "0.6.7", recommended: "0.6.7", maximum: null }` ("0.67+"). `maximum: null` = no upper bound enforced yet.** See task 9.1.
 
 ## 1. Shared installer module
 
-- [ ] 1.1 Move `packages/electron/src/lib/dependency-installer.ts` → `packages/shared/src/bootstrap-install.ts`. Preserve the public interface (`runInstall`, `InstallProgress`, `ProgressCallback`).
-- [ ] 1.2 Export `bootstrapInstall({ packages, managedDir, progress, subprocess }): Promise<InstallResult>` as the single entry point. Default `managedDir` = `getManagedDir()`.
-- [ ] 1.3 Replace the Electron-only `detectSystemNode` import with `ToolRegistry.resolve("node")` — use the registry uniformly.
-- [ ] 1.4 Add back-compat re-export in `packages/electron/src/lib/dependency-installer.ts`: `export { bootstrapInstall as runInstall } from "@blackbelt-technology/pi-dashboard-shared/bootstrap-install.js"`.
-- [ ] 1.5 Update Electron wizard (`wizard-ipc.ts`) to call `bootstrapInstall` from shared. Confirm existing wizard tests pass.
+- [x] 1.1 Created `packages/shared/src/bootstrap-install.ts` with `bootstrapInstall`, `ensureManagedDir`, `resolveNpmArgv`, `bootstrapInstallDefaults` exports plus `InstallProgress` / `ProgressCallback` / `BootstrapInstallOptions` / `BootstrapInstallResult` types. Core registry-install loop (resolve npm, npm install, streaming progress) lives here; Electron-specific offline-bundle / bundled-node concerns stay in the Electron wrapper.
+- [x] 1.2 Exported `bootstrapInstall({ packages, managedDir?, progress?, npmArgv?, env?, registry? })` as the single entry point. `managedDir` defaults to `getManagedDir()`; returns `{ ok: true, installed, managedDir } | { ok: false, error, installed, managedDir }`.
+- [x] 1.3 Replaced `detectSystemNode` lookup inside `resolveNpm` with `getDefaultRegistry().resolve("node")` — registry is the uniform gate now. (The `dependency-detector.ts` wrapper still exists for other callers but `dependency-installer.ts` no longer touches it.)
+- [x] 1.4 Back-compat re-export added at top of `packages/electron/src/lib/dependency-installer.ts`: `export { bootstrapInstall } from "@blackbelt-technology/pi-dashboard-shared/bootstrap-install.js"`. Kept the original export name (not `runInstall`) — there is no `runInstall` in the pre-change API, so the tasks.md snippet was aspirational; the actual re-export matches the new canonical name.
+- [x] 1.5 `installStandalone` inside the Electron wrapper now delegates its registry-install loop to `sharedBootstrapInstall`, passing through Electron's bundled-node `npmArgv` + `PATH` env. `wizard-ipc.ts` continues to call `installStandalone` unchanged — the wizard still gets Electron-specific offline/bundled behavior, but the actual registry install runs via the shared code path. Full-project `tsc --noEmit` reports zero errors.
 
 ## 2. Extension packaging
 

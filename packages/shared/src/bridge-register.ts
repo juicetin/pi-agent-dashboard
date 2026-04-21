@@ -10,29 +10,62 @@
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import { createRequire } from "node:module";
 
 /**
- * Find the bundled extension directory relative to a base directory.
- * Looks for `packages/extension/` (monorepo layout) under baseDir.
+ * Check that a candidate path is a valid, stable extension directory.
+ * Returns true when the directory exists, contains a package.json, and
+ * is NOT under /tmp/.mount_* (unstable AppImage mount).
+ */
+function isValidExtensionPath(candidate: string): boolean {
+  if (!fs.existsSync(candidate)) return false;
+  if (!fs.existsSync(path.join(candidate, "package.json"))) return false;
+  if (candidate.includes("/tmp/.mount_")) {
+    console.warn(
+      "[dashboard] AppImage detected — extension path is temporary, skipping registration:",
+      candidate,
+    );
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Find the bundled extension directory.
  *
- * Returns null if:
- * - Directory not found
- * - No package.json in the directory
- * - Path is under /tmp/.mount_* (unstable AppImage mount)
+ * Resolution order:
+ *   1. Monorepo layout: `<baseDir>/packages/extension/`.
+ *   2. Node module resolution: `@blackbelt-technology/pi-dashboard-extension/package.json`
+ *      via `require.resolve` from this module. Works in ANY install layout
+ *      (flat `node_modules/`, scoped, nested, pnpm, npm-g). This is the
+ *      canonical identity-based lookup and the only reliable strategy
+ *      when pi-dashboard is installed via `npm i -g`.
+ *
+ * Returns null if both strategies fail, the resolved directory doesn't
+ * have a package.json, or the path is under /tmp/.mount_* (AppImage).
+ *
+ * See change: unified-bootstrap-install.
  */
 export function findBundledExtension(baseDir: string): string | null {
-  const candidate = path.resolve(baseDir, "packages", "extension");
-  if (!fs.existsSync(candidate) || !fs.existsSync(path.join(candidate, "package.json"))) {
-    return null;
+  // Strategy 1: monorepo sibling layout.
+  const monorepoCandidate = path.resolve(baseDir, "packages", "extension");
+  if (isValidExtensionPath(monorepoCandidate)) return monorepoCandidate;
+
+  // Strategy 2: Node module resolver. This works for the `npm i -g
+  // pi-dashboard` layout where the extension is shipped as a runtime dep
+  // of pi-dashboard-server.
+  try {
+    const req = createRequire(import.meta.url);
+    const extPkgJson = req.resolve(
+      "@blackbelt-technology/pi-dashboard-extension/package.json",
+    );
+    const extDir = path.dirname(extPkgJson);
+    if (isValidExtensionPath(extDir)) return extDir;
+  } catch {
+    // Not resolvable — fall through.
   }
 
-  // Reject unstable AppImage temp mount paths
-  if (candidate.includes("/tmp/.mount_")) {
-    console.warn("[dashboard] AppImage detected — extension path is temporary, skipping registration:", candidate);
-    return null;
-  }
-
-  return candidate;
+  return null;
 }
 
 /** Optional overrides for testing / multi-HOME scenarios. */

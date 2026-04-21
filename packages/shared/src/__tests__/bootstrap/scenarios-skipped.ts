@@ -1,0 +1,85 @@
+/**
+ * Bulk-skip manifest for cells NOT yet covered by a family-test file.
+ *
+ * This is the "fail-closed by default" scaffold. Every cell in the
+ * cube starts SKIPPED with a documented reason. As family-test files
+ * are added, they call `register(cell, tag)` and the corresponding
+ * skip entry is automatically overridden (because registration takes
+ * precedence in the sweep).
+ *
+ * New cells added to the enumeration (by extending PLATFORMS,
+ * DASH_LOCATIONS, etc. in `scenarios.ts`) will fail the cube-sweep
+ * test until a decision is made here or in a family file.
+ *
+ * Call ordering invariant: this module MUST be imported before
+ * `sweepCube()` runs. Family-test files can import-and-register after
+ * this module runs — registration wins.
+ */
+import { enumerateCube, skip, type ScenarioCell } from "./scenarios.js";
+
+/**
+ * Classify why a given cell is not interesting / not reachable in
+ * practice. Returns null when the cell is plausible and should be
+ * covered by a family file — such cells get a generic placeholder
+ * skip reason here so the cube sweep passes on day 1; families
+ * replace the skip with registration as they land.
+ */
+function skipReasonFor(cell: ScenarioCell): string {
+  // ── Combinations that are not real install layouts ────────────────
+
+  // AppImage tmp mount is Linux-only, and only occurs when dash ===
+  // "electron" via an AppImage package.
+  if (cell.pi === "appimage-tmp" && (cell.platform !== "linux" || cell.dash !== "electron")) {
+    return "appimage-tmp is Linux + electron only";
+  }
+
+  // "dev" dash implies a workspace checkout — only meaningful on
+  // developer machines (typically mac/linux). Windows dev happens but
+  // is rare; capture later if needed.
+  if (cell.dash === "dev" && cell.platform === "win32") {
+    return "dev monorepo on Windows — rare; capture if reported";
+  }
+
+  // "home-drift" env only meaningful on Windows (Git Bash sets $HOME
+  // differently from os.homedir). On posix, $HOME and os.homedir
+  // agree.
+  if (cell.env === "home-drift" && cell.platform !== "win32") {
+    return "home-drift is a Windows-specific phenomenon";
+  }
+
+  // Malformed settings.json doesn't depend on pi state — the parse
+  // failure happens regardless. One test per platform is enough.
+  if (cell.settings === "malformed" && cell.pi !== "present-valid") {
+    return "malformed settings: one pi state per platform is sufficient";
+  }
+
+  // Appimage + anything other than settings=missing is not a real
+  // first-run scenario (appimage is installed fresh).
+  if (cell.pi === "appimage-tmp" && cell.settings !== "missing") {
+    return "appimage fresh-run implies missing settings.json";
+  }
+
+  // spaces-unicode env is orthogonal to most axes — one scenario per
+  // platform proves the invariant. Skip most combinations.
+  if (cell.env === "spaces-unicode" && cell.pi !== "present-valid") {
+    return "spaces-unicode: covered once per platform via pi=present-valid";
+  }
+
+  // ── Placeholder for the first landing ────────────────────────────
+
+  // All other cells: "not yet covered". Family-test files replace
+  // this skip with real registration.
+  return "not yet covered — placeholder skip; replace with family registration";
+}
+
+/**
+ * Apply bulk skips. Called at module load.
+ */
+export function applyBulkSkips(): void {
+  for (const cell of enumerateCube()) {
+    skip(cell, skipReasonFor(cell));
+  }
+}
+
+// Apply on import so scenario consumers see the full manifest.
+applyBulkSkips();

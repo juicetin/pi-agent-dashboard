@@ -23,25 +23,27 @@
 
 ## 3. Fixtures library
 
-- [ ] 3.1 Create `fixtures/electron-layout.ts` with `electronPackaged({ platform, pi?, openspec? })` returning fs layer mimicking `<resourcesPath>/server/packages/...` + `node_modules/node-pty/prebuilds/...`.
-- [ ] 3.2 Create `fixtures/npm-global-layout.ts` with `npmGlobalUnix({ packages })` and `npmGlobalWindows({ packages, location: "appdata" | "programfiles" })`.
-- [ ] 3.3 Create `fixtures/managed-install.ts` with `managedInstall({ homedir, pi?, openspec?, tsx? })` — populates `<homedir>/.pi-dashboard/node_modules/...` + `.bin/` shims.
-- [ ] 3.4 Create `fixtures/dev-monorepo.ts` mimicking workspace layout (root `node_modules/`, packages/*/node_modules/).
-- [ ] 3.5 Create `fixtures/settings-json.ts` with `settingsJson({ homedir, packages, malformed? })` — writes `<homedir>/.pi/agent/settings.json` with the given package array (or broken JSON if `malformed: true`).
-- [ ] 3.6 Create `fixtures/pi-versions.ts` with helper to stamp a specific version into a fixture's `pi/package.json`.
-- [ ] 3.7 Create a `layer(...layers)` helper that merges fs records (later layers override earlier — useful for "managed install has stale pi, global has newer").
+- [x] 3.1 Create `fixtures/electron-layout.ts` with `electronPackaged({ platform, appimage? })` returning fs layer mimicking `<resourcesPath>/server/packages/...` + bundled node. AppImage variant produces `/tmp/.mount_PIxxxx/...`.
+- [x] 3.2 Create `fixtures/npm-global-layout.ts` with `npmGlobalUnix`, `npmGlobalWindowsAppData`, `npmGlobalWindowsProgramFiles`.
+- [x] 3.3 Create `fixtures/managed-install.ts` with `managedInstall({ homedir, platform, pi?, openspec?, tsx?, piPartial? })` — populates `<homedir>/.pi-dashboard/node_modules/...` + `.bin/` shims (`.cmd` on win32). `piPartial` simulates an interrupted install (E2).
+- [x] 3.4 Create `fixtures/dev-monorepo.ts` with `devMonorepo({ root, platform, pi?, openspec? })` (workspace layout with hoisted deps).
+- [x] 3.5 Create `fixtures/settings-json.ts` with `settingsJson({ homedir, platform, packages?, malformed?, missing? })` and `settingsJsonPath` helper.
+- [x] 3.6 Create `fixtures/pi-versions.ts` with `piPackageJson`/`openspecPackageJson` helpers for version stamping.
+- [x] 3.7 `layer(...layers)` helper already implemented in `harness.ts` during task 2.2.
 
 ## 4. Assertions
 
-- [ ] 4.1 Create `assertions.ts` with `snapshotTrail(resolution, { homedir, npmRoot })` — normalizes paths (replaces homedir/npmRoot with `<HOME>`/`<NPM_ROOT>`, backslashes → forward-slashes) and emits the format in design §8.
-- [ ] 4.2 Create `snapshotSettings(ctx)` that reads the fake settings.json and emits design §9 format with `before` captured at harness-create and `after` captured at read time.
-- [ ] 4.3 Add a diff-based `snapshotSettingsDelta(before, after)` showing added/removed/preserved lines — primary assertion for bridge-registration scenarios.
+- [x] 4.1 `snapshotTrail(resolution, ctx)` normalizes paths via `normalizePath` (replaces `<HOME>`/`<NPM_ROOT>`, flips backslashes). Applies to both the resolved `path` field AND every `tried[].result` reason string so snapshots are stable cross-OS.
+- [x] 4.2 `snapshotSettings(settings, ctx)` emits a sorted package list with normalized paths.
+- [x] 4.3 `snapshotSettingsDelta(before, after, ctx)` shows added/removed/preserved with normalized paths.
 
 ## 5. Scenario registration + cube
 
-- [ ] 5.1 Create `scenarios.ts` exporting `REGISTERED_SCENARIOS` (Map of cell-key → scenario fn) and `SKIPPED_SCENARIOS` (Map of cell-key → reason string).
-- [ ] 5.2 Create `cube.ts` with `enumerateCube()` producing cell-keys `<platform>/<dash>/<pi>/<bridge>/<settings>/<env>`. Unit scenarios first (only cells in the ~25 curated list); add a single expansion axis per follow-up.
-- [ ] 5.3 Add `cube.test.ts` — fails if any cell is neither in `REGISTERED_SCENARIOS` nor `SKIPPED_SCENARIOS`. Error message lists unclassified cells + suggests where to add them.
+- [x] 5.1 `scenarios.ts` with `REGISTERED_SCENARIOS` (Map<key, tag>) and `SKIPPED_SCENARIOS` (Map<key, reason>). `register()`, `skip()`, `skipPattern()`, `enumerateCube()`, `cellKey()`, `parseCellKey()`. Canonical axes exported (`PLATFORMS`, `DASH_LOCATIONS`, `PI_STATES`, `SETTINGS_STATES`, `ENV_STATES`).
+- [x] 5.2 `cube.ts` with `sweepCube()` and `formatUnclassifiedError()`. Cube shape: 3 platforms × 5 dash-locations × 6 pi-states × 4 settings-states × 3 env-states = 1080 cells.
+- [x] 5.3 `cube.test.ts` fails if any cell is neither registered nor skipped. `scenarios-skipped.ts` provides bulk-skip manifest so the test passes on day 1 (all cells skipped with reasons); family files replace skip with registration as they land. `families/index.ts` barrel ensures registration runs before sweep (avoids vitest module-graph isolation issues).
+
+Note: one family scaffold landed alongside (Family A1+A2 × 3 platforms = 6 registered cells). Remaining family tasks below populate the cube.
 
 ## 6. Family A — electron-packaged
 

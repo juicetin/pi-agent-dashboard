@@ -203,6 +203,22 @@ function buildResolveModule(
     return p.join(pkgDir, main);
   }
 
+  // Split a require id into { pkgName, subpath }.
+  //   "foo"                     → { pkgName: "foo",        subpath: null }
+  //   "foo/bar"                 → { pkgName: "foo",        subpath: "bar" }
+  //   "@scope/foo"              → { pkgName: "@scope/foo", subpath: null }
+  //   "@scope/foo/package.json" → { pkgName: "@scope/foo", subpath: "package.json" }
+  function splitId(id: string): { pkgName: string; subpath: string | null } {
+    if (id.startsWith("@")) {
+      const parts = id.split("/");
+      if (parts.length <= 2) return { pkgName: id, subpath: null };
+      return { pkgName: parts.slice(0, 2).join("/"), subpath: parts.slice(2).join("/") };
+    }
+    const idx = id.indexOf("/");
+    if (idx === -1) return { pkgName: id, subpath: null };
+    return { pkgName: id.slice(0, idx), subpath: id.slice(idx + 1) };
+  }
+
   return (id: string, from: string): string | null => {
     // Normalize `from`: if it's a file:// URL, strip it.
     let anchor = from;
@@ -220,15 +236,24 @@ function buildResolveModule(
       dir = p.dirname(anchor);
     }
 
-    // Walk up looking for node_modules/<id>/package.json
+    const { pkgName, subpath } = splitId(id);
+
+    // Walk up looking for node_modules/<pkgName>/package.json.
     // Stop when we hit the filesystem root (dirname returns same value).
     let prev = "";
     while (dir !== prev) {
-      const pkgPath = p.join(dir, "node_modules", id, "package.json");
-      if (fs.existsSync(pkgPath)) {
-        const pkg = readJson(pkgPath);
+      const pkgJsonPath = p.join(dir, "node_modules", pkgName, "package.json");
+      if (fs.existsSync(pkgJsonPath)) {
+        // Subpath request — resolve relative to the package dir.
+        if (subpath !== null) {
+          const candidate = p.join(p.dirname(pkgJsonPath), subpath);
+          if (fs.existsSync(candidate)) return candidate;
+          return null;
+        }
+        // Bare package — read main from package.json.
+        const pkg = readJson(pkgJsonPath);
         if (pkg) {
-          const entry = entryFromPkg(pkgPath, pkg);
+          const entry = entryFromPkg(pkgJsonPath, pkg);
           if (fs.existsSync(entry)) return entry;
         }
       }

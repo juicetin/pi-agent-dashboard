@@ -59,11 +59,12 @@ Two real users on the same host SHALL be able to run their own dashboards indepe
 - **THEN** each acquires their own lock
 - **AND** neither interferes with the other
 
-#### Scenario: Port collision handled separately
+#### Scenario: Port collision surfaced with actionable error
 - **WHEN** user A's dashboard listens on 8000
-- **AND** user B's `pi-dashboard` starts
-- **THEN** the startup auto-increments to 8001 with a log message
-- **AND** the port-choice mechanism is orthogonal to the HOME lock
+- **AND** user B's `pi-dashboard` starts with the same `config.port`
+- **THEN** the per-HOME lock path differs (each user has a distinct canonical HOME), so both pass the lock-acquisition gate independently
+- **AND** the process that loses the port race exits with `"Port 8000 is occupied by another service"` (existing `cli.ts` behavior); the user reconfigures the port in `~/.pi/dashboard/config.json` or via `--port`
+- **AND** the port-choice mechanism is orthogonal to the HOME lock (port auto-increment is deliberately out of scope for this change)
 
 ### Requirement: Restart handoff
 The `/api/restart` flow SHALL hand off the lock cleanly: old process releases, orchestrator waits for lock to become available, new process acquires.

@@ -304,6 +304,62 @@ describe("loadConfig", () => {
     const config = loadConfig();
     expect(config.electronMode).toBe(false);
   });
+
+  // ── fix-trusted-networks-no-oauth regression tests ──────────────────
+  // These assert that auth.bypassHosts and auth.bypassUrls are honored
+  // at load time EVEN WHEN auth.providers is empty or absent. Before the
+  // fix, parseAuthConfig returned undefined whenever providers was empty,
+  // nuking bypassHosts before the resolvedTrustedNetworks merge could
+  // read it. See openspec/changes/fix-trusted-networks-no-oauth/.
+
+  it("should honor auth.bypassHosts when providers is {} (task 1.1)", () => {
+    fs.writeFileSync(configFile, JSON.stringify({
+      auth: { providers: {}, bypassHosts: ["192.168.1.0/24"] },
+    }));
+    const config = loadConfig();
+    expect(config.auth).toBeDefined();
+    expect(config.auth!.bypassHosts).toEqual(["192.168.1.0/24"]);
+    expect(config.resolvedTrustedNetworks).toContain("192.168.1.0/24");
+  });
+
+  it("should honor auth.bypassHosts when no providers key at all (task 1.2)", () => {
+    fs.writeFileSync(configFile, JSON.stringify({
+      auth: { bypassHosts: ["10.0.0.0/8"] },
+    }));
+    const config = loadConfig();
+    expect(config.auth).toBeDefined();
+    expect(config.auth!.bypassHosts).toEqual(["10.0.0.0/8"]);
+    expect(config.resolvedTrustedNetworks).toContain("10.0.0.0/8");
+  });
+
+  it("should honor auth.bypassUrls when providers is {} (task 1.3)", () => {
+    fs.writeFileSync(configFile, JSON.stringify({
+      auth: { providers: {}, bypassUrls: ["/webhooks/"] },
+    }));
+    const config = loadConfig();
+    expect(config.auth).toBeDefined();
+    expect(config.auth!.bypassUrls).toEqual(["/webhooks/"]);
+  });
+
+  it("should return auth undefined when providers={} and all bypass arrays are empty (task 1.4 boundary)", () => {
+    fs.writeFileSync(configFile, JSON.stringify({
+      auth: { providers: {}, bypassHosts: [], bypassUrls: [] },
+    }));
+    const config = loadConfig();
+    // Truly empty auth → still undefined (boundary preserved)
+    expect(config.auth).toBeUndefined();
+    expect(config.resolvedTrustedNetworks).toEqual([]);
+  });
+
+  it("should merge top-level trustedNetworks with bypassHosts when no providers", () => {
+    fs.writeFileSync(configFile, JSON.stringify({
+      trustedNetworks: ["192.168.1.0/24"],
+      auth: { providers: {}, bypassHosts: ["10.0.0.0/8"] },
+    }));
+    const config = loadConfig();
+    expect(config.resolvedTrustedNetworks).toContain("192.168.1.0/24");
+    expect(config.resolvedTrustedNetworks).toContain("10.0.0.0/8");
+  });
 });
 
 describe("ensureConfig", () => {

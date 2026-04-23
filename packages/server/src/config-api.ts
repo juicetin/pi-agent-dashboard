@@ -100,6 +100,17 @@ export function writeConfigPartial(partial: Record<string, any>): WriteConfigRes
         mergedAuth.allowedUsers = partial.auth.allowedUsers;
       }
 
+      // fix-trusted-networks-no-oauth: propagate bypassHosts / bypassUrls
+      // from the incoming partial. Without these, the UI's Trusted Networks
+      // save path silently dropped every entry on disk. `!== undefined`
+      // (not truthiness) lets an empty array clear all entries.
+      if (partial.auth.bypassHosts !== undefined) {
+        mergedAuth.bypassHosts = partial.auth.bypassHosts;
+      }
+      if (partial.auth.bypassUrls !== undefined) {
+        mergedAuth.bypassUrls = partial.auth.bypassUrls;
+      }
+
       partial.auth = mergedAuth;
     }
 

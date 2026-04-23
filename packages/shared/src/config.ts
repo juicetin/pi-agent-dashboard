@@ -117,28 +117,57 @@ const DEFAULTS: DashboardConfig = {
 
 /**
  * Parse and validate the auth config section.
- * Returns undefined if auth is not configured or has no providers.
+ *
+ * Returns undefined ONLY when nothing auth-relevant is configured — that is,
+ * when none of `providers`, `bypassHosts`, or `bypassUrls` has any content.
+ *
+ * When providers is empty but bypassHosts or bypassUrls is populated, this
+ * function returns a valid AuthConfig with an empty providers map. The auth
+ * plugin already no-ops in that case (providerRegistry.size === 0 → skip
+ * OAuth route + cookie plugin registration), so no OAuth flow activates
+ * accidentally. But returning an object here lets the caller populate
+ * resolvedTrustedNetworks from auth.bypassHosts — which is the entire
+ * point of allowing this shape. Before this change, parseAuthConfig
+ * returned undefined on empty-providers, which nuked auth.bypassHosts
+ * before the resolvedTrustedNetworks merge could read it, and users
+ * without OAuth lost remote network access after the UI started writing
+ * to auth.bypassHosts. See openspec/changes/fix-trusted-networks-no-oauth.
  */
 function parseAuthConfig(raw: any): AuthConfig | undefined {
   if (!raw || typeof raw !== "object") return undefined;
   const providers = raw.providers;
-  if (!providers || typeof providers !== "object" || Object.keys(providers).length === 0) {
-    return undefined;
-  }
-  // Validate each provider has at least clientId and clientSecret
+  const hasProviders =
+    providers && typeof providers === "object" && Object.keys(providers).length > 0;
+  const hasHosts = Array.isArray(raw.bypassHosts) && raw.bypassHosts.length > 0;
+  const hasUrls = Array.isArray(raw.bypassUrls) && raw.bypassUrls.length > 0;
+  if (!hasProviders && !hasHosts && !hasUrls) return undefined;
+
+  // Validate each provider has at least clientId and clientSecret.
+  // validProviders may end up empty when providers is {} or all entries
+  // are malformed — that's fine, the caller tolerates it as long as
+  // bypassHosts or bypassUrls carries the auth-relevant content.
   const validProviders: Record<string, AuthProviderConfig> = {};
-  for (const [key, value] of Object.entries(providers)) {
-    const p = value as any;
-    if (p && typeof p === "object" && p.clientId && p.clientSecret) {
-      validProviders[key] = {
-        clientId: p.clientId,
-        clientSecret: p.clientSecret,
-        ...(p.issuerUrl ? { issuerUrl: p.issuerUrl } : {}),
-        ...(p.name ? { name: p.name } : {}),
-      };
+  if (hasProviders) {
+    for (const [key, value] of Object.entries(providers as Record<string, unknown>)) {
+      const p = value as any;
+      if (p && typeof p === "object" && p.clientId && p.clientSecret) {
+        validProviders[key] = {
+          clientId: p.clientId,
+          clientSecret: p.clientSecret,
+          ...(p.issuerUrl ? { issuerUrl: p.issuerUrl } : {}),
+          ...(p.name ? { name: p.name } : {}),
+        };
+      }
     }
   }
-  if (Object.keys(validProviders).length === 0) return undefined;
+
+  // If providers was declared but all entries are malformed AND there is no
+  // bypass content, fall back to undefined — same "nothing auth-relevant"
+  // rule as the top-level gate.
+  if (Object.keys(validProviders).length === 0 && !hasHosts && !hasUrls) {
+    return undefined;
+  }
+
   return {
     secret: raw.secret ?? "",
     providers: validProviders,

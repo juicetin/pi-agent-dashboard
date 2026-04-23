@@ -52,6 +52,25 @@ describe("trustedNetworks config", () => {
     expect(config.resolvedTrustedNetworks).toContain("10.0.0.0/8");
   });
 
+  // Companion to the test above. The archived trusted-networks spec scenario
+  // "trustedNetworks merged with auth.bypassHosts" as written did NOT include
+  // a `providers` field; the test above silently adds one to make it pass.
+  // This second test exercises the literal spec scenario — it would have
+  // failed pre-fix (parseAuthConfig nuked the whole auth block when
+  // providers was absent) and demonstrates the scenario as written now holds.
+  // See openspec/changes/fix-trusted-networks-no-oauth.
+  it("should merge trustedNetworks with auth.bypassHosts (no providers configured)", () => {
+    fs.writeFileSync(configFile, JSON.stringify({
+      trustedNetworks: ["192.168.1.0/24"],
+      auth: {
+        bypassHosts: ["10.0.0.0/8"],
+      },
+    }));
+    const config = loadConfig();
+    expect(config.resolvedTrustedNetworks).toContain("192.168.1.0/24");
+    expect(config.resolvedTrustedNetworks).toContain("10.0.0.0/8");
+  });
+
   it("should deduplicate entries", () => {
     fs.writeFileSync(configFile, JSON.stringify({
       trustedNetworks: ["192.168.1.0/24"],

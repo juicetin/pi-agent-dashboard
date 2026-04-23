@@ -174,7 +174,7 @@ make clean              # Destroy all cloned VMs
 | `src/client/lib/providers-api.ts` | Client-side fetch helper: `testProvider({ name?, baseUrl, apiKey, api })` → structured `{ ok, status?, modelCount?, sample?, error? }`. Used by the **Test** button on the LLM Providers card |
 | `src/client/components/ProviderAuthSection.tsx` | Settings section: OAuth login buttons, device-code modal, API key inputs |
 | `src/server/auth-plugin.ts` | Fastify plugin: auth routes, onRequest hook, WS upgrade validation |
-| `src/server/config-api.ts` | Config REST API: read (redacted), write (partial merge), secret preservation |
+| `src/server/config-api.ts` | Config REST API: read (redacted), write (partial merge), secret preservation. `writeConfigPartial` auth-merge propagates `secret`, `providers`, `allowedUsers`, `bypassHosts`, `bypassUrls` (the last two added by change `fix-trusted-networks-no-oauth` — silently dropped before, breaking Trusted Networks saves for users without OAuth). |
 | `src/client/components/SettingsPanel.tsx` | Settings UI: all dashboard config fields, grouped form, save to server |
 | `src/client/hooks/useAuthStatus.ts` | Client auth status hook and login redirect helper |
 | `src/server/localhost-guard.ts` | Network access guard: `createNetworkGuard` (loopback/trusted/authenticated), `isBypassedHost` (CIDR/wildcard/exact), netmask-to-CIDR helpers |

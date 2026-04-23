@@ -100,5 +100,73 @@ describe("config-api", () => {
       // providers preserved
       expect(written.auth.providers.github.clientId).toBe("x");
     });
+
+    // ── fix-trusted-networks-no-oauth regression tests ─────────────────
+    // These assert that auth.bypassHosts and auth.bypassUrls are persisted
+    // through PUT /api/config. Before the fix, the auth-merge block only
+    // copied secret / providers / allowedUsers, silently dropping bypass*
+    // on every save.
+
+    it("should persist auth.bypassHosts with no pre-existing auth (task 1.5)", () => {
+      fs.writeFileSync(configFile, JSON.stringify({ port: 8000 }));
+      const result = writeConfigPartial({
+        auth: { providers: {}, bypassHosts: ["192.168.1.0/24"] },
+      });
+      expect(result.success).toBe(true);
+      const written = JSON.parse(fs.readFileSync(configFile, "utf-8"));
+      expect(written.auth.bypassHosts).toEqual(["192.168.1.0/24"]);
+    });
+
+    it("should persist auth.bypassHosts alongside existing providers (task 1.6)", () => {
+      fs.writeFileSync(configFile, JSON.stringify({
+        auth: {
+          secret: "s",
+          providers: { github: { clientId: "abc", clientSecret: "xyz" } },
+        },
+      }));
+      const result = writeConfigPartial({
+        auth: { bypassHosts: ["10.0.0.0/8"] },
+      });
+      expect(result.success).toBe(true);
+      const written = JSON.parse(fs.readFileSync(configFile, "utf-8"));
+      expect(written.auth.providers.github.clientId).toBe("abc");
+      expect(written.auth.providers.github.clientSecret).toBe("xyz");
+      expect(written.auth.bypassHosts).toEqual(["10.0.0.0/8"]);
+    });
+
+    it("should clear auth.bypassHosts via empty array (task 1.7)", () => {
+      fs.writeFileSync(configFile, JSON.stringify({
+        auth: { providers: {}, bypassHosts: ["192.168.1.0/24"] },
+      }));
+      const result = writeConfigPartial({
+        auth: { bypassHosts: [] },
+      });
+      expect(result.success).toBe(true);
+      const written = JSON.parse(fs.readFileSync(configFile, "utf-8"));
+      expect(written.auth.bypassHosts).toEqual([]);
+    });
+
+    it("should preserve existing auth.bypassHosts when partial omits the key (task 1.8)", () => {
+      fs.writeFileSync(configFile, JSON.stringify({
+        auth: { providers: {}, bypassHosts: ["192.168.1.0/24"] },
+      }));
+      const result = writeConfigPartial({
+        auth: { allowedUsers: ["alice"] },
+      });
+      expect(result.success).toBe(true);
+      const written = JSON.parse(fs.readFileSync(configFile, "utf-8"));
+      expect(written.auth.bypassHosts).toEqual(["192.168.1.0/24"]);
+      expect(written.auth.allowedUsers).toEqual(["alice"]);
+    });
+
+    it("should persist auth.bypassUrls symmetrically (task 1.9)", () => {
+      fs.writeFileSync(configFile, JSON.stringify({ port: 8000 }));
+      const result = writeConfigPartial({
+        auth: { providers: {}, bypassUrls: ["/webhooks/", "/metrics"] },
+      });
+      expect(result.success).toBe(true);
+      const written = JSON.parse(fs.readFileSync(configFile, "utf-8"));
+      expect(written.auth.bypassUrls).toEqual(["/webhooks/", "/metrics"]);
+    });
   });
 });

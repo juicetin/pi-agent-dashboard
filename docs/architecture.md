@@ -200,6 +200,30 @@ Consecutive tool calls with the same name and identical args (e.g. health check 
 - `index.ts`: `flow:abort` and `flow:toggle-autonomous` event listeners added
 - `flow-tui.ts`: `autonomousMode` included in `flow:flow-started` event data
 
+### `/reload` Flow (two code paths)
+Reload from the dashboard (via `npm run reload`, the reload button, or `/reload` typed into the chat composer) follows one of two paths depending on how the pi session was spawned. The server transparently selects the right path:
+
+```mermaid
+flowchart TD
+    A[Browser sends send_prompt text="/reload"] --> B[server handleSendPrompt]
+    B --> C{shouldInterceptReload?<br/>text === "/reload"<br/>no images<br/>headlessPidRegistry.getPid defined}
+    C -->|Yes — headless session| D[handleHeadlessReload]
+    D --> D1[Emit command_feedback 'started']
+    D1 --> D2[headlessPidRegistry.killBySessionId<br/>SIGTERMs old pi]
+    D2 --> D3[spawnPiSession with<br/>sessionFile+mode:'continue'<br/>strategy:'headless']
+    D3 --> D4[headlessPidRegistry.register new PID]
+    D4 --> D5[Emit command_feedback 'completed']
+    D5 --> D6[New pi bridge re-registers<br/>with same sessionId —<br/>sessionManager preserves<br/>tokens/cost/context/attachedProposal]
+    C -->|No — tmux/wt/wsl-tmux| E[piGateway.sendToSession→bridge]
+    E --> F[bridge command-handler parses /reload]
+    F --> G[Calls globalThis-RELOAD_KEY fn]
+    G --> H{Was /__dashboard_reload<br/>typed in TUI first?}
+    H -->|Yes| I[session.reload in-place]
+    H -->|No| J[Error logged to bridge stderr<br/>User must bootstrap via TUI]
+```
+
+**Why two paths?** pi-coding-agent's `ExtensionContext` (delivered to `session_start` handlers) has no `reload()` method — only `ExtensionCommandContext` (given to command handlers) does. The bridge works around this by registering `__dashboard_reload` as a command and capturing `ctx.reload` into `globalThis[RELOAD_KEY]` when a user first invokes it in pi's TUI. Headless sessions have no TUI, so the capture never happens. The server-side interception is a transparent kill-and-respawn that achieves the same user-visible outcome (fresh settings, fresh extensions, fresh skills/prompts/themes) without needing an in-process reload. Since `memorySessionManager.register` carries accumulated state when the same `sessionId` re-registers, the user sees a brief reconnect flicker but keeps their tokens, cost, context usage, and attached proposal. See change: headless-reload-via-respawn.
+
 ### Auto-Resume on Prompt
 When a user sends a prompt to an ended session, the server automatically resumes it:
 1. Server detects `send_prompt` for a session with `status === "ended"` and a valid `sessionFile`

@@ -13,6 +13,7 @@ import {
 import {
   findPidByMarker,
 } from "@blackbelt-technology/pi-dashboard-shared/platform/process-identify.js";
+import { shouldInterceptReload } from "./session-action-helpers.js";
 
 /**
  * Find headless pi PIDs associated with a session-id marker and kill them.
@@ -42,11 +43,142 @@ function killHeadlessBySessionId(sessionId: string): boolean {
   return true;
 }
 
+/**
+ * Emit a `command_feedback` DashboardEvent to all subscribed browsers.
+ * Mirrors what the bridge's command-handler does for TUI `/reload`, but from
+ * the server side for the headless-reload path.
+ *
+ * See change: headless-reload-via-respawn.
+ */
+function emitCommandFeedback(
+  ctx: BrowserHandlerContext,
+  sessionId: string,
+  status: "started" | "completed" | "error",
+  message?: string,
+): void {
+  const event = {
+    eventType: "command_feedback",
+    timestamp: Date.now(),
+    data: { command: "/reload", status, ...(message ? { message } : {}) },
+  };
+  const seq = ctx.eventStore.insertEvent(sessionId, event);
+  ctx.broadcast({ type: "event", sessionId, seq, event } as any);
+}
+
+/**
+ * Headless-session `/reload` handler.
+ *
+ * pi-coding-agent 0.68.0 has no programmatic reload path accessible to an
+ * extension in RPC mode:
+ *   - `ExtensionContext` (delivered to `session_start`) has no `reload` field
+ *   - The RPC protocol has no `{type:"reload"}` command
+ *   - The `globalThis[RELOAD_KEY]` bootstrap requires a human to type
+ *     `/__dashboard_reload` in pi's TUI, which headless sessions lack.
+ *
+ * Instead, the server achieves a reload-equivalent outcome by killing the
+ * headless pi process and respawning it with `--session <file>`, which
+ * re-hydrates the same `sessionId` and entry list. Because
+ * `memorySessionManager.register` carries accumulated state (tokens, cost,
+ * context usage, attachedProposal) when the same sessionId re-registers,
+ * the user-visible session state survives the respawn.
+ *
+ * See change: headless-reload-via-respawn.
+ */
+export async function handleHeadlessReload(
+  msg: Extract<BrowserToServerMessage, { type: "send_prompt" }>,
+  ctx: BrowserHandlerContext,
+): Promise<void> {
+  const { sessionManager, headlessPidRegistry } = ctx;
+  const session = sessionManager.get(msg.sessionId);
+  if (!session) {
+    emitCommandFeedback(ctx, msg.sessionId, "error", "Session not found");
+    return;
+  }
+  if (!session.sessionFile) {
+    emitCommandFeedback(
+      ctx,
+      msg.sessionId,
+      "error",
+      "No session file — cannot respawn on reload",
+    );
+    return;
+  }
+  if (session.status === "streaming") {
+    emitCommandFeedback(
+      ctx,
+      msg.sessionId,
+      "error",
+      "Wait for the current response to finish before reloading.",
+    );
+    return;
+  }
+
+  emitCommandFeedback(ctx, msg.sessionId, "started");
+
+  // SIGTERM the old headless pi. No-op if already dead (idempotency guard).
+  headlessPidRegistry.killBySessionId(msg.sessionId);
+
+  // Respawn with the same session file. The new pi process re-hydrates the
+  // same sessionId, the bridge re-registers, and the server preserves
+  // accumulated state (tokens/cost/context/attachedProposal).
+  let spawnResult: Awaited<ReturnType<typeof spawnPiSession>>;
+  try {
+    spawnResult = await spawnPiSession(session.cwd, {
+      sessionFile: session.sessionFile,
+      mode: "continue",
+      strategy: "headless",
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`[dashboard] headless reload spawn failed: ${message}`);
+    const endedAt = Date.now();
+    sessionManager.update(msg.sessionId, { status: "ended", endedAt });
+    ctx.broadcast({
+      type: "session_updated",
+      sessionId: msg.sessionId,
+      updates: { status: "ended", endedAt },
+    });
+    emitCommandFeedback(ctx, msg.sessionId, "error", message);
+    return;
+  }
+
+  if (!spawnResult.success) {
+    console.error(
+      `[dashboard] headless reload spawn failed: ${spawnResult.message}`,
+    );
+    const endedAt = Date.now();
+    sessionManager.update(msg.sessionId, { status: "ended", endedAt });
+    ctx.broadcast({
+      type: "session_updated",
+      sessionId: msg.sessionId,
+      updates: { status: "ended", endedAt },
+    });
+    emitCommandFeedback(ctx, msg.sessionId, "error", spawnResult.message);
+    return;
+  }
+
+  if (spawnResult.pid && spawnResult.process) {
+    headlessPidRegistry.register(spawnResult.pid, session.cwd, spawnResult.process);
+  }
+
+  emitCommandFeedback(ctx, msg.sessionId, "completed");
+}
+
 export async function handleSendPrompt(
   msg: Extract<BrowserToServerMessage, { type: "send_prompt" }>,
   ctx: BrowserHandlerContext,
 ): Promise<void> {
   const { sessionManager, piGateway, headlessPidRegistry, pendingResumeRegistry, pendingDashboardSpawns, broadcast } = ctx;
+
+  // Intercept `/reload` on active headless sessions — forward the request to
+  // our kill-and-respawn handler instead of routing the prompt to the bridge
+  // (the bridge has no programmatic reload path on RPC).
+  // See change: headless-reload-via-respawn.
+  if (shouldInterceptReload(msg, headlessPidRegistry)) {
+    await handleHeadlessReload(msg, ctx);
+    return;
+  }
+
   const promptSession = sessionManager.get(msg.sessionId);
 
   if (promptSession?.status === "ended") {

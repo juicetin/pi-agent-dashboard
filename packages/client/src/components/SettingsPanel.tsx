@@ -396,11 +396,6 @@ export function SettingsPanel({ availableModels }: { availableModels?: Array<{ p
                 <ToggleField label="Enable Zrok Tunnel" value={config.tunnel.enabled} onChange={(v) => update((c) => { c.tunnel.enabled = v; })} />
               </Section>
 
-              <TrustedNetworksSection
-                networks={config.trustedNetworks ?? []}
-                onChange={(nets) => update((c) => { c.trustedNetworks = nets; })}
-              />
-
               <Section title="Developer">
                 <ToggleField label="Dev Build on Reload" value={config.devBuildOnReload} onChange={(v) => update((c) => { c.devBuildOnReload = v; })} />
               </Section>
@@ -507,26 +502,16 @@ export function SettingsPanel({ availableModels }: { availableModels?: Array<{ p
                     }}
                   />
                 </div>
-                <div className="mt-3">
-                  <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">
-                    Trusted Hosts <span className="text-[var(--text-tertiary)]">(one per line — requests from these IPs/hosts skip auth. Supports exact IP, wildcards like 10.0.0.*, CIDR like 192.168.1.0/24)</span>
-                  </label>
-                  <textarea
-                    className="w-full bg-[var(--bg-secondary)] border border-[var(--border-secondary)] rounded px-2 py-1.5 text-sm text-[var(--text-primary)] font-mono resize-y"
-                    rows={2}
-                    data-testid="bypass-hosts-textarea"
-                    placeholder={"10.0.0.*\n192.168.1.0/24"}
-                    value={(config.auth?.bypassHosts || []).join("\n")}
-                    onChange={(e) => {
-                      const hosts = e.target.value.split("\n").map((s) => s.trim()).filter(Boolean);
-                      update((c) => {
-                        if (!c.auth) c.auth = { secret: "", providers: {} };
-                        c.auth.bypassHosts = hosts;
-                      });
-                    }}
-                  />
-                </div>
               </Section>
+
+              <TrustedNetworksSection
+                bypassHosts={config.auth?.bypassHosts ?? []}
+                legacyTrustedNetworks={config.trustedNetworks ?? []}
+                onChange={(nets) => update((c) => {
+                  if (!c.auth) c.auth = { secret: "", providers: {} };
+                  c.auth.bypassHosts = nets;
+                })}
+              />
             </>
           )}
 
@@ -628,10 +613,37 @@ function DebugToolsToggle() {
   );
 }
 
-function TrustedNetworksSection({ networks, onChange }: { networks: string[]; onChange: (nets: string[]) => void }) {
+/** Pure: append a trimmed entry to the list if non-empty and not a duplicate. Exported for tests. */
+export function addTrustedEntry(current: string[], entry: string): string[] {
+  const trimmed = entry.trim();
+  if (!trimmed) return current;
+  if (current.includes(trimmed)) return current;
+  return [...current, trimmed];
+}
+
+/** Pure: remove an entry (exact match). Exported for tests. */
+export function removeTrustedEntry(current: string[], entry: string): string[] {
+  return current.filter((n) => n !== entry);
+}
+
+/** Pure: should the legacy-hint be visible? Exported for tests. */
+export function shouldShowLegacyHint(legacyTrustedNetworks: string[]): boolean {
+  return legacyTrustedNetworks.length > 0;
+}
+
+function TrustedNetworksSection({
+  bypassHosts,
+  legacyTrustedNetworks,
+  onChange,
+}: {
+  bypassHosts: string[];
+  legacyTrustedNetworks: string[];
+  onChange: (nets: string[]) => void;
+}) {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [interfaces, setInterfaces] = useState<NetworkInterfaceInfo[]>([]);
   const [loading, setLoading] = useState(false);
+  const [manualEntry, setManualEntry] = useState("");
   const dropdownRef = React.useRef<HTMLDivElement>(null);
 
   // Close dropdown on outside click
@@ -658,32 +670,40 @@ function TrustedNetworksSection({ networks, onChange }: { networks: string[]; on
     setDropdownOpen(true);
   };
 
-  const addNetwork = (cidr: string) => {
-    if (!networks.includes(cidr)) {
-      onChange([...networks, cidr]);
-    }
+  const addNetwork = (entry: string) => {
+    const next = addTrustedEntry(bypassHosts, entry);
+    if (next !== bypassHosts) onChange(next);
     setDropdownOpen(false);
   };
 
-  const removeNetwork = (cidr: string) => {
-    onChange(networks.filter((n) => n !== cidr));
+  const removeNetwork = (entry: string) => {
+    onChange(removeTrustedEntry(bypassHosts, entry));
+  };
+
+  const handleManualAdd = () => {
+    const value = manualEntry.trim();
+    if (!value) return;
+    addNetwork(value);
+    setManualEntry("");
   };
 
   return (
     <Section title="Trusted Networks">
       <p className="text-xs text-[var(--text-tertiary)] mb-2">
-        Devices on these networks can access the dashboard without authentication.
+        Devices matching these networks or hosts can access the dashboard without authentication.
+        Accepts exact IP (<code>10.0.0.5</code>), wildcard (<code>10.0.0.*</code>), or CIDR (<code>192.168.1.0/24</code>).
       </p>
 
-      {networks.length > 0 && (
-        <div className="space-y-1 mb-2">
-          {networks.map((net) => (
+      {bypassHosts.length > 0 && (
+        <div className="space-y-1 mb-2" data-testid="trusted-networks-list">
+          {bypassHosts.map((net) => (
             <div key={net} className="flex items-center justify-between bg-[var(--bg-secondary)] rounded px-2 py-1">
               <span className="text-sm text-[var(--text-primary)] font-mono">{net}</span>
               <button
                 onClick={() => removeNetwork(net)}
                 className="text-red-400 hover:text-red-300 text-xs px-1 cursor-pointer"
                 title="Remove"
+                data-testid={`trusted-networks-remove-${net}`}
               >
                 ✕
               </button>
@@ -692,31 +712,62 @@ function TrustedNetworksSection({ networks, onChange }: { networks: string[]; on
         </div>
       )}
 
-      <div className="relative" ref={dropdownRef}>
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative" ref={dropdownRef}>
+          <button
+            onClick={fetchInterfaces}
+            className="text-xs px-2 py-1 rounded bg-[var(--bg-tertiary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] cursor-pointer"
+            data-testid="trusted-networks-add-local"
+          >
+            {loading ? "Detecting…" : "+ Add Local Network"}
+          </button>
+          {dropdownOpen && interfaces.length > 0 && (
+            <div className="absolute left-0 top-full mt-1 z-50 min-w-[260px] bg-[var(--bg-surface)] border border-[var(--border-primary)] rounded-lg shadow-xl py-1">
+              {interfaces.map((iface) => (
+                <button
+                  key={`${iface.name}-${iface.cidr}`}
+                  onClick={() => addNetwork(iface.cidr)}
+                  disabled={bypassHosts.includes(iface.cidr)}
+                  className={`w-full flex items-center justify-between px-3 py-1.5 text-xs text-left hover:bg-[var(--bg-tertiary)] transition-colors cursor-pointer ${
+                    bypassHosts.includes(iface.cidr) ? "opacity-40" : ""
+                  }`}
+                >
+                  <span className="font-mono text-[var(--text-primary)]">{iface.cidr}</span>
+                  <span className="text-[var(--text-tertiary)] ml-2">{iface.name}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <input
+          type="text"
+          value={manualEntry}
+          onChange={(e) => setManualEntry(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleManualAdd(); } }}
+          placeholder="IP, wildcard, or CIDR"
+          className="flex-1 min-w-[160px] bg-[var(--bg-secondary)] border border-[var(--border-secondary)] rounded px-2 py-1 text-xs font-mono text-[var(--text-primary)]"
+          data-testid="trusted-networks-manual-input"
+        />
         <button
-          onClick={fetchInterfaces}
-          className="text-xs px-2 py-1 rounded bg-[var(--bg-tertiary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] cursor-pointer"
+          onClick={handleManualAdd}
+          disabled={!manualEntry.trim()}
+          className="text-xs px-2 py-1 rounded bg-[var(--bg-tertiary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+          data-testid="trusted-networks-manual-add"
         >
-          {loading ? "Detecting…" : "+ Add Local Network"}
+          Add
         </button>
-        {dropdownOpen && interfaces.length > 0 && (
-          <div className="absolute left-0 top-full mt-1 z-50 min-w-[260px] bg-[var(--bg-surface)] border border-[var(--border-primary)] rounded-lg shadow-xl py-1">
-            {interfaces.map((iface) => (
-              <button
-                key={`${iface.name}-${iface.cidr}`}
-                onClick={() => addNetwork(iface.cidr)}
-                disabled={networks.includes(iface.cidr)}
-                className={`w-full flex items-center justify-between px-3 py-1.5 text-xs text-left hover:bg-[var(--bg-tertiary)] transition-colors cursor-pointer ${
-                  networks.includes(iface.cidr) ? "opacity-40" : ""
-                }`}
-              >
-                <span className="font-mono text-[var(--text-primary)]">{iface.cidr}</span>
-                <span className="text-[var(--text-tertiary)] ml-2">{iface.name}</span>
-              </button>
-            ))}
-          </div>
-        )}
       </div>
+
+      {shouldShowLegacyHint(legacyTrustedNetworks) && (
+        <p
+          className="text-xs text-[var(--text-tertiary)] mt-2"
+          data-testid="trusted-networks-legacy-hint"
+        >
+          {legacyTrustedNetworks.length} {legacyTrustedNetworks.length === 1 ? "entry" : "entries"} from <code>config.json</code> → <code>trustedNetworks</code>
+          {" "}are also active. Edit them directly in that file.
+        </p>
+      )}
 
       <p className="text-xs text-amber-400/80 mt-2">
         ⚠ Anyone on a trusted network has full access to the dashboard without authentication. Only use on private networks you control.

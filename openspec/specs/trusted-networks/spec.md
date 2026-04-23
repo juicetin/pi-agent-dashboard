@@ -106,21 +106,21 @@ The server SHALL expose `GET /api/network-interfaces` as a localhost-only endpoi
 - **WHEN** a request to `GET /api/network-interfaces` arrives from a non-loopback IP
 - **THEN** the server SHALL return 403
 
-### Requirement: Settings UI trusted networks section
-The Settings panel SHALL include a "Trusted Networks" section. It SHALL display the current `trustedNetworks` entries as a list with a remove button per entry. It SHALL provide an "Add Local Network" button that fetches `GET /api/network-interfaces` and displays detected interfaces in a dropdown. Clicking an interface SHALL add its CIDR to the list. The section SHALL display a warning: "Anyone on a trusted network has full access to the dashboard without authentication. Only use on private networks you control." Changes SHALL be saved via the existing config write mechanism.
+### Requirement: Canonical UI write path is auth.bypassHosts
+The top-level `config.trustedNetworks` field SHALL remain readable and SHALL continue to be merged into `resolvedTrustedNetworks` for backward compatibility with hand-edited `config.json` files. However, UI-driven additions to the trusted-networks list SHALL be written to `config.auth.bypassHosts` only. The UI SHALL NOT write new entries to top-level `config.trustedNetworks` and SHALL NOT remove existing entries from top-level `config.trustedNetworks`. The Settings-panel UI behavior for this section is specified by the `settings-panel` capability (see `Trusted Networks section on Security tab`).
 
-#### Scenario: No trusted networks configured
-- **WHEN** the user opens Settings and `trustedNetworks` is empty
-- **THEN** the section SHALL show an empty list and the "Add Local Network" button
+#### Scenario: UI write flows to auth.bypassHosts
+- **WHEN** a user adds a trusted network via the Settings UI
+- **THEN** the resulting config write SHALL place the entry under `auth.bypassHosts`
+- **AND** the resulting config write SHALL NOT modify top-level `trustedNetworks`
 
-#### Scenario: Add local network
-- **WHEN** the user clicks "Add Local Network" and selects `en0 — 192.168.1.0/24`
-- **THEN** `192.168.1.0/24` SHALL be added to the `trustedNetworks` list in the UI
+#### Scenario: Existing top-level trustedNetworks preserved
+- **WHEN** `config.json` contains entries in top-level `trustedNetworks` prior to any UI interaction
+- **THEN** those entries SHALL continue to load into `resolvedTrustedNetworks` via the existing merge
+- **AND** those entries SHALL NOT be removed or migrated by UI operations
 
-#### Scenario: Remove trusted network
-- **WHEN** the user clicks the remove button next to `192.168.1.0/24`
-- **THEN** the entry SHALL be removed from the list
-
-#### Scenario: Duplicate prevention
-- **WHEN** the user tries to add `192.168.1.0/24` and it already exists in the list
-- **THEN** the entry SHALL NOT be duplicated
+#### Scenario: UI removal targets auth.bypassHosts only
+- **WHEN** a user removes an entry via the Settings UI and that entry exists in both `auth.bypassHosts` and top-level `trustedNetworks`
+- **THEN** the UI SHALL remove the entry from `auth.bypassHosts` only
+- **AND** the entry SHALL remain in top-level `trustedNetworks`
+- **AND** the entry SHALL still be honored at runtime via the merge into `resolvedTrustedNetworks`

@@ -381,7 +381,7 @@ The server has a two-layer access model:
 
 **Layer 1: Network Guard (`createNetworkGuard`)** — Fastify `preHandler` on all sensitive routes. Allows requests via three paths:
 1. **Loopback** — `127.0.0.1`, `::1`, `::ffff:127.0.0.1` (always allowed)
-2. **Trusted networks** — IPs matching `resolvedTrustedNetworks` (CIDR, wildcard, exact). Configured via top-level `trustedNetworks` in config, merged with `auth.bypassHosts` at load time.
+2. **Trusted networks** — IPs matching `resolvedTrustedNetworks` (CIDR, wildcard, exact). `resolvedTrustedNetworks` is computed at load time by merging two config sources: the Settings UI writes new entries to `auth.bypassHosts` (canonical path on the Security tab, surfaced as the "Trusted Networks" section), while the legacy top-level `trustedNetworks` field remains readable for backward compatibility with hand-edited `config.json` files. Both honor the same matching logic; the UI does not modify the legacy field.
 3. **Authenticated** — `request.isAuthenticated === true` (set by auth `onRequest` hook via `decorateRequest`)
 
 Otherwise → 403. The guard strips `::ffff:` IPv4-mapped prefixes before matching.
@@ -413,7 +413,7 @@ Optional OAuth2 authentication protects the dashboard when accessed remotely.
 ### Settings Panel
 The web client includes a Settings panel (gear icon in sidebar header → `/settings` route) that lets users view and edit all dashboard configuration. The panel:
 1. Loads config via `GET /api/config` (secrets redacted as `***`)
-2. Renders grouped form fields: Server, Sessions, Tunnel, Trusted Networks, Authentication, Developer
+2. Renders grouped form fields per tab — General: Server, Sessions, Tunnel, Developer; Security: Authentication (OAuth providers, Allowed Users, Bypass URL Prefixes) and Trusted Networks (writes `auth.bypassHosts`, with "+ Add Local Network" auto-detect + manual IP/wildcard/CIDR entry)
 3. Sends only changed fields via `PUT /api/config` (partial merge)
 4. Server preserves `***` secrets (doesn't overwrite real values), writes to disk, and applies runtime-safe changes
 5. Port/piPort changes flag `restartRequired` in the response

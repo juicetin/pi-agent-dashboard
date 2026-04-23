@@ -201,9 +201,26 @@ Tool path overrides (optional, machine-local): **`~/.pi/dashboard/tool-overrides
   "shutdownIdleSeconds": 300,
   "spawnStrategy": "headless",
   "tunnel": { "enabled": true, "reservedToken": "auto-created-on-first-run" },
-  "devBuildOnReload": false
+  "devBuildOnReload": false,
+  "openspec": {
+    "pollIntervalSeconds": 30,
+    "maxConcurrentSpawns": 3,
+    "changeDetection": "mtime",
+    "jitterSeconds": 5
+  }
 }
 ```
+
+**OpenSpec background polling** (`openspec` block):
+
+| Key | Default | Range | Description |
+|-----|---------|-------|-------------|
+| `pollIntervalSeconds` | `30` | `5–3600` | How often each known directory is polled for OpenSpec updates |
+| `maxConcurrentSpawns` | `3` | `1–16` | Cap on concurrent `openspec` CLI invocations across all directories |
+| `changeDetection` | `"mtime"` | `"mtime" \| "always"` | `mtime` skips re-polling unchanged proposals (near-zero steady-state cost); `always` polls unconditionally |
+| `jitterSeconds` | `5` | `0–60` | Per-directory phase offset so polls don't all align on the same tick |
+
+Live-reconfigurable via Settings → Advanced → "Background polling (OpenSpec)" or `PUT /api/config` — no server restart needed. See [docs/architecture.md](docs/architecture.md) for the cost model.
 
 ### Tool resolution & overrides
 
@@ -386,6 +403,21 @@ pi-dashboard status          # Show daemon status
 ```
 
 Daemon stdout/stderr is logged to `~/.pi/dashboard/server.log` for crash diagnosis.
+
+### Keyboard shortcuts in chat input
+
+The chat input supports bash-style history recall and per-session draft persistence:
+
+| Key | Action |
+|-----|--------|
+| `Enter` | Send the prompt. |
+| `Shift+Enter` | Insert a newline. |
+| `ArrowUp` | Recall the previous user prompt (only when the caret is on the first line and no autocomplete dropdown is open). Repeat to walk further back. |
+| `ArrowDown` | Walk forward through history (only when the caret is on the last line). Past the newest entry, restores the in-progress draft. |
+| `Escape` | While navigating history, restore the in-progress draft and exit history mode. Also cancels a pending prompt or dismisses the autocomplete dropdown. |
+| `Tab` / `Enter` in dropdown | Accept the highlighted `/command` or `@file` suggestion. |
+
+Drafts (typed-but-unsent text) are persisted per session in `localStorage` under `chat-draft:<sessionId>` and survive navigation (Settings, OpenSpec preview, file diffs, ...) as well as full page reloads. Drafts never leak between sessions.
 
 ### Graceful restart via API
 

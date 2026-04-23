@@ -158,6 +158,50 @@ pi-flows runs multi-agent workflows in-process. Subagent sessions use `SessionMa
 - Abort: browser sends `flow_control { action: "abort" }` → server → bridge → `pi.events.emit("flow:abort")` → `flowManager.abort()`
 - Autonomous toggle: browser sends `flow_control { action: "toggle_autonomous" }` → same path → `setAutonomousMode()`
 
+### Bootstrap & First Run
+
+The dashboard has three install paths that all converge on the shared
+`bootstrapInstall` in `packages/shared/src/bootstrap-install.ts`:
+
+1. **Electron wizard** (first-run in the desktop app) —
+   `packages/electron/src/lib/dependency-installer.ts installStandalone`
+   wraps the shared installer with Electron-specific concerns
+   (bundled Node + `npm-cli.js`, offline npm cacache bundle extracted
+   from `resourcesPath/offline-packages/`, bundled-extension activation
+   into pi's git cache). The registry-install loop itself is the shared
+   function.
+
+2. **`pi-dashboard` CLI first-run** (degraded-mode) — when
+   `pi-dashboard` (or `pi-dashboard start`) launches and
+   `ToolRegistry.resolve("pi")` fails, `cli.ts runDegradedModeBootstrap`
+   flips `bootstrapState.status` to `"installing"`, kicks off
+   `bootstrapInstall({ packages: ["@mariozechner/pi-coding-agent", "@fission-ai/openspec", "tsx"] })`
+   asynchronously, and returns immediately so the server's
+   `fastify.listen` remains responsive. The UI renders `BootstrapBanner`
+   above the main layout. `session-api.ts gateOrEnqueue` queues
+   `POST /api/session/spawn` requests while installing; the
+   `server.ts` subscribe hook flushes the queue on transition to
+   `"ready"`. On success, `registerBridgeExtension(findBundledExtension())`
+   auto-wires the bridge so no manual step is required.
+
+3. **`pi-dashboard upgrade-pi` CLI subcommand** — runs
+   `bootstrapInstall({ packages: ["@mariozechner/pi-coding-agent"] })`
+   either directly (when no dashboard is listening) or via
+   `POST /api/bootstrap/upgrade-pi` (when one is). The REST path flips
+   state through the existing broadcast hook so open dashboard tabs
+   see the progress; on completion, `/reload` is broadcast to all
+   connected bridges, matching the pi-core-update session-reload
+   pattern.
+
+Compatibility skew is checked on every ready transition via
+`updateBootstrapCompatibility` which reads `piCompatibility` from
+`packages/server/package.json` and populates `bootstrapState.compatibility`
+with `upgradeRecommended` / `upgradeDashboard` flags consumed by
+`BootstrapBanner`. Versions below `minimum` set a blocking `error`
+message that `session-api gateOrEnqueue` translates to 503 responses.
+
+See change: `unified-bootstrap-install`.
+
 ### Force Kill Escalation
 The Stop button supports two-click escalation for stuck sessions:
 1. **Click 1 (Abort)**: Sends `abort` → bridge → `ctx.abort()`. Button transitions to orange pulsing "Force Stop".
@@ -270,12 +314,31 @@ When a user sends a prompt to an ended session, the server automatically resumes
 7. Session cards display processes with elapsed time and a kill button (sends SIGTERM to process group)
 
 ### OpenSpec Polling (Server-Side)
-1. Server's DirectoryService polls `openspec` CLI every 30s for each known directory (union of pinned dirs + session cwds)
-2. OpenSpec data is keyed by directory (cwd), not by session — one poll per directory regardless of session count
-3. Changes are broadcast to all connected browsers via `openspec_update { cwd, data }`
-4. Browsers can request immediate refresh via `openspec_refresh { cwd }`
-5. New directories (pinned or from new sessions) trigger immediate discovery + polling
+1. Server's DirectoryService polls `openspec` CLI for each known directory (union of pinned dirs + session cwds) at a **configurable interval** (`DashboardConfig.openspec.pollIntervalSeconds`, default 30 s, range 5–3600 s).
+2. OpenSpec data is keyed by directory (cwd), not by session — one poll per directory regardless of session count.
+3. Changes are broadcast to all connected browsers via `openspec_update { cwd, data }`.
+4. Browsers can request immediate refresh via `openspec_refresh { cwd }`. Force-refresh **bypasses the mtime gate** but still respects the concurrency cap.
+5. New directories (pinned or from new sessions) trigger immediate discovery + polling (eager; bypasses jitter + mtime gate).
 6. Each `OpenSpecChange` carries an optional `isComplete?: boolean` field forwarded straight through from `openspec status --change <name> --json`. It indicates artifact-authoring completeness only — orthogonal to the task tally — and never feeds `deriveChangeState`. The dashboard uses it solely to gate the **Archive anyway** escape hatch (see “OpenSpec session card”).
+
+#### OpenSpec polling cost model
+
+A naive `for each cwd: list + for each change: status` fan-out explodes quickly: 4 pinned dirs with 63 total active changes → **67 `openspec` CLI spawns per 30 s tick**, each costing ~0.5 s user CPU just for Node + module load. On an 8-core host that produces a rectangular ~10 s plateau at 100 % CPU every cycle.
+
+The scheduler in `packages/server/src/directory-service.ts` applies four layers of throttling (all configurable under `DashboardConfig.openspec`):
+
+1. **mtime gate** (`changeDetection: "mtime" | "always"`, default `mtime`) — skips `openspec list` when `fs.stat(openspec/changes).mtimeMs` is unchanged since the last successful poll, and skips `openspec status --change X` when the per-change directory mtime is unchanged. A `stat` is ~10 µs vs. ~500 ms per CLI spawn; in steady state this drops 67 spawns/tick to 0–2.
+2. **Concurrency cap** (`maxConcurrentSpawns`, default 3, range 1–16) — an in-repo semaphore (`packages/shared/src/semaphore.ts`) serializes CLI spawns across all directories. Burst-work spreads uniformly over the interval instead of pinning every core.
+3. **Per-cwd jitter** (`jitterSeconds`, default 5) — each known directory is assigned a deterministic phase offset `fnv1a32(cwd) % (jitterSeconds * 1000)` within the interval so polls don't all align on the same scheduling boundary.
+4. **Split pi-resources timer** — `scanPiResources(cwd)` no longer rides the openspec tick; it has its own interval at 5× the openspec cadence (pi extensions/skills change far less often than OpenSpec artifacts).
+
+Cache shape (per cwd): `{ listMtimeMs, listResult, changes: Map<name, { mtimeMs, change }>, data }`. Cache is updated atomically per directory — a partial failure leaves the previous snapshot intact and the next tick retries.
+
+Force-refresh paths (`refreshOpenSpec(cwd)`, `openspec_refresh` WS, `onDirectoryAdded(cwd)`) bypass the mtime gate but **still go through the semaphore**, so a refresh-button storm cannot overload the host.
+
+Live reconfiguration: `PUT /api/config` with an `openspec` block calls `directoryService.reconfigurePolling(cfg)` — the timer cadence and semaphore max are updated without a server restart; in-flight polls finish on their old config.
+
+Observability: `DEBUG=pi-dashboard:openspec-poll` (or any `DEBUG=...pi-dashboard...`) emits one line per tick with dir count, queue size, and wall time. Any tick over 5 s logs a WARN hinting at `pollIntervalSeconds` / `maxConcurrentSpawns` as knobs.
 
 ### OpenSpec session card UI
 
@@ -1015,6 +1078,33 @@ Settings → General → **Tools** renders one row per registered tool: status b
 
 See change: `consolidate-tool-resolution`.
 
+### Testing the bootstrap state space
+
+Resolution behavior intersects with HOME, platform, install layout, and pi's `settings.json` state across ~1000 combinations. Rather than hope CI on three runners plus manual QA cover all of them, the dashboard ships an in-memory harness at `packages/shared/src/__tests__/bootstrap/` that models the full cube:
+
+```
+  3 platforms  (win32, darwin, linux)
+× 5 dash-locations  (electron, npm-g, dev, managed, absent)
+× 6 pi-states  (absent, present-no-ext, present-stale-ext, present-valid, malformed, appimage-tmp)
+× 4 settings-states  (missing, empty, valid, malformed)
+× 3 env-states  (normal, spaces-unicode, home-drift)
+= 1080 cells
+```
+
+Each cell is **either** a registered test (writing a trail snapshot via `snapshotTrail`) **or** an explicit skip with a documented reason (in `scenarios-skipped.ts`). `cube.test.ts` fails CI when any cell is neither — a forcing function so that adding a new platform, a new install mechanic, or a new pi-state silently never happens.
+
+The harness is memfs-backed (no real fs, no subprocesses, no network) and runs in ~2 seconds via `npm run test:bootstrap`. The primary assertion is a normalized trail snapshot that captures strategy order, failure reasons, and `toArgv` output — which catches most bootstrap regressions before CI even reaches a real OS.
+
+Key locked-in invariants (from current snapshots):
+
+- Unix pi chain: `override → managed-bin → where` (no bare-import, no npm-g — a real limitation for GUI-launched minimal-PATH scenarios).
+- Win32 pi chain: 5-level fallback including the no-cmd-flash `.cmd` probe and `node.exe` prepend for `.js` targets.
+- Override strategy is first in every chain; invalid overrides fall through with `invalid: ...` reason.
+- Path normalization cross-OS via `<HOME>` / `<NPM_ROOT>` placeholders — snapshots stable on macOS and Linux CI.
+- **Windows bug captured**: `npm i -g pi-dashboard` + no pi → pi unresolved. Trail snapshot locks in the current broken state; `unified-bootstrap-install` will update it when the fix lands.
+
+See change: `bootstrap-resolution-harness`. Full walkthrough in `packages/shared/src/__tests__/bootstrap/README.md`.
+
 ## Path Handling (`platform/paths.ts`)
 
 Filesystem paths are OS-aware, and the dashboard touches them in three user-visible places: pin-directory storage (server), session-grouping (client), and the path picker UI (client). All three go through a single module — `packages/shared/src/platform/paths.ts` — rather than inventing their own logic.
@@ -1055,3 +1145,54 @@ Every OS-dependent function takes an optional trailing `platform: NodeJS.Platfor
 `Array.prototype.map` passes `(element, index, array)`. When a function takes `platform` as an optional second argument, the index (a number) gets passed as `platform`, silently failing the `=== "win32"` check and taking the POSIX branch. Always wrap: `.map((p) => normalizePath(p))` instead of `.map(normalizePath)`.
 
 See change: `platform-path-normalization`.
+
+## Chat Input State (drafts & history recall)
+
+### Per-session draft persistence
+
+The chat input (`CommandInput.tsx`) is a **controlled** component — its text value is driven by the `draft` prop passed from `App.tsx`. App owns a `drafts: Map<sessionId, string>` state that is:
+
+1. **Hydrated** once at mount from `localStorage` via `readAllDrafts()` (scans for the `chat-draft:` key prefix).
+2. **Persisted** (debounced ~300 ms) on change: new / changed keys go through `writeDraft(sid, text)`, removed keys and empty values go through `deleteDraft(sid)`.
+3. **Cleared eagerly on send** (`wrappedHandleSend` → `clearDraftForSession(selectedId)`) so a reload immediately after sending does not resurrect the sent prompt.
+
+```
+localStorage
+├── chat-draft:<sessionId-A>  "half-typed foo"
+├── chat-draft:<sessionId-B>  "another draft"
+└── ...
+```
+
+This solves two bugs at once:
+- **Lost drafts on navigation**: `CommandInput` unmounts when the user opens Settings, file diff view, OpenSpec preview, etc. The lifted state in `App.tsx` survives the unmount, and the draft reappears when the user returns to the chat branch.
+- **Draft leakage between sessions**: keying by `sessionId` means each session has its own draft cell; switching flips the `draft` prop, never bleeding text across.
+
+Pasted images (`useImagePaste` → `pendingImages`) are **intentionally not persisted** — base64 blobs blow through `localStorage` quotas and the transient in-memory behavior is unchanged from pre-change.
+
+### History recall (ArrowUp / ArrowDown)
+
+History source is **derived**, not stored: `extractUserPromptHistory(state.messages)` filters the session's in-memory `ChatMessage[]` to `role === "user"`, drops empty/whitespace content, collapses consecutive duplicates, and returns newest-first. Since messages are replayed from the server on subscribe, history is available as soon as the session is subscribed — no new protocol, no new persistence.
+
+Inside `CommandInput`, history navigation uses a small state machine:
+
+```
+historyIndex: number | null    — null = not in history mode
+savedDraftRef: useRef<string>  — in-progress draft captured when history mode is first entered
+
+  ArrowUp  (caret on first line, no dropdown, no pending, history.length > 0)
+    null  ─────────────────────────────────────────▶  0         (save current text first)
+    k     ─────────────────────────────────────────▶  min(k+1, len-1)
+  ArrowDown (caret on last line, no dropdown, historyIndex != null)
+    k > 0 ─────────────────────────────────────────▶  k - 1
+    0     ─────────────────────────────────────────▶  null      (restore savedDraftRef)
+  Escape  (historyIndex != null)
+    k     ─────────────────────────────────────────▶  null      (restore savedDraftRef)
+  any text edit while historyIndex != null
+    k     ─────────────────────────────────────────▶  null      (user now editing; no restore)
+  sessionId change
+                                                      null, savedDraftRef = ""
+```
+
+**Bash-style caret gating** is critical: `ArrowUp` only triggers history when `selectionStart` is at or before the first `\n` (the textarea's native "ArrowUp" would have nowhere to go); `ArrowDown` only when `selectionStart` is at or after the last `\n`. Non-empty selections are excluded. This guarantees multiline editing (moving between rows with arrow keys) is never broken.
+
+See change: `chat-input-draft-and-history`.

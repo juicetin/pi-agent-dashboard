@@ -20,6 +20,8 @@ See [docs/architecture.md](docs/architecture.md) for full details.
 npm install          # Install dependencies
 npm test             # Run all tests (vitest)
 npm run test:watch   # Watch mode
+npm run test:bootstrap       # Run the bootstrap resolution harness only
+npm run test:bootstrap:watch # Bootstrap harness in watch mode
 npm run build        # Build web client (Vite)
 npm run dev          # Start Vite dev server
 npm run reload       # Reload all connected pi sessions
@@ -58,7 +60,8 @@ make clean              # Destroy all cloned VMs
 | `src/shared/protocol.ts` | Extension↔Server WebSocket messages |
 | `src/shared/browser-protocol.ts` | Server↔Browser WebSocket messages (all message types including PromptBus `prompt_request`/`prompt_dismiss`/`prompt_cancel` must be in the `ServerToBrowserMessage` union — `as any` switch cases are stripped by esbuild in production) |
 | `src/shared/types.ts` | Data models (Session, Workspace, Event) |
-| `src/shared/config.ts` | Shared config loader (`~/.pi/dashboard/config.json`) |
+| `src/shared/config.ts` | Shared config loader (`~/.pi/dashboard/config.json`). Includes `openspec: OpenSpecPollConfig` block (`pollIntervalSeconds` 5–3600, `maxConcurrentSpawns` 1–16, `changeDetection` `"mtime"\|"always"`, `jitterSeconds` 0–60) with clamping via `parseOpenSpecPollConfig`. See change: optimize-openspec-poll-burst |
+| `src/shared/semaphore.ts` | Tiny FIFO semaphore (`createSemaphore(max)` → `{run, setMax, size}`). Used by `directory-service.ts` to cap concurrent `openspec` CLI spawns. Supports live resize via `setMax(n)` for runtime reconfig. |
 | `src/extension/bridge.ts` | Main extension entry point (composes sync/tracker/flow modules, tracks `isAgentStreaming` in persistent BridgeState) |
 | `src/extension/bridge-context.ts` | Shared mutable state type + helpers for bridge modules |
 | `src/extension/session-sync.ts` | Session register, replay, and switch/fork handling |
@@ -134,6 +137,13 @@ make clean              # Destroy all cloned VMs
 | `src/shared/tool-registry/types.ts` | `ToolDefinition`, `Strategy`, `StrategyResult`, `Resolution`, `Source`, `UnknownToolError`, `ModuleResolutionError` |
 | `src/shared/tool-registry/index.ts` | Barrel export + `getDefaultRegistry()` singleton accessor |
 | `src/server/routes/tool-routes.ts` | REST routes: `GET /api/tools`, `GET /api/tools/:name`, `POST /api/tools/rescan`, `PUT/DELETE /api/tools/:name`, `POST /api/tools/diagnostics` (text/plain export) |
+| `packages/shared/src/bootstrap-install.ts` | Shared bootstrap installer (`bootstrapInstall({ packages, managedDir?, progress?, npmArgv?, env?, registry? })`, `bootstrapInstallDefaults`, `ensureManagedDir`, `resolveNpmArgv`). Single entry point for pi/openspec/tsx install into `~/.pi-dashboard/` — called from the Electron wizard (via `packages/electron/src/lib/dependency-installer.ts` wrapper that adds bundled-node + offline-cacache concerns) and from the CLI first-run path (`cli.ts runDegradedModeBootstrap`). See change: unified-bootstrap-install. |
+| `packages/server/src/bootstrap-state.ts` | In-memory bootstrap state store (`createBootstrapState()`, `BootstrapState { status, progress, error, version, compatibility, bridgeRegistrationError }`, `BootstrapStateStore` with get/set/subscribe/dispose plus side-channel `setLastInstallPackages` / `getLastInstallPackages` so `POST /api/bootstrap/retry` re-runs the exact failed set instead of a hard-coded default). Partial `set()` supports `undefined` = clear semantics; `setLastInstallPackages` does NOT trigger subscribers (it's not part of the broadcast snapshot). |
+| `packages/server/src/routes/bootstrap-routes.ts` | REST routes: `GET /api/bootstrap/status`, `POST /api/bootstrap/upgrade-pi` (202+ticketId or 409), `POST /api/bootstrap/retry` (202 if failed, else 409). Trigger callbacks are injected so CLI wires them to `bootstrapInstall` while tests wire them to spies. |
+| `packages/server/src/bootstrap-queue.ts` | In-memory ticket queue (`createBootstrapQueue()`, `enqueue(handler)`, `flushAll()`, `size()`, `clear(reason)`, `onTicketComplete(listener)`). `server.ts` flushes on bootstrap-state transition to "ready" and wires `onTicketComplete` → `bootstrap_ticket_complete` WS broadcast so browsers holding a 202 ticketId learn the queued op's outcome. `session-api.ts gateOrEnqueue` uses the queue to defer session spawn during installs. On `clear`, pending tickets are rejected directly (reject closure stored on the entry) so no caller hangs at shutdown. |
+| `packages/server/src/pi-version-skew.ts` | Pi compatibility range reader (`readPiCompatibility` reads `piCompatibility` from `packages/server/package.json`; `readCurrentPiVersion` via `createRequire`), comparator (`parseVersion`, `compareVersions`, `isBelow`, `isAbove` supporting `0.x` wildcard), + `updateBootstrapCompatibility(store, pkgPath)` that writes the result into `bootstrapState.compatibility` with a 60 s cache. Below-minimum adds a 503-blocking `error` message. |
+| `packages/client/src/hooks/useBootstrapStatus.ts` | Client hook for bootstrap state. Fetches `/api/bootstrap/status` on mount, subscribes to `bootstrap-status` `CustomEvent` dispatched by `useMessageHandler` on `bootstrap_status_update` WS broadcasts. Exposes `{ state, isLoading, error, refresh, retry, upgradePi }`. |
+| `packages/client/src/components/BootstrapBanner.tsx` | Banner mounted in `App.tsx` above `<MobileShell>`. Hidden at status="ready" with no compatibility hints; blue "Installing pi…" when installing; red "pi install failed — [Retry]" when failed; amber upgrade hints when `compatibility.upgradeRecommended` or `upgradeDashboard` is true. |
 | `src/client/lib/tools-api.ts` | Client-side fetch helpers for `/api/tools*` (`fetchTools`, `rescanAll`, `rescanOne`, `setOverride`, `clearOverride`, `downloadDiagnostics`) |
 | `src/client/components/ToolsSection.tsx` | Settings → General → **Tools** section. One row per registered tool: status badge, source, truncated path, expand-to-trail, override input, per-row rescan. Top-level: Rescan all / Reset overrides / Export diagnostics |
 | `src/server/npm-search-proxy.ts` | Cached proxy for npm registry search (`keywords:pi-package`) and README fetch |
@@ -144,7 +154,7 @@ make clean              # Destroy all cloned VMs
 | `src/server/session-scanner.ts` | Startup session discovery by scanning `~/.pi/agent/sessions/` |
 | `src/server/migrate-persistence.ts` | One-time migration from `sessions.json` + `state.json` to `.meta.json` |
 | `src/server/session-order-manager.ts` | Per-cwd session ordering with persistence |
-| `src/server/directory-service.ts` | Server-side session discovery, event loading, and OpenSpec polling |
+| `src/server/directory-service.ts` | Server-side session discovery, event loading, and OpenSpec polling. Uses mtime-gated per-directory cache (`DirCache`), shared FIFO semaphore, and deterministic per-cwd `phaseOffsetMs(cwd, jitterSeconds)` jitter (FNV-1a 32-bit hash). `refreshOpenSpec(cwd)` bypasses the mtime gate but still acquires the semaphore. `reconfigurePolling(cfg)` applies live config changes without a restart. Pi-resources scan lives on its own 5×-interval timer so it doesn't stack with the openspec burst. See change: optimize-openspec-poll-burst |
 | `src/server/pending-fork-registry.ts` | Tracks pending fork operations for session placement |
 | `src/server/pending-resume-registry.ts` | Queues prompts for auto-resume of ended sessions |
 | `src/server/json-store.ts` | Atomic JSON file read/write helpers |
@@ -157,6 +167,7 @@ make clean              # Destroy all cloned VMs
 | `src/shared/platform/process-identify.ts` | `findPidByMarker` + `isProcessLikePi` + `isPiCommandLine` — consolidates the three `process.platform === "win32"` branches that previously lived inside `session-action-handler.ts`. Windows stubs are documented (command-line lookup goes via `headlessPidRegistry` instead). |
 | `src/shared/platform/process.ts` | **Sole source of process termination + liveness primitives**: `isProcessAlive(pid)` (signal 0), `killProcess(pid, {timeoutMs})` (Windows `taskkill /F /T /PID`, POSIX `SIGTERM` → wait → `SIGKILL` tree kill), `killPidWithGroup(pid, sig)` (POSIX `kill(-pid, sig)`, Windows direct kill). Every `process.kill(...)` call outside this file is banned by `no-direct-process-kill.test.ts`. See change: route-kill-paths-through-platform. |
 | `src/shared/__tests__/no-direct-process-kill.test.ts` | Repo-level lint: scans `packages/*/src/` (excluding platform/ and `__tests__/`) for `process.kill(` calls and fails with file:line if any are found. Mirrors `no-direct-child-process.test.ts`. |
+| `src/shared/__tests__/bootstrap/` | In-memory bootstrap resolution harness (memfs-backed). `harness.ts` (withFakeEnv + layer), `fixtures/` (managed/npm-g/electron/dev-monorepo/settings-json layouts), `assertions.ts` (snapshotTrail + snapshotSettingsDelta with `<HOME>` / `<NPM_ROOT>` normalization), `scenarios.ts` (1080-cell cube: platform × dash × pi × settings × env), `scenarios-skipped.ts` (bulk-skip manifest with documented reasons), `cube.test.ts` (fail-closed sweep), `families/*.test.ts` (30+ registered scenario cells across A-K). Run via `npm run test:bootstrap`. See change: bootstrap-resolution-harness. |
 | `src/server/editor-registry.ts` | Detects available native editors (running processes + CLI) |
 | `src/server/editor-manager.ts` | Lifecycle manager for code-server child processes (spawn, stop, idle, heartbeat) |
 | `src/server/editor-proxy.ts` | Reverse proxy for `/editor/:id/*` to code-server instances |
@@ -234,6 +245,9 @@ make clean              # Destroy all cloned VMs
 | `src/client/components/SessionHeader.tsx` | Session header with OpenSpec attach/detach, flow launcher, MobileAttachButton |
 | `src/client/hooks/useSwipeBack.ts` | iOS-style left-edge swipe-back gesture (40px edge zone, document-level listeners) |
 | `src/client/components/ChatView.tsx` | Chat message view with scroll-lock: pauses auto-scroll when user scrolls up, floating scroll-to-bottom button, per-session scroll position persistence |
+| `src/client/components/CommandInput.tsx` | Chat textarea + autocomplete + controlled draft / history. Props: `sessionId`, `draft`, `onDraftChange` (lifted to App.tsx so the draft survives navigation), `history` (newest-first user prompts for this session). `ArrowUp`/`ArrowDown` walk history bash-style (only when no dropdown is open AND caret is on first/last line); `Escape` during history mode restores the in-progress draft. See change: chat-input-draft-and-history |
+| `src/client/lib/draft-storage.ts` | Per-session chat input draft persistence helpers: `readAllDrafts()`, `writeDraft(sid, text)`, `deleteDraft(sid)`, key prefix `chat-draft:`. Wraps `localStorage` in try/catch (private-mode / quota safe). |
+| `src/client/lib/message-history.ts` | `extractUserPromptHistory(messages)` — pure filter+dedup over `ChatMessage[]` returning newest-first user prompts with consecutive duplicates collapsed. Drives `ArrowUp`/`ArrowDown` history recall in `CommandInput`. |
 | `src/client/lib/mobile-depth.ts` | Pure function computing MobileShell depth from route state |
 | `src/client/hooks/useZoomPan.ts` | Reusable zoom/pan hook (wheel, drag, pinch, buttons) |
 | `src/client/hooks/useMessageHandler.ts` | WebSocket message dispatch hook (extracted from App.tsx) |

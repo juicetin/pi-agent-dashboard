@@ -18,6 +18,42 @@ see [`docs/release-process.md`](docs/release-process.md).
 - **Custom-provider models discovered via `~/.pi/agent/providers.json` now advertise image input capability by default**, so pasted images reach the upstream model instead of being stripped client-side by pi-ai's `downgradeUnsupportedImages`. Vision-capable models (Claude Opus 4.x, GPT-4o, Gemini 2+, OpenRouter multimodals) handle images correctly out of the box. Modern text-only models (GLM, MiniMax, etc.) return a polite "no image visible" reply; legacy text-only models (gpt-3.5-turbo, vanilla gpt-4) surface the upstream 400 error. Built-in / OAuth providers are unchanged — their capabilities still come from pi-ai's `models.generated.js`. See change: `enable-image-input-custom-providers`.
 
 ### Added
+- **Auto-install pi on first `pi-dashboard` run** (degraded-mode first-run).
+  When the server starts and `ToolRegistry.resolve("pi")` fails, it now flips
+  `bootstrapState` to `installing`, runs a background `bootstrapInstall` into
+  `~/.pi-dashboard/` (extracted from the Electron installer into the shared
+  `@blackbelt-technology/pi-dashboard-shared/bootstrap-install.js` module),
+  auto-registers the bridge extension on completion, and flips state back to
+  `ready`. The UI renders a new `BootstrapBanner` above the main layout
+  (`Installing pi…` while in progress, `pi install failed — [Retry]` on error,
+  upgrade hints when the resolved pi version is below the compatibility
+  range declared in `packages/server/package.json` `piCompatibility`). New
+  `pi-dashboard upgrade-pi` subcommand upgrades `@mariozechner/pi-coding-agent`
+  via the same shared installer, delegating to a running dashboard when
+  present. Session spawn is queued during installs via the new
+  `bootstrap-queue` (runs once status flips to `ready`); `/api/pi-core/*`,
+  `/api/pi-resources`, and `POST /api/bootstrap/upgrade-pi` all 503/202 as
+  appropriate. Extension is shipped as a runtime dep of
+  `pi-dashboard-server` so `findBundledExtension` resolves it via
+  `require.resolve` when installed via `npm i -g pi-dashboard`. See change:
+  `unified-bootstrap-install`.
+
+- **Bootstrap resolution harness** — in-memory (memfs-backed) test harness
+  for the dashboard's bootstrap resolution: `ToolRegistry` strategy chains
+  + bridge-extension registration across install mechanics, platforms, and
+  HOME/path drift. Fail-closed scenario cube (3 platforms × 5 dash-locations
+  × 6 pi-states × 4 settings-states × 3 env-states = 1080 cells) enforces
+  that every new combination is either tested or explicitly skipped with a
+  reason. Captures the current Windows `npm i -g pi-dashboard` bug (B1) as a
+  trail snapshot so the fix in `unified-bootstrap-install` will flip visibly.
+  Run via `npm run test:bootstrap`. No runtime behavior change; purely a
+  regression-prevention layer. Prerequisites: `StrategyDeps` gains
+  `resolveModule(id, from)` injector, `managed-paths.ts` exports
+  `getManagedDir`/`getManagedBin` getters alongside existing constants,
+  `ToolRegistry` accepts an optional `PlatformEnv` context,
+  `registerBridgeExtension` accepts `{ homedir }` override — all
+  backwards-compatible. See change: `bootstrap-resolution-harness`.
+
 - **Offline first-run install for the Electron app** (opt-in). Release Electron builds now bundle a per-platform npm cacache containing pinned versions of `pi-coding-agent`, `openspec`, and `tsx` (plus all transitive dependencies) inside `resources/offline-packages/` — ~50 MB gzipped per installer. On first launch, the wizard extracts the tarball to `~/.pi-dashboard/.offline-cache/`, verifies its SHA-256 against the embedded manifest, runs ONE `npm install --offline`, then deletes the cache to reclaim ~140 MB. No network access is required. On SHA-256 mismatch or any cache-install failure the wizard aborts — there is **no silent fallback to `registry.npmjs.org`** (deterministic offline contract). When the bundle is absent (dev builds, opt-in flag off) the previous per-package registry install flow runs unchanged. New Doctor row "Offline packages bundle" shows target platform, pinned versions, and SHA-256 prefix. Gated on `BUNDLE_OFFLINE_PACKAGES=1` in CI; pins live in `packages/electron/offline-packages.json`. See change: `electron-offline-bundled-packages`.
 - **Bundled first-party extensions in the Electron installer** (opt-in). A new `BUNDLED_EXTENSION_IDS` manifest in `@blackbelt-technology/pi-dashboard-shared` drives a build-time bundler (`packages/electron/scripts/bundle-recommended-extensions.sh`, gated by `BUNDLE_RECOMMENDED_EXTENSIONS=1`) that clones each listed extension into `packages/electron/resources/bundled-extensions/<id>/` with SPDX-license and 15 MB size-budget enforcement. At first launch, `installBundledExtensions()` copies each bundled tree into pi's git cache (`~/.pi/agent/git/<host>/<path>/`), runs `npm install --omit=dev` if needed, and registers the original git URL in `~/.pi/agent/settings.json` so pi's later `update()` can re-resolve upstream. The wizard renders distinct "Bundled ✓" / "Installed" badges. Release CI (`publish.yml`) runs the bundler before `bundle-server.sh` on macOS, Linux, and Windows runners and emits a per-platform size breakdown to the workflow summary. First-party scope: currently `pi-anthropic-messages` (and `pi-flows` once its repo adds a SPDX-conformant license). See change: `bundle-first-party-extensions`.
 - **Windows cross-platform parity** — fresh-install dashboard now

@@ -115,7 +115,7 @@ function piExecutorDef(deps?: StrategyDeps): ToolDefinition {
 
   const winStrategies = [
     overrideStrategy("pi", deps),
-    ...piPkgAliases.map((pkg) => bareImportCliStrategy(pkg, cliEntry)),
+    ...piPkgAliases.map((pkg) => bareImportCliStrategy(pkg, cliEntry, deps)),
     ...piPkgAliases.map((pkg) => managedModuleStrategy(pkg, cliEntry, deps)),
     ...piPkgAliases.map((pkg) => npmGlobalStrategy(pkg, cliEntry, deps)),
     managedBinStrategy("pi", deps),
@@ -239,19 +239,31 @@ function npmExecutorDef(deps?: StrategyDeps): ToolDefinition {
  * the pi executor to find pi-coding-agent's cli.js via the same
  * module-resolution algorithm as `import()`.
  */
-function bareImportCliStrategy(pkgName: string, entryRelative: string) {
+function bareImportCliStrategy(
+  pkgName: string,
+  entryRelative: string,
+  deps?: StrategyDeps,
+) {
+  // Default uses the real module resolver anchored to this file;
+  // tests inject a fake via deps.resolveModule.
+  const resolveModule: NonNullable<StrategyDeps["resolveModule"]> =
+    deps?.resolveModule
+    ?? ((id, from) => {
+      try {
+        return createRequire(from).resolve(id);
+      } catch {
+        return null;
+      }
+    });
   return {
     name: "bare-import",
     run(): { ok: true; path: string } | { ok: false; reason: string } {
-      try {
-        const req = createRequire(import.meta.url);
-        const pkgJson = req.resolve(`${pkgName}/package.json`);
-        const entry = path.join(path.dirname(pkgJson), entryRelative);
-        return { ok: true, path: entry };
-      } catch (err) {
-        const msg = err instanceof Error ? err.message.split("\n")[0] : String(err);
-        return { ok: false, reason: msg };
+      const pkgJson = resolveModule(`${pkgName}/package.json`, import.meta.url);
+      if (!pkgJson) {
+        return { ok: false, reason: `cannot resolve ${pkgName}/package.json` };
       }
+      const entry = path.join(path.dirname(pkgJson), entryRelative);
+      return { ok: true, path: entry };
     },
   };
 }

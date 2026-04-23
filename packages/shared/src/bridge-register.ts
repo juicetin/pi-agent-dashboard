@@ -10,29 +10,92 @@
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import { createRequire } from "node:module";
 
 /**
- * Find the bundled extension directory relative to a base directory.
- * Looks for `packages/extension/` (monorepo layout) under baseDir.
- *
- * Returns null if:
- * - Directory not found
- * - No package.json in the directory
- * - Path is under /tmp/.mount_* (unstable AppImage mount)
+ * Check that a candidate path is a valid, stable extension directory.
+ * Returns true when the directory exists, contains a package.json, and
+ * is NOT under /tmp/.mount_* (unstable AppImage mount).
  */
-export function findBundledExtension(baseDir: string): string | null {
-  const candidate = path.resolve(baseDir, "packages", "extension");
-  if (!fs.existsSync(candidate) || !fs.existsSync(path.join(candidate, "package.json"))) {
-    return null;
-  }
-
-  // Reject unstable AppImage temp mount paths
+function isValidExtensionPath(candidate: string): boolean {
+  if (!fs.existsSync(candidate)) return false;
+  if (!fs.existsSync(path.join(candidate, "package.json"))) return false;
   if (candidate.includes("/tmp/.mount_")) {
-    console.warn("[dashboard] AppImage detected — extension path is temporary, skipping registration:", candidate);
+    console.warn(
+      "[dashboard] AppImage detected — extension path is temporary, skipping registration:",
+      candidate,
+    );
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Optional dependency injection for `findBundledExtension`. Tests pass
+ * `{ resolvePackage: () => null }` to disable the node-resolver fallback.
+ */
+export interface FindExtensionDeps {
+  /**
+   * Resolve `@blackbelt-technology/pi-dashboard-extension/package.json`
+   * via Node's module resolver. Return the absolute package.json path
+   * or null. Defaults to `createRequire(import.meta.url).resolve(...)`.
+   */
+  resolvePackage?: () => string | null;
+}
+
+function defaultResolvePackage(): string | null {
+  try {
+    const req = createRequire(import.meta.url);
+    return req.resolve("@blackbelt-technology/pi-dashboard-extension/package.json");
+  } catch {
     return null;
   }
+}
 
-  return candidate;
+/**
+ * Find the bundled extension directory.
+ *
+ * Resolution order:
+ *   1. Monorepo layout: `<baseDir>/packages/extension/`.
+ *   2. Node module resolution: `@blackbelt-technology/pi-dashboard-extension/package.json`
+ *      via `require.resolve` from this module. Works in ANY install layout
+ *      (flat `node_modules/`, scoped, nested, pnpm, npm-g). This is the
+ *      canonical identity-based lookup and the only reliable strategy
+ *      when pi-dashboard is installed via `npm i -g`.
+ *
+ * Returns null if both strategies fail, the resolved directory doesn't
+ * have a package.json, or the path is under /tmp/.mount_* (AppImage).
+ *
+ * See change: unified-bootstrap-install.
+ */
+export function findBundledExtension(
+  baseDir: string,
+  deps: FindExtensionDeps = {},
+): string | null {
+  // Strategy 1: monorepo sibling layout.
+  const monorepoCandidate = path.resolve(baseDir, "packages", "extension");
+  if (isValidExtensionPath(monorepoCandidate)) return monorepoCandidate;
+
+  // Strategy 2: Node module resolver. This works for the `npm i -g
+  // pi-dashboard` layout where the extension is shipped as a runtime dep
+  // of pi-dashboard-server.
+  const resolver = deps.resolvePackage ?? defaultResolvePackage;
+  const extPkgJson = resolver();
+  if (extPkgJson) {
+    const extDir = path.dirname(extPkgJson);
+    if (isValidExtensionPath(extDir)) return extDir;
+  }
+
+  return null;
+}
+
+/** Optional overrides for testing / multi-HOME scenarios. */
+export interface BridgeRegisterOptions {
+  /**
+   * Override the HOME used to locate settings.json. When omitted,
+   * falls back to `$HOME || $USERPROFILE || os.homedir()` (existing behavior).
+   */
+  homedir?: string;
 }
 
 /**
@@ -44,12 +107,16 @@ export function findBundledExtension(baseDir: string): string | null {
  *
  * No-op if the path is already registered.
  */
-export function registerBridgeExtension(extensionPath: string): void {
+export function registerBridgeExtension(
+  extensionPath: string,
+  opts: BridgeRegisterOptions = {},
+): void {
   // Compute at call time so tests can override HOME
-  const settingsPath = path.join(
-    process.env.HOME || process.env.USERPROFILE || os.homedir(),
-    ".pi", "agent", "settings.json",
-  );
+  const home = opts.homedir
+    ?? process.env.HOME
+    ?? process.env.USERPROFILE
+    ?? os.homedir();
+  const settingsPath = path.join(home, ".pi", "agent", "settings.json");
   const settingsDir = path.dirname(settingsPath);
   fs.mkdirSync(settingsDir, { recursive: true });
 

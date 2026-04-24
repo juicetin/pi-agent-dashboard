@@ -94,10 +94,25 @@ In `CHANGELOG.md`:
 
 ```bash
 npm version <version> --workspaces --include-workspace-root --no-git-tag-version
+node scripts/sync-versions.js
 ```
 
-This updates `package.json` and every workspace under `packages/*` in a single
-commit-worthy edit. Verify with `git diff package.json packages/*/package.json`.
+The first command updates the `version` field in `package.json` and every
+workspace under `packages/*` in a single commit-worthy edit. The second
+command (`sync-versions.js`) rewrites every inter-package dependency
+specifier (e.g. `"@blackbelt-technology/pi-dashboard-shared": "^<old>"`) to
+the bumped version. Without it, the published root would declare
+`"pi-dashboard-server": "^<old>"` while the actual published server tarball
+is `^<new>` — inconsistent metadata on the registry.
+
+Verify with `git diff package.json packages/*/package.json` — expected:
+lockstep `version` bumps plus synchronised inter-package dep specifiers.
+
+> Why the separate script? The npm CLI does not implement the `workspace:`
+> protocol (pnpm/yarn-only feature). We use plain semver ranges
+> (`"^0.3.0"`) and sync them at bump time. CI also runs `sync-versions.js`
+> defensively in `publish.yml` after `npm version`, so a forgotten local
+> invocation does not corrupt the release.
 
 ### 4. Commit
 
@@ -120,7 +135,23 @@ The tag push triggers `.github/workflows/publish.yml`.
 
 On a `v*` tag push, `publish.yml`:
 
-1. **`publish` job** — publishes the npm package with provenance.
+1. **`publish` job** — publishes **five npm packages** in one invocation of
+   `npm publish --workspaces --include-workspace-root --provenance
+   --access public`:
+   - `@blackbelt-technology/pi-agent-dashboard` (root metapackage)
+   - `@blackbelt-technology/pi-dashboard-shared`
+   - `@blackbelt-technology/pi-dashboard-extension`
+   - `@blackbelt-technology/pi-dashboard-server`
+   - `@blackbelt-technology/pi-dashboard-web`
+
+   The job runs `node scripts/sync-versions.js` between `npm version` and
+   `npm run build` so inter-package dep specifiers match the bumped version
+   even if the release author forgot to run it locally.
+
+   `packages/electron` is marked `"private": true` and is automatically
+   skipped by `npm publish --workspaces`; it ships as native installers
+   through the Electron job instead.
+
 2. **`electron` job (matrix)** — builds DMG (macOS arm64), DEB + AppImage
    (Linux x64 + arm64), NSIS + ZIP + portable (Windows x64 + arm64).
 3. **`github-release` job** —

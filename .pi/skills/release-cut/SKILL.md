@@ -4,7 +4,9 @@ description: >
   Cut a new pi-agent-dashboard release. Promotes `## [Unreleased]` in
   CHANGELOG.md to a versioned section, bumps all workspace package.json
   versions per SemVer, commits, tags `v<version>`, and pushes — which
-  triggers the Release workflow that publishes npm + Electron artifacts
+  triggers the Release workflow that publishes **5 npm packages** (root +
+  shared/extension/server/web via `npm publish -ws --include-workspace-root`)
+  and the Electron artifacts
   and creates a draft GitHub Release. Use when the user says "cut a
   release", "release vX.Y.Z", "publish a new version", "tag a release".
 license: MIT
@@ -118,19 +120,31 @@ Verify afterwards with:
 grep -n "^## " CHANGELOG.md | head
 ```
 
-## Step 5 — Bump all workspace versions
+## Step 5 — Bump all workspace versions + sync inter-package dep specifiers
 
 ```bash
 npm version <version> --workspaces --include-workspace-root --no-git-tag-version
+node scripts/sync-versions.js
 ```
+
+The first command bumps the `version` field on the root + every workspace.
+The second rewrites every inter-package `dependencies` specifier (e.g.
+`"@blackbelt-technology/pi-dashboard-shared": "^<old>"`) to the new version.
+
+> **Why the second step?** The npm CLI does not implement the `workspace:`
+> protocol (it's a pnpm/yarn feature). We use plain semver ranges and
+> synchronise them at bump time so the published tarballs have consistent
+> metadata. CI's `publish.yml` runs `sync-versions.js` defensively too, but
+> running it locally keeps the commit honest.
 
 Verify with:
 ```bash
 git diff --stat package.json packages/*/package.json package-lock.json
 ```
 
-Should show version bumps in `package.json`, every `packages/*/package.json`,
-and `package-lock.json`. No other files.
+Should show `version` bumps in `package.json` and every
+`packages/*/package.json` plus synchronised `@blackbelt-technology/pi-dashboard-*`
+dependency specifiers, plus a regenerated `package-lock.json`. No other files.
 
 ## Step 6 — Commit
 

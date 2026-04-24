@@ -2,6 +2,7 @@
   "name": "@blackbelt-technology/pi-dashboard-electron",
   "productName": "pi-dashboard-electron",
   "version": "0.3.0",
+  "private": true,
   "description": "Electron desktop app for pi-dashboard",
   "repository": {
     "type": "git",
@@ -18,7 +19,7 @@
     "test": "HOME=$(mktemp -d -t pi-elec-test-XXXXXX) vitest run"
   },
   "dependencies": {
-    "@blackbelt-technology/pi-dashboard-shared": "*",
+    "@blackbelt-technology/pi-dashboard-shared": "^0.3.0",
     "electron-updater": "^6.3.0"
   },
   "devDependencies": {

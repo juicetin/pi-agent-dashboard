@@ -109,6 +109,21 @@ see [`docs/release-process.md`](docs/release-process.md).
   allocate a visible console.
 
 ### Fixed
+- **`npm install @blackbelt-technology/pi-agent-dashboard` now works in a
+  fresh environment.** The 0.3.0 release on npm was unresolvable: the root
+  tarball declared three workspace sub-packages as `dependencies`
+  (`pi-dashboard-extension`, `pi-dashboard-server`, `pi-dashboard-web`), but
+  those packages were never published to the registry because
+  `.github/workflows/publish.yml` ran `npm publish` without `--workspaces`.
+  Any clean-environment `npm install` — including `pi install
+  npm:@blackbelt-technology/pi-agent-dashboard` — failed with E404 on the
+  sub-dependencies. This release publishes the complete runtime package set
+  (`root`, `-shared`, `-extension`, `-server`, `-web`) in lockstep, with
+  inter-package dependency specifiers synchronised to the current version
+  by a new `scripts/sync-versions.js` helper that runs between the version
+  bump and the publish step. `packages/electron` remains `"private": true`
+  and continues to ship as native installers (DMG/DEB/AppImage/EXE)
+  attached to the GitHub Release, not via npm.
 - **Bridge auto-registration path math** was off by one — fresh
   installs silently failed to register the dashboard bridge in pi's
   `~/.pi/agent/settings.json` because `baseDir` resolved to

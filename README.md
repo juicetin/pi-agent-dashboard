@@ -1,7 +1,7 @@
 # PI Dashboard
 
 [![CI](https://github.com/BlackBeltTechnology/pi-agent-dashboard/actions/workflows/ci.yml/badge.svg)](https://github.com/BlackBeltTechnology/pi-agent-dashboard/actions/workflows/ci.yml)
-[![npm](https://img.shields.io/npm/v/@blackbelt-technology/pi-dashboard)](https://www.npmjs.com/package/@blackbelt-technology/pi-dashboard)
+[![npm](https://img.shields.io/npm/v/@blackbelt-technology/pi-agent-dashboard)](https://www.npmjs.com/package/@blackbelt-technology/pi-agent-dashboard)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 A web-based dashboard for monitoring and interacting with [pi](https://github.com/badlogic/pi-mono) agent sessions from any browser, including mobile.
@@ -109,7 +109,7 @@ On first launch, a setup wizard guides you through:
 Requires [pi](https://github.com/badlogic/pi-mono) (or [Oh My Pi](https://www.npmjs.com/package/@oh-my-pi/pi-coding-agent)) and Node.js **≥ 22.18.0** (or ≥ 24.3.0). Older Node 22.x / 24.x builds are affected by [nodejs/node#58515](https://github.com/nodejs/node/issues/58515) which crashes Fastify at startup.
 
 ```bash
-pi install npm:@blackbelt-technology/pi-dashboard
+pi install npm:@blackbelt-technology/pi-agent-dashboard
 pi
 ```
 
@@ -328,10 +328,10 @@ See [Getting Started — Option A](#option-a-electron-desktop-app-standalone--no
 
 ```bash
 # pi
-pi install npm:@blackbelt-technology/pi-dashboard
+pi install npm:@blackbelt-technology/pi-agent-dashboard
 
 # Oh My Pi
-omp install npm:@blackbelt-technology/pi-dashboard
+omp install npm:@blackbelt-technology/pi-agent-dashboard
 ```
 
 > The package is compatible with both [pi](https://github.com/badlogic/pi-mono) and [Oh My Pi](https://www.npmjs.com/package/@oh-my-pi/pi-coding-agent) — no configuration needed.

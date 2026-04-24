@@ -106,10 +106,21 @@ export function readCurrentPiVersion(registry: ToolRegistry = getDefaultRegistry
     /* not resolvable yet */
   }
   // Fall back to the registry's resolved path + ../package.json.
+  // `where` / `which` strategies typically return a symlinked npm bin
+  // launcher (e.g. ~/.nvm/.../bin/pi → ../lib/node_modules/@mariozechner/
+  // pi-coding-agent/dist/cli.js). Realpath the result first so the
+  // dirname math lands on the real pi module directory, not the
+  // bin-containing Node install prefix. See change: warn-pi-version-skew-in-cli.
   try {
     const res = registry.resolve("pi");
     if (res.ok && res.path) {
-      const candidate = path.join(path.dirname(path.dirname(res.path)), "package.json");
+      let resolvedPath: string;
+      try {
+        resolvedPath = fs.realpathSync(res.path);
+      } catch {
+        return undefined;
+      }
+      const candidate = path.join(path.dirname(path.dirname(resolvedPath)), "package.json");
       if (fs.existsSync(candidate)) {
         const raw = fs.readFileSync(candidate, "utf8");
         const parsed = JSON.parse(raw) as { version?: string };

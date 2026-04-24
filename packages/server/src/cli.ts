@@ -52,6 +52,37 @@ import {
 } from "@blackbelt-technology/pi-dashboard-shared/bridge-register.js";
 import type { DashboardServer } from "./server.js";
 import { updateBootstrapCompatibility } from "./pi-version-skew.js";
+import type { BootstrapStateStore } from "./bootstrap-state.js";
+
+/**
+ * Emit a stderr warning at CLI startup when the resolved pi version is
+ * below `piCompatibility.minimum` (blocking) or below `.recommended`
+ * (advisory). Reads from the already-populated `bootstrapState` so no
+ * additional I/O happens here. See change: warn-pi-version-skew-in-cli.
+ */
+function logCompatibilityWarning(store: BootstrapStateStore): void {
+  const s = store.get();
+  const c = s.compatibility;
+  if (!c || !c.current) return;
+  // Below minimum: `updateBootstrapCompatibility` sets `error.message`.
+  // We treat the presence of a blocking error + upgradeRecommended as the
+  // below-minimum signal; `upgradeRecommended` alone means below-recommended.
+  if (s.error?.message && c.upgradeRecommended) {
+    console.error(
+      `[bootstrap] ⚠ pi ${c.current} is below the required minimum ${c.minimum}.`,
+    );
+    console.error(
+      `[bootstrap]   All pi-dependent features (sessions, resources, openspec) will return 503.`,
+    );
+    console.error(`[bootstrap]   Run: pi-dashboard upgrade-pi`);
+    return;
+  }
+  if (c.upgradeRecommended) {
+    console.warn(
+      `[bootstrap] pi ${c.current} is below the recommended ${c.recommended} — consider running \`pi-dashboard upgrade-pi\``,
+    );
+  }
+}
 
 const SUBCOMMANDS = ["start", "stop", "restart", "status", "upgrade-pi"] as const;
 type Subcommand = (typeof SUBCOMMANDS)[number];
@@ -192,6 +223,7 @@ async function runDegradedModeBootstrap(server: DashboardServer): Promise<void> 
         "package.json",
       );
       updateBootstrapCompatibility(server.bootstrapState, serverPkg);
+      logCompatibilityWarning(server.bootstrapState);
     } catch (err) {
       console.warn("[bootstrap] version-skew check failed (non-fatal):", err);
     }
@@ -261,6 +293,7 @@ async function runDegradedModeBootstrap(server: DashboardServer): Promise<void> 
         "package.json",
       );
       updateBootstrapCompatibility(server.bootstrapState, serverPkg);
+      logCompatibilityWarning(server.bootstrapState);
     } catch (err) {
       console.warn("[bootstrap] version-skew check failed (non-fatal):", err);
     }

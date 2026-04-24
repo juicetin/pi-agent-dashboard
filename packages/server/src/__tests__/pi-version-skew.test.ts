@@ -13,9 +13,11 @@ import {
   isBelow,
   isAbove,
   readPiCompatibility,
+  readCurrentPiVersion,
   computeCompatibility,
   _resetVersionSkewCache,
 } from "../pi-version-skew.js";
+import type { ToolRegistry, Resolution } from "@blackbelt-technology/pi-dashboard-shared/tool-registry/index.js";
 
 describe("pi-version-skew", () => {
   beforeEach(() => {
@@ -160,6 +162,75 @@ describe("pi-version-skew", () => {
         "0.10.0",
       );
       expect(out.upgradeDashboard).toBe(true);
+    });
+  });
+
+  // See change: warn-pi-version-skew-in-cli.
+  describe("readCurrentPiVersion (realpath symlinks)", () => {
+    let tmpDir: string;
+
+    beforeEach(() => {
+      tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-skew-realpath-"));
+    });
+
+    function stubRegistry(resolvedPath: string): ToolRegistry {
+      return {
+        resolve: (_name: string): Resolution => ({
+          ok: true,
+          path: resolvedPath,
+          source: "where",
+          tried: [],
+          resolvedAt: Date.now(),
+        }),
+      } as unknown as ToolRegistry;
+    }
+
+    it("npm-global symlinked bin launcher resolves to the real package.json", () => {
+      // Simulate ~/.nvm/.../bin/pi → ../lib/node_modules/@mariozechner/pi-coding-agent/dist/cli.js
+      const nodeRoot = path.join(tmpDir, "node-install");
+      const binDir = path.join(nodeRoot, "bin");
+      const pkgDir = path.join(nodeRoot, "lib", "node_modules", "@mariozechner", "pi-coding-agent");
+      const distDir = path.join(pkgDir, "dist");
+      fs.mkdirSync(binDir, { recursive: true });
+      fs.mkdirSync(distDir, { recursive: true });
+      fs.writeFileSync(path.join(distDir, "cli.js"), "// stub");
+      fs.writeFileSync(
+        path.join(pkgDir, "package.json"),
+        JSON.stringify({ name: "@mariozechner/pi-coding-agent", version: "0.70.0" }),
+      );
+      // The bad path (what old code computed) must NOT exist.
+      // That is: nodeRoot/package.json. We leave it absent.
+
+      const binLink = path.join(binDir, "pi");
+      // relative symlink matches npm's install layout.
+      fs.symlinkSync(
+        path.relative(binDir, path.join(distDir, "cli.js")),
+        binLink,
+      );
+
+      const registry = stubRegistry(binLink);
+      expect(readCurrentPiVersion(registry)).toBe("0.70.0");
+    });
+
+    it("non-symlinked path is a no-op under realpath", () => {
+      const pkgDir = path.join(tmpDir, "pkg");
+      const distDir = path.join(pkgDir, "dist");
+      fs.mkdirSync(distDir, { recursive: true });
+      const cli = path.join(distDir, "cli.js");
+      fs.writeFileSync(cli, "// stub");
+      fs.writeFileSync(
+        path.join(pkgDir, "package.json"),
+        JSON.stringify({ name: "@mariozechner/pi-coding-agent", version: "0.69.0" }),
+      );
+      const registry = stubRegistry(cli);
+      expect(readCurrentPiVersion(registry)).toBe("0.69.0");
+    });
+
+    it("dangling symlink returns undefined", () => {
+      const link = path.join(tmpDir, "dangling-pi");
+      fs.symlinkSync(path.join(tmpDir, "does-not-exist", "cli.js"), link);
+      const registry = stubRegistry(link);
+      expect(readCurrentPiVersion(registry)).toBeUndefined();
     });
   });
 });

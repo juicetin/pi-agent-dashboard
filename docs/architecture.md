@@ -200,7 +200,18 @@ with `upgradeRecommended` / `upgradeDashboard` flags consumed by
 `BootstrapBanner`. Versions below `minimum` set a blocking `error`
 message that `session-api gateOrEnqueue` translates to 503 responses.
 
-See change: `unified-bootstrap-install`.
+The pinned range is `minimum: "0.70.0"`, `recommended: "0.70.0"`,
+`maximum: null` — deliberately in lockstep. The dashboard does NOT carry
+backward-compatibility shims for older pi releases; one supported pi
+means no conditional code paths in the bridge and no dual-import
+fallbacks (e.g. `@sinclair/typebox` vs `typebox`). Bumping `recommended`
+in a future change SHOULD be matched by an equal bump to `minimum` and a
+lockstep bump of the offline-bundled pi version in
+`packages/electron/offline-packages.json`.
+
+The CLI also surfaces skew on stderr at startup: `cli.ts::logCompatibilityWarning` emits a three-line red block on below-minimum (including the exact `pi-dashboard upgrade-pi` remediation command) and a single advisory line on below-recommended. Silent when in range. This is in addition to the browser banner and the 503 gating, so terminal-only users (headless servers, CI) don't miss the signal. Note: `readCurrentPiVersion` uses `fs.realpathSync` on the registry-resolved bin path so the common npm-global symlink layout (`~/.nvm/.../bin/pi` → `../lib/node_modules/@mariozechner/pi-coding-agent/dist/cli.js`) resolves to the real `package.json` — without this, `compatibility.current` was silently `undefined` in every response.
+
+See changes: `unified-bootstrap-install`, `pi-zero-seventy-compat`, `warn-pi-version-skew-in-cli`.
 
 ### Force Kill Escalation
 The Stop button supports two-click escalation for stuck sessions:

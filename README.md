@@ -177,7 +177,7 @@ Only needed for Option B/C (the Electron app handles everything automatically).
 
 | Requirement | Why | Install |
 |-------------|-----|---------|
-| **[pi](https://github.com/badlogic/pi-mono)** | The AI coding agent that the dashboard monitors (Oh My Pi is **not** supported) | `npm i -g @mariozechner/pi-coding-agent` |
+| **[pi](https://github.com/badlogic/pi-mono)** ≥ **0.70.0** | The AI coding agent that the dashboard monitors (Oh My Pi is **not** supported). The dashboard does NOT support pi versions older than 0.70.0 (see `piCompatibility` in `packages/server/package.json`); below-minimum versions trigger a 503-blocking banner with an in-app upgrade affordance. | `npm i -g @mariozechner/pi-coding-agent@0.70.0` |
 | **Node.js ≥ 22.18.0** | Runtime for the dashboard server (older 22.x / 24.x affected by [nodejs/node#58515](https://github.com/nodejs/node/issues/58515)) | [nodejs.org](https://nodejs.org/) |
 | **C++ build tools** | Required by `node-pty` native addon for terminal emulation | Xcode CLI Tools (macOS) / `build-essential` (Linux) |
 

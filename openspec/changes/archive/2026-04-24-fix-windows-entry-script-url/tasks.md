@@ -27,9 +27,9 @@
 
 ## 5. Manual verification
 
-- [ ] 5.1 On a Windows machine (or Windows VM via the `qa/` harness) with the dashboard source cloned to `B:\Dev\pi-agent-dashboard` (or substituted via `subst B: ...`), run `node packages/server/src/cli.ts start` and verify the server starts without `ERR_UNSUPPORTED_ESM_URL_SCHEME`.
-- [ ] 5.2 On the same machine, verify `POST /api/restart` succeeds and the new server comes up healthy.
-- [ ] 5.3 On a C:-drive Windows install, smoke-test `pi-dashboard start` and the Electron app launch to confirm no regression on the previously-working path.
+- [x] 5.1 On a Windows machine (or Windows VM via the `qa/` harness) with the dashboard source cloned to `B:\Dev\pi-agent-dashboard` (or substituted via `subst B: ...`), run `node packages/server/src/cli.ts start` and verify the server starts without `ERR_UNSUPPORTED_ESM_URL_SCHEME`.
+- [x] 5.2 On the same machine, verify `POST /api/restart` succeeds and the new server comes up healthy.
+- [x] 5.3 On a C:-drive Windows install, smoke-test `pi-dashboard start` and the Electron app launch to confirm no regression on the previously-working path.
 
 ## 6. Documentation
 
@@ -39,4 +39,4 @@
 
 ## 7. Archive
 
-- [ ] 7.1 After all tasks complete and the PR is merged, run the `openspec-archive-change` skill to move this change under `openspec/changes/archive/<date>-fix-windows-entry-script-url/` and sync the `dashboard-server` spec with the MODIFIED + ADDED requirements from `specs/dashboard-server/spec.md`.
+- [x] 7.1 After all tasks complete and the PR is merged, run the `openspec-archive-change` skill to move this change under `openspec/changes/archive/<date>-fix-windows-entry-script-url/` and sync the `dashboard-server` spec with the MODIFIED + ADDED requirements from `specs/dashboard-server/spec.md`.

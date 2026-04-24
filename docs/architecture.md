@@ -864,6 +864,22 @@ The dashboard is installable as a Progressive Web App on mobile devices:
 - **Service Worker** (`public/sw.js`) — minimal fetch pass-through for installability
 - **Tunnel/QR Button** — unified sidebar button: shows tunnel icon when zrok is not installed (click → setup guide), QR code icon when set up but disconnected (click → setup guide), green QR code icon when connected (click → QR dialog with disconnect and setup buttons)
 
+### External Link Routing (#13)
+
+The dashboard runs in three shells (regular browser tab, installed PWA with `"display": "standalone"`, Electron), and all three previously stranded the user when a link in chat content was clicked — the PWA and Electron shells have no URL bar / back button to recover with. Two layers of hardening route external URLs safely:
+
+1. **Client markdown renderer** (`packages/client/src/components/MarkdownContent.tsx`) overrides ReactMarkdown's `a` component. `isExternalHref(href)` classifies URLs using the `URL` constructor against `window.location.origin`; external URLs render as `<a target="_blank" rel="noopener noreferrer">`, while fragment-only and same-origin hrefs stay bare so in-document scrolling and internal navigation (e.g. the `/auth/login?return=...` redirect) keep working. Applies uniformly to chat bodies, thinking blocks, flow agent detail, package READMEs, and markdown previews — every consumer of `MarkdownContent`.
+
+2. **Electron shell** (`packages/electron/src/main.ts` `createMainWindow`) registers two `webContents` handlers BEFORE `loadURL(serverUrl)`:
+   - `setWindowOpenHandler((details) => { shell.openExternal(details.url); return { action: "deny" }; })` — every `target="_blank"` / `window.open` call is routed to the user's real system browser; no secondary Electron `BrowserWindow` is spawned.
+   - `on("will-navigate", (event, url) => { if (!isSameOriginUrl(url, serverUrl)) { event.preventDefault(); shell.openExternal(url); } })` — defense-in-depth for any bare `<a href>` that slipped past layer 1. Same-origin navigation (including the client-side auth-login redirect) passes through untouched.
+
+The same-origin decision lives in a pure, electron-free helper (`packages/electron/src/lib/link-handling.ts::isSameOriginUrl(href, serverOrigin)`) with 15 unit tests covering relative paths, fragments, different-origin URLs, `javascript:`/`mailto:` schemes, and malformed inputs (which safely fall through to "external").
+
+A repo-level lint (`packages/client/src/__tests__/no-bare-external-anchor.test.ts`) scans every client `.tsx` for literal `<a href="http(s)://...">` opening tags without `target="_blank"` and fails the build if any slip in. Per-line opt-out via `// ban:bare-anchor-ok`.
+
+See change: `harden-external-link-handling`.
+
 | `devBuildOnReload` | false | Rebuild Vite client + restart server on `/reload` |
 
 ## Shared Config

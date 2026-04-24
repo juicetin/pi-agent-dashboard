@@ -62,7 +62,7 @@ make clean              # Destroy all cloned VMs
 | `src/shared/types.ts` | Data models (Session, Workspace, Event) |
 | `src/shared/config.ts` | Shared config loader (`~/.pi/dashboard/config.json`). Includes `openspec: OpenSpecPollConfig` block (`pollIntervalSeconds` 5–3600, `maxConcurrentSpawns` 1–16, `changeDetection` `"mtime"\|"always"`, `jitterSeconds` 0–60) with clamping via `parseOpenSpecPollConfig`. See change: optimize-openspec-poll-burst |
 | `src/shared/semaphore.ts` | Tiny FIFO semaphore (`createSemaphore(max)` → `{run, setMax, size}`). Used by `directory-service.ts` to cap concurrent `openspec` CLI spawns. Supports live resize via `setMax(n)` for runtime reconfig. |
-| `src/extension/bridge.ts` | Main extension entry point (composes sync/tracker/flow modules, tracks `isAgentStreaming` in persistent BridgeState) |
+| `src/extension/bridge.ts` | Main extension entry point (composes sync/tracker/flow modules, tracks `isAgentStreaming` in persistent BridgeState). **Invariant**: bridge code MUST NOT call `pi.newSession(...)` / `ctx.fork(...)` / `ctx.switchSession(...)` — enforced by `packages/extension/src/__tests__/no-session-replacement-calls.test.ts`. pi 0.69+ invalidates captured `pi`/`ctx` after these calls; the bridge re-captures state in `session_start` keyed on `event.reason ∈ {"new","fork","resume"}`. |
 | `src/extension/bridge-context.ts` | Shared mutable state type + helpers for bridge modules |
 | `src/extension/session-sync.ts` | Session register, replay, and switch/fork handling |
 | `src/extension/model-tracker.ts` | Model/thinking-level/git/name change detection |
@@ -89,7 +89,9 @@ make clean              # Destroy all cloned VMs
 | `src/extension/prompt-bus.ts` | PromptBus — unified prompt routing to registered adapters (TUI, dashboard, custom). First-response-wins, cross-adapter dismissal. |
 | `src/extension/dashboard-default-adapter.ts` | Built-in PromptBus adapter that renders prompts as generic interactive dialogs in dashboard chat |
 | `src/client/lib/prompt-component-registry.ts` | Client-side component registry mapping prompt type strings to render metadata (placement, component) |
-| `src/extension/ask-user-tool.ts` | `ask_user` tool registration (bundled in bridge, registered at session_start to avoid static tool-name conflicts with other extensions) |
+| `src/extension/ask-user-tool.ts` | `ask_user` tool registration (bundled in bridge, registered at session_start to avoid static tool-name conflicts with other extensions). `multiselect` dispatches through `polyfillMultiselect` (since pi-coding-agent's `ExtensionUIContext` has no `multiselect` method). Tool description instructs agents: *"UI provides a Select all toggle; do not add one."* See change: ask-user-multiselect-polyfill. |
+| `src/extension/multiselect-polyfill.ts` | `polyfillMultiselect(ctx, title, options, opts)` — thin wrapper around `ctx.ui.custom<T>()` that resolves to `string[]` (confirmed) or `undefined` (cancelled). Used for both single-question and batch sub-question `multiselect` paths in `ask-user-tool.ts`. |
+| `src/extension/multiselect-list.ts` | `MultiSelectList` component implementing pi-tui's `Component` interface. Keyboard contract: `↑↓`/`k`/`j` navigate, `Space` toggles current, `Enter` confirms (selected values in original option order), `Escape` cancels. **No "select all" binding in TUI** — the dashboard adapter provides that affordance. |
 | `src/shared/openspec-activity-detector.ts` | Detects OpenSpec activity from tool events; auto-attach requires only changeName (phase optional) |
 | `src/shared/openspec-poller.ts` | OpenSpec CLI polling (shared, used by server DirectoryService) |
 | `src/shared/state-replay.ts` | Synthesizes events from pi entries (shared, used by server + bridge) |

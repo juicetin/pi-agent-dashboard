@@ -126,6 +126,59 @@ describe("ToolCallStep", () => {
     expect(img!.className).toContain("max-w-[512px]");
   });
 
+  describe("ask_user auto-expand behavior", () => {
+    // A lightweight way to detect expanded state: the renderer content wrapper
+    // (.overflow-x-auto on the inner div) only renders when expanded.
+    function isExpanded(container: HTMLElement): boolean {
+      return container.querySelector(".overflow-x-auto") !== null;
+    }
+
+    it("auto-expands ask_user when status is running (pending dialog)", () => {
+      const { container } = renderStep({
+        toolName: "ask_user",
+        toolCallId: "tc-run",
+        args: { method: "confirm", title: "Proceed?" },
+        status: "running",
+      });
+      expect(isExpanded(container)).toBe(true);
+    });
+
+    it("auto-expands ask_user when status is complete (answer visible)", () => {
+      const { container } = renderStep({
+        toolName: "ask_user",
+        toolCallId: "tc-ok",
+        args: { method: "confirm", title: "Proceed?" },
+        status: "complete",
+        result: "User responded: true",
+      });
+      expect(isExpanded(container)).toBe(true);
+    });
+
+    it("does NOT auto-expand ask_user when status is error", () => {
+      const { container } = renderStep({
+        toolName: "ask_user",
+        toolCallId: "tc-err",
+        args: { method: "multiselect", title: "Pick" },
+        status: "error",
+        result: "ctx.ui.multiselect is not a function",
+      });
+      expect(isExpanded(container)).toBe(false);
+    });
+
+    it("clicking a collapsed failed ask_user expands it", () => {
+      const { container } = renderStep({
+        toolName: "ask_user",
+        toolCallId: "tc-err-click",
+        args: { method: "multiselect", title: "Pick" },
+        status: "error",
+        result: "Some error",
+      });
+      expect(isExpanded(container)).toBe(false);
+      fireEvent.click(container.querySelector("button")!);
+      expect(isExpanded(container)).toBe(true);
+    });
+  });
+
   it("opens lightbox when clicking a tool result image", () => {
     const { container } = renderStep({
       toolName: "read",

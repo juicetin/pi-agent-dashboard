@@ -13,6 +13,10 @@ export function MultiselectRenderer({ params, status, result, onRespond, onCance
 
   const [checked, setChecked] = useState<Set<string>>(new Set());
 
+  // Derived: are all real options currently checked? Drives the synthetic
+  // "Select all" row's checkbox state and its click behavior.
+  const allChecked = options.length > 0 && checked.size === options.length;
+
   function toggle(option: string) {
     setChecked((prev) => {
       const next = new Set(prev);
@@ -20,6 +24,11 @@ export function MultiselectRenderer({ params, status, result, onRespond, onCance
       else next.add(option);
       return next;
     });
+  }
+
+  function toggleAll() {
+    if (allChecked) setChecked(new Set());
+    else setChecked(new Set(options));
   }
 
   if (status !== "pending") {
@@ -55,6 +64,23 @@ export function MultiselectRenderer({ params, status, result, onRespond, onCance
         <div className="text-xs text-[var(--text-secondary)] mb-3 ml-6"><MarkdownContent content={message} /></div>
       )}
       <div className="flex flex-col gap-1 ml-6 mb-2">
+        {options.length > 0 && (
+          <>
+            <label
+              data-testid="select-all-row"
+              className="flex items-center gap-2 text-xs cursor-pointer hover:bg-[var(--bg-surface)] rounded px-2 py-1 transition-colors text-[var(--text-tertiary)] italic"
+            >
+              <input
+                type="checkbox"
+                checked={allChecked}
+                onChange={toggleAll}
+                className="accent-blue-500"
+              />
+              <span>Select all</span>
+            </label>
+            <div className="border-t border-[var(--border-subtle)] my-1" />
+          </>
+        )}
         {options.map((option) => (
           <label
             key={option}

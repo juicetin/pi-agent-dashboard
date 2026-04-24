@@ -1,5 +1,9 @@
-# Agent Tool Rendering
+# agent-tool-rendering Specification
 
+## Purpose
+How the dashboard client renders tool-call lifecycle events for Agent and Agent-like tools: summary, auto-expand defaults, structured partial results, and interactive flows.
+
+## Requirements
 ### Requirement: Structured partialResult handling in event reducer
 The event reducer SHALL detect when `tool_execution_update.partialResult` is an object (not a string). When it is an object, it SHALL extract `details` into a `toolDetails` field on the `ChatMessage`, and use `content[0].text` (or JSON.stringify of `content`) as the `result` string.
 

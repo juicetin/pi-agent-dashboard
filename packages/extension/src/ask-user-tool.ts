@@ -6,7 +6,8 @@
  * register ask_user. Runtime registration bypasses detectExtensionConflicts.
  */
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
+import { polyfillMultiselect } from "./multiselect-polyfill.js";
 
 // ──────────────────────────────────────────────────────────────────────────
 // Single-question schema arms (reused inside the batch arm's questions array)
@@ -121,7 +122,7 @@ export function registerAskUserTool(pi: ExtensionAPI): void {
     name: "ask_user",
     label: "Ask User",
     description:
-      "Ask the user a question interactively. Use this when you need clarification, confirmation, or a choice from the user before proceeding.",
+      "Ask the user a question interactively. Use this when you need clarification, confirmation, or a choice from the user before proceeding. UI provides a Select all toggle; do not add one.",
     promptSnippet:
       "Ask the user interactive questions (confirm, select, multiselect, input, or batch — multiple related questions at once)",
     promptGuidelines: [
@@ -254,7 +255,7 @@ export function registerAskUserTool(pi: ExtensionAPI): void {
                     `ask_user batch: sub-question method "multiselect" requires a non-empty "options" array.`,
                   );
                 }
-                answer = await (ctx.ui as any).multiselect(subTitle, opts, subMsg);
+                answer = await polyfillMultiselect(ctx, subTitle, opts, subMsg);
                 break;
               }
               case "input":
@@ -336,7 +337,7 @@ export function registerAskUserTool(pi: ExtensionAPI): void {
           result = await ctx.ui.select(title, options, msgOpts);
           break;
         case "multiselect":
-          result = await (ctx.ui as any).multiselect(title, options, msgOpts);
+          result = await polyfillMultiselect(ctx, title, options, msgOpts);
           break;
         case "input":
           result = await ctx.ui.input(title, params.placeholder, msgOpts);

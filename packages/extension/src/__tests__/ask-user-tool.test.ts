@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 
 // Mock modules before importing
-vi.mock("@sinclair/typebox", () => ({
+vi.mock("typebox", () => ({
   Type: {
     Object: vi.fn(() => ({})),
     String: vi.fn(() => ({})),
@@ -44,20 +44,37 @@ describe("registerAskUserTool", () => {
     expect(tool.promptGuidelines.length).toBeGreaterThan(0);
   });
 
+  it("description instructs agents not to add a Select all option", () => {
+    const pi = createMockPi();
+    registerAskUserTool(pi as any);
+    const tool = pi.registerTool.mock.calls[0][0];
+    expect(tool.description).toMatch(/UI provides a Select all/i);
+  });
+
   describe("message passthrough", () => {
     function getToolAndMockCtx() {
       const pi = createMockPi();
       registerAskUserTool(pi as any);
       const tool = pi.registerTool.mock.calls[0][0];
+      // `custom` stands in for the multiselect polyfill: it invokes the factory
+      // with a `done` callback; the factory-returned component exposes
+      // onConfirm/onCancel. We auto-confirm with ["A"] to preserve the legacy
+      // mock return value that the multiselect assertions expected.
+      const custom = vi.fn().mockImplementation(async (factory: any) => {
+        return await new Promise<unknown>((resolve) => {
+          const component: any = factory({}, {}, {}, (r: unknown) => resolve(r));
+          component?.onConfirm?.(["A"]);
+        });
+      });
       const ctx = {
         ui: {
           confirm: vi.fn().mockResolvedValue(true),
           select: vi.fn().mockResolvedValue("A"),
           input: vi.fn().mockResolvedValue("hello"),
-          multiselect: vi.fn().mockResolvedValue(["A"]),
+          custom,
         },
       };
-      return { tool, ctx };
+      return { tool, ctx, custom };
     }
 
     it("passes message through opts for input", async () => {
@@ -72,10 +89,19 @@ describe("registerAskUserTool", () => {
       expect(ctx.ui.select).toHaveBeenCalledWith("Pick", ["A", "B"], { message: "Context" });
     });
 
-    it("passes message through opts for multiselect", async () => {
+    it("dispatches multiselect through the polyfill via ctx.ui.custom", async () => {
       const { tool, ctx } = getToolAndMockCtx();
-      await tool.execute("id", { method: "multiselect", title: "Multi", message: "Info", options: ["A"] }, undefined, undefined, ctx);
-      expect(ctx.ui.multiselect).toHaveBeenCalledWith("Multi", ["A"], { message: "Info" });
+      const result = await tool.execute(
+        "id",
+        { method: "multiselect", title: "Multi", message: "Info", options: ["A"] },
+        undefined,
+        undefined,
+        ctx,
+      );
+      // Polyfill routes via custom(factory); multiselect is not called directly.
+      expect(ctx.ui.custom).toHaveBeenCalledTimes(1);
+      expect(result.details.method).toBe("multiselect");
+      expect(result.details.result).toEqual(["A"]);
     });
 
     it("does not pass opts when message is undefined", async () => {
@@ -123,7 +149,7 @@ describe("registerAskUserTool", () => {
       await expect(
         tool.execute("id", { method: "multiselect", title: "Pick" }, undefined, undefined, ctx),
       ).rejects.toThrow(/options/i);
-      expect(ctx.ui.multiselect).not.toHaveBeenCalled();
+      expect(ctx.ui.custom).not.toHaveBeenCalled();
     });
   });
 
@@ -311,12 +337,18 @@ describe("registerAskUserTool", () => {
       const pi = createMockPi();
       registerAskUserTool(pi as any);
       const tool = pi.registerTool.mock.calls[0][0];
+      const custom = vi.fn().mockImplementation(async (factory: any) => {
+        return await new Promise<unknown>((resolve) => {
+          const component: any = factory({}, {}, {}, (r: unknown) => resolve(r));
+          component?.onConfirm?.(["A"]);
+        });
+      });
       const ctx = {
         ui: {
           confirm: vi.fn().mockResolvedValue(true),
           select: vi.fn().mockResolvedValue("A"),
           input: vi.fn().mockResolvedValue("hello"),
-          multiselect: vi.fn().mockResolvedValue(["A"]),
+          custom,
         },
       };
       return { tool, ctx };

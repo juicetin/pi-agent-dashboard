@@ -5,7 +5,7 @@
  * See change: fix-windows-entry-script-url.
  */
 import { describe, it, expect, vi } from "vitest";
-import { toFileUrl, spawnNodeScript } from "../platform/node-spawn.js";
+import { toFileUrl, spawnNodeScript, isTsxLoader } from "../platform/node-spawn.js";
 import * as execModule from "../platform/exec.js";
 
 describe("toFileUrl", () => {
@@ -36,15 +36,40 @@ describe("toFileUrl", () => {
   });
 });
 
+describe("isTsxLoader", () => {
+  it("returns true for loader URLs containing /tsx/", () => {
+    expect(isTsxLoader("file:///home/x/node_modules/tsx/dist/esm/index.mjs")).toBe(true);
+    expect(isTsxLoader("file:///C:/project/node_modules/tsx/dist/esm/index.mjs")).toBe(true);
+  });
+
+  it("returns true for raw paths with /tsx/ segment", () => {
+    expect(isTsxLoader("/home/x/node_modules/tsx/dist/esm/index.mjs")).toBe(true);
+  });
+
+  it("returns true for Windows raw paths with \\tsx\\ segment", () => {
+    expect(isTsxLoader("C:\\project\\node_modules\\tsx\\dist\\esm\\index.mjs")).toBe(true);
+  });
+
+  it("returns false for jiti loader", () => {
+    expect(isTsxLoader("file:///home/x/node_modules/@mariozechner/jiti/lib/jiti-register.mjs")).toBe(false);
+    expect(isTsxLoader("/home/x/node_modules/@mariozechner/jiti/lib/jiti-register.mjs")).toBe(false);
+  });
+
+  it("returns false for undefined / empty", () => {
+    expect(isTsxLoader(undefined)).toBe(false);
+    expect(isTsxLoader("")).toBe(false);
+  });
+});
+
 describe("spawnNodeScript", () => {
-  it("produces argv [--import, file://loader, file://entry, ...args] and invokes nodeBin", () => {
+  it("URL-wraps both loader and entry when loader is NOT tsx (jiti/default)", () => {
     const spawnSpy = vi
       .spyOn(execModule, "spawn")
       .mockImplementation(() => ({ unref: () => {} } as unknown as ReturnType<typeof execModule.spawn>));
 
     spawnNodeScript({
       nodeBin: "C:\\Program Files\\nodejs\\node.exe",
-      loader: "B:\\loader.mjs",
+      loader: "B:\\jiti\\register.mjs",
       entry: "B:\\Dev\\cli.ts",
       args: ["start", "--dev"],
     });
@@ -54,12 +79,34 @@ describe("spawnNodeScript", () => {
     expect(bin).toBe("C:\\Program Files\\nodejs\\node.exe");
     expect(argv).toEqual([
       "--import",
-      "file:///B:/loader.mjs",
+      "file:///B:/jiti/register.mjs",
       "file:///B:/Dev/cli.ts",
       "start",
       "--dev",
     ]);
 
+    spawnSpy.mockRestore();
+  });
+
+  it("URL-wraps loader but passes RAW entry when loader is tsx", () => {
+    const spawnSpy = vi
+      .spyOn(execModule, "spawn")
+      .mockImplementation(() => ({ unref: () => {} } as unknown as ReturnType<typeof execModule.spawn>));
+
+    spawnNodeScript({
+      nodeBin: "/usr/bin/node",
+      loader: "/home/u/node_modules/tsx/dist/esm/index.mjs",
+      entry: "/home/u/repo/packages/server/src/cli.ts",
+      args: ["start"],
+    });
+
+    const [, argv] = spawnSpy.mock.calls[0]!;
+    expect(argv).toEqual([
+      "--import",
+      "file:///home/u/node_modules/tsx/dist/esm/index.mjs",
+      "/home/u/repo/packages/server/src/cli.ts",  // RAW, not URL
+      "start",
+    ]);
     spawnSpy.mockRestore();
   });
 

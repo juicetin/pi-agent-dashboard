@@ -9,9 +9,19 @@
  *
  * Node's internal drive-letter heuristic catches the common cases
  * (`C:\`, `D:\`) but has known gaps for `A:`, `B:`, and other letters.
- * Rather than relying on the heuristic, we wrap every URL-parsed
- * position with `file://` unconditionally. `pathToFileURL` is a no-op
- * in effect on platforms that already worked.
+ * Rather than relying on the heuristic, we wrap the loader position
+ * with `file://` unconditionally.
+ *
+ * The entry-script position needs a more nuanced rule. Node's default
+ * resolver AND jiti's ESM hook both accept `file://` URL entries. But
+ * **tsx's ESM hook rejects `file://` URLs as entries** — tsx's resolver
+ * treats the entry as a user-typed specifier and attempts bare-import
+ * / relative-path resolution, producing `<cwd>/file:/...` errors.
+ * Since tsx is used as the jiti fallback on dev machines without pi
+ * installed (the most common Linux dev path), we must NOT URL-wrap
+ * the entry when the loader is tsx. Detection: the loader path
+ * contains `/tsx/` (every tsx install ships its hook under a `tsx/`
+ * directory; jiti's hook is under `jiti/`).
  *
  * This module is the canonical chokepoint. The repo-level lint test
  * `no-raw-node-import.test.ts` refuses any other call site that
@@ -39,6 +49,26 @@ export interface SpawnNodeScriptOptions {
 
   /** Standard spawn options (cwd, env, stdio, detached, etc.). */
   spawnOptions?: SpawnOptions;
+}
+
+/**
+ * Detect whether a loader (file:// URL or raw path) is tsx.
+ *
+ * tsx's ESM hook rejects `file://` URLs at the entry-script position,
+ * so the caller must pass a raw OS path for the entry when this
+ * returns true. jiti and Node's default resolver both accept URL
+ * entries.
+ *
+ * Heuristic: every tsx install places its hook under a `tsx/` package
+ * directory (e.g. `.../node_modules/tsx/dist/esm/index.mjs`). The
+ * check is tolerant of `file://` URLs, raw POSIX paths, and raw
+ * Windows paths with either slash direction.
+ */
+export function isTsxLoader(loader: string | undefined): boolean {
+  if (!loader) return false;
+  // Normalize backslashes so the `/tsx/` probe works on Windows paths.
+  const normalized = loader.replace(/\\/g, "/");
+  return /\/tsx\//i.test(normalized);
 }
 
 /**
@@ -70,8 +100,13 @@ export function toFileUrl(pathOrUrl: string): string {
 }
 
 /**
- * Spawn `node` with an optional `--import` loader and a script entry,
- * wrapping both positions in file:// URLs.
+ * Spawn `node` with an optional `--import` loader and a script entry.
+ *
+ * The loader position is always URL-wrapped (Node's ESM loader
+ * requires `file://` on Windows drive letters outside the heuristic).
+ *
+ * The entry position is URL-wrapped UNLESS the loader is tsx — tsx
+ * rejects file:// URL entries. See `isTsxLoader` for detection.
  *
  * Delegates actual spawning to `platform/exec.ts::spawn` so the
  * `windowsHide: true` default and other safe-spawn invariants are
@@ -80,12 +115,13 @@ export function toFileUrl(pathOrUrl: string): string {
  */
 export function spawnNodeScript(opts: SpawnNodeScriptOptions): ChildProcess {
   const nodeBin = opts.nodeBin ?? process.execPath;
+  const useRawEntry = isTsxLoader(opts.loader);
 
   const argv: string[] = [];
   if (opts.loader) {
     argv.push("--import", toFileUrl(opts.loader));
   }
-  argv.push(toFileUrl(opts.entry));
+  argv.push(useRawEntry ? opts.entry : toFileUrl(opts.entry));
   if (opts.args) argv.push(...opts.args);
 
   return execSpawn(nodeBin, argv, opts.spawnOptions ?? {});

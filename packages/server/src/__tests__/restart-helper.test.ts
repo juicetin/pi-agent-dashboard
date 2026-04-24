@@ -34,14 +34,15 @@ describe("buildOrchestratorScript", () => {
     const script = buildOrchestratorScript(baseParams);
     // ARGS should be a JSON array containing --import and the loader
     expect(script).toMatch(/const ARGS = \[.*"--import".*"file:\/\/\/tmp\/jiti-register\.mjs"/);
-    expect(script).toMatch(/"\/tmp\/cli\.ts"/);
+    // cliPath is now wrapped as file:// URL (see change: fix-windows-entry-script-url)
+    expect(script).toMatch(/"file:\/\/\/tmp\/cli\.ts"/);
     expect(script).toMatch(/"start"/);
   });
 
   it("omits --import when loader is empty", () => {
     const script = buildOrchestratorScript({ ...baseParams, loader: "" });
     expect(script).not.toMatch(/"--import"/);
-    expect(script).toMatch(/"\/tmp\/cli\.ts"/);
+    expect(script).toMatch(/"file:\/\/\/tmp\/cli\.ts"/);
     expect(script).toMatch(/"start"/);
   });
 
@@ -51,7 +52,10 @@ describe("buildOrchestratorScript", () => {
     expect(script).toMatch(/"start","--dev"/);
   });
 
-  it("safely embeds Windows paths with backslashes and drive letters", () => {
+  it("wraps Windows cliPath as file:// URL when loader is jiti (non-C: drives don't crash Node's ESM loader)", () => {
+    // Regression: before fix-windows-entry-script-url, cliPath was embedded
+    // as a raw path "B:\\Dev\\..." which Node's ESM loader rejects with
+    // ERR_UNSUPPORTED_ESM_URL_SCHEME because "b:" parses as a URL scheme.
     const winParams = {
       ...baseParams,
       cliPath: "B:\\Dev\\BB\\pi-agent-dashboard\\packages\\server\\src\\cli.ts",
@@ -59,13 +63,35 @@ describe("buildOrchestratorScript", () => {
       execPath: "C:\\Program Files\\nodejs\\node.exe",
     };
     const script = buildOrchestratorScript(winParams);
-    // Must be embedded via JSON.stringify (backslashes escaped, quotes preserved)
     expect(script).toContain(JSON.stringify(winParams.execPath));
-    expect(script).toContain(JSON.stringify(winParams.cliPath));
     expect(script).toContain(JSON.stringify(winParams.loader));
-    // Should not contain raw unescaped backslashes that would break the JS
-    // (we embed via JSON.stringify which escapes them to \\)
-    expect(script).toMatch(/B:\\\\Dev\\\\BB/);
+    // cliPath MUST be embedded as a file:// URL when loader is jiti
+    const expectedCliUrl = "file:///B:/Dev/BB/pi-agent-dashboard/packages/server/src/cli.ts";
+    expect(script).toContain(JSON.stringify(expectedCliUrl));
+    // Negative: the raw backslash form must NOT appear in the ARGS array
+    expect(script).not.toContain(JSON.stringify(winParams.cliPath));
+  });
+
+  it("keeps cliPath as RAW path when loader is tsx (tsx rejects file:// URL entries)", () => {
+    // Regression: tsx's ESM hook treats the entry as a user-typed specifier
+    // and attempts bare/relative resolution. A file:// URL becomes "<cwd>/file:/..."
+    // and crashes with ERR_MODULE_NOT_FOUND. This is the Linux dev-loop case
+    // (jiti not in repo node_modules, tsx fallback picked up).
+    const tsxParams = {
+      cliPath: "/home/u/repo/packages/server/src/cli.ts",
+      loader: "file:///home/u/repo/node_modules/tsx/dist/esm/index.mjs",
+      port: 8000,
+      extraArgs: [] as string[],
+      execPath: "/usr/bin/node",
+    };
+    const script = buildOrchestratorScript(tsxParams);
+    // Loader is still URL-wrapped (Node's --import requires file://)
+    expect(script).toContain(JSON.stringify(tsxParams.loader));
+    // Entry is the RAW path, NOT a file:// URL
+    expect(script).toContain(JSON.stringify(tsxParams.cliPath));
+    // Negative: must NOT contain the file:// URL form of the entry
+    const urlForm = "file://" + tsxParams.cliPath;
+    expect(script).not.toContain(JSON.stringify(urlForm));
   });
 
   it("references ~/.pi/dashboard/restart.log for failure logging", () => {

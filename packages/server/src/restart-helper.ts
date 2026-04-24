@@ -12,6 +12,7 @@
  * See change: fix-windows-server-parity.
  */
 import { spawn } from "@blackbelt-technology/pi-dashboard-shared/platform/exec.js";
+import { toFileUrl, isTsxLoader } from "@blackbelt-technology/pi-dashboard-shared/platform/node-spawn.js";
 import os from "node:os";
 import path from "node:path";
 
@@ -35,11 +36,20 @@ export interface RestartParams {
 export function buildOrchestratorScript(params: RestartParams): string {
   const execPath = params.execPath ?? process.execPath;
   const logPath = path.join(os.homedir(), ".pi", "dashboard", "restart.log");
+  // Loader is always URL-wrapped (required on Windows for non-C: drives).
+  // Entry is URL-wrapped EXCEPT when the loader is tsx — tsx's ESM hook
+  // rejects file:// URLs at the entry position. See change:
+  // fix-windows-entry-script-url.
+  const useRawEntry = isTsxLoader(params.loader);
   const spawnArgs: string[] = [];
   if (params.loader) {
-    spawnArgs.push("--import", params.loader);
+    spawnArgs.push("--import", toFileUrl(params.loader));
   }
-  spawnArgs.push(params.cliPath, "start", ...params.extraArgs);
+  spawnArgs.push(
+    useRawEntry ? params.cliPath : toFileUrl(params.cliPath),
+    "start",
+    ...params.extraArgs,
+  );
 
   // The script runs in a fresh Node process. Keep it self-contained and use
   // only built-ins (net, http, fs, child_process). JSON.stringify is used to

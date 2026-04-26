@@ -78,12 +78,13 @@ If, in the future, a third party ships a competing pi-extension implementing alt
 
 ## References
 
-- Umbrella: `openspec/changes/dashboard-plugin-architecture/`
+- Umbrella (archived; design implemented): `openspec/changes/archive/2026-04-26-dashboard-plugin-architecture/`
+- Canonical specs: `openspec/specs/dashboard-shell-slots/spec.md`, `openspec/specs/dashboard-plugin-loader/spec.md`
 - Sibling extractions:
   - `openspec/changes/extract-openspec-as-plugin/`
   - `openspec/changes/extract-flows-as-plugin/`
   - `openspec/changes/extract-subagents-as-plugin/`
-- Layout scan: `openspec/changes/dashboard-plugin-architecture/design.md` §"Current dashboard layout"
+- Layout scan: `openspec/changes/archive/2026-04-26-dashboard-plugin-architecture/design.md` §"Current dashboard layout"
 - Git's role in the dashboard: see `docs/architecture.md` §"Git Polling".
 
 ## Slot wiring guardrail

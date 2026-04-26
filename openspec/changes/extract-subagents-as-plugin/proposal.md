@@ -109,12 +109,13 @@ This validates the plugin architecture works for arbitrary external authors. It 
 
 ## References
 
-- Umbrella: `openspec/changes/dashboard-plugin-architecture/` — defines `tool-renderer` slot and Future Work for `node_modules` scanning.
+- Umbrella (archived; design implemented): `openspec/changes/archive/2026-04-26-dashboard-plugin-architecture/` — defines `tool-renderer` slot and Future Work for `node_modules` scanning.
+- Canonical specs: `openspec/specs/dashboard-shell-slots/spec.md` (slot taxonomy including `tool-renderer`), `openspec/specs/dashboard-plugin-loader/spec.md` (manifest format, plugin context).
 - Sibling extractions:
   - `openspec/changes/extract-openspec-as-plugin/`
   - `openspec/changes/extract-flows-as-plugin/` (introduces the reducer-slice registration mechanism this plugin uses)
 - Upstream: [`@tintinweb/pi-subagents`](https://www.npmjs.com/package/@tintinweb/pi-subagents) — the npm package whose tools this plugin renders.
-- Layout scan: `openspec/changes/dashboard-plugin-architecture/design.md` §"Current dashboard layout" for the broader picture.
+- Layout scan: `openspec/changes/archive/2026-04-26-dashboard-plugin-architecture/design.md` §"Current dashboard layout" for the broader picture.
 
 ## Slot wiring guardrail
 

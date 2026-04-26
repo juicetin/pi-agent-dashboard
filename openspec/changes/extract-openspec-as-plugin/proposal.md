@@ -68,9 +68,10 @@ None. This change is a refactor that uses `dashboard-shell-slots` and `dashboard
 
 ## References
 
-- Umbrella: `openspec/changes/dashboard-plugin-architecture/`
+- Umbrella (archived; design implemented): `openspec/changes/archive/2026-04-26-dashboard-plugin-architecture/`
+- Canonical specs: `openspec/specs/dashboard-shell-slots/spec.md`, `openspec/specs/dashboard-plugin-loader/spec.md`
 - Sibling extraction: `openspec/changes/extract-flows-as-plugin/`
-- Layout scan results: `openspec/changes/dashboard-plugin-architecture/design.md` §"Current dashboard layout"
+- Layout scan results: `openspec/changes/archive/2026-04-26-dashboard-plugin-architecture/design.md` §"Current dashboard layout"
 - Existing OpenSpec capabilities currently in `openspec/specs/`: `openspec-polling`, `openspec-archive`, `openspec-attach-detach`, `openspec-tasks-popover`, etc. (final list confirmed during implementation).
 
 ## Slot wiring guardrail

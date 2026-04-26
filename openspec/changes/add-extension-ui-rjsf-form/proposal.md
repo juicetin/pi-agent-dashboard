@@ -36,5 +36,6 @@ None — extends `extension-ui-system`.
 
 - Design: `openspec/changes/extension-ui-system/design.md` §"RJSF: Phase 4, forms-only"
 - RJSF: https://github.com/rjsf-team/react-jsonschema-form
-- Phase 1: `openspec/changes/add-extension-ui-modal/`
-- Phase 2: `openspec/changes/add-extension-ui-decorations/`
+- Phase 1 (archived; shipped): `openspec/changes/archive/2026-04-26-add-extension-ui-modal/`
+- Phase 2 (archived; shipped): `openspec/changes/archive/2026-04-26-add-extension-ui-decorations/`
+- Canonical Phase 1 + 2 requirements: `openspec/specs/extension-ui-system/spec.md`

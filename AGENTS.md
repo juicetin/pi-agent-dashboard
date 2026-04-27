@@ -344,7 +344,8 @@ make clean              # Destroy all cloned VMs
 | `packages/electron/scripts/test-electron-install.sh` | Full e2e Docker test: install, wizard, server launch, health check |
 | `packages/electron/scripts/test-electron-install-inner.sh` | Inner test script run inside Docker container |
 | `packages/electron/resources/icon.png` | Master 1024×1024 app icon (π on dark navy) |
-| `.github/workflows/publish.yml` | CI: builds DMG (macOS), DEB+AppImage (Linux), NSIS+ZIP+portable (Windows) on native runners; publishes npm + GitHub Release |
+| `.github/workflows/publish.yml` | CI: builds DMG (macOS), DEB+AppImage (Linux), NSIS+ZIP+portable (Windows) on native runners; publishes npm + GitHub Release. **Trigger:** push of any `v*` tag. |
+| `.github/workflows/release-trigger.yml` | Manual release dispatcher (mirrors the judo-ng `release.yml` pattern). `workflow_dispatch` inputs: `version` (semver string or `"Auto"` to bump patch), `prerelease` (boolean), `dry_run` (boolean). Bumps every workspace `package.json`, runs `scripts/sync-versions.js`, promotes `## [Unreleased]` to a dated `## [<version>]` section in `CHANGELOG.md`, commits + tags + pushes — the existing `publish.yml` then auto-fires from the tag push. Pre-flight gates lint/test/build before mutating develop. With `dry_run=true` it computes everything and prints the diff but commits nothing. |
 
 ## Build & Restart Workflow
 

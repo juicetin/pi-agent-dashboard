@@ -1,0 +1,199 @@
+/**
+ * Generic row component used by every group of the unified packages
+ * Settings section (Core, Recommended Extensions, Other Packages).
+ *
+ * Visual language is derived from the original PiCoreVersionsSection
+ * row (display name, source caption, badge, version pill, optional
+ * Update). Generalized to take an optional kebab menu with Uninstall /
+ * View README / Reset actions.
+ *
+ * See change: consolidate-packages-settings-ui.
+ */
+import React, { useEffect, useRef, useState } from "react";
+import { Icon } from "@mdi/react";
+import {
+	mdiAlertCircle,
+	mdiArrowUpBold,
+	mdiCheckCircle,
+	mdiDotsVertical,
+	mdiLoading,
+} from "@mdi/js";
+import type { SourceType } from "../lib/package-classifier.js";
+
+export interface PackageRowProps {
+	displayName: string;
+	source: string;
+	sourceType: SourceType;
+	isBundled?: boolean;
+	isDev?: boolean;
+	currentVersion?: string;
+	latestVersion?: string | null;
+	updateAvailable?: boolean;
+	busy?: boolean;
+	progress?: string;
+	error?: string;
+	canUpdate?: boolean;
+	canUninstall?: boolean;
+	onUpdate?: () => void;
+	onUninstall?: () => void;
+	onViewReadme?: () => void;
+	onReset?: () => void;
+	testId?: string;
+}
+
+const SOURCE_BADGE_STYLE: Record<SourceType, string> = {
+	npm: "border-[var(--border-secondary)] text-[var(--text-muted)]",
+	git: "border-purple-500/40 text-purple-400",
+	local: "border-teal-500/40 text-teal-400",
+	global: "border-blue-500/40 text-blue-400",
+};
+
+function Badge({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+	return (
+		<span
+			className={`text-[10px] px-1.5 py-0.5 rounded border ${className}`}
+		>
+			{children}
+		</span>
+	);
+}
+
+export function PackageRow({
+	displayName,
+	source,
+	sourceType,
+	isBundled,
+	isDev,
+	currentVersion,
+	latestVersion,
+	updateAvailable,
+	busy,
+	progress,
+	error,
+	canUpdate = true,
+	canUninstall = false,
+	onUpdate,
+	onUninstall,
+	onViewReadme,
+	onReset,
+	testId,
+}: PackageRowProps) {
+	const [menuOpen, setMenuOpen] = useState(false);
+	const menuRef = useRef<HTMLDivElement | null>(null);
+
+	useEffect(() => {
+		if (!menuOpen) return;
+		const onDocClick = (e: MouseEvent) => {
+			if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+				setMenuOpen(false);
+			}
+		};
+		document.addEventListener("mousedown", onDocClick);
+		return () => document.removeEventListener("mousedown", onDocClick);
+	}, [menuOpen]);
+
+	const hasMenu =
+		(canUninstall && !!onUninstall) || !!onViewReadme || !!onReset;
+
+	return (
+		<div
+			className="py-1.5 px-2 rounded hover:bg-[var(--bg-hover)] text-xs"
+			data-testid={testId}
+		>
+			<div className="flex items-center justify-between gap-2">
+				<div className="min-w-0 flex-1">
+					<div className="flex items-center gap-2 flex-wrap">
+						<span className="text-[var(--text-primary)] font-medium">{displayName}</span>
+						<Badge className={SOURCE_BADGE_STYLE[sourceType]}>{sourceType}</Badge>
+						{isBundled && (
+							<Badge className="border-amber-500/40 text-amber-400">bundled</Badge>
+						)}
+						{isDev && (
+							<span className="text-[10px] italic text-[var(--text-muted)]">dev</span>
+						)}
+					</div>
+					<code className="text-[10px] text-[var(--text-muted)] font-mono break-all">{source}</code>
+				</div>
+				<div className="flex items-center gap-2 flex-shrink-0">
+					{updateAvailable && currentVersion && latestVersion ? (
+						<span className="text-[10px] text-[var(--text-muted)]">
+							<span className="text-[var(--text-secondary)]">{currentVersion}</span>
+							{" → "}
+							<span className="text-[var(--accent-primary)]">{latestVersion}</span>
+						</span>
+					) : currentVersion ? (
+						<span className="text-[10px] text-[var(--text-muted)] flex items-center gap-1">
+							<Icon path={mdiCheckCircle} size={0.45} className="text-green-500" />
+							{currentVersion}
+							{latestVersion === null && (
+								<span className="italic">(registry unreachable)</span>
+							)}
+						</span>
+					) : null}
+					{updateAvailable && canUpdate && onUpdate && (
+						<button
+							onClick={onUpdate}
+							disabled={busy}
+							className="px-2 py-0.5 rounded bg-[var(--accent-primary)]/20 text-[var(--accent-primary)] hover:bg-[var(--accent-primary)]/30 disabled:opacity-50 flex items-center gap-1"
+							data-testid={testId ? `${testId}-update` : undefined}
+						>
+							{busy ? <Icon path={mdiLoading} size={0.45} spin /> : <Icon path={mdiArrowUpBold} size={0.45} />}
+							Update
+						</button>
+					)}
+					{hasMenu && (
+						<div ref={menuRef} className="relative">
+							<button
+								onClick={() => setMenuOpen((v) => !v)}
+								className="p-1 rounded text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
+								title="More actions"
+								data-testid={testId ? `${testId}-menu` : undefined}
+							>
+								<Icon path={mdiDotsVertical} size={0.55} />
+							</button>
+							{menuOpen && (
+								<div className="absolute right-0 top-full mt-1 z-10 min-w-[140px] rounded border border-[var(--border-secondary)] bg-[var(--bg-secondary)] shadow-lg py-1 text-xs">
+									{onViewReadme && (
+										<button
+											className="block w-full text-left px-3 py-1.5 hover:bg-[var(--bg-hover)] text-[var(--text-primary)]"
+											onClick={() => { setMenuOpen(false); onViewReadme(); }}
+										>
+											View README
+										</button>
+									)}
+									{onReset && (
+										<button
+											className="block w-full text-left px-3 py-1.5 hover:bg-[var(--bg-hover)] text-[var(--text-primary)]"
+											onClick={() => { setMenuOpen(false); onReset(); }}
+										>
+											Reset (reinstall)
+										</button>
+									)}
+									{canUninstall && onUninstall && (
+										<button
+											className="block w-full text-left px-3 py-1.5 hover:bg-red-400/10 text-red-400"
+											onClick={() => { setMenuOpen(false); onUninstall(); }}
+										>
+											Uninstall
+										</button>
+									)}
+								</div>
+							)}
+						</div>
+					)}
+				</div>
+			</div>
+			{busy && progress && (
+				<div className="text-[10px] text-[var(--text-muted)] font-mono mt-0.5 truncate" title={progress}>
+					{progress}
+				</div>
+			)}
+			{error && (
+				<div className="text-[10px] text-red-400 mt-0.5 flex items-start gap-1">
+					<Icon path={mdiAlertCircle} size={0.4} className="flex-shrink-0 mt-0.5" />
+					<span>{error}</span>
+				</div>
+			)}
+		</div>
+	);
+}

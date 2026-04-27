@@ -1,0 +1,324 @@
+/**
+ * Unified Settings → Packages section. Renders a single "Pi Ecosystem"
+ * header followed by three sub-groups (Core / Recommended Extensions /
+ * Other Packages), each using the same `<PackageRow>` component.
+ *
+ * Replaces the two prior sibling sections (`PiCoreVersionsSection` and
+ * the inline "Installed Global Packages" block in `SettingsPanel.tsx`).
+ *
+ * See change: consolidate-packages-settings-ui.
+ */
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { Icon } from "@mdi/react";
+import {
+	mdiAlertCircle,
+	mdiArrowUpBold,
+	mdiLoading,
+	mdiRefresh,
+} from "@mdi/js";
+import { getApiBase } from "../lib/api-context.js";
+import { usePiCoreVersions } from "../hooks/usePiCoreVersions.js";
+import { useInstalledPackages } from "../hooks/useInstalledPackages.js";
+import { usePackageOperations } from "../hooks/usePackageOperations.js";
+import { PackageRow } from "./PackageRow.js";
+import {
+	classifySource,
+	groupInstalledPackages,
+} from "../lib/package-classifier.js";
+import type {
+	InstalledPackage,
+	PiCorePackage,
+	PiCoreUpdateResponse,
+} from "@blackbelt-technology/pi-dashboard-shared/rest-api.js";
+import type { NpmPackageResult } from "@blackbelt-technology/pi-dashboard-shared/rest-api.js";
+import { PackageReadmeDialog } from "./PackageReadmeDialog.js";
+
+type ProgressMap = Map<string, { phase: "start" | "output" | "complete" | "error"; message?: string }>;
+
+function relativeTime(iso: string): string {
+	const then = new Date(iso).getTime();
+	if (isNaN(then)) return iso;
+	const diff = Math.floor((Date.now() - then) / 1000);
+	if (diff < 5) return "just now";
+	if (diff < 60) return `${diff}s ago`;
+	if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+	if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+	return `${Math.floor(diff / 86400)}d ago`;
+}
+
+export function UnifiedPackagesSection() {
+	// ── Core data (Pi Ecosystem core: pi, pi-dashboard, pi-model-proxy) ──
+	const { status, isLoading, error, refresh } = usePiCoreVersions();
+	const [coreUpdating, setCoreUpdating] = useState<Set<string>>(new Set());
+	const [coreProgress, setCoreProgress] = useState<ProgressMap>(new Map());
+	const [coreErrors, setCoreErrors] = useState<Map<string, string>>(new Map());
+
+	// Live tick for "last checked N min ago"
+	const [, setTick] = useState(0);
+	useEffect(() => {
+		const id = setInterval(() => setTick((n) => n + 1), 30_000);
+		return () => clearInterval(id);
+	}, []);
+
+	// Core update WS listener (mirrors PiCoreVersionsSection).
+	useEffect(() => {
+		const handler = (e: Event) => {
+			const msg = (e as CustomEvent).detail;
+			if (msg?.type === "pi_core_update_progress") {
+				setCoreProgress((prev) => {
+					const next = new Map(prev);
+					next.set(msg.name, { phase: msg.phase, message: msg.message });
+					return next;
+				});
+			} else if (msg?.type === "pi_core_update_complete") {
+				setCoreUpdating(new Set());
+				setCoreProgress(new Map());
+				const errs = new Map<string, string>();
+				for (const r of (msg.results ?? []) as Array<{ name: string; success: boolean; error?: string }>) {
+					if (!r.success && r.error) errs.set(r.name, r.error);
+				}
+				setCoreErrors(errs);
+			}
+		};
+		window.addEventListener("pi-core-event", handler);
+		return () => window.removeEventListener("pi-core-event", handler);
+	}, []);
+
+	const doCoreUpdate = useCallback(
+		async (packages: string[]) => {
+			if (packages.length === 0) return;
+			setCoreUpdating(new Set(packages));
+			setCoreErrors(new Map());
+			try {
+				const res = await fetch(`${getApiBase()}/api/pi-core/update`, {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({ packages }),
+				});
+				const body = await res.json();
+				if (!body.success) {
+					const errs = new Map<string, string>();
+					for (const name of packages) errs.set(name, body.error ?? "Update failed");
+					setCoreErrors(errs);
+					setCoreUpdating(new Set());
+				} else {
+					const data = body.data as PiCoreUpdateResponse;
+					const errs = new Map<string, string>();
+					for (const r of data.results) if (!r.success && r.error) errs.set(r.name, r.error);
+					setCoreErrors(errs);
+					setCoreUpdating(new Set());
+					refresh(true);
+				}
+			} catch (err: any) {
+				const errs = new Map<string, string>();
+				for (const name of packages) errs.set(name, err?.message ?? "Network error");
+				setCoreErrors(errs);
+				setCoreUpdating(new Set());
+			}
+		},
+		[refresh],
+	);
+
+	const corePackages: PiCorePackage[] = status?.packages ?? [];
+	const updatableCore = useMemo(
+		() => corePackages.filter((p) => p.updateAvailable),
+		[corePackages],
+	);
+
+	// ── Installed-packages data (recommended + other) ─────────────────────
+	const installed = useInstalledPackages("global");
+	const operations = usePackageOperations("global", undefined, installed.refresh);
+	const [updatesAvailable, setUpdatesAvailable] = useState<Set<string>>(new Set());
+	const [checkingUpdates, setCheckingUpdates] = useState(false);
+	const [readmePkg, setReadmePkg] = useState<NpmPackageResult | null>(null);
+
+	const handleCheckUpdates = useCallback(async () => {
+		setCheckingUpdates(true);
+		try {
+			const res = await fetch(`${getApiBase()}/api/packages/check-updates`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: "{}",
+			});
+			const body = await res.json();
+			if (body.success) {
+				setUpdatesAvailable(new Set(body.data.map((u: any) => u.source)));
+			}
+		} catch {
+			/* ignore */
+		}
+		setCheckingUpdates(false);
+		// Also refresh Core data so a single click covers the whole section.
+		refresh(true);
+	}, [refresh]);
+
+	// Group installed rows: Core whitelist members are dropped (Core wins).
+	const coreNpmNames = useMemo(() => corePackages.map((p) => p.name), [corePackages]);
+	const { recommended, other } = useMemo(
+		() => groupInstalledPackages(installed.packages, coreNpmNames),
+		[installed.packages, coreNpmNames],
+	);
+
+	const renderInstalledRow = (pkg: InstalledPackage) => {
+		const opSource = pkg.source;
+		const busy = operations.runningSource === opSource;
+		const opStatus = operations.statusFor(opSource);
+		const opMessage = operations.messageFor(opSource);
+		return (
+			<PackageRow
+				key={pkg.source}
+				displayName={pkg.displayName ?? pkg.source}
+				source={pkg.source}
+				sourceType={classifySource(pkg.source)}
+				isBundled={!!pkg.isBundled}
+				currentVersion={pkg.version}
+				updateAvailable={updatesAvailable.has(pkg.source)}
+				busy={busy}
+				progress={busy ? opMessage : undefined}
+				error={opStatus === "error" ? opMessage : undefined}
+				canUpdate={true}
+				canUninstall={true}
+				onUpdate={() => operations.update(pkg.source)}
+				onUninstall={() => operations.remove(pkg.source)}
+				onViewReadme={
+					pkg.source.startsWith("npm:")
+						? () => {
+								const name = pkg.source.slice(4).split("@")[0];
+								setReadmePkg({ name } as any);
+							}
+						: undefined
+				}
+				testId={`pkg-row-${pkg.source.replace(/[^a-z0-9]/gi, "-")}`}
+			/>
+		);
+	};
+
+	return (
+		<div>
+			<h2 className="text-sm font-semibold text-[var(--text-primary)] mb-3 pb-1 border-b border-[var(--border-secondary)] flex items-center justify-between">
+				<span>Pi Ecosystem</span>
+				<div className="flex items-center gap-2">
+					{status?.lastChecked && (
+						<span className="text-[10px] font-normal text-[var(--text-muted)]">
+							Last checked: {relativeTime(status.lastChecked)}
+						</span>
+					)}
+					<button
+						onClick={() => {
+							refresh(true);
+							handleCheckUpdates();
+						}}
+						disabled={isLoading || checkingUpdates}
+						className="text-xs px-2 py-1 rounded border border-[var(--border-secondary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--border-primary)] disabled:opacity-50 flex items-center gap-1"
+						data-testid="unified-pkg-check-now"
+					>
+						<Icon path={isLoading || checkingUpdates ? mdiLoading : mdiRefresh} size={0.5} spin={isLoading || checkingUpdates} />
+						{isLoading || checkingUpdates ? "Checking..." : "Check Now"}
+					</button>
+				</div>
+			</h2>
+
+			<p className="text-xs text-[var(--text-tertiary)] mb-3">
+				Pi tooling, recommended extensions, and any other packages your pi loads.
+			</p>
+
+			{error && (
+				<div className="mb-2 p-2 rounded bg-red-500/10 border border-red-500/30 text-red-400 text-xs flex items-start gap-2">
+					<Icon path={mdiAlertCircle} size={0.6} className="flex-shrink-0 mt-0.5" />
+					<span>{error}</span>
+				</div>
+			)}
+
+			{/* ── Core sub-group ─────────────────────────────────────────── */}
+			<SubGroupHeader title="Core" />
+			{corePackages.length === 0 ? (
+				<EmptyHint>No pi ecosystem core packages detected.</EmptyHint>
+			) : (
+				<>
+					{updatableCore.length > 1 && (
+						<div className="mb-2">
+							<button
+								onClick={() => doCoreUpdate(updatableCore.map((p) => p.name))}
+								disabled={coreUpdating.size > 0}
+								className="text-xs px-3 py-1 rounded bg-[var(--accent-primary)]/20 text-[var(--accent-primary)] hover:bg-[var(--accent-primary)]/30 disabled:opacity-50 flex items-center gap-1"
+								data-testid="pi-core-update-all"
+							>
+								<Icon path={coreUpdating.size > 0 ? mdiLoading : mdiArrowUpBold} size={0.55} spin={coreUpdating.size > 0} />
+								Update All ({updatableCore.length})
+							</button>
+						</div>
+					)}
+					<div className="space-y-1 mb-4">
+						{corePackages.map((pkg) => (
+							<PackageRow
+								key={pkg.name}
+								displayName={pkg.displayName}
+								source={pkg.name}
+								sourceType={pkg.installSource === "managed" ? "local" : "global"}
+								currentVersion={pkg.currentVersion}
+								latestVersion={pkg.latestVersion}
+								updateAvailable={pkg.updateAvailable}
+								busy={coreUpdating.has(pkg.name)}
+								progress={coreProgress.get(pkg.name)?.message}
+								error={coreErrors.get(pkg.name)}
+								canUpdate={true}
+								canUninstall={false}
+								onUpdate={() => doCoreUpdate([pkg.name])}
+								testId={`pi-core-row-${pkg.name}`}
+							/>
+						))}
+					</div>
+				</>
+			)}
+
+			{/* ── Recommended Extensions sub-group ───────────────────────── */}
+			<SubGroupHeader title="Recommended Extensions" />
+			{recommended.length === 0 ? (
+				<EmptyHint>No recommended extensions installed.</EmptyHint>
+			) : (
+				<div className="space-y-1 mb-4">{recommended.map(renderInstalledRow)}</div>
+			)}
+
+			{/* ── Other Packages sub-group ───────────────────────────────── */}
+			<SubGroupHeader title="Other Packages" />
+			{other.length === 0 ? (
+				<EmptyHint>Locally-developed and user-added packages will appear here.</EmptyHint>
+			) : (
+				<div className="space-y-1 mb-2">{other.map(renderInstalledRow)}</div>
+			)}
+
+			{readmePkg && (
+				<PackageReadmeDialog
+					pkg={readmePkg}
+					installed={installed.packages.some((p) => p.source === `npm:${readmePkg.name}`)}
+					onInstall={() => {
+						operations.install(`npm:${readmePkg.name}`);
+						setReadmePkg(null);
+					}}
+					onUninstall={() => {
+						operations.remove(`npm:${readmePkg.name}`);
+						setReadmePkg(null);
+					}}
+					onClose={() => setReadmePkg(null)}
+				/>
+			)}
+		</div>
+	);
+}
+
+function SubGroupHeader({ title, right }: { title: string; right?: React.ReactNode }) {
+	return (
+		<div className="flex items-center justify-between mt-2 mb-1.5">
+			<h3 className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wide">
+				{title}
+			</h3>
+			{right}
+		</div>
+	);
+}
+
+function EmptyHint({ children }: { children: React.ReactNode }) {
+	return (
+		<p className="text-xs text-[var(--text-muted)] italic mb-3">{children}</p>
+	);
+}

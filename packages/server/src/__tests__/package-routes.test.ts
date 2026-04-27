@@ -88,11 +88,43 @@ describe("package-routes", () => {
   });
 
   describe("GET /api/packages/installed", () => {
-    it("returns installed packages", async () => {
+    it("returns installed packages with enrichment fields", async () => {
       const res = await app.inject({ method: "GET", url: "/api/packages/installed?scope=global" });
       expect(res.statusCode).toBe(200);
       const body = JSON.parse(res.body);
-      expect(body.data[0].source).toBe("npm:pi-doom");
+      const row = body.data[0];
+      expect(row.source).toBe("npm:pi-doom");
+      // Enrichment fields are present on every row.
+      expect(row).toHaveProperty("displayName");
+      expect(row).toHaveProperty("isRecommended");
+      expect(row).toHaveProperty("isBundled");
+      // pi-doom is not in RECOMMENDED_EXTENSIONS — falls back to basename.
+      expect(row.displayName).toBe("pi-doom");
+      expect(row.isRecommended).toBe(false);
+      expect(row.isBundled).toBe(false);
+    });
+
+    it("matches a row to RECOMMENDED_EXTENSIONS by source", async () => {
+      wrapper.listInstalled.mockReturnValueOnce([
+        { source: "npm:@tintinweb/pi-subagents", scope: "user", filtered: false },
+      ]);
+      const res = await app.inject({ method: "GET", url: "/api/packages/installed?scope=global" });
+      const body = JSON.parse(res.body);
+      const row = body.data[0];
+      expect(row.isRecommended).toBe(true);
+      // displayName comes from the recommended manifest.
+      expect(row.displayName).toBe("@tintinweb/pi-subagents");
+    });
+
+    it("missing installedPath does not break enrichment", async () => {
+      wrapper.listInstalled.mockReturnValueOnce([
+        { source: "npm:weirdpkg", scope: "user", filtered: false },
+      ]);
+      const res = await app.inject({ method: "GET", url: "/api/packages/installed?scope=global" });
+      expect(res.statusCode).toBe(200);
+      const body = JSON.parse(res.body);
+      expect(body.data[0].version).toBeUndefined();
+      expect(body.data[0].displayName).toBe("weirdpkg");
     });
   });
 

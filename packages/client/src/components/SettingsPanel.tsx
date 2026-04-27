@@ -15,7 +15,7 @@ import { PackageInstallConfirmDialog } from "./PackageInstallConfirmDialog.js";
 import { PackageReadmeDialog } from "./PackageReadmeDialog.js";
 import { useInstalledPackages } from "../hooks/useInstalledPackages.js";
 import { usePackageOperations } from "../hooks/usePackageOperations.js";
-import { PiCoreVersionsSection } from "./PiCoreVersionsSection.js";
+import { UnifiedPackagesSection } from "./UnifiedPackagesSection.js";
 import type { NpmPackageResult } from "@blackbelt-technology/pi-dashboard-shared/rest-api.js";
 
 interface ProviderConfig {
@@ -537,8 +537,8 @@ export function SettingsPanel({ availableModels }: { availableModels?: Array<{ p
           {/* Advanced Tab */}
           {activeTab === "packages" && (
             <div className="space-y-6">
-              <PiCoreVersionsSection />
-              <GlobalPackagesSection />
+              <UnifiedPackagesSection />
+              <GlobalPackagesBrowseAndDialogs />
             </div>
           )}
 
@@ -1002,27 +1002,18 @@ const API_TYPE_OPTIONS = [
   { value: "google-vertex", label: "Google Vertex AI" },
 ];
 
-// ─── Global Packages Section ──────────────────────────────────────────────────
+// ─── Global Packages Browse + Confirm-install Dialog ──────────────────────────
+//
+// The unified packages section above handles the installed-rows view
+// and the README dialog. This section keeps only the Browse Packages
+// search UI and its install-confirm dialog. See change:
+// consolidate-packages-settings-ui.
 
-function GlobalPackagesSection() {
+function GlobalPackagesBrowseAndDialogs() {
   const installed = useInstalledPackages("global");
   const operations = usePackageOperations("global", undefined, installed.refresh);
   const [confirmInstall, setConfirmInstall] = useState<{ source: string; pkg?: NpmPackageResult } | null>(null);
   const [readmePkg, setReadmePkg] = useState<NpmPackageResult | null>(null);
-  const [checking, setChecking] = useState(false);
-  const [updatesAvailable, setUpdatesAvailable] = useState<Set<string>>(new Set());
-
-  const handleCheckUpdates = async () => {
-    setChecking(true);
-    try {
-      const res = await fetch(`${getApiBase()}/api/packages/check-updates`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
-      const body = await res.json();
-      if (body.success) {
-        setUpdatesAvailable(new Set(body.data.map((u: any) => u.source)));
-      }
-    } catch { /* ignore */ }
-    setChecking(false);
-  };
 
   const handleConfirmInstall = (source: string, pkg?: NpmPackageResult) => {
     setConfirmInstall({ source, pkg });
@@ -1036,58 +1027,6 @@ function GlobalPackagesSection() {
 
   return (
     <>
-      {/* Installed packages */}
-      <Section title="Installed Global Packages">
-        <div className="flex items-center gap-2 mb-2">
-          <button
-            onClick={handleCheckUpdates}
-            disabled={checking}
-            className="text-xs px-2 py-1 rounded border border-[var(--border-secondary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--border-primary)] disabled:opacity-50"
-          >
-            <Icon path={mdiUpdate} size={0.45} className="inline mr-0.5" />{checking ? "Checking..." : "Check for Updates"}
-          </button>
-        </div>
-        {installed.packages.length === 0 ? (
-          <p className="text-xs text-[var(--text-muted)] italic">No global packages installed.</p>
-        ) : (
-          <div className="space-y-1">
-            {installed.packages.map((pkg) => (
-              <div key={pkg.source} className="flex items-center justify-between py-1.5 px-2 rounded hover:bg-[var(--bg-hover)] text-xs">
-                <span className="text-[var(--text-primary)] font-mono">{pkg.source}</span>
-                <div className="flex items-center gap-1.5">
-                  {updatesAvailable.has(pkg.source) && (
-                    <button
-                      onClick={() => operations.update(pkg.source)}
-                      disabled={operations.operation.status === "running"}
-                      className="px-2 py-0.5 rounded bg-[var(--accent-primary)]/20 text-[var(--accent-primary)] hover:bg-[var(--accent-primary)]/30 disabled:opacity-50"
-                    >
-                      Update
-                    </button>
-                  )}
-                  <button
-                    onClick={() => operations.remove(pkg.source)}
-                    disabled={operations.operation.status === "running"}
-                    className="px-2 py-0.5 rounded text-red-400 hover:bg-red-400/10 disabled:opacity-50"
-                  >
-                    Uninstall
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-        {operations.operation.status !== "idle" && (
-          <div className={`mt-2 text-xs px-2 py-1 rounded ${
-            operations.operation.status === "running" ? "bg-blue-500/10 text-blue-400"
-              : operations.operation.status === "success" ? "bg-green-500/10 text-green-400"
-                : "bg-red-500/10 text-red-400"
-          }`}>
-            {operations.operation.message}
-          </div>
-        )}
-      </Section>
-
-      {/* Browse packages */}
       <Section title="Browse Packages">
         <PackageBrowser
           scope="global"
@@ -1096,7 +1035,6 @@ function GlobalPackagesSection() {
         />
       </Section>
 
-      {/* Dialogs */}
       {confirmInstall && (
         <PackageInstallConfirmDialog
           source={confirmInstall.source}

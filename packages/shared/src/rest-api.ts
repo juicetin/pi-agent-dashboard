@@ -254,6 +254,16 @@ export interface InstalledPackage {
   installedPath?: string;
   /** Set after check-updates: true if newer version available */
   updateAvailable?: boolean;
+  /** Version read from `<installedPath>/package.json#version`. Undefined if missing/unreadable. */
+  version?: string;
+  /** Description read from `<installedPath>/package.json#description`. */
+  description?: string;
+  /** Friendly name. From RECOMMENDED_EXTENSIONS displayName when matched, else basename of source. */
+  displayName?: string;
+  /** True when this row matches a RECOMMENDED_EXTENSIONS entry (via sourcesMatch). */
+  isRecommended?: boolean;
+  /** True when isRecommended AND id is in BUNDLED_EXTENSION_IDS AND bundle subtree exists. */
+  isBundled?: boolean;
 }
 
 export type InstalledPackagesResponse = ApiResponse<InstalledPackage[]>;

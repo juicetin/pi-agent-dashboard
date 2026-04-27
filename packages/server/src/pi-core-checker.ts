@@ -69,22 +69,17 @@ function resolveDisplayName(name: string): string {
 }
 
 /**
- * Heuristic to decide if a package is part of the pi ecosystem but NOT in
- * the known-names list above. Matches bare-name pi packages on npm:
- *   - bare `pi-<name>`
- *   - scoped `@<scope>/pi-<name>`
- * Note: extensions already managed by PackageManagerWrapper (via
- * `settings.json packages[]`) are deliberately included if they are ALSO
- * installed globally — the PiCoreChecker's discovery is a superset, and
- * the UI layer decides which surface to show a package in.
+ * Strict whitelist check: a package is part of the pi-ecosystem CORE
+ * tooling if and only if its name is in `CORE_PACKAGE_NAMES`. The
+ * previous `pi-*` name-prefix heuristic was removed because it caused
+ * recommended-extension packages (e.g. `pi-agent-browser`,
+ * `@tintinweb/pi-subagents`) to appear in BOTH the Core ecosystem panel
+ * and the Installed Packages panel. Recommended extensions are now
+ * surfaced exclusively through `/api/packages/installed`. See change:
+ * consolidate-packages-settings-ui.
  */
 function looksLikePiEcosystem(name: string): boolean {
-	if (CORE_PACKAGE_NAMES.includes(name)) return true;
-	// `pi-foo` or `pi` bare-scoped
-	if (/^pi-[a-z0-9-]+$/i.test(name)) return true;
-	// scoped variant: `@scope/pi-foo`
-	if (/^@[^/]+\/pi-[a-z0-9-]+$/i.test(name)) return true;
-	return false;
+	return CORE_PACKAGE_NAMES.includes(name);
 }
 
 export interface NpmListRunner {

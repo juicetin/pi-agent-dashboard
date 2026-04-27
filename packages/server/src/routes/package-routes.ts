@@ -6,6 +6,7 @@ import type { ApiResponse } from "@blackbelt-technology/pi-dashboard-shared/type
 import type { PackageManagerWrapper } from "../package-manager-wrapper.js";
 import { PackageOperationBusyError } from "../package-manager-wrapper.js";
 import { searchPackages, fetchReadme, PackageNotFoundError } from "../npm-search-proxy.js";
+import { enrichInstalledRows } from "../installed-package-enricher.js";
 
 export function registerPackageRoutes(
   fastify: FastifyInstance,
@@ -62,7 +63,8 @@ export function registerPackageRoutes(
       const cwd = request.query.cwd;
       try {
         const packages = await packageManagerWrapper.listInstalled(scope, cwd);
-        return { success: true, data: packages } satisfies ApiResponse;
+        const enriched = enrichInstalledRows(packages as any);
+        return { success: true, data: enriched } satisfies ApiResponse;
       } catch (err: any) {
         return { success: false, error: err.message } satisfies ApiResponse;
       }

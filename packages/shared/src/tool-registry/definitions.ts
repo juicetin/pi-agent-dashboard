@@ -22,6 +22,7 @@ import {
   overrideStrategy,
   whereStrategy,
 } from "./strategies.js";
+import type { Strategy } from "./types.js";
 
 // ── Classifier ──────────────────────────────────────────────────────────────
 
@@ -66,6 +67,68 @@ function moduleDefWithAliases(
   return { name: canonicalName, kind: "module", strategies, classify };
 }
 
+// ── Build-time module definitions (electron, node-pty) ────────────────────
+
+/**
+ * Bare-import strategy that resolves `<pkg>/package.json` and returns the
+ * containing directory. Used for build-time tools whose useful artifact is
+ * a sibling file of `package.json` (e.g. `electron/install.js`,
+ * `node-pty/prebuilds/`). Mirrors the semantics that build-time consumers
+ * (`publish.yml`, `Dockerfile.build`, `scripts/fix-pty-permissions.cjs`)
+ * need — see change: register-build-time-tools.
+ *
+ * `searchPaths` are passed to Node's resolver as the `paths` option,
+ * making the lookup work whether the package is hoisted to the repo root
+ * or nested under a workspace.
+ */
+function bareImportPackageDirStrategy(
+  pkgName: string,
+  searchPaths?: readonly string[],
+  deps?: StrategyDeps,
+): Strategy {
+  const fallbackResolve = (id: string, from: string): string | null => {
+    try {
+      if (searchPaths && searchPaths.length > 0) {
+        const req = createRequire(from) as unknown as {
+          resolve(id: string, opts?: { paths?: readonly string[] }): string;
+        };
+        return req.resolve(id, { paths: searchPaths });
+      }
+      return createRequire(from).resolve(id);
+    } catch {
+      return null;
+    }
+  };
+  const resolveModule = deps?.resolveModule ?? fallbackResolve;
+  return {
+    name: "bare-import",
+    run() {
+      const pkgJson = resolveModule(`${pkgName}/package.json`, import.meta.url);
+      if (!pkgJson) {
+        return { ok: false, reason: `cannot resolve ${pkgName}/package.json` };
+      }
+      return { ok: true, path: path.dirname(pkgJson) };
+    },
+  };
+}
+
+/** Module def that returns the package directory (containing package.json). */
+function packageDirModuleDef(
+  toolName: string,
+  pkgName: string,
+  options: { searchPaths?: readonly string[]; includeManaged?: boolean },
+  deps?: StrategyDeps,
+): ToolDefinition {
+  const strategies: Strategy[] = [
+    overrideStrategy(toolName, deps),
+    bareImportPackageDirStrategy(pkgName, options.searchPaths, deps),
+  ];
+  if (options.includeManaged) {
+    strategies.push(managedModuleStrategy(pkgName, "package.json", deps));
+  }
+  return { name: toolName, kind: "module", strategies, classify };
+}
+
 // ── Registration ─────────────────────────────────────────────────
 
 // Tools intentionally NOT registered:
@@ -76,6 +139,14 @@ function moduleDefWithAliases(
 //   - `pi-dashboard` — that's the package this code is part of.
 //     "Is it installed" is a bootstrap concern handled directly in
 //     `packages/electron/src/lib/dependency-detector.ts`.
+//
+// Build-time tools (see change: register-build-time-tools):
+//   - `electron`   — module, returns the package directory containing
+//                    `install.js`. Resolved with paths anchored at
+//                    `packages/electron` to handle hoisted vs. nested
+//                    layouts uniformly.
+//   - `node-pty`   — module, returns the package directory containing
+//                    `prebuilds/`. Standard module resolution suffices.
 // See change: consolidate-tool-resolution (follow-up).
 
 /**
@@ -330,6 +401,27 @@ export function registerDefaultTools(registry: ToolRegistry, deps?: StrategyDeps
       "pi-coding-agent",
       ["@mariozechner/pi-coding-agent", "@oh-my-pi/pi-coding-agent"],
       path.join("dist", "index.js"),
+      deps,
+    ),
+  );
+
+  // Build-time tools (see change: register-build-time-tools).
+  registry.register(
+    packageDirModuleDef(
+      "electron",
+      "electron",
+      {
+        searchPaths: [path.resolve("packages/electron")],
+        includeManaged: true,
+      },
+      deps,
+    ),
+  );
+  registry.register(
+    packageDirModuleDef(
+      "node-pty",
+      "node-pty",
+      { includeManaged: false },
       deps,
     ),
   );

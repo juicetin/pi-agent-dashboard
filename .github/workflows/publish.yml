@@ -88,8 +88,10 @@ jobs:
           # Use --ignore-scripts above, then rebuild only the modules we need.
           npm rebuild node-pty 2>&1 | tail -5 || true
           # Electron may be hoisted to root node_modules by npm workspaces,
-          # or nested under packages/electron/node_modules. Resolve dynamically.
-          ELECTRON_DIR=$(node -e "console.log(require('path').dirname(require.resolve('electron/package.json', { paths: ['packages/electron'] })))")
+          # or nested under packages/electron/node_modules. Resolve via the
+          # tool-registry shell wrapper so layout changes are absorbed in
+          # one place. See change: register-build-time-tools.
+          ELECTRON_DIR=$(node packages/shared/bin/pi-dashboard-resolve-tool.cjs electron)
           echo "Electron dir: $ELECTRON_DIR"
           cd "$ELECTRON_DIR" && node install.js 2>&1 | tail -5
 

@@ -1,13 +1,20 @@
 // ---------------------------------------------------------------------------
 // useImagePaste — reusable clipboard-image-paste state + handler.
 //
-// Extracted from CommandInput so the OpenSpec Explore dialog (and any
-// future textareas) can accept pasted screenshots/mockups with the same
-// behavior: supported-mime gate, 10MB cap, base64 data URLs, auto-
-// dismissing error message, array of pending images ready to ship in a
-// send_prompt's `images` field.
+// Supports two modes:
 //
-// Behavior:
+//   1. Uncontrolled (legacy): `useImagePaste()` with no args. The hook
+//      owns `pendingImages` in local `useState`. Used by the OpenSpec
+//      Explore dialog — its lifetime IS the dialog's lifetime, so a
+//      per-component state location is correct.
+//
+//   2. Controlled: `useImagePaste({ images, onImagesChange })`. The
+//      caller owns the array and gets a setter. Used by `<CommandInput>`
+//      so pending images can be lifted to App-level state keyed by
+//      sessionId — surviving route changes (Settings, terminals,
+//      OpenSpec preview, …) and not leaking across session switches.
+//
+// Behavior (identical in both modes):
 //   - Supported MIME types: image/jpeg, image/png, image/gif, image/webp
 //   - Max size: 10 MB of base64 (≈7.5 MB of raw bytes)
 //   - On unsupported/oversized paste: set `imageError` for 3 s, ignore the blob
@@ -15,10 +22,13 @@
 //   - `clearImages()` is meant to be called by the consumer after sending
 //     so the UI resets.
 //
+// `imageError` is local in BOTH modes — it auto-clears after 3 s and
+// has no value in surviving an unmount. Lifting it would force the
+// caller to manage a clear timeout for no user-visible benefit.
+//
 // The returned `handlePaste` swallows the clipboard event with
 // preventDefault when an image is handled, preventing the base64 data
-// URL from being inserted as text into the textarea — same guarantee
-// the original CommandInput logic gave.
+// URL from being inserted as text into the textarea.
 // ---------------------------------------------------------------------------
 
 import { useCallback, useState } from "react";
@@ -31,6 +41,13 @@ export const SUPPORTED_IMAGE_TYPES = new Set([
 	"image/gif",
 	"image/webp",
 ]);
+
+export interface UseImagePasteOptions {
+	/** When provided, the hook is controlled — caller owns the array. */
+	images?: ImageContent[];
+	/** Called whenever the images array would change. Required when `images` is provided. */
+	onImagesChange?: (next: ImageContent[]) => void;
+}
 
 export interface UseImagePasteResult {
 	/** Accumulated pasted images ready to attach to a send_prompt. */
@@ -45,9 +62,33 @@ export interface UseImagePasteResult {
 	clearImages: () => void;
 }
 
-export function useImagePaste(): UseImagePasteResult {
-	const [pendingImages, setPendingImages] = useState<ImageContent[]>([]);
+export function useImagePaste(opts?: UseImagePasteOptions): UseImagePasteResult {
+	const isControlled = opts?.images !== undefined;
+	const [localImages, setLocalImages] = useState<ImageContent[]>([]);
 	const [imageError, setImageError] = useState<string | null>(null);
+
+	// Source of truth for the current array.
+	const pendingImages = isControlled ? (opts!.images as ImageContent[]) : localImages;
+
+	// Setter that routes through the caller in controlled mode and through
+	// local state otherwise. Accepts a value or an updater function so call
+	// sites can use either.
+	const writeImages = useCallback(
+		(next: ImageContent[] | ((prev: ImageContent[]) => ImageContent[])) => {
+			if (isControlled) {
+				const onChange = opts?.onImagesChange;
+				if (!onChange) return;
+				const resolved =
+					typeof next === "function"
+						? (next as (p: ImageContent[]) => ImageContent[])(opts!.images as ImageContent[])
+						: next;
+				onChange(resolved);
+			} else {
+				setLocalImages(next as ImageContent[] | ((p: ImageContent[]) => ImageContent[]));
+			}
+		},
+		[isControlled, opts],
+	);
 
 	const handlePaste = useCallback((e: React.ClipboardEvent) => {
 		const items = e.clipboardData.items;
@@ -80,20 +121,20 @@ export function useImagePaste(): UseImagePasteResult {
 					return;
 				}
 
-				setPendingImages((prev) => [...prev, { type: "image", data: base64, mimeType }]);
+				writeImages((prev) => [...prev, { type: "image", data: base64, mimeType }]);
 			};
 			reader.readAsDataURL(blob);
 		}
-	}, []);
+	}, [writeImages]);
 
 	const removeImage = useCallback((index: number) => {
-		setPendingImages((prev) => prev.filter((_, i) => i !== index));
-	}, []);
+		writeImages((prev) => prev.filter((_, i) => i !== index));
+	}, [writeImages]);
 
 	const clearImages = useCallback(() => {
-		setPendingImages([]);
+		writeImages([]);
 		setImageError(null);
-	}, []);
+	}, [writeImages]);
 
 	return { pendingImages, imageError, handlePaste, removeImage, clearImages };
 }

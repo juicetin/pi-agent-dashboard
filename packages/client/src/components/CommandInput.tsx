@@ -31,6 +31,16 @@ interface Props {
   onDraftChange?: (text: string) => void;
   /** Previously sent user prompts for this session, newest-first, pre-deduped. */
   history?: string[];
+  /**
+   * Controlled pending pasted images. When provided, the parent owns the
+   * array (typically lifted to App keyed by sessionId so it survives route
+   * changes and doesn't leak across sessions). When omitted, the hook falls
+   * back to local state — used by tests and any caller that doesn't need
+   * cross-route persistence.
+   */
+  images?: ImageContent[];
+  /** Parent callback for every images-array change (controlled mode). */
+  onImagesChange?: (next: ImageContent[]) => void;
 }
 
 /**
@@ -90,7 +100,7 @@ function extractAtQuery(text: string): string | null {
 
 type StopState = "idle" | "aborting" | "killing";
 
-export function CommandInput({ commands: externalCommands, onSend, onListFiles, fileResults, disabled, sessionStatus, onAbort, onForceKill, pendingPrompt, onCancelPending, sessionId, draft, onDraftChange, history }: Props) {
+export function CommandInput({ commands: externalCommands, onSend, onListFiles, fileResults, disabled, sessionStatus, onAbort, onForceKill, pendingPrompt, onCancelPending, sessionId, draft, onDraftChange, history, images, onImagesChange }: Props) {
   // Merge server commands with built-in commands, avoiding duplicates
   const commands = useMemo(() => {
     const names = new Set(externalCommands.map((c) => c.name));
@@ -128,7 +138,11 @@ export function CommandInput({ commands: externalCommands, onSend, onListFiles, 
     setHistoryIndex(null);
     savedDraftRef.current = "";
   }, [sessionId]);
-  const { pendingImages, imageError, handlePaste, removeImage, clearImages } = useImagePaste();
+  // Controlled when caller passes `images` (App lifts state per-session);
+  // uncontrolled otherwise (legacy / tests).
+  const { pendingImages, imageError, handlePaste, removeImage, clearImages } = useImagePaste(
+    images !== undefined ? { images, onImagesChange } : undefined,
+  );
   const [dismissed, setDismissed] = useState<string | null>(null); // text value when Escape was pressed
   const prevDropdownKeyRef = useRef<string>(""); // tracks mode+filter to reset selectedIndex
   const inputRef = useRef<HTMLTextAreaElement>(null);

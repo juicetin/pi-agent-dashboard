@@ -70,6 +70,9 @@ const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
 const wsPort = window.location.port ? `:${window.location.port}` : "";
 const DEFAULT_WS_URL = `${wsProtocol}//${window.location.hostname}${wsPort}/ws`;
 const LAST_SERVER_KEY = "pi-dashboard-last-server";
+// Stable empty-array reference for sessions with no pending images.
+// Frozen so accidental mutation throws in strict mode.
+const EMPTY_IMAGES: readonly ImageContent[] = Object.freeze([]);
 
 function getInitialWsUrl(): string {
   const saved = localStorage.getItem(LAST_SERVER_KEY);
@@ -150,6 +153,14 @@ export default function App() {
   // Track the previous drafts snapshot so the persist effect can compute a
   // precise write-set (added/changed keys) and delete-set (removed/emptied keys).
   const prevDraftsRef = useRef<Map<string, string>>(drafts);
+  // Per-session pending pasted-image attachments. Lifted out of
+  // useImagePaste's local useState into App so they survive the
+  // unmount/remount of <CommandInput> caused by content-area route
+  // changes (Settings, terminals, OpenSpec preview, …) and so they
+  // do NOT leak across session switches. NOT persisted to
+  // localStorage — base64 blobs are large and per-reload reset is
+  // acceptable (see openspec/specs/chat-input-state).
+  const [pendingImagesMap, setPendingImagesMap] = useState<Map<string, ImageContent[]>>(new Map());
   const [sessionCommands, setSessionCommands] = useState<Map<string, CommandInfo[]>>(new Map());
   const [sessionFlows, setSessionFlows] = useState<Map<string, FlowInfo[]>>(new Map());
   const [fileResults, setFileResults] = useState<{ query: string; files: FileEntry[] } | null>(null);
@@ -358,6 +369,10 @@ export default function App() {
 
   // Per-session draft text + history recall for CommandInput.
   const selectedDraft = selectedId ? (drafts.get(selectedId) ?? "") : "";
+  // Per-session pending images. Returns the stable EMPTY_IMAGES ref
+  // when the session has no entry, so unrelated re-renders don't
+  // produce a fresh `[]` and re-render <CommandInput>.
+  const selectedImages = (selectedId ? pendingImagesMap.get(selectedId) : undefined) ?? (EMPTY_IMAGES as ImageContent[]);
   const selectedHistory = useMemo(
     () => extractUserPromptHistory(selectedState.messages),
     [selectedState.messages],
@@ -411,6 +426,36 @@ export default function App() {
     // Also clear from localStorage eagerly so a reload before the debounce
     // window fires doesn't resurrect the cleared draft.
     deleteDraft(sid);
+  }, []);
+
+  // Per-session pending-image setter. Mutates pendingImagesMap for the
+  // currently selected session. Deletes the entry when `next` is empty
+  // so the map doesn't accumulate empty arrays.
+  const setImagesForSelected = useCallback((next: ImageContent[]) => {
+    if (!selectedId) return;
+    setPendingImagesMap((m) => {
+      const existing = m.get(selectedId);
+      if (next.length === 0) {
+        if (!m.has(selectedId)) return m;
+        const out = new Map(m);
+        out.delete(selectedId);
+        return out;
+      }
+      if (existing === next) return m;
+      const out = new Map(m);
+      out.set(selectedId, next);
+      return out;
+    });
+  }, [selectedId]);
+
+  // Clear pending images for a specific session (used after a successful send).
+  const clearImagesForSession = useCallback((sid: string) => {
+    setPendingImagesMap((m) => {
+      if (!m.has(sid)) return m;
+      const next = new Map(m);
+      next.delete(sid);
+      return next;
+    });
   }, []);
 
   // Safety timeout: clear stuck pendingPrompt after 30s and show error
@@ -503,8 +548,11 @@ export default function App() {
       return;
     }
     handleSend(text, images);
-    if (selectedId) clearDraftForSession(selectedId);
-  }, [handleSend, selectedId, clearDraftForSession]);
+    if (selectedId) {
+      clearDraftForSession(selectedId);
+      clearImagesForSession(selectedId);
+    }
+  }, [handleSend, selectedId, clearDraftForSession, clearImagesForSession]);
 
   const openspecActions = useOpenSpecActions({ send, openspecMap, setPreviewState, clearAllContentViews });
   const {
@@ -993,6 +1041,8 @@ export default function App() {
             draft={selectedDraft}
             onDraftChange={setDraftForSelected}
             history={selectedHistory}
+            images={selectedImages}
+            onImagesChange={setImagesForSelected}
           />
           {flowPickerOpen && (() => {
             const hasFlowsNew = selectedCommands.some(c => c.name === "flows:new");

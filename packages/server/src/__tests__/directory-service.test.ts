@@ -226,6 +226,75 @@ describe("DirectoryService", () => {
 
       fs.rmSync(tmp, { recursive: true, force: true });
     });
+
+    it("applies design override (R3): tasks.md with checkboxes promotes design→done", async () => {
+      // See change: fix-openspec-design-detection.
+      const fs = await import("node:fs");
+      const os = await import("node:os");
+      const path = await import("node:path");
+      const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "ds-design-override-"));
+      const changeDir = path.join(tmp, "openspec", "changes", "change-x");
+      fs.mkdirSync(changeDir, { recursive: true });
+      fs.writeFileSync(path.join(changeDir, "tasks.md"), "## 1. Setup\n\n- [ ] 1.1 Do thing\n");
+
+      const { runOpenSpecList, runOpenSpecStatus } = await import("@blackbelt-technology/pi-dashboard-shared/openspec-poller.js");
+      (runOpenSpecList as any).mockResolvedValue({ changes: [
+        { name: "change-x", status: "in-progress", completedTasks: 0, totalTasks: 1 },
+      ] });
+      (runOpenSpecStatus as any).mockResolvedValue({
+        artifacts: [
+          { id: "proposal", status: "done" },
+          { id: "specs", status: "done" },
+          { id: "design", status: "ready" },
+          { id: "tasks", status: "ready" },
+        ],
+        isComplete: false,
+      });
+
+      const stateStore = createMockPreferencesStore();
+      const sessionManager = createMockSessionManager();
+      service = createDirectoryService(stateStore, sessionManager);
+
+      const data = await service.refreshOpenSpec(tmp);
+      const change = data.changes.find((c) => c.name === "change-x")!;
+      const design = change.artifacts.find((a) => a.id === "design")!;
+      expect(design.status).toBe("done");
+      // tasks artifact should pass through unchanged (still ready)
+      expect(change.artifacts.find((a) => a.id === "tasks")!.status).toBe("ready");
+
+      fs.rmSync(tmp, { recursive: true, force: true });
+    });
+
+    it("design override leaves design=ready when no evidence", async () => {
+      const fs = await import("node:fs");
+      const os = await import("node:os");
+      const path = await import("node:path");
+      const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "ds-design-no-override-"));
+      const changeDir = path.join(tmp, "openspec", "changes", "change-y");
+      fs.mkdirSync(changeDir, { recursive: true });
+      fs.writeFileSync(path.join(changeDir, "proposal.md"), "# proposal\n");
+
+      const { runOpenSpecList, runOpenSpecStatus } = await import("@blackbelt-technology/pi-dashboard-shared/openspec-poller.js");
+      (runOpenSpecList as any).mockResolvedValue({ changes: [
+        { name: "change-y", status: "in-progress", completedTasks: 0, totalTasks: 0 },
+      ] });
+      (runOpenSpecStatus as any).mockResolvedValue({
+        artifacts: [
+          { id: "proposal", status: "done" },
+          { id: "design", status: "ready" },
+        ],
+      });
+
+      const stateStore = createMockPreferencesStore();
+      const sessionManager = createMockSessionManager();
+      service = createDirectoryService(stateStore, sessionManager);
+
+      const data = await service.refreshOpenSpec(tmp);
+      const change = data.changes.find((c) => c.name === "change-y")!;
+      expect(change.artifacts.find((a) => a.id === "design")!.status).toBe("ready");
+
+      fs.rmSync(tmp, { recursive: true, force: true });
+    });
   });
 
   describe("onDirectoryAdded", () => {

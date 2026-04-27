@@ -23,12 +23,29 @@
 import { listOr, statusOr, OPENSPEC_LIST, OPENSPEC_STATUS } from "./platform/openspec.js";
 import { runAsync, unwrap } from "./platform/runner.js";
 import type { OpenSpecData, OpenSpecChange, OpenSpecArtifact } from "./types.js";
+import {
+  evaluateLocalDesignSatisfaction,
+  createFsDesignEvidenceProbe,
+  type DesignEvidenceProbe,
+} from "./openspec-design-evidence.js";
+import path from "node:path";
 
 const EMPTY_DATA: OpenSpecData = { initialized: false, changes: [] };
+
+/**
+ * Factory that returns a probe for a given change name. Production callers
+ * pass a closure rooted at `<cwd>/openspec/changes/<name>`. Tests pass an
+ * in-memory factory. When omitted, the design override does NOT fire and
+ * `buildOpenSpecData` matches today's behavior verbatim.
+ *
+ * See change: fix-openspec-design-detection.
+ */
+export type DesignProbeFactory = (changeName: string) => DesignEvidenceProbe;
 
 export function buildOpenSpecData(
   listResult: { changes?: Array<{ name: string; status: string; completedTasks: number; totalTasks: number }> } | null,
   statusResults: Map<string, { artifacts?: Array<{ id: string; status: string }>; isComplete?: boolean } | null>,
+  probeFactory?: DesignProbeFactory,
 ): OpenSpecData {
   if (!listResult || !Array.isArray(listResult.changes)) {
     return EMPTY_DATA;
@@ -41,8 +58,27 @@ export function buildOpenSpecData(
       status: (a.status === "done" ? "done" : a.status === "ready" ? "ready" : "blocked") as OpenSpecArtifact["status"],
     }));
 
-    const isComplete =
+    // Design-artifact override: promote-only, design-only. See change:
+    // fix-openspec-design-detection.
+    if (probeFactory) {
+      const designIdx = artifacts.findIndex((a) => a.id === "design");
+      if (designIdx !== -1 && artifacts[designIdx].status === "ready") {
+        const probe = probeFactory(c.name);
+        if (evaluateLocalDesignSatisfaction("", probe)) {
+          artifacts[designIdx] = { ...artifacts[designIdx], status: "done" };
+        }
+      }
+    }
+
+    const cliIsComplete =
       typeof statusResult?.isComplete === "boolean" ? statusResult.isComplete : undefined;
+
+    // Re-derive isComplete from post-override artifacts. Promote false→true
+    // only when every artifact is done; never demote CLI true.
+    let isComplete = cliIsComplete;
+    if (artifacts.length > 0 && artifacts.every((a) => a.status === "done")) {
+      isComplete = true;
+    }
 
     const change: OpenSpecChange = {
       name: c.name,
@@ -59,6 +95,25 @@ export function buildOpenSpecData(
 }
 
 /**
+ * Build a real-fs probe factory rooted at `<cwd>/openspec/changes/<name>`.
+ * Production callers (`pollOpenSpec`, `pollOpenSpecAsync`,
+ * `directory-service.ts`) use this to wire the override. Tests inject
+ * their own factory.
+ */
+export function createFsProbeFactory(cwd: string): DesignProbeFactory {
+  const probe = createFsDesignEvidenceProbe();
+  const changesRoot = path.join(cwd, "openspec", "changes");
+  return (changeName) => {
+    const changeDir = path.join(changesRoot, changeName);
+    return {
+      hasDesignFile: () => probe.hasDesignFile(changeDir),
+      hasDesignDirWithMd: () => probe.hasDesignDirWithMd(changeDir),
+      tasksHasCheckboxes: () => probe.tasksHasCheckboxes(changeDir),
+    };
+  };
+}
+
+/**
  * Synchronous poll — blocks the event loop. Used by the bridge extension
  * where async isn't practical (some pi extension hooks are sync).
  */
@@ -70,7 +125,7 @@ export function pollOpenSpec(cwd: string): OpenSpecData {
   for (const c of listResult.changes) {
     statusResults.set(c.name, statusOr({ cwd, change: c.name }));
   }
-  return buildOpenSpecData(listResult, statusResults);
+  return buildOpenSpecData(listResult, statusResults, createFsProbeFactory(cwd));
 }
 
 /**
@@ -114,5 +169,5 @@ export async function pollOpenSpecAsync(cwd: string): Promise<OpenSpecData> {
     }),
   );
   const statusResults = new Map<string, any>(statusEntries);
-  return buildOpenSpecData(listResult, statusResults);
+  return buildOpenSpecData(listResult, statusResults, createFsProbeFactory(cwd));
 }

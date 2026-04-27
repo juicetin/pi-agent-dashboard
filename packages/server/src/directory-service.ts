@@ -18,6 +18,7 @@ import {
   pollOpenSpecAsync,
   runOpenSpecList,
   runOpenSpecStatus,
+  createFsProbeFactory,
 } from "@blackbelt-technology/pi-dashboard-shared/openspec-poller.js";
 import { DEFAULT_OPENSPEC_POLL, type OpenSpecPollConfig } from "@blackbelt-technology/pi-dashboard-shared/config.js";
 import { createSemaphore, type Semaphore } from "@blackbelt-technology/pi-dashboard-shared/semaphore.js";
@@ -277,7 +278,11 @@ export function createDirectoryService(
     }));
 
     // ── Step 3: build + cache + return ──
-    const data = buildOpenSpecData({ changes: listResult ?? [] }, statusResults);
+    const data = buildOpenSpecData(
+      { changes: listResult ?? [] },
+      statusResults,
+      createFsProbeFactory(cwd),
+    );
 
     // Update per-change cache with the file-aware effective mtimes we just observed.
     for (const change of data.changes) {

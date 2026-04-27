@@ -57,7 +57,8 @@ A Node.js HTTP + WebSocket server that:
 - Persists global preferences (pinned directories, session order) in `~/.pi/dashboard/preferences.json`
 - Discovers historical sessions directly from disk via `SessionManager.list()` (DirectoryService)
 - Loads session events on demand directly from disk via `SessionManager.open()` (DirectoryService)
-- Polls OpenSpec CLI per directory every 30s, broadcasting changes to browsers (DirectoryService)
+- Polls OpenSpec CLI per directory every 30s, broadcasting changes to browsers (DirectoryService).
+  - **Design-artifact override**: After receiving the CLI's per-change `status`, `buildOpenSpecData` post-processes the `design` artifact: when CLI says `design: ready`, the dashboard checks local file-system evidence (R1: `^design.*\.md$` present; R2: `design/*.md` present; R3: `tasks.md` contains a Markdown checkbox) and promotes `design.status` to `"done"` if any rule fires. The override is **promote-only and design-only** — never demotes, never touches other artifact ids, never promotes from `"blocked"`. Change-level `isComplete` is re-derived locally; CLI `isComplete: true` is never demoted. The same R1/R2/R3 rules are mirrored in `.pi/skills/openspec-shared/scripts/effective-status.sh` so OpenSpec workflow skills and dashboard session-card buttons cannot disagree about a change's next-ready artifact. See change: fix-openspec-design-detection.
 - Serves the built web client as static files (production) or proxies to Vite dev server (dev mode)
 - Writes per-session `.meta.json` sidecar files with dashboard state and cached stats
 - Exposes REST API for session management, event content fetch, pinned directories, and file reading

@@ -815,6 +815,7 @@ export default function App() {
         openspecChanges={selectedCwd ? openspecMap.get(selectedCwd)?.changes : undefined}
         onAttachProposal={(changeName) => handleAttachProposal(selectedId, changeName)}
         onDetachProposal={() => handleDetachProposal(selectedId)}
+        onReadArtifact={selectedCwd ? (changeName, artifactId) => handleReadArtifact(selectedCwd, changeName, artifactId) : undefined}
         hasFileChanges={selectedState.hasFileChanges}
         onOpenDiffView={() => { clearAllContentViews(); setDiffViewSessionId(selectedId); }}
         onOpenExtensionModulePicker={() => setExtensionModulePickerOpen(true)}

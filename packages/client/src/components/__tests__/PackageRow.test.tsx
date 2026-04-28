@@ -137,4 +137,89 @@ describe("PackageRow", () => {
 		);
 		expect(screen.getByText("something blew up")).toBeTruthy();
 	});
+
+	// ── Move affordance (change: unify-package-management-ui) ───────────────────
+
+	it("renders Move → Local in the menu when currentScope=global", () => {
+		render(
+			<PackageRow
+				displayName="x"
+				source="npm:x"
+				sourceType="npm"
+				onMove={() => {}}
+				currentScope="global"
+				testId="row"
+			/>,
+		);
+		fireEvent.click(screen.getByTestId("row-menu"));
+		expect(screen.getByText("Move → Local")).toBeTruthy();
+	});
+
+	it("renders Move → Global in the menu when currentScope=local", () => {
+		render(
+			<PackageRow
+				displayName="x"
+				source="npm:x"
+				sourceType="npm"
+				onMove={() => {}}
+				currentScope="local"
+				testId="row"
+			/>,
+		);
+		fireEvent.click(screen.getByTestId("row-menu"));
+		expect(screen.getByText("Move → Global")).toBeTruthy();
+	});
+
+	it("hides Move when onMove not provided", () => {
+		render(
+			<PackageRow
+				displayName="x"
+				source="npm:x"
+				sourceType="npm"
+				canUninstall
+				onUninstall={() => {}}
+				testId="row"
+			/>,
+		);
+		fireEvent.click(screen.getByTestId("row-menu"));
+		expect(screen.queryByText(/Move →/)).toBeNull();
+	});
+
+	it("fires onMove when the Move menu item is clicked", () => {
+		const onMove = vi.fn();
+		render(
+			<PackageRow
+				displayName="x"
+				source="npm:x"
+				sourceType="npm"
+				onMove={onMove}
+				currentScope="global"
+				testId="row"
+			/>,
+		);
+		fireEvent.click(screen.getByTestId("row-menu"));
+		fireEvent.click(screen.getByText("Move → Local"));
+		expect(onMove).toHaveBeenCalledOnce();
+	});
+
+	it("disables Move when moveDisabledReason is set; tooltip carries the reason", () => {
+		const onMove = vi.fn();
+		render(
+			<PackageRow
+				displayName="x"
+				source="npm:x"
+				sourceType="npm"
+				onMove={onMove}
+				currentScope="global"
+				moveDisabledReason="Already installed in local scope"
+				testId="row"
+			/>,
+		);
+		fireEvent.click(screen.getByTestId("row-menu"));
+		const moveBtn = screen.getByTestId("row-move") as HTMLButtonElement;
+		expect(moveBtn.disabled).toBe(true);
+		expect(moveBtn.getAttribute("title")).toBe("Already installed in local scope");
+		fireEvent.click(moveBtn);
+		expect(onMove).not.toHaveBeenCalled();
+	});
 });

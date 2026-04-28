@@ -123,4 +123,20 @@ describe("PiResourcesView", () => {
     screen.getByTestId("pi-resources-back").click();
     expect(onBack).toHaveBeenCalled();
   });
+
+  // Pin spec scenario "Loose resources still render as tree" — ensures a future
+  // refactor that removes <MergedScopeSection> in favor of the new
+  // <InstalledPackagesList> alone is caught by tests. See change:
+  // unify-package-management-ui.
+  it("keeps loose resources outside the package tree", async () => {
+    render(<PiResourcesView cwd="/path/to/project" onBack={vi.fn()} onViewFile={vi.fn()} />);
+    await expandLocal();
+
+    // Loose skill is rendered inside the merged scope's tree (resource-item).
+    const looseSkill = await screen.findByText("code-review");
+    expect(looseSkill.closest('[data-testid="resource-item"]')).toBeTruthy();
+
+    // The unified package list section is mounted alongside.
+    expect(screen.getByTestId("installed-packages-local-section")).toBeTruthy();
+  });
 });

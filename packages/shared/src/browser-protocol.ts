@@ -216,13 +216,24 @@ export interface BrowserPromptCancelMessage {
   promptId: string;
 }
 
-/** Progress event streamed during a package install/remove/update operation. */
+/** Progress event streamed during a package install/remove/update/move operation.
+ *
+ * `moveId` is set when this progress event is part of a move operation
+ * (which composes install + remove). Clients group events by `moveId`
+ * to display a single composite progress affordance instead of two
+ * separate operations. Consumers that ignore the field continue to
+ * render install + remove independently — graceful degradation.
+ *
+ * See change: unify-package-management-ui.
+ */
 export interface PackageProgressMessage {
   type: "package_progress";
   operationId: string;
+  /** Optional move grouping id when emitted as part of a move. */
+  moveId?: string;
   event: {
     type: "start" | "progress" | "complete" | "error";
-    action: "install" | "remove" | "update" | "clone" | "pull";
+    action: "install" | "remove" | "update" | "clone" | "pull" | "move";
     source: string;
     message?: string;
   };
@@ -299,13 +310,23 @@ export interface BootstrapTicketCompleteMessage {
 export interface PackageOperationCompleteMessage {
   type: "package_operation_complete";
   operationId: string;
-  action: "install" | "remove" | "update";
+  /** Optional move grouping id; set on every event of a composite move op. */
+  moveId?: string;
+  action: "install" | "remove" | "update" | "move";
   source: string;
   scope: "global" | "local";
   success: boolean;
   error?: string;
   /** Number of sessions reloaded (only on success). */
   sessionsReloaded?: number;
+  /** Set on a move op when install succeeded but remove failed.
+   * Indicates the package now exists in BOTH scopes; UI should surface
+   * a recovery action (POST /api/packages/remove against fromScope). */
+  partialSuccess?: {
+    installed: boolean;
+    removed: boolean;
+    removeError?: string;
+  };
 }
 
 // ── Extension UI System (Phase 1: management-modal slot) ───────────

@@ -1,35 +1,4 @@
-# Package Management
-
-## Purpose
-
-Package management for pi extensions, skills, prompts, and themes. Covers pi module resolution, scope-to-scope moves, and the WebSocket event protocol used to track composite operations.
-
-## Requirements
-
-### Requirement: Pi module resolution
-`loadPiPackageManager()` SHALL resolve pi's `DefaultPackageManager` and `SettingsManager` using the following ordered resolution chain:
-
-1. Direct import of `@mariozechner/pi-coding-agent`
-2. Managed install at `~/.pi-dashboard/node_modules/{@mariozechner/pi-coding-agent,@oh-my-pi/pi-coding-agent}/dist/index.js`
-3. Global npm root via `npm root -g` for both package name variants
-
-The function SHALL return the first successful resolution and cache the result. If all paths fail, it SHALL throw an error with message "pi-coding-agent is not installed."
-
-#### Scenario: Pi found in managed install directory
-- **WHEN** direct import fails AND pi is installed at `~/.pi-dashboard/node_modules/@mariozechner/pi-coding-agent/dist/index.js`
-- **THEN** `loadPiPackageManager()` resolves successfully and returns `DefaultPackageManager` and `SettingsManager`
-
-#### Scenario: Pi found in managed install under alternate package name
-- **WHEN** direct import fails AND `@mariozechner` variant is not in managed install AND `@oh-my-pi/pi-coding-agent` is present in managed install
-- **THEN** `loadPiPackageManager()` resolves successfully from the `@oh-my-pi` variant
-
-#### Scenario: Managed install not present falls through to global npm
-- **WHEN** direct import fails AND managed install directory does not contain pi
-- **THEN** resolution falls through to global npm root check without error
-
-#### Scenario: All resolution paths fail
-- **WHEN** direct import, managed install, and global npm all fail
-- **THEN** `loadPiPackageManager()` throws an error with message containing "pi-coding-agent is not installed"
+## ADDED Requirements
 
 ### Requirement: Server moves packages between scopes via hybrid execution
 The server SHALL expose `POST /api/packages/move` accepting:
@@ -106,42 +75,38 @@ Before invoking install or settings-edit, the server SHALL check whether any ent
 - **WHEN** client sends a move from local to global for `npm:pi-flows`
 - **THEN** the server returns `409 already_at_destination` and performs no install or remove
 
-### Requirement: Move endpoint surfaces partial success via composite WebSocket event
-The `/api/packages/move` endpoint is asynchronous (returns `202 { moveId }` immediately and runs install + remove phases in the background). When the npm/git/https execution arm successfully installs at the destination but fails to remove from the origin, the server SHALL emit a `package_operation_complete` WebSocket event for the move with:
+### Requirement: Move endpoint surfaces partial success
+When the npm/git/https execution arm successfully installs at the destination but fails to remove from the origin, the server SHALL return `207 partial_success` with the response body:
 
 ```
 {
-  type: "package_operation_complete",
-  operationId: <moveId>,
-  moveId: <moveId>,
-  action: "move",
-  source: <entry.source>,
-  scope: <toScope>,
-  success: true,
-  partialSuccess: {
-    installed: true,
-    removed: false,
-    removeError: <message>
+  moveId,
+  installed: true,
+  removed: false,
+  removeError: <message>,
+  recoveryAction: {
+    endpoint: "POST /api/packages/remove",
+    body: { source: <entry.source>, scope: <fromScope>, cwd: <fromCwd> }
   }
 }
 ```
 
-The client SHALL surface this state with a recovery affordance (Cleanup button) that POSTs `/api/packages/remove` against `fromScope` (idempotent on retry — already-removed entries are a no-op).
+The recovery action SHALL be idempotent — re-running it on an already-removed entry SHALL succeed as a no-op.
 
 #### Scenario: Install succeeds, remove fails
 - **WHEN** install at destination completes, but `removeAndPersist` throws
-- **THEN** the move's `package_operation_complete` event has `success: true` and `partialSuccess: { installed: true, removed: false, removeError: <msg> }`
-- **AND** the client renders a Cleanup banner that retries the remove against `fromScope`
+- **THEN** the server returns `207` with `installed: true, removed: false`
+- **AND** the response includes a `recoveryAction` body that the client can POST to retry the remove
 
 ### Requirement: Move endpoint emits composite progress events
-For an `npm:`/`git:`/`https://` move, the server SHALL emit `package_progress` and `package_operation_complete` WebSocket events for both the install phase and the remove phase, each tagged with the same optional `moveId: string` field. For a path-source move, the server SHALL emit a single `settings-edit` progress event tagged with `moveId`.
+For an `npm:`/`git:`/`https://` move, the server SHALL emit `package_operation_*` WebSocket events for both the install phase and the remove phase, each tagged with the same optional `moveId: string` field. For a path-source move, the server SHALL emit a single `settings-edit` progress event tagged with `moveId`.
 
 Existing consumers that ignore the `moveId` field SHALL continue to render install + remove as two separate progress operations without breakage.
 
 #### Scenario: Composite events share moveId
 - **WHEN** a successful npm-source move completes
-- **THEN** every `package_progress` event for both phases contains `moveId: <id>`
-- **AND** the final `package_operation_complete` event contains the same `moveId: <id>` and `action: "move"`
+- **THEN** at least one `package_operation_*` event for the install phase contains `moveId: <id>`
+- **AND** at least one event for the remove phase contains the same `moveId: <id>`
 
 ### Requirement: Move endpoint validates scope and cwd inputs
 The server SHALL return `400 invalid_request` when:

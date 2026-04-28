@@ -107,7 +107,7 @@ Remove with `pi remove /path/to/pi-agent-dashboard`. Alternatively, add the pack
 - **OpenSpec integration** — browse specs, view archive history, manage changes, create new changes from the sidebar
 - **Browser-based provider auth** — sign in to Anthropic, OpenAI Codex, GitHub Copilot, Gemini CLI, and Antigravity from Settings. Enter API keys for other providers. Credentials saved to `~/.pi/agent/auth.json` and live-synced to running sessions.
 - **Custom LLM providers** — add OpenAI-compatible, Anthropic-compatible, or Google Generative AI endpoints (Settings → Providers → LLM Providers). **Test** button verifies the base URL + API key before saving. Adding / editing / removing takes effect live in every running session — no restart.
-- **Package management** — browse, install, update, and remove pi packages. Search the npm registry for pi-package extensions/skills/themes; install from npm or git URL. Active sessions auto-reload after changes.
+- **Package management** — browse, install, update, remove, and **move** pi packages between global and project scopes from a single rich-row UI used in both Settings and Pi Resources. Install dialog exposes a Local/Global radio when launched from a per-folder context. Search the npm registry for pi-package extensions/skills/themes; install from npm or git URL. Active sessions auto-reload after changes.
 
 **Dev tools**
 - **Integrated terminal** — full browser-based terminal emulator (xterm.js + node-pty) with ANSI colors, scrollback, and keep-alive

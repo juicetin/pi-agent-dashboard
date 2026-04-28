@@ -530,6 +530,46 @@ List discovered extensions, skills, and prompts (localhost-only).
 ### `GET /api/pi-resource-file?path=FILEPATH`
 Read a pi resource file (localhost-only, restricted to allowed locations).
 
+---
+
+## Package Management
+
+### `POST /api/packages/move`
+Move a package between scopes (global ↔ local). Hybrid execution:
+- `npm:` / `git:` / `https://` sources → install at destination, then remove from origin
+- `abs-path` / `rel-path` sources → settings-only edit (no file copy; matches pi's path-source semantics)
+
+**Body:**
+```json
+{
+  "entry": "npm:pi-flows"  // or { "source": "npm:my-pkg", "extensions": ["a.ts"], "skills": [] }
+  "fromScope": "global" | "local",
+  "fromCwd": "/abs/cwd"  // required if fromScope is local
+  "toScope": "global" | "local",
+  "toCwd": "/abs/cwd"    // required if toScope is local
+}
+```
+
+**Responses:**
+- `202 { success: true, data: { moveId, phases } }` — accepted; `phases` is `["install","remove"]` or `["settings-edit"]`.
+- `400 { code: "invalid_request" }` — missing/conflicting fields, same scope.
+- `400 { code: "unsupported_source_for_destination" }` — e.g. relative-path with no `fromCwd`.
+- `409 { code: "already_at_destination" }` — destination scope already has same package identity.
+- `409 { code: "operation_in_flight" }` — another package operation is busy.
+
+**Identity rules** (per pi `docs/packages.md`):
+- npm: bare package name (without `@version`)
+- git/https: repo URL with trailing `@<ref>` stripped
+- path: resolved absolute path
+
+**Filter preservation**: object-form entries (with `extensions` / `skills` / `prompts` filters) survive the move — destination receives the full object, only `source` is rewritten when path-translating.
+
+**Composite progress events**: install + remove phases of an `npm:`/`git:` move both broadcast `package_progress` and `package_operation_complete` over the existing WebSocket channel, each tagged with the same `moveId`. UI groups them into one logical operation. Path-source moves emit a single `settings-edit` event.
+
+**Partial success**: if install succeeds but remove fails, the WS `package_operation_complete` event for the move includes `partialSuccess: { installed: true, removed: false, removeError }`. UI surfaces a Cleanup button that POSTs `/api/packages/remove` against `fromScope` (idempotent retry).
+
+See change: unify-package-management-ui.
+
 ### `GET /api/editors?path=CWD`
 Detect available editors (localhost-only).
 

@@ -1054,6 +1054,7 @@ function GlobalPackagesBrowseAndDialogs() {
           source={confirmInstall.source}
           packageName={confirmInstall.pkg?.name}
           scope="global"
+          lockScope="global"
           onConfirm={doInstall}
           onCancel={() => setConfirmInstall(null)}
         />

@@ -3,8 +3,14 @@
  */
 import type { FastifyInstance } from "fastify";
 import type { ApiResponse } from "@blackbelt-technology/pi-dashboard-shared/types.js";
-import type { PackageManagerWrapper } from "../package-manager-wrapper.js";
-import { PackageOperationBusyError } from "../package-manager-wrapper.js";
+import type { PackageManagerWrapper, PackageEntry } from "../package-manager-wrapper.js";
+import {
+  PackageOperationBusyError,
+  AlreadyAtDestinationError,
+  InvalidMoveRequestError,
+  UnsupportedSourceForDestinationError,
+} from "../package-manager-wrapper.js";
+import { parseSourceKind } from "../package-source-helpers.js";
 import { searchPackages, fetchReadme, PackageNotFoundError } from "../npm-search-proxy.js";
 import { enrichInstalledRows } from "../installed-package-enricher.js";
 
@@ -158,6 +164,67 @@ export function registerPackageRoutes(
   );
 
   // ── Check for updates ───────────────────────────────────────────
+
+  // Move package between scopes (see change: unify-package-management-ui)
+  fastify.post<{
+    Body: {
+      entry?: PackageEntry;
+      fromScope?: string;
+      fromCwd?: string;
+      toScope?: string;
+      toCwd?: string;
+    };
+  }>("/api/packages/move", async (request, reply) => {
+    const body = request.body ?? {};
+    const { entry, fromCwd, toCwd } = body;
+    const fromScope = body.fromScope === "local" ? "local" : body.fromScope === "global" ? "global" : null;
+    const toScope = body.toScope === "local" ? "local" : body.toScope === "global" ? "global" : null;
+
+    if (!entry || (typeof entry !== "string" && (typeof entry !== "object" || !entry.source))) {
+      reply.code(400);
+      return { success: false, error: "entry is required (string or { source, ...filters })" } satisfies ApiResponse;
+    }
+    if (!fromScope || !toScope) {
+      reply.code(400);
+      return { success: false, error: "fromScope and toScope are required ('global' or 'local')" } satisfies ApiResponse;
+    }
+
+    try {
+      const moveId = await packageManagerWrapper.move({
+        entry: entry as PackageEntry,
+        fromScope,
+        fromCwd,
+        toScope,
+        toCwd,
+      });
+      const sourceStr = typeof entry === "string" ? entry : entry.source;
+      const kind = parseSourceKind(sourceStr);
+      const phases = kind === "abs-path" || kind === "rel-path"
+        ? ["settings-edit" as const]
+        : ["install" as const, "remove" as const];
+      reply.code(202);
+      return { success: true, data: { moveId, phases } } satisfies ApiResponse;
+    } catch (err: any) {
+      if (err instanceof InvalidMoveRequestError) {
+        reply.code(400);
+        return { success: false, error: err.message, code: "invalid_request" } as any;
+      }
+      if (err instanceof UnsupportedSourceForDestinationError) {
+        reply.code(400);
+        return { success: false, error: err.message, code: "unsupported_source_for_destination" } as any;
+      }
+      if (err instanceof AlreadyAtDestinationError) {
+        reply.code(409);
+        return { success: false, error: err.message, code: "already_at_destination" } as any;
+      }
+      if (err instanceof PackageOperationBusyError) {
+        reply.code(409);
+        return { success: false, error: err.message, code: "operation_in_flight" } as any;
+      }
+      reply.code(500);
+      return { success: false, error: err?.message ?? String(err) } satisfies ApiResponse;
+    }
+  });
 
   fastify.post<{ Body: { cwd?: string } }>(
     "/api/packages/check-updates",

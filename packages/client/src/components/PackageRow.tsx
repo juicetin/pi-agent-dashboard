@@ -17,6 +17,7 @@ import {
 	mdiCheckCircle,
 	mdiDotsVertical,
 	mdiLoading,
+	mdiSwapHorizontal,
 } from "@mdi/js";
 import type { SourceType } from "../lib/package-classifier.js";
 
@@ -38,6 +39,19 @@ export interface PackageRowProps {
 	onUninstall?: () => void;
 	onViewReadme?: () => void;
 	onReset?: () => void;
+	/**
+	 * Move → button. Caller supplies the destination scope this row
+	 * should offer; the button label is computed from `currentScope`.
+	 * When undefined, no Move button is rendered.
+	 * See change: unify-package-management-ui.
+	 */
+	onMove?: () => void;
+	/** The scope this row currently lives in. Used to label the Move button. */
+	currentScope?: "global" | "local";
+	/** Hint for the Move button label/tooltip. Defaults to the opposite of `currentScope`. */
+	moveDestinationScope?: "global" | "local";
+	/** When true, the Move button renders disabled with a tooltip. */
+	moveDisabledReason?: string;
 	testId?: string;
 }
 
@@ -76,6 +90,10 @@ export function PackageRow({
 	onUninstall,
 	onViewReadme,
 	onReset,
+	onMove,
+	currentScope,
+	moveDestinationScope,
+	moveDisabledReason,
 	testId,
 }: PackageRowProps) {
 	const [menuOpen, setMenuOpen] = useState(false);
@@ -92,8 +110,12 @@ export function PackageRow({
 		return () => document.removeEventListener("mousedown", onDocClick);
 	}, [menuOpen]);
 
+	const destScope = moveDestinationScope ?? (currentScope === "global" ? "local" : "global");
+	const showMove = !!onMove;
+	const moveLabel = `Move → ${destScope === "global" ? "Global" : "Local"}`;
+
 	const hasMenu =
-		(canUninstall && !!onUninstall) || !!onViewReadme || !!onReset;
+		(canUninstall && !!onUninstall) || !!onViewReadme || !!onReset || showMove;
 
 	return (
 		<div
@@ -152,7 +174,19 @@ export function PackageRow({
 								<Icon path={mdiDotsVertical} size={0.55} />
 							</button>
 							{menuOpen && (
-								<div className="absolute right-0 top-full mt-1 z-10 min-w-[140px] rounded border border-[var(--border-secondary)] bg-[var(--bg-secondary)] shadow-lg py-1 text-xs">
+								<div className="absolute right-0 top-full mt-1 z-10 min-w-[160px] rounded border border-[var(--border-secondary)] bg-[var(--bg-secondary)] shadow-lg py-1 text-xs">
+									{showMove && (
+										<button
+											className="block w-full text-left px-3 py-1.5 hover:bg-[var(--bg-hover)] text-[var(--text-primary)] disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+											disabled={!!moveDisabledReason || busy}
+											title={moveDisabledReason}
+											onClick={() => { setMenuOpen(false); onMove?.(); }}
+											data-testid={testId ? `${testId}-move` : undefined}
+										>
+											<Icon path={mdiSwapHorizontal} size={0.45} />
+											{moveLabel}
+										</button>
+									)}
 									{onViewReadme && (
 										<button
 											className="block w-full text-left px-3 py-1.5 hover:bg-[var(--bg-hover)] text-[var(--text-primary)]"

@@ -5,7 +5,12 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import Fastify from "fastify";
 import type { FastifyInstance } from "fastify";
 import { registerPackageRoutes } from "../routes/package-routes.js";
-import { PackageOperationBusyError } from "../package-manager-wrapper.js";
+import {
+  PackageOperationBusyError,
+  AlreadyAtDestinationError,
+  InvalidMoveRequestError,
+  UnsupportedSourceForDestinationError,
+} from "../package-manager-wrapper.js";
 
 // Mock pi dependency (pulled transitively by package-manager-wrapper)
 vi.mock("@mariozechner/pi-coding-agent", () => ({
@@ -27,6 +32,7 @@ import { searchPackages, fetchReadme, PackageNotFoundError } from "../npm-search
 function createMockWrapper() {
   return {
     run: vi.fn().mockResolvedValue("op-123"),
+    move: vi.fn().mockResolvedValue("move-456"),
     listInstalled: vi.fn().mockReturnValue([{ source: "npm:pi-doom", scope: "user", filtered: false }]),
     checkUpdates: vi.fn().mockResolvedValue([]),
     isBusy: vi.fn().mockReturnValue(false),
@@ -199,6 +205,101 @@ describe("package-routes", () => {
       expect(res.statusCode).toBe(200);
       const body = JSON.parse(res.body);
       expect(body.data[0].source).toBe("npm:pi-doom");
+    });
+  });
+
+  describe("POST /api/packages/move", () => {
+    it("returns 202 with moveId + phases for npm source", async () => {
+      const res = await app.inject({
+        method: "POST",
+        url: "/api/packages/move",
+        payload: { entry: "npm:pi-doom", fromScope: "global", toScope: "local", toCwd: "/proj" },
+      });
+      expect(res.statusCode).toBe(202);
+      const body = JSON.parse(res.body);
+      expect(body.success).toBe(true);
+      expect(body.data.moveId).toBe("move-456");
+      expect(body.data.phases).toEqual(["install", "remove"]);
+      expect(wrapper.move).toHaveBeenCalledWith({
+        entry: "npm:pi-doom",
+        fromScope: "global",
+        fromCwd: undefined,
+        toScope: "local",
+        toCwd: "/proj",
+      });
+    });
+
+    it("returns settings-edit phase for relative-path source", async () => {
+      const res = await app.inject({
+        method: "POST",
+        url: "/api/packages/move",
+        payload: { entry: { source: "./vendor/x" }, fromScope: "local", fromCwd: "/proj", toScope: "global" },
+      });
+      expect(res.statusCode).toBe(202);
+      expect(JSON.parse(res.body).data.phases).toEqual(["settings-edit"]);
+    });
+
+    it("returns 400 when entry is missing", async () => {
+      const res = await app.inject({
+        method: "POST",
+        url: "/api/packages/move",
+        payload: { fromScope: "global", toScope: "local", toCwd: "/proj" },
+      });
+      expect(res.statusCode).toBe(400);
+      expect(JSON.parse(res.body).error).toMatch(/entry is required/);
+    });
+
+    it("returns 400 when fromScope/toScope missing", async () => {
+      const res = await app.inject({
+        method: "POST",
+        url: "/api/packages/move",
+        payload: { entry: "npm:foo" },
+      });
+      expect(res.statusCode).toBe(400);
+    });
+
+    it("returns 400 invalid_request from InvalidMoveRequestError", async () => {
+      wrapper.move = vi.fn().mockRejectedValue(new InvalidMoveRequestError("same scope"));
+      const res = await app.inject({
+        method: "POST",
+        url: "/api/packages/move",
+        payload: { entry: "npm:foo", fromScope: "global", toScope: "global" },
+      });
+      expect(res.statusCode).toBe(400);
+      expect(JSON.parse(res.body).code).toBe("invalid_request");
+    });
+
+    it("returns 400 unsupported_source_for_destination", async () => {
+      wrapper.move = vi.fn().mockRejectedValue(new UnsupportedSourceForDestinationError("need fromCwd"));
+      const res = await app.inject({
+        method: "POST",
+        url: "/api/packages/move",
+        payload: { entry: "..", fromScope: "local", toScope: "global" },
+      });
+      expect(res.statusCode).toBe(400);
+      expect(JSON.parse(res.body).code).toBe("unsupported_source_for_destination");
+    });
+
+    it("returns 409 already_at_destination", async () => {
+      wrapper.move = vi.fn().mockRejectedValue(new AlreadyAtDestinationError("npm:foo", "global"));
+      const res = await app.inject({
+        method: "POST",
+        url: "/api/packages/move",
+        payload: { entry: "npm:foo", fromScope: "local", fromCwd: "/p", toScope: "global" },
+      });
+      expect(res.statusCode).toBe(409);
+      expect(JSON.parse(res.body).code).toBe("already_at_destination");
+    });
+
+    it("returns 409 operation_in_flight", async () => {
+      wrapper.move = vi.fn().mockRejectedValue(new PackageOperationBusyError());
+      const res = await app.inject({
+        method: "POST",
+        url: "/api/packages/move",
+        payload: { entry: "npm:foo", fromScope: "global", toScope: "local", toCwd: "/p" },
+      });
+      expect(res.statusCode).toBe(409);
+      expect(JSON.parse(res.body).code).toBe("operation_in_flight");
     });
   });
 });

@@ -204,3 +204,34 @@ The same matching rule SHALL apply to `package_progress` messages so progress up
 - **WHEN** a `package_operation_complete` arrives whose `operationId` does not match `running.operationId` AND whose `source` does not match `running.source`
 - **THEN** the queue ignores the message and the running op is unaffected
 
+### Requirement: Install confirmation dialog supports scope selection
+The `PackageInstallConfirmDialog` SHALL accept the following props in addition to its existing props:
+
+- `scope: "global" | "local"` — currently selected scope (controlled by caller).
+- `onScopeChange?: (scope: "global" | "local") => void` — change handler; required when `lockScope` is undefined.
+- `lockScope?: "global" | "local"` — when set, the dialog SHALL hide the scope radio and use the locked scope unconditionally.
+
+When `lockScope` is undefined AND `onScopeChange` is provided, the dialog SHALL render a `Local | Global` radio group above the confirm button. Both options SHALL be selectable; the dialog SHALL NOT preflight whether the source is installable in either scope.
+
+When `lockScope` is set OR when `onScopeChange` is not provided, the dialog SHALL NOT render the radio. The dialog SHALL pass the locked-or-static scope to the install action verbatim.
+
+The default selection follows the caller's `scope` prop value.
+
+#### Scenario: Settings caller locks scope to global
+- **GIVEN** the dialog is opened from `SettingsPanel` with `lockScope="global"`
+- **THEN** the scope radio SHALL NOT be visible
+- **AND** confirming SHALL pass `scope: "global"` to the install action
+
+#### Scenario: Pi Resources caller offers radio
+- **GIVEN** the dialog is opened from `PiResourcesView` with `onScopeChange` provided and no `lockScope`
+- **THEN** the scope radio SHALL be visible with both Local and Global options
+- **AND** the default selection SHALL be the value of the `scope` prop
+- **AND** the user SHALL be able to switch the selection before confirming
+
+#### Scenario: Confirming with selected scope
+- **WHEN** the user picks `Global` and confirms
+- **THEN** the install action SHALL receive `scope: "global"` and `cwd: undefined`
+
+- **WHEN** the user picks `Local` and confirms
+- **THEN** the install action SHALL receive `scope: "local"` and `cwd: <current cwd>`
+

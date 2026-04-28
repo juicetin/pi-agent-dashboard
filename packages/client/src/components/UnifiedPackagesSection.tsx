@@ -32,6 +32,7 @@ import type {
 } from "@blackbelt-technology/pi-dashboard-shared/rest-api.js";
 import type { NpmPackageResult } from "@blackbelt-technology/pi-dashboard-shared/rest-api.js";
 import { PackageReadmeDialog } from "./PackageReadmeDialog.js";
+import { PinDirectoryDialog } from "./PinDirectoryDialog.js";
 
 type ProgressMap = Map<string, { phase: "start" | "output" | "complete" | "error"; message?: string }>;
 
@@ -131,6 +132,7 @@ export function UnifiedPackagesSection() {
 	const [updatesAvailable, setUpdatesAvailable] = useState<Set<string>>(new Set());
 	const [checkingUpdates, setCheckingUpdates] = useState(false);
 	const [readmePkg, setReadmePkg] = useState<NpmPackageResult | null>(null);
+	const [movePickerSource, setMovePickerSource] = useState<string | null>(null);
 
 	const handleCheckUpdates = useCallback(async () => {
 		setCheckingUpdates(true);
@@ -164,6 +166,14 @@ export function UnifiedPackagesSection() {
 		const busy = operations.runningSource === opSource;
 		const opStatus = operations.statusFor(opSource);
 		const opMessage = operations.messageFor(opSource);
+		const moveState = operations.moveStateFor(opSource);
+		const rowBusy = busy || moveState?.phase === "running";
+		const rowProgress = moveState?.phase === "running"
+			? moveState.message
+			: busy ? opMessage : undefined;
+		const rowError = moveState?.phase === "error"
+			? moveState.message
+			: opStatus === "error" ? opMessage : undefined;
 		return (
 			<PackageRow
 				key={pkg.source}
@@ -173,9 +183,9 @@ export function UnifiedPackagesSection() {
 				isBundled={!!pkg.isBundled}
 				currentVersion={pkg.version}
 				updateAvailable={updatesAvailable.has(pkg.source)}
-				busy={busy}
-				progress={busy ? opMessage : undefined}
-				error={opStatus === "error" ? opMessage : undefined}
+				busy={rowBusy}
+				progress={rowProgress}
+				error={rowError}
 				canUpdate={true}
 				canUninstall={true}
 				onUpdate={() => operations.update(pkg.source)}
@@ -188,6 +198,8 @@ export function UnifiedPackagesSection() {
 							}
 						: undefined
 				}
+				onMove={() => setMovePickerSource(pkg.source)}
+				currentScope="global"
 				testId={`pkg-row-${pkg.source.replace(/[^a-z0-9]/gi, "-")}`}
 			/>
 		);
@@ -300,6 +312,20 @@ export function UnifiedPackagesSection() {
 						setReadmePkg(null);
 					}}
 					onClose={() => setReadmePkg(null)}
+				/>
+			)}
+			{movePickerSource && (
+				<PinDirectoryDialog
+					onPin={(targetCwd) => {
+						const src = movePickerSource;
+						setMovePickerSource(null);
+						operations.move(src, {
+							fromScope: "global",
+							toScope: "local",
+							toCwd: targetCwd,
+						});
+					}}
+					onCancel={() => setMovePickerSource(null)}
 				/>
 			)}
 		</div>

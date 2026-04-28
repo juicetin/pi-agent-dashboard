@@ -7,6 +7,7 @@ import { PackageInstallConfirmDialog } from "./PackageInstallConfirmDialog.js";
 import { PackageReadmeDialog } from "./PackageReadmeDialog.js";
 import { useInstalledPackages } from "../hooks/useInstalledPackages.js";
 import { usePackageOperations } from "../hooks/usePackageOperations.js";
+import { InstalledPackagesList } from "./InstalledPackagesList.js";
 import type { PiResource, PiResourceScope, PiPackageInfo, NpmPackageResult } from "@blackbelt-technology/pi-dashboard-shared/rest-api.js";
 
 interface Props {
@@ -177,21 +178,42 @@ export function PiResourcesView({ cwd, onBack, onViewFile }: Props) {
   const [activeTab, setActiveTab] = useState<"installed" | "packages">("installed");
   const { data, isLoading, error, refresh } = usePiResources(cwd);
   const installed = useInstalledPackages("local", cwd);
+  const installedGlobal = useInstalledPackages("global");
   const operations = usePackageOperations("local", cwd, installed.refresh);
-  const [confirmInstall, setConfirmInstall] = useState<{ source: string; pkg?: NpmPackageResult } | null>(null);
+  const [confirmInstall, setConfirmInstall] = useState<{ source: string; pkg?: NpmPackageResult; scope: "global" | "local" } | null>(null);
   const [readmePkg, setReadmePkg] = useState<NpmPackageResult | null>(null);
+
+  // Build maps from package source string → contained-resources data, sliced
+  // by scope. The Pi Resources fetch already includes this; we just project
+  // it for InstalledPackagesList's expand-tree.
+  const localContainedMap = useMemo(() => {
+    const m = new Map<string, PiPackageInfo>();
+    for (const p of data?.packages ?? []) {
+      if (p.scope === "local" || !p.scope) m.set(p.source, p);
+    }
+    return m;
+  }, [data]);
+  const globalContainedMap = useMemo(() => {
+    const m = new Map<string, PiPackageInfo>();
+    for (const p of data?.packages ?? []) {
+      if (p.scope === "global") m.set(p.source, p);
+    }
+    return m;
+  }, [data]);
 
   const handleView = (resource: PiResource) => {
     onViewFile(resource.filePath, resource.name);
   };
 
   const handleConfirmInstall = (source: string, pkg?: NpmPackageResult) => {
-    setConfirmInstall({ source, pkg });
+    // Default Pi Resources installs to LOCAL scope (matches the surface),
+    // but the dialog exposes a radio so the user can choose.
+    setConfirmInstall({ source, pkg, scope: "local" });
   };
 
   const doInstall = () => {
     if (!confirmInstall) return;
-    operations.install(confirmInstall.source);
+    operations.install(confirmInstall.source, confirmInstall.scope);
     setConfirmInstall(null);
   };
 
@@ -269,12 +291,39 @@ export function PiResourcesView({ cwd, onBack, onViewFile }: Props) {
                   packages={data.packages.filter((p) => p.scope === "local" || !p.scope)}
                   onView={handleView}
                 />
+                <div className="mb-4" data-testid="installed-packages-local-section">
+                  <h4 className="text-[11px] font-semibold text-[var(--text-secondary)] uppercase tracking-wide px-2 mb-1">
+                    Local Packages
+                  </h4>
+                  <InstalledPackagesList
+                    scope="local"
+                    cwd={cwd}
+                    containedResources={localContainedMap}
+                    otherScopePackages={installedGlobal.packages}
+                    onViewReadme={setReadmePkg}
+                    onViewResource={handleView}
+                    testId="installed-packages-local"
+                  />
+                </div>
                 <MergedScopeSection
                   title="Global"
                   scope={data.global}
                   packages={data.packages.filter((p) => p.scope === "global")}
                   onView={handleView}
                 />
+                <div className="mb-4" data-testid="installed-packages-global-section">
+                  <h4 className="text-[11px] font-semibold text-[var(--text-secondary)] uppercase tracking-wide px-2 mb-1">
+                    Global Packages
+                  </h4>
+                  <InstalledPackagesList
+                    scope="global"
+                    containedResources={globalContainedMap}
+                    otherScopePackages={installed.packages}
+                    onViewReadme={setReadmePkg}
+                    onViewResource={handleView}
+                    testId="installed-packages-global"
+                  />
+                </div>
               </>
             )}
           </>
@@ -295,7 +344,8 @@ export function PiResourcesView({ cwd, onBack, onViewFile }: Props) {
         <PackageInstallConfirmDialog
           source={confirmInstall.source}
           packageName={confirmInstall.pkg?.name}
-          scope="local"
+          scope={confirmInstall.scope}
+          onScopeChange={(s) => setConfirmInstall((prev) => prev ? { ...prev, scope: s } : prev)}
           onConfirm={doInstall}
           onCancel={() => setConfirmInstall(null)}
         />

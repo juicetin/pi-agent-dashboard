@@ -10,6 +10,7 @@
 import * as os from "node:os";
 import * as path from "node:path";
 import * as crypto from "node:crypto";
+import { computeIdentity, parseSourceKind } from "./package-source-helpers.js";
 import {
   getDefaultRegistry,
   ModuleResolutionError,
@@ -151,27 +152,54 @@ export function diagnosePiPackageManager(registry: ToolRegistry = getDefaultRegi
 export { ModuleResolutionError };
 
 export type PackageScope = "global" | "local";
-export type PackageAction = "install" | "remove" | "update";
+export type PackageAction = "install" | "remove" | "update" | "move";
 
 export interface OperationRequest {
-  action: PackageAction;
+  action: "install" | "remove" | "update";
   source: string;
   scope: PackageScope;
   cwd?: string;
 }
 
+/**
+ * Pi `packages[]` entry. Either a bare source string or an object with
+ * filter keys (`extensions`/`skills`/`prompts`/`themes`). See pi's
+ * `docs/packages.md` “Package Filtering” section.
+ */
+export type PackageEntry = string | { source: string; [k: string]: unknown };
+
+/** Move operation request. See change: unify-package-management-ui. */
+export interface MoveRequest {
+  /** Full origin entry (string or filter object) — passed verbatim from the route. */
+  entry: PackageEntry;
+  fromScope: PackageScope;
+  fromCwd?: string;
+  toScope: PackageScope;
+  toCwd?: string;
+}
+
 export interface OperationResult {
   operationId: string;
+  /** `move` for composite move ops; `install`/`remove`/`update` otherwise. */
   action: PackageAction;
-  source: string;
+  /** When `action === "move"`, this is the destination scope. */
   scope: PackageScope;
+  source: string;
   success: boolean;
   error?: string;
+  /** Set on `action === "move"` only; ties together emitted events. */
+  moveId?: string;
+  /** Set on `action === "move"` when install succeeded but remove failed. */
+  partialSuccess?: {
+    installed: boolean;
+    removed: boolean;
+    removeError?: string;
+  };
   /** On failure: full resolution trail if pi couldn't be loaded. */
   diagnostics?: Resolution;
 }
 
-export type ProgressListener = (operationId: string, event: ProgressEvent) => void;
+export type ProgressListener = (operationId: string, event: ProgressEvent, moveId?: string) => void;
 export type CompleteListener = (result: OperationResult) => void;
 
 const AGENT_DIR = path.join(os.homedir(), ".pi", "agent");
@@ -241,6 +269,51 @@ export class PackageManagerWrapper {
     });
 
     return operationId;
+  }
+
+  /**
+   * Move a package between scopes (global ↔ local). Hybrid execution:
+   *
+   *   - npm:/git:/https: → install at destination, then remove from origin.
+   *   - abs-path/rel-path → settings-only edit (pi never copies path sources).
+   *
+   * Returns moveId synchronously. Single-flight via `this.busy`.
+   * Throws synchronously: `PackageOperationBusyError`,
+   * `InvalidMoveRequestError`, `UnsupportedSourceForDestinationError`.
+   * Throws async (caught by executeMove): `AlreadyAtDestinationError`
+   * is delivered via the complete listener with success=false.
+   *
+   * See change: unify-package-management-ui.
+   */
+  async move(req: MoveRequest): Promise<string> {
+    if (this.busy) {
+      throw new PackageOperationBusyError();
+    }
+
+    if (req.fromScope === req.toScope) {
+      throw new InvalidMoveRequestError("fromScope and toScope must differ");
+    }
+    if (req.fromScope === "local" && !req.fromCwd) {
+      throw new InvalidMoveRequestError("fromCwd required when fromScope is local");
+    }
+    if (req.toScope === "local" && !req.toCwd) {
+      throw new InvalidMoveRequestError("toCwd required when toScope is local");
+    }
+
+    const sourceStr = typeof req.entry === "string" ? req.entry : req.entry.source;
+    if (!sourceStr || typeof sourceStr !== "string") {
+      throw new InvalidMoveRequestError("entry.source must be a non-empty string");
+    }
+    if (parseSourceKind(sourceStr) === "rel-path" && req.fromScope === "local" && !req.fromCwd) {
+      throw new UnsupportedSourceForDestinationError("relative-path source requires fromCwd");
+    }
+
+    const moveId = crypto.randomUUID();
+    this.busy = true;
+    this.executeMove(moveId, req).catch(() => {
+      // errors handled inside executeMove
+    });
+    return moveId;
   }
 
   /**
@@ -322,13 +395,14 @@ export class PackageManagerWrapper {
     this.pmPending.delete(effectiveCwd);
   }
 
-  private async executeOperation(operationId: string, req: OperationRequest): Promise<void> {
+  private async executeOperation(operationId: string, req: OperationRequest, moveId?: string): Promise<void> {
     const result: OperationResult = {
       operationId,
       action: req.action,
       source: req.source,
       scope: req.scope,
       success: false,
+      moveId,
     };
 
     try {
@@ -336,7 +410,7 @@ export class PackageManagerWrapper {
       const local = req.scope === "local";
 
       pm.setProgressCallback((event: ProgressEvent) => {
-        this.onProgress?.(operationId, event);
+        this.onProgress?.(operationId, event, moveId);
       });
 
       switch (req.action) {
@@ -357,8 +431,9 @@ export class PackageManagerWrapper {
       // listInstalled() calls see the mutated settings.json.
       this.invalidatePackageManager(req.cwd);
 
-      // Reload all sessions after successful operation
-      if (this.reloadSessions) {
+      // Reload all sessions. When called inside a move (moveId set),
+      // skip — executeMove issues exactly one reload at the very end.
+      if (this.reloadSessions && !moveId) {
         try {
           const count = await this.reloadSessions();
           (result as any).sessionsReloaded = count;
@@ -376,10 +451,232 @@ export class PackageManagerWrapper {
       } else {
         result.error = err?.message ?? String(err);
       }
+      // Re-throw so executeMove can detect failure and short-circuit.
+      if (moveId) throw err;
+    } finally {
+      // When inside a move the busy lock is held by executeMove —
+      // do NOT release it here. Don't fire the completion listener
+      // either — executeMove emits a single composite "move" event.
+      if (!moveId) {
+        this.busy = false;
+        this.onComplete?.(result);
+      }
+    }
+  }
+
+  /**
+   * Execute a move. Holds the busy lock across both phases. Emits exactly
+   * one `package_operation_complete` listener call with `action: "move"`.
+   */
+  private async executeMove(moveId: string, req: MoveRequest): Promise<void> {
+    const sourceStr = typeof req.entry === "string" ? req.entry : req.entry.source;
+    const result: OperationResult = {
+      operationId: moveId,
+      action: "move",
+      source: sourceStr,
+      scope: req.toScope,
+      success: false,
+      moveId,
+    };
+
+    const pmCwd = req.toCwd ?? req.fromCwd ?? process.cwd();
+
+    try {
+      const pm = await this.createPackageManager(pmCwd);
+      const settingsManager = (pm as any).settingsManager;
+      if (!settingsManager) {
+        throw new Error("pi DefaultPackageManager does not expose settingsManager (unexpected pi version)");
+      }
+
+      // Identity preflight against destination's packages[].
+      const destPackages = readPackages(settingsManager, req.toScope);
+      const toSettingsDir = req.toScope === "global"
+        ? path.join(os.homedir(), ".pi", "agent")
+        : path.join(req.toCwd ?? pmCwd, ".pi");
+      const fromSettingsDir = req.fromScope === "global"
+        ? path.join(os.homedir(), ".pi", "agent")
+        : path.join(req.fromCwd ?? pmCwd, ".pi");
+      const incomingIdentity = computeIdentity(sourceStr, fromSettingsDir);
+      const dup = destPackages.find((e) => {
+        const s = typeof e === "string" ? e : e?.source;
+        return s ? computeIdentity(s, toSettingsDir) === incomingIdentity : false;
+      });
+      if (dup) throw new AlreadyAtDestinationError(sourceStr, req.toScope);
+
+      const kind = parseSourceKind(sourceStr);
+      const isPathArm = kind === "abs-path" || kind === "rel-path";
+
+      pm.setProgressCallback((event: ProgressEvent) => {
+        this.onProgress?.(moveId, { ...event, action: "move" as any }, moveId);
+      });
+
+      if (isPathArm) {
+        // Path arm: settings-only edit, no file copy.
+        const fromPackages = readPackages(settingsManager, req.fromScope);
+        const fromIdx = fromPackages.findIndex((e) => {
+          const s = typeof e === "string" ? e : e?.source;
+          return s && computeIdentity(s, fromSettingsDir) === incomingIdentity;
+        });
+        if (fromIdx < 0) {
+          throw new Error(`source not found in ${req.fromScope} packages[]`);
+        }
+        const originEntry = fromPackages[fromIdx];
+        const newSource = translatePathSource({
+          originalSource: sourceStr,
+          fromSettingsDir,
+          toSettingsDir,
+          toScope: req.toScope,
+        });
+        const newEntry: PackageEntry = typeof originEntry === "string"
+          ? newSource
+          : { ...originEntry, source: newSource };
+
+        writePackages(settingsManager, req.toScope, [...destPackages, newEntry]);
+        writePackages(settingsManager, req.fromScope, fromPackages.filter((_, i) => i !== fromIdx));
+      } else {
+        // npm/git/https arm: install at dest, then remove from origin.
+        const installReq: OperationRequest = {
+          action: "install",
+          source: sourceStr,
+          scope: req.toScope,
+          cwd: req.toScope === "local" ? req.toCwd : undefined,
+        };
+        await this.executeOperation(crypto.randomUUID(), installReq, moveId);
+
+        // Filter-preservation: if origin had filters (object form), patch
+        // the destination entry pi just wrote so they survive the move.
+        if (typeof req.entry === "object" && req.entry !== null) {
+          const finalDest = readPackages(settingsManager, req.toScope);
+          const idx = finalDest.findIndex((e) => {
+            const s = typeof e === "string" ? e : e?.source;
+            return s && computeIdentity(s, toSettingsDir) === incomingIdentity;
+          });
+          if (idx >= 0) {
+            const installedEntry = finalDest[idx];
+            const installedSource = typeof installedEntry === "string"
+              ? installedEntry
+              : installedEntry.source;
+            finalDest[idx] = { ...req.entry, source: installedSource };
+            writePackages(settingsManager, req.toScope, finalDest);
+          }
+        }
+
+        // Remove from origin. Failure → partial-success, not full failure.
+        try {
+          const removeReq: OperationRequest = {
+            action: "remove",
+            source: sourceStr,
+            scope: req.fromScope,
+            cwd: req.fromScope === "local" ? req.fromCwd : undefined,
+          };
+          await this.executeOperation(crypto.randomUUID(), removeReq, moveId);
+        } catch (removeErr: any) {
+          result.partialSuccess = {
+            installed: true,
+            removed: false,
+            removeError: removeErr?.message ?? String(removeErr),
+          };
+        }
+      }
+
+      result.success = true;
+      this.invalidatePackageManager(req.fromCwd);
+      this.invalidatePackageManager(req.toCwd);
+
+      if (this.reloadSessions) {
+        try {
+          const count = await this.reloadSessions();
+          (result as any).sessionsReloaded = count;
+        } catch (err) {
+          console.error("[package-manager] session reload failed:", err);
+        }
+      }
+    } catch (err: any) {
+      if (err instanceof ModuleResolutionError) {
+        result.error = err.message;
+        result.diagnostics = err.resolution;
+      } else if (err instanceof AlreadyAtDestinationError) {
+        result.error = err.message;
+        (result as any).code = "already_at_destination";
+      } else {
+        result.error = err?.message ?? String(err);
+      }
     } finally {
       this.busy = false;
       this.onComplete?.(result);
     }
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────
+// SettingsManager helpers — thin shim around pi's API.
+// ──────────────────────────────────────────────────────────────────
+
+function readPackages(settingsManager: any, scope: PackageScope): PackageEntry[] {
+  const settings = scope === "global"
+    ? settingsManager.getGlobalSettings?.()
+    : settingsManager.getProjectSettings?.();
+  return Array.isArray(settings?.packages) ? [...settings.packages] : [];
+}
+
+function writePackages(settingsManager: any, scope: PackageScope, packages: PackageEntry[]): void {
+  if (scope === "global") {
+    if (typeof settingsManager.setPackages !== "function") {
+      throw new Error("settingsManager.setPackages not available (unexpected pi version)");
+    }
+    settingsManager.setPackages(packages);
+  } else {
+    if (typeof settingsManager.setProjectPackages !== "function") {
+      throw new Error("settingsManager.setProjectPackages not available (unexpected pi version)");
+    }
+    settingsManager.setProjectPackages(packages);
+  }
+}
+
+/**
+ * Translate a path source between scopes per design.md decision 1.
+ * To global → resolve to absolute against fromSettingsDir.
+ * To local  → try path.relative(toSettingsDir, abs); keep absolute if
+ * the relative form escapes the cwd tree by more than 2 `..` segments.
+ */
+export function translatePathSource(args: {
+  originalSource: string;
+  fromSettingsDir: string;
+  toSettingsDir: string;
+  toScope: PackageScope;
+}): string {
+  const { originalSource, fromSettingsDir, toSettingsDir, toScope } = args;
+  const abs = path.isAbsolute(originalSource)
+    ? path.normalize(originalSource)
+    : path.resolve(fromSettingsDir, originalSource);
+
+  if (toScope === "global") return abs;
+
+  const rel = path.relative(toSettingsDir, abs);
+  if (rel === "") return ".";
+  const upSegments = rel.split(path.sep).filter((s) => s === "..").length;
+  if (upSegments > 2) return abs;
+  return rel;
+}
+
+export class AlreadyAtDestinationError extends Error {
+  constructor(public source: string, public destScope: PackageScope) {
+    super(`Package already installed at ${destScope} scope: ${source}`);
+    this.name = "AlreadyAtDestinationError";
+  }
+}
+
+export class InvalidMoveRequestError extends Error {
+  constructor(reason: string) {
+    super(`Invalid move request: ${reason}`);
+    this.name = "InvalidMoveRequestError";
+  }
+}
+
+export class UnsupportedSourceForDestinationError extends Error {
+  constructor(reason: string) {
+    super(`Unsupported source for destination: ${reason}`);
+    this.name = "UnsupportedSourceForDestinationError";
   }
 }
 

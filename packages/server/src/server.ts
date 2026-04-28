@@ -598,9 +598,16 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
   // Package management
   const packageManagerWrapper = new PackageManagerWrapper();
 
-  // Forward progress events to all browser clients
-  packageManagerWrapper.setProgressListener((operationId, event) => {
-    browserGateway.broadcastToAll({ type: "package_progress", operationId, event } as any);
+  // Forward progress events to all browser clients. The third arg
+  // (`moveId`) is set when the event is part of a composite move op;
+  // clients group events by moveId. See change: unify-package-management-ui.
+  packageManagerWrapper.setProgressListener((operationId, event, moveId) => {
+    browserGateway.broadcastToAll({
+      type: "package_progress",
+      operationId,
+      ...(moveId ? { moveId } : {}),
+      event,
+    } as any);
   });
 
   // On completion: broadcast to browsers + invalidate the recommended cache
@@ -615,6 +622,8 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
       error: result.error,
       diagnostics: result.diagnostics,
       sessionsReloaded: (result as any).sessionsReloaded,
+      ...(result.moveId ? { moveId: result.moveId } : {}),
+      ...(result.partialSuccess ? { partialSuccess: result.partialSuccess } : {}),
     } as any);
     if (result.success) invalidateRecommendedCache();
   });

@@ -1131,6 +1131,45 @@ This is separate from the main JSON dashboard WebSocket (`/ws`).
 1. **Postinstall** — `packages/server/scripts/fix-pty-permissions.cjs` (wired at workspace-root `postinstall`) uses `require.resolve("node-pty/package.json")` to locate the dependency wherever npm placed it and sets mode `0o755` on every `prebuilds/*/spawn-helper` and `prebuilds/*/pty.node`.
 2. **Electron bundle** — `packages/electron/scripts/bundle-server.sh` runs `find … -name spawn-helper -exec chmod +x` after `npm install` and removes macOS quarantine flags (`xattr -d com.apple.quarantine`) from native binaries.
 
+### Package management (install / remove / update / move)
+
+Package operations all flow through `package-manager-wrapper.ts`'s single-flight `busy` lock. The route layer (`/api/packages/install` / `/remove` / `/update` / `/move`) returns `202 { operationId | moveId }` synchronously and progress streams over the existing `package_progress` + `package_operation_complete` WebSocket channels.
+
+**Move semantics** (added in change `unify-package-management-ui`):
+
+Moving a package between scopes (global ↔ local) is a hybrid operation, keyed on the source kind:
+
+```
+npm: / git: / https://       → install at destination + remove from origin
+  (real fetch — npm cache or git clone, both cached after first run)
+  busy lock held across both phases; reload coalesced to one at the end
+  filter objects in packages[] entries are post-patched onto the dest
+  entry after pi's installer writes a bare-string entry
+
+abs-path / rel-path           → settings-only edit; no file copy
+  (matches pi's "paths are not copied" contract from docs/packages.md)
+  reads both packages[] arrays via SettingsManager.getGlobalSettings/
+  getProjectSettings; rewrites source string for destination scope:
+    to global → path.resolve against fromSettingsDir (absolute)
+    to local  → path.relative against toSettingsDir; falls back to
+                absolute when the relative form would escape the cwd
+                tree by more than 2 `..` segments
+  splices destination + removes from origin via setPackages /
+  setProjectPackages (atomic write per pi's settings APIs)
+```
+
+**Identity preflight** (per pi's dedup rules from `docs/packages.md`): before any side-effect, the wrapper computes the package identity and rejects with `AlreadyAtDestinationError` (→ 409) if the destination scope already contains a matching entry. Identity rules:
+
+```
+npm:<spec>                 → bare package name (without @version)
+git:<url> / https://<url>  → url with trailing @<ref> stripped
+path source                → resolved absolute path
+```
+
+**Composite progress events**: the wrapper threads an internal `moveId?: string` parameter through `executeOperation` so progress and completion events from both sub-phases share the same `moveId`. The server gateway forwards the field on every WS broadcast; the client's `move-tracker` (singleton store) groups events by `moveId` and exposes per-source state through `usePackageOperations.moveStateFor()`. Consumers that ignore `moveId` continue to render install + remove as two unrelated operations — graceful back-compat.
+
+**Partial-success recovery**: if install at destination succeeds but remove from origin fails, the move's `package_operation_complete` event includes `partialSuccess: { installed: true, removed: false, removeError: <message> }`. The client's `<InstalledPackagesList>` renders an inline banner with a Cleanup button that POSTs `/api/packages/remove` against `fromScope` (idempotent on retry). No HTTP-level 207 — the move endpoint is async (202 + moveId pattern), so partial-success surfaces post-202 via the WS channel.
+
 ### Bundled first-party extensions (Electron installer)
 
 The Electron installer can optionally ship a curated subset of recommended pi extensions inside `resources/bundled-extensions/<id>/` so first-run works with zero network access. The set is declared by `BUNDLED_EXTENSION_IDS` in `packages/shared/src/recommended-extensions.ts` (currently `pi-anthropic-messages`, `pi-flows`) — a strict subset of `RECOMMENDED_EXTENSIONS`, enforced by a unit test.

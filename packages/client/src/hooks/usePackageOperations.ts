@@ -27,6 +27,8 @@ import {
   type PackageOperationStatus,
   type RunningOp,
 } from "../lib/package-queue.js";
+import { moveTracker, type MoveState } from "../lib/move-tracker.js";
+import { movePackage, type PackageEntry, type MoveResponse } from "../lib/packages-api.js";
 
 export type { PackageOperationStatus } from "../lib/package-queue.js";
 
@@ -135,11 +137,60 @@ export function usePackageOperations(
     // Backwards-compat no-op: queue manages its own lifecycle.
   }, []);
 
+  // ── Move ──────────────────────────────────────────────────────────────
+  // Move ops live outside the source-keyed `packageQueue` (they have
+  // their own moveId-keyed identity and partial-success semantics).
+  // See change: unify-package-management-ui.
+  // ───────────────────────────────────────────────────────────────
+
+  // Re-render on any move-tracker state change so callers see live phase.
+  const [, forceMove] = useState(0);
+  useEffect(
+    () => moveTracker.subscribe(() => forceMove((n) => n + 1)),
+    [],
+  );
+
+  const move = useCallback(
+    async (
+      entry: PackageEntry,
+      args: {
+        fromScope: PackageScope;
+        fromCwd?: string;
+        toScope: PackageScope;
+        toCwd?: string;
+      },
+    ): Promise<MoveResponse> => {
+      const sourceStr = typeof entry === "string" ? entry : entry.source;
+      const res = await movePackage({ entry, ...args });
+      if (res.ok) {
+        moveTracker.register({
+          moveId: res.moveId,
+          source: sourceStr,
+          fromScope: args.fromScope,
+          fromCwd: args.fromCwd,
+          toScope: args.toScope,
+          toCwd: args.toCwd,
+        });
+      }
+      return res;
+    },
+    [],
+  );
+
+  /** Get the live state of a move by source (most recent only). */
+  const moveStateFor = useCallback(
+    (source: string): MoveState | undefined => moveTracker.getBySource(source),
+    [],
+  );
+
   return {
     operation,
     install,
     remove,
     update,
+    move,
+    moveStateFor,
+    clearMove: (moveId: string) => moveTracker.clear(moveId),
     clearOperation,
     statusFor,
     messageFor,

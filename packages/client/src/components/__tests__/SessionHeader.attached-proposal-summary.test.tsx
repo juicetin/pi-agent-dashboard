@@ -178,4 +178,48 @@ describe("SessionHeader attached-proposal summary — mobile", () => {
     expect(screen.getByTestId("mobile-header-attached-chip")).toBeTruthy();
     expect(screen.queryByTestId("artifact-letters-btn")).toBeNull();
   });
+
+  // Two-row layout assertions — see change: fix-mobile-header-and-orientation.
+  it("places chip on its own row, NOT a sibling of the title span, when attached", async () => {
+    const SessionHeader = await loadMobile();
+    render(
+      <SessionHeader
+        session={makeSession({ attachedProposal: "add-extension-ui-decorations", name: "my-session" })}
+        state={createInitialState()}
+        mobileActions={{
+          openspecChanges: [makeChange({ name: "add-extension-ui-decorations" })],
+          onAttachProposal: () => {},
+          onDetachProposal: () => {},
+          onReadArtifact: () => {},
+        }}
+      />,
+    );
+    const chip = screen.getByTestId("mobile-header-attached-chip");
+    const title = screen.getByText("my-session");
+    // Chip's nearest row container must NOT contain the title — they're on
+    // separate rows.
+    const chipRow = chip.closest("div");
+    expect(chipRow).toBeTruthy();
+    expect(chipRow!.contains(title)).toBe(false);
+  });
+
+  it("renders header as a single-row container when attachedProposal is null", async () => {
+    const SessionHeader = await loadMobile();
+    const { container } = render(
+      <SessionHeader
+        session={makeSession({ attachedProposal: null })}
+        state={createInitialState()}
+        mobileActions={{
+          openspecChanges: [],
+          onAttachProposal: () => {},
+        }}
+      />,
+    );
+    // No chip in the DOM.
+    expect(screen.queryByTestId("mobile-header-attached-chip")).toBeNull();
+    // The flex-col outer wrapper has exactly one child (row 1).
+    const outer = container.firstElementChild as HTMLElement;
+    expect(outer.className).toContain("flex-col");
+    expect(outer.children.length).toBe(1);
+  });
 });

@@ -151,8 +151,13 @@ function MobileHeader({ session, showBack, onBack, isRenaming, onConfirmRename, 
     ? mobileActions?.openspecChanges?.find((c) => c.name === session.attachedProposal)
     : undefined;
   const readArtifact = onReadArtifact ?? mobileActions?.onReadArtifact;
-  return (
-    <div className="px-2 py-1 border-b border-[var(--border-primary)] flex items-center gap-1 text-sm min-h-[44px]">
+  // Row 1: back + name + attach button + kebab. Always present.
+  // The attached-proposal chip used to live here too (between name and the
+  // MobileAttachButton), but it crowded the title down to ~8-10 visible chars
+  // on a 360px-wide phone. The chip now lives on row 2 so the title gets the
+  // full width of row 1. See change: fix-mobile-header-and-orientation.
+  const row1 = (
+    <div className="flex items-center gap-1 min-h-[44px]">
       {showBack && onBack && (
         <button
           onClick={onBack}
@@ -172,36 +177,6 @@ function MobileHeader({ session, showBack, onBack, isRenaming, onConfirmRename, 
         />
       ) : (
         <span className="font-medium truncate flex-1">{getSessionDisplayName(session)}</span>
-      )}
-      {/* Mobile attached-proposal chip (read-only) — see change: */}
-      {/* fix-mobile-attach-proposal-display. Placed between the title and the */}
-      {/* MobileAttachButton, which keeps action affordances (attach/detach). */}
-      {session.attachedProposal && (
-        <span
-          className="text-[10px] text-blue-400 max-w-[55%] flex items-center gap-0.5 flex-shrink-0"
-          title={`Attached: ${session.attachedProposal}`}
-          data-testid="mobile-header-attached-chip"
-        >
-          <Icon path={mdiPaperclip} size={0.4} />
-          <span className="truncate min-w-0">{session.attachedProposal}</span>
-          {attachedChange && attachedChange.artifacts.length > 0 && (
-            <span className="flex-shrink-0">
-              <ArtifactLettersButton
-                artifacts={attachedChange.artifacts}
-                changeName={attachedChange.name}
-                onReadArtifact={readArtifact}
-              />
-            </span>
-          )}
-          {attachedChange && attachedChange.totalTasks > 0 && (
-            <span
-              className="text-[10px] text-[var(--text-muted)] flex-shrink-0"
-              data-testid="attached-proposal-task-counter"
-            >
-              ({attachedChange.completedTasks}/{attachedChange.totalTasks})
-            </span>
-          )}
-        </span>
       )}
       {mobileActions && (
         <MobileAttachButton
@@ -229,6 +204,54 @@ function MobileHeader({ session, showBack, onBack, isRenaming, onConfirmRename, 
           onRefresh={mobileActions.onRefresh}
         />
       )}
+    </div>
+  );
+
+  // Row 2: attached-proposal chip. Read-only (action affordances stay in the
+  // MobileAttachButton popover on row 1). The chip's data-testid, content,
+  // tooltip, and reactivity are unchanged from fix-mobile-attach-proposal-display
+  // — only its parent moved from row-1 sibling to row-2 sibling.
+  // The previous max-w-[55%] is dropped because the chip no longer competes
+  // with the title for horizontal space; the inner change-name span keeps its
+  // truncate so very long names still ellipsize within the full row-2 width.
+  // See change: fix-mobile-header-and-orientation.
+  const chipRow = session.attachedProposal ? (
+    <div className="flex items-center min-h-[20px] pl-1">
+      <span
+        className="text-[10px] text-blue-400 flex items-center gap-0.5 min-w-0"
+        title={`Attached: ${session.attachedProposal}`}
+        data-testid="mobile-header-attached-chip"
+      >
+        <Icon path={mdiPaperclip} size={0.4} />
+        <span className="truncate min-w-0">{session.attachedProposal}</span>
+        {attachedChange && attachedChange.artifacts.length > 0 && (
+          <span className="flex-shrink-0">
+            <ArtifactLettersButton
+              artifacts={attachedChange.artifacts}
+              changeName={attachedChange.name}
+              onReadArtifact={readArtifact}
+            />
+          </span>
+        )}
+        {attachedChange && attachedChange.totalTasks > 0 && (
+          <span
+            className="text-[10px] text-[var(--text-muted)] flex-shrink-0"
+            data-testid="attached-proposal-task-counter"
+          >
+            ({attachedChange.completedTasks}/{attachedChange.totalTasks})
+          </span>
+        )}
+      </span>
+    </div>
+  ) : null;
+
+  // When there's an attached proposal, render two rows. When there isn't, the
+  // header stays a single-row container exactly as before — no empty row 2 is
+  // reserved. See change: fix-mobile-header-and-orientation.
+  return (
+    <div className="px-2 py-1 border-b border-[var(--border-primary)] flex flex-col text-sm">
+      {row1}
+      {chipRow}
     </div>
   );
 }

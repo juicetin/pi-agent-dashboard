@@ -6,7 +6,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { loadConfig, getPluginsConfig, getPluginConfig } from "../config.ts";
+import { loadConfig, getPluginsConfig, getPluginConfig } from "../config.js";
 
 let tmpDir: string;
 let origHome: string | undefined;

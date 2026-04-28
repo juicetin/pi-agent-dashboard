@@ -10,6 +10,7 @@ import {
   applyPluginConfigUpdate,
 } from "../plugin-context.js";
 import { createSlotRegistry } from "../slot-registry.js";
+import type { DashboardSession } from "@blackbelt-technology/pi-dashboard-shared/types.js";
 
 // Helper: render a component that calls a hook, capture the result
 function renderHook<T>(hookFn: () => T, wrapper: React.FC<{ children: React.ReactNode }>) {
@@ -19,7 +20,7 @@ function renderHook<T>(hookFn: () => T, wrapper: React.FC<{ children: React.Reac
     return null;
   }
   render(
-    React.createElement(wrapper, {}, React.createElement(TestComponent)),
+    React.createElement(wrapper, { children: React.createElement(TestComponent) }),
   );
   return { get: () => result! };
 }
@@ -70,7 +71,7 @@ describe("usePluginConfig", () => {
     let config: Record<string, unknown> | null = null;
 
     function Comp() {
-      config = usePluginConfig<Record<string, unknown>>();
+      config = usePluginConfig<Record<string, unknown>>() as Record<string, unknown>;
       return null;
     }
 
@@ -88,7 +89,7 @@ describe("usePluginConfig", () => {
     );
 
     expect(config).toBeTruthy();
-    expect((config as Record<string, unknown>).foo).toBe(42);
+    expect((config as unknown as Record<string, unknown>).foo).toBe(42);
   });
 
   it("re-renders on plugin_config_update", async () => {
@@ -147,10 +148,10 @@ describe("usePluginLogger", () => {
 
 describe("useAllSessions", () => {
   it("returns the sessions array passed to the provider", () => {
-    const sessions = [
-      { id: "s1", cwd: "/", source: "tui" as const, status: "active" as const, startedAt: 0 },
+    const sessions: DashboardSession[] = [
+      { id: "s1", cwd: "/", source: "tui", status: "active", startedAt: 0 },
     ];
-    let result: typeof sessions = [];
+    let result: DashboardSession[] = [];
     function Comp() {
       result = useAllSessions();
       return null;

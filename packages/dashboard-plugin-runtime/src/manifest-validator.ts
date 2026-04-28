@@ -6,6 +6,7 @@ import {
   SLOT_DEFINITIONS,
   VALID_SETTINGS_TABS,
   type SlotId,
+  type SettingsTab,
 } from "@blackbelt-technology/pi-dashboard-shared/dashboard-plugin/slot-types.js";
 import type {
   PluginManifest,
@@ -44,7 +45,7 @@ function validateClaim(claim: unknown, pluginId: string, index: number): PluginC
 
   // settings-section: validate optional tab field
   if (slotId === "settings-section" && c.tab !== undefined) {
-    if (!VALID_SETTINGS_TABS.includes(c.tab as string)) {
+    if (!VALID_SETTINGS_TABS.includes(c.tab as SettingsTab)) {
       throw new ManifestValidationError(
         pluginId,
         `claims[${index}].tab "${c.tab}" is not a valid settings tab. Valid tabs: ${VALID_SETTINGS_TABS.join(", ")}`,
@@ -68,7 +69,7 @@ function validateClaim(claim: unknown, pluginId: string, index: number): PluginC
     ...(typeof c.command === "string" ? { command: c.command } : {}),
     ...(typeof c.trigger === "string" ? { trigger: c.trigger } : {}),
     ...(typeof c.toolName === "string" ? { toolName: c.toolName } : {}),
-    ...(typeof c.tab === "string" ? { tab: c.tab as string } : {}),
+    ...(typeof c.tab === "string" ? { tab: c.tab as SettingsTab } : {}),
     ...(typeof c.predicate === "string" ? { predicate: c.predicate } : {}),
     ...(c.config && typeof c.config === "object" && !Array.isArray(c.config)
       ? { config: c.config as Record<string, unknown> }

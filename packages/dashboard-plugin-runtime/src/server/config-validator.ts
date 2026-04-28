@@ -6,7 +6,7 @@
  *
  * Ajv is already a transitive dependency of Fastify, so no new dep.
  */
-import Ajv from "ajv";
+import Ajv, { type ValidateFunction } from "ajv";
 
 export class ValidationError extends Error {
   constructor(
@@ -23,9 +23,9 @@ export class ValidationError extends Error {
 const ajv = new Ajv({ coerceTypes: false, useDefaults: true, allErrors: true });
 
 /** Cache compiled validators by schema identity. */
-const validatorCache = new Map<string, Ajv.ValidateFunction>();
+const validatorCache = new Map<string, ValidateFunction>();
 
-function getValidator(schema: Record<string, unknown>): Ajv.ValidateFunction {
+function getValidator(schema: Record<string, unknown>): ValidateFunction {
   const key = JSON.stringify(schema);
   if (!validatorCache.has(key)) {
     validatorCache.set(key, ajv.compile(schema));

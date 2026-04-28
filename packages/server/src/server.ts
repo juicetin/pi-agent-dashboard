@@ -871,7 +871,7 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
             sessionManager: {
               listActive: () => sessionManager.listActive(),
               listAll: () => sessionManager.listAll(),
-              getSession: (id) => sessionManager.getSession(id),
+              getSession: (id: string) => sessionManager.get(id),
             },
             eventStore: {
               getEvents: (sessionId) => eventStore.getEvents(sessionId, 0),

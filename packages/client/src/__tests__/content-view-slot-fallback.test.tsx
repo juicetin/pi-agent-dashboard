@@ -32,7 +32,10 @@ function SlotWrapper(): React.ReactElement | null {
 describe("JSX slot ?? fallback semantics", () => {
   it("documents the bug: <Slot/> ?? fallback chooses the slot element even when the slot renders null", () => {
     // The expression mirrors the broken pattern that shipped in App.tsx.
-    const broken = <SlotWrapper /> ?? <span data-testid="fallback">FALLBACK</span>;
+    // Cast to a nullable type so TS doesn't reject the deliberately-buggy
+    // pattern this regression test exists to document.
+    const slotElement: React.ReactElement | null = (<SlotWrapper />) as React.ReactElement | null;
+    const broken = slotElement ?? <span data-testid="fallback">FALLBACK</span>;
     const { queryByTestId, container } = render(<>{broken}</>);
 
     // The "fallback" branch is NOT chosen — `<SlotWrapper/>` is truthy.

@@ -147,6 +147,114 @@ export function createInitialState(): SessionState {
 
 
 
+/**
+ * Reorder the suffix of `messages` so that rows belonging to a single
+ * assistant message_end land in the same order as the model's content
+ * array. Without this, an assistant message of shape `[text, toolCall]`
+ * renders the running tool card BEFORE its own text bubble — because
+ * `tool_execution_start` pushes immediately while the assistant text
+ * only lands at `message_end`.
+ *
+ * Matching rules (per content-array order):
+ * - `text` block        → most recent `role:"assistant"` row in the suffix
+ * - `toolCall` block    → `role:"toolResult"` row whose `toolCallId` matches
+ * - `thinking` block    → most recent `role:"thinking"` row in the suffix
+ *
+ * Suffix rows that match no content block ("unclaimed") keep their
+ * **original positions** in the new suffix. Claimed rows fill the
+ * remaining positions in content-array order. This protects rows from
+ * prior assistant messages that may end up inside the K-sized suffix
+ * window when the current message has more content blocks than rows
+ * actually pushed (e.g. an empty thinking block, or a `tool_execution_start`
+ * that hasn't fired yet at message_end time — spec scenario 8). Without
+ * this guard, an unclaimed prior-message row would be appended at the
+ * tail and visibly migrate past the just-ended message.
+ *
+ * Pure: returns a new array; the input is not mutated.
+ *
+ * See change: fix-text-tool-render-order.
+ */
+function reorderToolCardsForAssistantMessage(
+  messages: ChatMessage[],
+  assistantContent: unknown[],
+): ChatMessage[] {
+  if (!Array.isArray(assistantContent)) return messages;
+  // Fast path: nothing to reorder if there are no tool calls in this message.
+  const hasToolCall = assistantContent.some(
+    (b: any) => b && typeof b === "object" && b.type === "toolCall",
+  );
+  if (!hasToolCall) return messages;
+
+  const relevant = assistantContent.filter(
+    (b: any) =>
+      b &&
+      typeof b === "object" &&
+      (b.type === "text" || b.type === "toolCall" || b.type === "thinking"),
+  ) as Array<{ type: string; id?: string }>;
+  const k = relevant.length;
+  if (k === 0) return messages;
+
+  const start = Math.max(0, messages.length - k);
+  const suffix = messages.slice(start);
+  if (suffix.length === 0) return messages;
+
+  // Pass 1: walk content blocks in order, claim suffix indices.
+  const claimedSuffixIdxs = new Set<number>();
+  const claimedInContentOrder: ChatMessage[] = [];
+  for (const block of relevant) {
+    let si = -1;
+    if (block.type === "text") {
+      si = suffix.findIndex(
+        (m, i) => !claimedSuffixIdxs.has(i) && m.role === "assistant",
+      );
+    } else if (block.type === "toolCall") {
+      const id = block.id;
+      si = suffix.findIndex(
+        (m, i) =>
+          !claimedSuffixIdxs.has(i) &&
+          m.role === "toolResult" &&
+          m.toolCallId === id,
+      );
+    } else if (block.type === "thinking") {
+      si = suffix.findIndex(
+        (m, i) => !claimedSuffixIdxs.has(i) && m.role === "thinking",
+      );
+    }
+    if (si >= 0) {
+      claimedSuffixIdxs.add(si);
+      claimedInContentOrder.push(suffix[si]);
+    }
+    // else: block has no corresponding row in the suffix — skip silently.
+  }
+
+  // Pass 2: build the new suffix. Unclaimed indices keep their original
+  // suffix[i] value. Claimed indices are filled in content order from
+  // claimedInContentOrder.
+  const newSuffix: (ChatMessage | undefined)[] = new Array(suffix.length);
+  for (let i = 0; i < suffix.length; i++) {
+    if (!claimedSuffixIdxs.has(i)) newSuffix[i] = suffix[i];
+  }
+  let cursor = 0;
+  for (let i = 0; i < newSuffix.length; i++) {
+    if (newSuffix[i] === undefined) {
+      newSuffix[i] = claimedInContentOrder[cursor++];
+    }
+  }
+
+  // Optimisation: if the new suffix is identical to the old suffix
+  // (already in correct order) skip the array rebuild.
+  let changed = false;
+  for (let i = 0; i < suffix.length; i++) {
+    if (suffix[i] !== newSuffix[i]) {
+      changed = true;
+      break;
+    }
+  }
+  if (!changed) return messages;
+
+  return [...messages.slice(0, start), ...(newSuffix as ChatMessage[])];
+}
+
 /** Extract text from content blocks: [{ type: "text", text: "..." }, ...] */
 function extractContentBlockText(blocks: unknown[]): string | null {
   const texts = blocks
@@ -473,6 +581,14 @@ export function reduceEvent(state: SessionState, event: DashboardEvent): Session
               ];
             }
           }
+        }
+
+        // Reorder suffix so the assistant text bubble and its child tool
+        // cards land in the order dictated by the model's content array.
+        // Fast-path skipped inside the helper when no toolCall blocks.
+        // See change: fix-text-tool-render-order.
+        if (Array.isArray(msg?.content)) {
+          next.messages = reorderToolCardsForAssistantMessage(next.messages, msg.content);
         }
       }
       break;

@@ -74,6 +74,7 @@ export function createBrowserGateway(
   pendingDashboardSpawns?: Map<string, number>,
   maxWsBufferBytes?: number,
   pendingAttachRegistry?: import("./pending-attach-registry.js").PendingAttachRegistry,
+  pendingResumeIntents?: import("./pending-resume-intent-registry.js").PendingResumeIntentRegistry,
 ): BrowserGateway {
   const wss = new WebSocketServer({ noServer: true });
 
@@ -257,6 +258,7 @@ export function createBrowserGateway(
           directoryService, terminalManager,
           headlessPidRegistry, pendingResumeRegistry, pendingDashboardSpawns,
           pendingAttachRegistry,
+          pendingResumeIntents,
           sendTo, broadcast, getSubscribers, replayPendingUiRequests,
           trackUiRequest: trackUiRequest,
           markReplaying(targetWs, sessionId) {

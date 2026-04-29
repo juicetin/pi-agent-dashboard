@@ -19,6 +19,7 @@ import { createMetaPersistence, type MetaPersistence } from "./meta-persistence.
 import { createSessionOrderManager, type SessionOrderManager } from "./session-order-manager.js";
 import { createPendingForkRegistry, type PendingForkRegistry } from "./pending-fork-registry.js";
 import { createPendingAttachRegistry } from "./pending-attach-registry.js";
+import { createPendingResumeIntentRegistry } from "./pending-resume-intent-registry.js";
 
 // pending-load-manager removed — server loads sessions directly via DirectoryService
 import { createDirectoryService, type DirectoryService } from "./directory-service.js";
@@ -211,14 +212,23 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
         });
       }
     } else if (!isEnded && wasEnded) {
-      // Resume: ended→alive. The session is becoming visible in the
-      // alive tier. If a drag-to-resume put it back in `sessionOrder`
-      // already, leave it where the user dropped it; otherwise (e.g.
-      // a plain Resume click), prepend so the resumed session lands at
-      // the top of the alive tier rather than the tail. Either way,
-      // broadcast `sessions_reordered` so connected browsers refresh
-      // their local order map.
+      // Resume: ended→alive. Two real triggers land here:
+      //   (a) user-initiated  — Resume click, drag-to-resume, REST
+      //                         resume; tagged via pendingResumeIntents
+      //   (b) bridge reattach — dashboard restarted, scan classified the
+      //                         session as ended, but the pi process was
+      //                         still alive and the bridge re-registered.
+      //                         NOT tagged.
+      // We always clear the transition tracker so a future alive→ended
+      // for this session fires correctly. We only mutate the persisted
+      // sessionOrder + broadcast for case (a) — case (b) MUST preserve
+      // the user's existing layout.
+      // See change: preserve-session-order-on-reboot.
       endedSessionIds.delete(sessionId);
+      if (!pendingResumeIntents.consume(sessionId)) {
+        // Bridge auto-reattach — leave order alone.
+        return;
+      }
       const order = sessionOrderManager.getOrder(session.cwd) ?? [];
       if (!order.includes(sessionId)) {
         sessionOrderManager.insert(session.cwd, sessionId);
@@ -264,6 +274,13 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
   // Consumed in event-wiring.ts on session_register. See change:
   // add-folder-task-checker-and-spawn-attach.
   const pendingAttachRegistry = createPendingAttachRegistry();
+  // Pending user-initiated resume intents (sessionId → timestamp).
+  // Consumed by `sessionManager.onChange` in the ended→alive branch to
+  // gate the sessionOrder mutation behind explicit user intent so that
+  // bridge auto-reattach on dashboard reboot does not mutate the user's
+  // drag-order.
+  // See change: preserve-session-order-on-reboot.
+  const pendingResumeIntents = createPendingResumeIntentRegistry();
   // Track known session IDs so we can distinguish new sessions from reconnections.
   const knownSessionIds = new Set<string>();
   // Populate from persisted sessions
@@ -320,7 +337,7 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
     },
   });
 
-  const browserGateway = createBrowserGateway(sessionManager, eventStore, piGateway, undefined, pendingForkRegistry, sessionOrderManager, preferencesStore, directoryService, terminalManager, pendingDashboardSpawns, config.maxWsBufferBytes, pendingAttachRegistry);
+  const browserGateway = createBrowserGateway(sessionManager, eventStore, piGateway, undefined, pendingForkRegistry, sessionOrderManager, preferencesStore, directoryService, terminalManager, pendingDashboardSpawns, config.maxWsBufferBytes, pendingAttachRegistry, pendingResumeIntents);
 
   // Resolve package version once at startup
   const __require = createRequire(import.meta.url);
@@ -476,6 +493,7 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
     pendingDashboardSpawns,
     bootstrapState,
     bootstrapQueue,
+    pendingResumeIntents,
   });
 
   // Register route modules

@@ -231,7 +231,7 @@ export async function handleResumeSession(
   msg: Extract<BrowserToServerMessage, { type: "resume_session" }>,
   ctx: BrowserHandlerContext,
 ): Promise<void> {
-  const { ws, sessionManager, pendingForkRegistry, headlessPidRegistry, pendingDashboardSpawns, sendTo } = ctx;
+  const { ws, sessionManager, pendingForkRegistry, headlessPidRegistry, pendingDashboardSpawns, pendingResumeIntents, sendTo } = ctx;
   const session = sessionManager.get(msg.sessionId);
   if (!session) {
     sendTo(ws, { type: "resume_result", sessionId: msg.sessionId, success: false, message: "Session not found" });
@@ -264,6 +264,14 @@ export async function handleResumeSession(
     }
   }
 
+  // Tag the user-resume intent BEFORE spawning so the `onChange`
+  // ended→alive branch in `server.ts` can distinguish a user-initiated
+  // resume (Resume click OR drag-to-resume — both flow through here)
+  // from a bridge auto-reattach on dashboard reboot. The fork path
+  // also tags but the tag is harmless: forks create new session ids
+  // that never appear in the ended→alive branch.
+  // See change: preserve-session-order-on-reboot.
+  pendingResumeIntents?.record(msg.sessionId);
   const resumeConfig = loadConfig();
   const result = await spawnPiSession(session.cwd, {
     sessionFile: forkSessionFile,

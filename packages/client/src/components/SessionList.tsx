@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { getApiBase } from "../lib/api-context.js";
 import { useLocation } from "wouter";
 import { Icon } from "@mdi/react";
-import { mdiChevronRight, mdiChevronDown, mdiPlus, mdiPin, mdiFolder, mdiFolderOpen, mdiConsoleLine, mdiCog, mdiPuzzleOutline, mdiFileDocumentOutline } from "@mdi/js";
+import { mdiChevronRight, mdiChevronDown, mdiChevronUp, mdiPlus, mdiPin, mdiFolder, mdiFolderOpen, mdiConsoleLine, mdiCog, mdiPuzzleOutline, mdiFileDocumentOutline } from "@mdi/js";
 import { PiLogo } from "./PiLogo.js";
 import { FolderActionBar } from "./FolderActionBar.js";
 import { encodeFolderPath } from "../lib/folder-encoding.js";
@@ -628,7 +628,14 @@ export function SessionList({ sessions, selectedId, onSelect, contextUsageMap, o
                 data-testid={`folder-ended-toggle-${group.cwd}`}
                 aria-label={expanded ? `Hide ${endedCount} ended sessions` : `Show ${endedCount} ended sessions`}
               >
-                <Icon path={expanded ? mdiChevronDown : mdiChevronRight} size={0.4} />
+                {/* Bottom toggle: arrow points UP when expanded (collapse-up
+                    direction — matches where the click takes the eye) and
+                    RIGHT when collapsed (consistent with sidebar folder
+                    chevrons). The top "Hide ended" button uses mdiChevronDown
+                    deliberately because it sits ABOVE the ended group and
+                    pointing down at it would still mean "this collapses what's
+                    below me" — inverse direction is intentional. */}
+                <Icon path={expanded ? mdiChevronUp : mdiChevronRight} size={0.4} />
                 <span>{expanded ? `Hide ended` : `${endedCount} ended`}</span>
               </button>
             );

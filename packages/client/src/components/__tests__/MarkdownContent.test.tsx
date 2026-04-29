@@ -172,6 +172,14 @@ describe("MarkdownContent", () => {
     expect(container.querySelector("li")).not.toBeNull();
   });
 
+  it("strips raw HTML ref attributes before rendering", () => {
+    const { container } = renderMd('<section ref="bad"><publiccheckoutpanel ref="bad">Pay</publiccheckoutpanel></section>');
+
+    expect(container.textContent).toContain("Pay");
+    expect(container.querySelector("section")?.getAttribute("ref")).toBeNull();
+    expect(container.querySelector("publiccheckoutpanel")?.getAttribute("ref")).toBeNull();
+  });
+
   it("renders mermaid code block as MermaidBlock instead of syntax highlighter", () => {
     const content = "```mermaid\ngraph TD; A-->B\n```";
     const { container } = render(<ThemeProvider><MarkdownContent content={content} /></ThemeProvider>);

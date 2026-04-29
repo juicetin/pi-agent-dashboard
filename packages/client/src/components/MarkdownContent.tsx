@@ -15,6 +15,28 @@ interface Props {
   content: string;
 }
 
+type HastNode = {
+  properties?: Record<string, unknown>;
+  children?: HastNode[];
+};
+
+function stripReactRefAttributes() {
+  return function transformer(tree: HastNode) {
+    visitHast(tree, (node) => {
+      if (node.properties && Object.prototype.hasOwnProperty.call(node.properties, "ref")) {
+        delete node.properties.ref;
+      }
+    });
+  };
+}
+
+function visitHast(node: HastNode, visitor: (node: HastNode) => void) {
+  visitor(node);
+  for (const child of node.children ?? []) {
+    visitHast(child, visitor);
+  }
+}
+
 /** Convert a <table> DOM element to markdown */
 export function tableToMarkdown(table: HTMLTableElement): string {
   const rows: string[][] = [];
@@ -172,7 +194,7 @@ export const MarkdownContent = React.memo(function MarkdownContent({ content }: 
     <div ref={containerRef} className="markdown-content text-sm">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
-        rehypePlugins={[rehypeRaw]}
+        rehypePlugins={[rehypeRaw, stripReactRefAttributes]}
         components={{
           code({ className, children, ...props }) {
             const match = /language-(\w+)/.exec(className || "");

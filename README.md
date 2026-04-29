@@ -97,7 +97,7 @@ Remove with `pi remove /path/to/pi-agent-dashboard`. Alternatively, add the pack
 - **Workspace management** — organize sessions by project folder with pinned directories and drag-to-reorder
 - **Command autocomplete** — `/` prefix triggers a filtering dropdown
 - **Mobile-friendly** — responsive layout with swipe drawer, touch targets, and mobile action menus
-- **Markdown preview** — rendered markdown views with search, mermaid diagrams, and syntax highlighting
+- **Markdown preview** — rendered markdown views with search, mermaid diagrams, syntax highlighting, and safe handling for raw HTML `ref` attributes
 - **Searchable select dialogs** — keyboard-navigable picker with real-time filtering (OpenSpec changes, flow commands)
 
 **Integrations**

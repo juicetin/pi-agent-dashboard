@@ -11,6 +11,13 @@ see [`docs/release-process.md`](docs/release-process.md).
 ## [Unreleased]
 
 ### Added
+
+### Changed
+
+### Fixed
+
+## [0.4.2] - 2026-04-30
+### Added
 - **Folder OpenSpec section: clickable task counter.** The `N/M tasks` indicator on each change row in `FolderOpenSpecSection` is now a button that opens the existing `TasksPopover` with the row's cwd + change name — the same component used by session cards. No new server endpoint, no parallel toggle logic; one popover at a time, opening another row swaps the popover. Read-only progress glance becomes interactive without first attaching a session. (add-folder-task-checker-and-spawn-attach)
 - **Folder OpenSpec section: spawn-with-attach.** Each change row gains a green play-icon button to spawn a new pi session in the folder's cwd with the change pre-attached, atomically. Implemented as an optional `attachProposal?: string` on `SpawnSessionBrowserMessage` (backward-compatible — old servers ignore the field, old clients omit it); the dashboard server queues the intent in `pendingAttachByCwd` (FIFO per cwd, cap 8, 60 s TTL) and consumes it on the next `session_register` for that cwd, applying the same idempotent attach + auto-rename logic as the explicit attach UI. The bare folder `+Session` button keeps the unattached semantics. (add-folder-task-checker-and-spawn-attach)
 

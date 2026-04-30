@@ -16,6 +16,13 @@ see [`docs/release-process.md`](docs/release-process.md).
 
 ### Fixed
 
+## [0.4.3-rc.1] - 2026-04-30
+### Added
+
+### Changed
+
+### Fixed
+
 ## [0.4.2] - 2026-04-30
 ### Added
 - **Folder OpenSpec section: clickable task counter.** The `N/M tasks` indicator on each change row in `FolderOpenSpecSection` is now a button that opens the existing `TasksPopover` with the row's cwd + change name — the same component used by session cards. No new server endpoint, no parallel toggle logic; one popover at a time, opening another row swaps the popover. Read-only progress glance becomes interactive without first attaching a session. (add-folder-task-checker-and-spawn-attach)

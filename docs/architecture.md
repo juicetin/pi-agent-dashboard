@@ -943,6 +943,27 @@ This is a **race-independent fix**: it doesn't try to close the timing window, i
 
 `packages/server/package.json` declares `"engines": { "node": ">=22.18.0 <23 || >=24.3.0" }` as an npm-level advisory.
 
+#### AppImage CLI self-recursion guard (Linux power-user mode)
+
+The Electron app's power-user launch path (`ensureServer()` → `detectPiDashboardCli()` → `launchViaCli()`) prefers an already-installed `pi-dashboard` CLI on PATH. On Linux **AppImage** builds, the AppImage runtime prepends its squashfs mount directory (e.g. `/tmp/.mount_PI-Das.../`) to `PATH` of the Electron child. That mount contains a binary literally named `pi-dashboard` because `forge.config.ts` declares `packagerConfig.executableName: "pi-dashboard"` for user-facing branding consistency. Without a guard, `which pi-dashboard` returns the AppImage's own launcher first; `launchViaCli()` then spawns the Electron app recursively as if it were the dashboard CLI, the recursive child silently ignores `start --port 8000`, never opens the dashboard port, and `waitForReady` polls until its 15-second deadline expires — user sees an indefinite loading screen.
+
+The fix lives at two layers:
+
+- **Layer 2 — shared registry strategy** (`packages/shared/src/tool-registry/strategies.ts`). After `whichSync(name)` returns a path, `whereStrategy` runs it through `isAppImageSelfHit(path)`; on hit, the strategy returns `{ ok: false, reason: "appimage-self-hit: <path>" }` so the registry's `Resolution.tried` records the rejection. **Every tool registered via `whereStrategy`** (currently `node`, `pi`, `openspec`, `npm`, `git`, `zrok`, `wt`, build-time `electron`/`node-pty`) inherits this guard transparently. Future tool registrations benefit by default.
+- **Layer 1 — Electron-only detector** (`packages/electron/src/lib/dependency-detector.ts`). `detectPiDashboardCli()` is intentionally NOT a registered tool (it's the dashboard package this code is part of), so it applies the same `isAppImageSelfHit` filter inline alongside the existing `_npx` cache-shim filter. Both rejections silently return `{ found: false }` so `ensureServer()` falls through to the standalone `launchServer()` path (tsx + `cli.ts`). `detectPi()` and `detectSystemNode()` apply the same guard symmetrically on the registry-resolved path — belt-and-braces beyond the Layer-2 filter.
+
+`isAppImageSelfHit(candidatePath, opts?)` lives in `packages/shared/src/platform/binary-lookup.ts` and treats a path as a self-hit when ANY of:
+
+- `realpath(candidatePath) === realpath(process.execPath)`, OR
+- `candidatePath` lives under the directory named by `process.env.APPDIR` (the AppImage squashfs mount), OR
+- `realpath(candidatePath) === realpath(process.env.APPIMAGE)`.
+
+All `realpath` calls are wrapped in try/catch so broken symlinks / ENOENT fall back to literal string compares; the helper never throws. Tests inject explicit `{ execPath?, appDir?, appImage? }` overrides via `opts`; production callers omit `opts` and the helper reads `process.execPath` / `process.env.APPDIR` / `process.env.APPIMAGE`.
+
+The `executableName: "pi-dashboard"` collision is **left in place** — renaming would break user-facing branding and existing `.desktop` files. The fix sits at the resolution layer where it belongs. If the guard ever fails to fire (future regression / edge case), the `launchViaCli` timeout error decoration includes a `readlink -f $(which pi-dashboard)` hint so the failure is recognizable from the error dialog alone.
+
+See change: `fix-electron-appimage-cli-self-detection`.
+
 ### Cross-OS Platform Primitives
 
 Cross-OS behavior (`process.platform === "win32"` branches) is centralized in `packages/shared/src/platform/` (pure Node, consumed by server + extension + Electron). The module has an `index.ts` barrel plus per-concern files:

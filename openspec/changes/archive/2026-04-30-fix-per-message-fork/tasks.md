@@ -42,12 +42,12 @@
 
 ## 7. End-to-end manual verification
 
-- [ ] 7.1 Build (`npm run build`), restart server (`pi-dashboard restart`), reload bridge (`npm run reload`).
-- [ ] 7.2 In a session with at least 2 user/assistant pairs, click ⑂ on the *last* user message. Verify the new session card opens, replays history, and its tail entry IS the clicked user message (visible in chat AND in the new JSONL under `~/.pi/agent/sessions/...`).
-- [ ] 7.3 Repeat for the *last* assistant message. Same expectation.
-- [ ] 7.4 Repeat for an *earlier* user message (mid-history). Verify forked session ends at that user message; later entries are gone.
-- [ ] 7.5 Repeat for an *earlier* assistant message (mid-history). Same expectation.
-- [ ] 7.6 Verify that hovering over a freshly-streaming assistant bubble (during agent_end) the ⑂ button does NOT appear until `entry_persisted` lands. (Tests the `entryId &&` guard.)
+- [x] 7.1 Build (`npm run build`), restart server (`pi-dashboard restart`), reload bridge (`npm run reload`).
+- [x] 7.2 In a session with at least 2 user/assistant pairs, click ⑂ on the *last* user message. Verify the new session card opens, replays history, and its tail entry IS the clicked user message (visible in chat AND in the new JSONL under `~/.pi/agent/sessions/...`).
+- [x] 7.3 Repeat for the *last* assistant message. Same expectation.
+- [x] 7.4 Repeat for an *earlier* user message (mid-history). Verify forked session ends at that user message; later entries are gone.
+- [x] 7.5 Repeat for an *earlier* assistant message (mid-history). Same expectation.
+- [x] 7.6 Verify that hovering over a freshly-streaming assistant bubble (during agent_end) the ⑂ button does NOT appear until `entry_persisted` lands. (Tests the `entryId &&` guard.)
 
 ## 8. Documentation
 

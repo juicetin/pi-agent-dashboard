@@ -82,11 +82,15 @@ function createMockSessionManager(sessions: DashboardSession[] = []): SessionMan
   } as unknown as SessionManager;
 }
 
-/** Bump the mtime of an existing path by 1 minute into the future. Used to
- *  cleanly differentiate test-controlled mtimes from filesystem-stamping
- *  drift on fast machines. */
+/** Bump the mtime of an existing path strictly past every prior bump. Uses a
+ *  module-level monotonic counter so successive calls in the same millisecond
+ *  still produce strictly-increasing mtimes (the previous `Date.now()`-based
+ *  implementation flaked when two bumps landed in the same ms, since the gate
+ *  uses `===` equality against the cached mtime). */
+let bumpCounter = 0;
 function bumpMtime(p: string, deltaMs = 60_000) {
-  const future = new Date(Date.now() + deltaMs);
+  bumpCounter += 1;
+  const future = new Date(Date.now() + deltaMs + bumpCounter * 1000);
   fs.utimesSync(p, future, future);
 }
 

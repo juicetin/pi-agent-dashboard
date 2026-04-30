@@ -308,9 +308,10 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
     });
     // When a session ends, drop its id from the persisted drag-reorder list
     // for that cwd. Drag-reorder is meaningful for live sessions only; ended
-    // ones must fall to the bottom in their natural startedAt order rather
-    // than retaining a position that interleaves them with active sessions.
-    // See change: pin-and-search-sessions.
+    // ones must fall to the bottom in their natural endedAt order (rendered
+    // top-of-bucket on most-recent-first) rather than retaining a position
+    // that interleaves them with active sessions.
+    // See change: pin-and-search-sessions, top-of-tier-on-status-change.
     // Status-transition tracking: prune+broadcast runs ONCE per
     // transition to ended. Subsequent `update()` calls on an already-
     // ended session (e.g. heartbeat tail, click-induced state sync,
@@ -351,10 +352,11 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
         // Bridge auto-reattach — leave order alone.
         return;
       }
-      const order = sessionOrderManager.getOrder(session.cwd) ?? [];
-      if (!order.includes(sessionId)) {
-        sessionOrderManager.insert(session.cwd, sessionId);
-      }
+      // User-intent resume: always move-to-front so the just-resumed
+      // card surfaces at the top of the alive tier, even on repeated
+      // end → resume cycles where the id might still be in the order.
+      // See change: top-of-tier-on-status-change.
+      sessionOrderManager.moveToFront(session.cwd, sessionId);
       const next = sessionOrderManager.getOrder(session.cwd) ?? [];
       browserGateway.broadcastToAll({
         type: "sessions_reordered",

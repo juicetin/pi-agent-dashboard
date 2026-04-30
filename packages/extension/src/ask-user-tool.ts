@@ -312,6 +312,21 @@ export function registerAskUserTool(pi: ExtensionAPI): void {
       return obj as any;
     },
     async execute(_toolCallId: any, params: any, _signal: any, _onUpdate: any, ctx: any) {
+      // Capture the originating toolCallId so the resulting prompt_request
+      // metadata carries it; the client reducer pairs the interactiveUi
+      // row with its parent toolResult row using this id.
+      // See change: fix-interactive-ui-reorder.
+      const toolCallId: string | undefined =
+        typeof _toolCallId === "string" && _toolCallId.length > 0
+          ? _toolCallId
+          : undefined;
+      const withTcid = (
+        opts: Record<string, unknown> | undefined,
+      ): Record<string, unknown> | undefined => {
+        if (!toolCallId) return opts;
+        return { ...(opts ?? {}), toolCallId };
+      };
+
       // ── Batch branch ─────────────────────────────────────────────────
       if (params.method === "batch" && Array.isArray(params.questions)) {
         const results: Array<unknown> = [];
@@ -319,13 +334,17 @@ export function registerAskUserTool(pi: ExtensionAPI): void {
 
         for (const sq of params.questions) {
           const subTitle = `${params.title} — ${sq.title ?? "Question"}`;
-          const subMsg = params.message ? { message: params.message } : undefined;
+          const subMsg = withTcid(params.message ? { message: params.message } : undefined);
 
           let answer: unknown;
           try {
             switch (sq.method) {
               case "confirm":
-                answer = await ctx.ui.confirm(subTitle, sq.message ?? params.message ?? "");
+                answer = await ctx.ui.confirm(
+                  subTitle,
+                  sq.message ?? params.message ?? "",
+                  withTcid(undefined),
+                );
                 break;
               case "select": {
                 const opts = Array.isArray(sq.options) ? sq.options : [];
@@ -401,7 +420,7 @@ export function registerAskUserTool(pi: ExtensionAPI): void {
 
       // ── Single-question branches (unchanged behavior) ────────────────
       let result: unknown;
-      const msgOpts = params.message ? { message: params.message } : undefined;
+      const msgOpts = withTcid(params.message ? { message: params.message } : undefined);
       const title = params.title || params.message || "Question";
 
       const options: string[] = Array.isArray(params.options)
@@ -420,7 +439,7 @@ export function registerAskUserTool(pi: ExtensionAPI): void {
 
       switch (params.method) {
         case "confirm":
-          result = await ctx.ui.confirm(title, params.message ?? "");
+          result = await ctx.ui.confirm(title, params.message ?? "", withTcid(undefined));
           break;
         case "select":
           result = await ctx.ui.select(title, options, msgOpts);

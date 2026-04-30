@@ -485,7 +485,15 @@ export function SessionList({ sessions, selectedId, onSelect, contextUsageMap, o
             // See change: pin-and-search-sessions.
             const flatMergeMode = sessionSearch.length > 0 && workspaceFilter.length === 0;
             const activeSessions = matched.filter((s) => s.status !== "ended");
-            const endedSessions = matched.filter((s) => s.status === "ended");
+            // Ended-tier sort: most-recently-ended first, regardless of
+            // sessionOrder (which is alive-only post-prune). Falls back
+            // to startedAt for legacy entries without endedAt. See
+            // change: top-of-tier-on-status-change.
+            const endedSessions = matched
+              .filter((s) => s.status === "ended")
+              .sort(
+                (a, b) => (b.endedAt ?? b.startedAt) - (a.endedAt ?? a.startedAt),
+              );
             const showEnded =
               endedSessions.length > 0 &&
               (endedExpanded.has(group.cwd) || sessionSearch.length > 0);

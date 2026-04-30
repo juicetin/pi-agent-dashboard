@@ -45,6 +45,10 @@ interface BroadcastEvent {
  * Executes the exact ended\u2192alive branch from `server.ts`'s onChange hook
  * against the supplied state. Returns the broadcast that would have been
  * emitted (or null when the branch returned early).
+ *
+ * Mirrors the post-`top-of-tier-on-status-change` semantics: user-intent
+ * resume calls `moveToFront` (always brings the id to the top) instead
+ * of insert-if-absent.
  */
 function endedToAlive(
   sessionId: string,
@@ -58,10 +62,7 @@ function endedToAlive(
   if (!pendingResumeIntents.consume(sessionId)) {
     return null;
   }
-  const order = sessionOrderManager.getOrder(cwd) ?? [];
-  if (!order.includes(sessionId)) {
-    sessionOrderManager.insert(cwd, sessionId);
-  }
+  sessionOrderManager.moveToFront(cwd, sessionId);
   const next = sessionOrderManager.getOrder(cwd) ?? [];
   return { type: "sessions_reordered", cwd, sessionIds: next };
 }
@@ -95,10 +96,14 @@ describe("ended\u2192alive sessionOrder gate", () => {
     expect(sessionOrderManager.getOrder(cwd)).toEqual(["X", "B", "A", "C"]);
   });
 
-  it("drag-to-resume preserves dropped slot", () => {
+  it("drag-to-resume moves id to front (top-of-tier semantic)", () => {
     // Pre-state: alive [A, C], ended id "B" was just dragged into slot 1
     // via reorder_sessions which writes the order BEFORE resume_session
     // fires.
+    //
+    // Post change `top-of-tier-on-status-change`, user intent always
+    // wins: the dropped slot is overridden so the just-resumed card
+    // surfaces at the top of the alive tier. R1 in design.md.
     sessionOrderManager.reorder(cwd, ["A", "B", "C"]);
     endedSessionIds.add("B");
 
@@ -108,9 +113,8 @@ describe("ended\u2192alive sessionOrder gate", () => {
     const broadcast = endedToAlive("B", cwd, endedSessionIds, pendingResumeIntents, sessionOrderManager);
 
     expect(broadcast).not.toBeNull();
-    // B stays at the dropped slot (index 1) because the if-not-includes
-    // guard inside the branch fired.
-    expect(sessionOrderManager.getOrder(cwd)).toEqual(["A", "B", "C"]);
+    // B is at index 0 — user-intent resume always means move-to-front.
+    expect(sessionOrderManager.getOrder(cwd)).toEqual(["B", "A", "C"]);
   });
 
   it("bridge auto-reattach on reboot leaves order untouched and emits no broadcast", () => {
@@ -182,5 +186,38 @@ describe("ended\u2192alive sessionOrder gate", () => {
     expect(second).toBeNull();
     // X is still in the order from the first call \u2014 no further mutation.
     expect(sessionOrderManager.getOrder(cwd)).toEqual(["X", "A"]);
+  });
+
+  it("end → resume → end → resume cycle always lands id at index 0", () => {
+    // Regression for `top-of-tier-on-status-change`: pre-fix the
+    // ended→alive branch used insert-if-absent, so on the second resume
+    // the id was still in the order list and stayed at its previous
+    // position. With moveToFront, every user-intent resume re-prepends.
+    sessionOrderManager.reorder(cwd, ["A", "B", "X", "C"]);
+
+    // Cycle 1: X ends, X resumes.
+    sessionOrderManager.remove(cwd, "X");
+    endedSessionIds.add("X");
+    pendingResumeIntents.record("X");
+    const r1 = endedToAlive("X", cwd, endedSessionIds, pendingResumeIntents, sessionOrderManager);
+    expect(r1).not.toBeNull();
+    expect(sessionOrderManager.getOrder(cwd)[0]).toBe("X");
+
+    // Cycle 2: X ends again, X resumes. With insert-if-absent this
+    // would no-op (X is already in the list); with moveToFront X jumps
+    // to the top regardless.
+    sessionOrderManager.remove(cwd, "X");
+    endedSessionIds.add("X");
+    pendingResumeIntents.record("X");
+    const r2 = endedToAlive("X", cwd, endedSessionIds, pendingResumeIntents, sessionOrderManager);
+    expect(r2).not.toBeNull();
+    expect(sessionOrderManager.getOrder(cwd)[0]).toBe("X");
+
+    // Cycle 3.
+    sessionOrderManager.remove(cwd, "X");
+    endedSessionIds.add("X");
+    pendingResumeIntents.record("X");
+    endedToAlive("X", cwd, endedSessionIds, pendingResumeIntents, sessionOrderManager);
+    expect(sessionOrderManager.getOrder(cwd)[0]).toBe("X");
   });
 });

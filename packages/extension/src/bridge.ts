@@ -950,20 +950,39 @@ function initBridge(pi: ExtensionAPI) {
     // now route through the bus, which distributes to all registered adapters.
     {
       const bus = promptBus;
+      // Build a `metadata` envelope for bus.request that includes both
+      // `message` (existing) and `toolCallId` (new — added by change
+      // `fix-interactive-ui-reorder` so the client reducer can pair the
+      // resulting interactiveUi row with its parent toolResult row).
+      // Free-floating callers (slash commands, architect prompts) omit
+      // `opts.toolCallId` and the metadata field stays undefined.
+      const buildMeta = (
+        opts: any,
+        explicitMessage?: string,
+      ): Record<string, unknown> | undefined => {
+        const message = explicitMessage ?? opts?.message;
+        const toolCallId = opts?.toolCallId;
+        if (!message && !toolCallId) return undefined;
+        const meta: Record<string, unknown> = {};
+        if (message) meta.message = message;
+        if (toolCallId) meta.toolCallId = toolCallId;
+        return meta;
+      };
+
       (ctx.ui as any).select = (title: string, options: string[], opts?: any) =>
-        bus.request({ pipeline: "command", type: "select", question: title, options, metadata: opts?.message ? { message: opts.message } : undefined })
+        bus.request({ pipeline: "command", type: "select", question: title, options, metadata: buildMeta(opts) })
           .then(r => r.cancelled ? undefined : r.answer);
 
       (ctx.ui as any).input = (title: string, placeholder?: string, opts?: any) =>
-        bus.request({ pipeline: "command", type: "input", question: title, defaultValue: placeholder, metadata: opts?.message ? { message: opts.message } : undefined })
+        bus.request({ pipeline: "command", type: "input", question: title, defaultValue: placeholder, metadata: buildMeta(opts) })
           .then(r => r.cancelled ? undefined : r.answer);
 
       (ctx.ui as any).confirm = (title: string, message?: string, opts?: any) =>
-        bus.request({ pipeline: "command", type: "confirm", question: title, metadata: (message || opts?.message) ? { message: message || opts?.message } : undefined })
+        bus.request({ pipeline: "command", type: "confirm", question: title, metadata: buildMeta(opts, message) })
           .then(r => !r.cancelled && r.answer === "true");
 
       (ctx.ui as any).editor = (title: string, prefill?: string, opts?: any) =>
-        bus.request({ pipeline: "command", type: "editor", question: title, defaultValue: prefill, metadata: opts?.message ? { message: opts.message } : undefined })
+        bus.request({ pipeline: "command", type: "editor", question: title, defaultValue: prefill, metadata: buildMeta(opts) })
           .then(r => r.cancelled ? undefined : r.answer);
 
       // ── Multiselect ──────────────────────────────────────────────

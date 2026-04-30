@@ -540,6 +540,24 @@ When a user sends a prompt to an ended session, the server automatically resumes
 8. On timeout (30s) or spawn failure, `resuming` flag is cleared and session returns to normal ended state
 9. If user sends another prompt while already resuming, the queued prompt is updated without spawning a second process
 
+### Sidebar session ordering: top-of-tier on status change
+The sidebar splits each folder's session cards into two tiers (alive on top, ended at the bottom). Cards within each tier sort independently:
+
+- **Alive tier** uses the persisted `sessionOrder` per cwd (drag-reorder, prepend on new spawn). On user-intent resume (Resume button, drag-to-resume, REST resume), the server calls `sessionOrderManager.moveToFront(cwd, sessionId)` so the just-resumed card surfaces at index 0 of the alive tier — even on repeated `end → resume → end → resume` cycles where the id might already be in the order list. Bridge auto-reattach on reboot is gated by `pendingResumeIntents`: without a user-intent tag, the order is left untouched.
+- **Ended tier** sorts by `(endedAt ?? startedAt)` descending, computed at render time inside `SessionList.renderGroup` (no persisted `endedSessionOrder` list — pure function of session timestamps). The most-recently-ended card surfaces at the top of the ended bucket regardless of cause (✕ shutdown, natural pi exit, force-kill). Legacy sessions without a recorded `endedAt` fall back to `startedAt` so pre-migration entries keep their previous ordering.
+
+Both halves share one mental model: "the session you just acted on appears at the top of its new tier." No protocol changes — the existing `sessions_reordered` broadcast carries the new order. See change `top-of-tier-on-status-change`.
+
+### Desktop back-arrow priority chain
+The desktop session-header back button used to call `window.history.back()`, which was a silent no-op on cold loads / hard refreshes / deep links. It also ignored the eight content-area overlay states (archive browser, specs browser, flow YAML preview, diff view, pi resource file preview, README preview, pi resources state, OpenSpec preview) owned by `App.tsx`.
+
+The fix introduces:
+- **`packages/client/src/lib/desktop-back.ts`** — pure helper `selectDesktopBackTarget(state) → { kind: "clear", target } | { kind: "navigate", to: "/" }` that mirrors the priority chain mobile's inline `onBack` switch already uses. Pinned by a 256-combination parity test against the mobile reference implementation so the two never drift.
+- **`packages/client/src/hooks/useDesktopBack.ts`** — thin React hook that reads the live overlay state, calls the helper, and dispatches to the right setter or `navigate("/")`.
+- **Sidebar overlay auto-close** — `useOpenSpecActions.handleReadArtifact`, `useContentViews.handleViewPiResourceFile`, and `useContentViews.handleViewReadme` accept `navigate`/`settingsMatch`/`tunnelSetupMatch` and call `navigate("/")` BEFORE setting overlay state when the user is on a URL-route view (Settings / Tunnel Setup) that takes over the content area. Without this, the JSX gate `!settingsMatch && !tunnelSetupMatch` would mask the just-opened overlay until the user clicked back twice.
+
+The priority chain (alive on click): `archiveBrowserCwd → specsBrowserCwd → flowYamlPreview → diffViewSessionId → piResourceFilePreview → readmePreview → piResourcesState → previewState → navigate("/")`. Mobile is unchanged — it keeps its own inline `onBack` switch covering the same chain. See change `fix-desktop-back-navigation`.
+
 ### Model & Thinking Level Flow
 1. Bridge sends current model and thinking level in `session_register` on connect
 2. When user changes model (via `/model`), pi emits `model_select` event

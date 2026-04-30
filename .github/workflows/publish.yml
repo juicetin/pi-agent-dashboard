@@ -315,7 +315,7 @@ jobs:
         env:
           BUNDLE_RECOMMENDED_EXTENSIONS: "1"
         run: |
-          bash packages/electron/scripts/bundle-recommended-extensions.sh | tee bundle-extensions.log
+          node --import tsx/esm packages/electron/scripts/bundle-recommended-extensions.mjs | tee bundle-extensions.log
           {
             echo "### Bundled recommended extensions (${{ matrix.platform }}/${{ matrix.arch }})";
             echo '```';
@@ -331,7 +331,7 @@ jobs:
         env:
           BUNDLE_OFFLINE_PACKAGES: "1"
         run: |
-          bash packages/electron/scripts/bundle-offline-packages.sh \
+          node packages/electron/scripts/bundle-offline-packages.mjs \
             --platform=${{ matrix.platform }}-${{ matrix.arch }} \
             | tee bundle-offline.log
           SIZE=$(du -h packages/electron/resources/offline-packages/npm-cache.tar.gz | cut -f1)

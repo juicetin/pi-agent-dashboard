@@ -115,6 +115,128 @@ export interface DashboardServer {
   piPort(): number | null;
 }
 
+// ── Post-install repair (centralized hook) ─────────────────────────
+// On every `installing → ready` bootstrap-state transition the server
+// re-runs the full ToolRegistry rescan, force-refreshes OpenSpec data
+// for every known directory, and refreshes pi-resources. Without this
+// the OpenSpec session-card buttons stay hidden until the next gated
+// poll tick (or never, if the gate's mtime heuristic declines).
+// See change: fix-openspec-buttons-after-bootstrap-install.
+
+import type { OpenSpecData } from "@blackbelt-technology/pi-dashboard-shared/types.js";
+import type { ServerToBrowserMessage } from "@blackbelt-technology/pi-dashboard-shared/browser-protocol.js";
+
+export interface PostInstallRepairDeps {
+  registry: { rescan(name?: string): void };
+  directoryService: {
+    knownDirectories(): string[];
+    getOpenSpecData(cwd: string): OpenSpecData | undefined;
+    refreshOpenSpec(cwd: string): Promise<OpenSpecData>;
+    refreshPiResources(cwd: string): Promise<unknown>;
+  };
+  browserGateway: { broadcastToAll(msg: ServerToBrowserMessage): void };
+}
+
+function isOpenSpecDataEmpty(d: OpenSpecData | undefined): boolean {
+  if (!d) return true;
+  return !d.initialized && (!d.changes || d.changes.length === 0);
+}
+
+/**
+ * Centralized post-install repair work fired on every `installing → ready`
+ * bootstrap-state transition. Idempotent. Failures per-cwd are isolated.
+ *
+ * Steps:
+ *   1) `registry.rescan()` (no arg — full registry invalidate). Restores
+ *      the literal contract from `unified-bootstrap-install` task 4.3.
+ *   2) For every `directoryService.knownDirectories()` cwd, force-refresh
+ *      OpenSpec (bypassing the mtime gate). If the prior cache was empty
+ *      or the refreshed payload differs, broadcast `openspec_update`.
+ *   3) For every cwd, force-refresh pi-resources (silent on failure).
+ *
+ * The DEBUG=pi-dashboard|openspec-poll envvar enables a single-line
+ * diagnostic log on completion, matching the existing daemon-log style.
+ */
+export async function runPostInstallRepair(deps: PostInstallRepairDeps): Promise<void> {
+  const debug =
+    typeof process !== "undefined" &&
+    typeof process.env?.DEBUG === "string" &&
+    /pi-dashboard|openspec-poll/.test(process.env.DEBUG);
+
+  // 1) full registry rescan
+  deps.registry.rescan();
+  if (debug) console.log("[bootstrap] post-install: rescanned tool registry");
+
+  const cwds = deps.directoryService.knownDirectories();
+
+  // 2) per-cwd OpenSpec force-refresh + selective broadcast
+  await Promise.all(
+    cwds.map(async (cwd) => {
+      try {
+        const prior = deps.directoryService.getOpenSpecData(cwd);
+        const fresh = await deps.directoryService.refreshOpenSpec(cwd);
+        const priorEmpty = isOpenSpecDataEmpty(prior);
+        const dataDiffers = JSON.stringify(prior) !== JSON.stringify(fresh);
+        if (priorEmpty || dataDiffers) {
+          deps.browserGateway.broadcastToAll({ type: "openspec_update", cwd, data: fresh });
+        }
+      } catch (err) {
+        console.error(
+          `[bootstrap] post-install openspec refresh failed for ${cwd}:`,
+          err,
+        );
+      }
+    }),
+  );
+
+  // 3) per-cwd pi-resources force-refresh (silent fail)
+  await Promise.all(
+    cwds.map(async (cwd) => {
+      try {
+        await deps.directoryService.refreshPiResources(cwd);
+      } catch {
+        // matches existing pattern in directory-service.ts::schedulePiResourcesTick
+      }
+    }),
+  );
+
+  if (debug) console.log("[bootstrap] post-install: openspec + pi-resources refresh complete");
+}
+
+export interface BootstrapTransitionHandlerDeps {
+  /** Invoked once per `installing → ready` transition, fire-and-forget. */
+  onTransitionToReady: () => Promise<void> | void;
+  /** Existing queue flush invoked on the same transition. */
+  flushQueue: () => Promise<void> | void;
+}
+
+/**
+ * Returns a stateful handler that drives `onTransitionToReady` and
+ * `flushQueue` once per `installing → ready` (or `failed → ready`)
+ * transition. The handler ignores the very first ready snapshot
+ * because the bootstrap state defaults to ready.
+ *
+ * Both callbacks run fire-and-forget so the subscribe callback returns
+ * synchronously — matches the existing `void bootstrapQueue.flushAll()`
+ * pattern in the inline subscribe call site.
+ */
+export function makeBootstrapTransitionHandler(
+  deps: BootstrapTransitionHandlerDeps,
+): (snapshot: { status: "ready" | "installing" | "failed" }) => void {
+  let last: "ready" | "installing" | "failed" = "ready";
+  return (snapshot) => {
+    if (last !== "ready" && snapshot.status === "ready") {
+      void Promise.resolve(deps.flushQueue()).catch((err) => {
+        console.error("[bootstrap] flushQueue failed:", err);
+      });
+      void Promise.resolve(deps.onTransitionToReady()).catch((err) => {
+        console.error("[bootstrap] post-install repair failed:", err);
+      });
+    }
+    last = snapshot.status;
+  };
+}
+
 export async function createServer(config: ServerConfig): Promise<DashboardServer> {
   // Ensure bridge extension is registered in pi's global settings
   // (needed for bundled installs where pi can't discover it from package.json)
@@ -463,17 +585,24 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
   // See change: unified-bootstrap-install.
   const bootstrapState = createBootstrapState();
   const bootstrapQueue = createBootstrapQueue();
-  let lastBootstrapStatus: "ready" | "installing" | "failed" = "ready";
+  // Centralized post-install repair: full ToolRegistry rescan +
+  // OpenSpec / pi-resources force-refresh on every `installing → ready`
+  // transition. See change: fix-openspec-buttons-after-bootstrap-install.
+  const handleBootstrapTransition = makeBootstrapTransitionHandler({
+    flushQueue: () => bootstrapQueue.flushAll(),
+    onTransitionToReady: () =>
+      runPostInstallRepair({
+        registry: getDefaultRegistry(),
+        directoryService,
+        browserGateway,
+      }),
+  });
   const unsubscribeBootstrap = bootstrapState.subscribe((snapshot) => {
     browserGateway.broadcastToAll({
       type: "bootstrap_status_update",
       state: snapshot,
     });
-    // Flush queued pi-dependent operations on ready transition.
-    if (lastBootstrapStatus !== "ready" && snapshot.status === "ready") {
-      void bootstrapQueue.flushAll();
-    }
-    lastBootstrapStatus = snapshot.status;
+    handleBootstrapTransition(snapshot);
   });
   const unsubscribeQueueComplete = bootstrapQueue.onTicketComplete((evt) => {
     browserGateway.broadcastToAll({

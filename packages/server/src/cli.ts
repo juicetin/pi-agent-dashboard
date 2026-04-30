@@ -259,12 +259,11 @@ async function runDegradedModeBootstrap(server: DashboardServer): Promise<void> 
       return;
     }
 
-    // Rescan registry so pi is re-resolved after the fresh install.
-    // If `rescan` is not exposed, the resolver's strategy chain re-runs
-    // on the next `resolve()` call anyway; we just want fresh timing.
-    type Rescannable = { rescan?: (name: string) => void };
-    const maybeRescan = (registry as unknown as Rescannable).rescan;
-    if (typeof maybeRescan === "function") maybeRescan.call(registry, "pi");
+    // Post-install registry rescan + openspec/pi-resources force-refresh
+    // are now centralized in server.ts's bootstrapState.subscribe hook,
+    // which fires on every installing → ready transition (this caller +
+    // triggerUpgradePi + triggerRetry).
+    // See change: fix-openspec-buttons-after-bootstrap-install.
 
     // Attempt bridge registration. Failures are non-fatal per spec §10.3.
     let bridgeErr: string | undefined;

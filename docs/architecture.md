@@ -418,7 +418,49 @@ lockstep bump of the offline-bundled pi version in
 
 The CLI also surfaces skew on stderr at startup: `cli.ts::logCompatibilityWarning` emits a three-line red block on below-minimum (including the exact `pi-dashboard upgrade-pi` remediation command) and a single advisory line on below-recommended. Silent when in range. This is in addition to the browser banner and the 503 gating, so terminal-only users (headless servers, CI) don't miss the signal. Note: `readCurrentPiVersion` uses `fs.realpathSync` on the registry-resolved bin path so the common npm-global symlink layout (`~/.nvm/.../bin/pi` → `../lib/node_modules/@mariozechner/pi-coding-agent/dist/cli.js`) resolves to the real `package.json` — without this, `compatibility.current` was silently `undefined` in every response.
 
-See changes: `unified-bootstrap-install`, `pi-zero-seventy-compat`, `warn-pi-version-skew-in-cli`.
+#### Post-install repair (centralized hook)
+
+On every `bootstrapState` transition from `"installing"` to `"ready"`,
+`server.ts`'s subscribe callback runs a one-shot repair phase via the
+exported helpers `makeBootstrapTransitionHandler` (gating) and
+`runPostInstallRepair` (the work):
+
+1. **Full `ToolRegistry.rescan()` (no arg)** — every cached `Resolution`
+   is dropped so the next `resolve(<tool>)` call re-runs the entire
+   strategy chain against the post-install filesystem. Restores the
+   literal contract from `unified-bootstrap-install` task 4.3 ("registry
+   rescan") that was previously narrowed to `rescan("pi")` and left
+   `openspec` / `tsx` cached as `not-found` forever.
+
+2. **Force-refresh OpenSpec for every known directory** — iterates
+   `directoryService.knownDirectories()` and for each cwd calls
+   `refreshOpenSpec(cwd)` (bypasses the mtime gate per the
+   `fix-openspec-mtime-gate-toctou` design's escape-hatch contract).
+   Compares the returned `OpenSpecData` against the prior cache; emits
+   `openspec_update` to all browsers when the prior was empty or the
+   payload differs. Per-cwd failures are isolated via try/catch so one
+   cwd cannot block the others. Concurrency is bounded by the existing
+   `OpenSpecPollConfig.maxConcurrentSpawns` semaphore inside
+   `directory-service.ts` (default 4).
+
+3. **Force-refresh pi-resources for every known directory** — same
+   iteration; silent on failure (matches
+   `directory-service.ts::schedulePiResourcesTick`).
+
+The hook fires once per transition, fire-and-forget so the subscribe
+callback returns synchronously. Because all three install entry points
+(`runDegradedModeBootstrap`, REST `triggerUpgradePi`, REST
+`triggerRetry`) flip the same state, the centralized hook covers every
+caller — the local `registry.rescan("pi")` block in `cli.ts` was
+removed as part of this change.
+
+Without this hook, the OpenSpec session-card buttons (`P/D/T/S`
+letters, attach combo, refresh) stayed hidden after a fresh first-run
+install until either the user manually reloaded or up to 30 s elapsed
+— and even then the mtime gate could decline to re-poll if no file
+actually changed since boot.
+
+See changes: `unified-bootstrap-install`, `pi-zero-seventy-compat`, `warn-pi-version-skew-in-cli`, `fix-openspec-buttons-after-bootstrap-install`.
 
 ### Force Kill Escalation
 The Stop button supports two-click escalation for stuck sessions:

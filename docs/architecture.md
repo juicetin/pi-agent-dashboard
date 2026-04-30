@@ -39,10 +39,10 @@ A global pi extension that runs in every pi session. It:
 - **Attached-proposal artifact summary** in the content-window header (`SessionHeader.tsx`, both desktop branch and `MobileHeader`): when `session.attachedProposal` matches an entry in the polled `openspecChanges` list, the header renders the `ArtifactLettersButton` (P/D/T/S letters colored by per-artifact status, single button → opens the proposal artifact) plus a `(completedTasks/totalTasks)` counter. Surface is gated on the explicit user attach only — auto-detected `openspecChange` does not trigger it. Wired via the new `onReadArtifact` prop, threaded from `App.tsx` (`handleReadArtifact` from `useContentViews`). See change: add-attached-proposal-header-summary.
 - **Duplicate bridge prevention**: Uses `process`-level shared state (not `globalThis`) with a monotonic generation counter. When the extension is loaded multiple times (e.g., local + global npm package), only the latest instance's event handlers are active — stale listeners bail out immediately. All previous connections and timers are tracked and cleaned up on re-init.
 - **Subagent re-entry guard**: When pi-subagents launches an Agent tool, the subagent creates its own `AgentSession` which loads extensions (including the bridge) in the same process. Without protection, this would overwrite the parent bridge's global state, disconnect its WebSocket, and prevent `tool_execution_end`/`agent_end` from being forwarded — leaving the parent session stuck at "streaming" forever. The bridge stores a reference to its owning `pi` instance and skips initialization when called from a different instance (subagent).
-- Routes `ctx.ui` dialog methods (confirm, select, input, editor, notify) through `PromptBus` (`prompt-bus.ts`)
+- Routes `ctx.ui` dialog methods (confirm, select, input, editor, multiselect, notify) through `PromptBus` (`prompt-bus.ts`)
   - Adapters register to handle prompts: `DashboardDefaultAdapter` renders generic dialogs inline; extensions (e.g. pi-flows) can register custom adapters via `prompt:register-adapter` event
   - First-response-wins: multiple adapters (TUI, dashboard, custom) can claim a prompt; the first to respond resolves it, others are dismissed
-  - Bridge's TUI adapter is registered inline (captures original `ctx.ui` methods before patching) and presents prompts in the terminal with AbortController-based cancellation
+  - Bridge's TUI adapter is registered inline (captures original `ctx.ui` methods before patching) and presents `select`/`input`/`confirm`/`editor` prompts in the terminal with AbortController-based cancellation. Multiselect bypasses the TUI adapter entirely and uses the bus-routed `ctx.ui.multiselect` patch → `DashboardDefaultAdapter` → client `MultiselectRenderer` exclusively (pi 0.70 RPC's `ctx.ui.custom` is a no-op, so a TUI arm would auto-cancel the dashboard render in <1s). See changes: fix-multiselect-auto-cancel-on-dashboard, fix-multiselect-tui-arm-self-cancel.
   - Patched `ctx.ui` methods forward the `message` field (from opts) via `metadata` in the PromptBus request
   - Client-side `prompt-component-registry.ts` maps component type strings to render placement (inline, widget-bar, overlay)
   - Protocol messages: `prompt_request`, `prompt_dismiss`, `prompt_cancel`, `prompt_response`
@@ -102,7 +102,7 @@ TypeScript type definitions shared across all components:
 5. Browser's event reducer processes event, React renders update
 
 ### Interactive UI Flow (PromptBus — extension dialog → browser → response)
-1. Extension calls `ctx.ui.confirm()` / `select()` / `input()` / `editor()`
+1. Extension calls `ctx.ui.confirm()` / `select()` / `input()` / `editor()` / bridge-patched `multiselect()`
 2. Bridge PromptBus intercepts via patched `ctx.ui` methods, creates a `PromptRequest` with a unique `promptId` and `pipeline` tag (e.g. `"command"`, `"architect"`)
 3. Registered adapters claim the prompt:
    - `DashboardDefaultAdapter` (always registered) returns a `PromptClaim` with `component: { type: "generic-dialog", props }` and `placement: "inline"`
@@ -113,6 +113,8 @@ TypeScript type definitions shared across all components:
 6. Browser's `prompt-component-registry.ts` resolves the component type to a React renderer and placement
 7. User responds in browser → `prompt_response` sent to server → routed to bridge
 8. Bus resolves the original dialog promise and calls `onResponse()` on all adapters for cleanup
+
+**Multiselect note:** pi's upstream `ExtensionUIContext` has no native `multiselect` method, so the bridge attaches `ctx.ui.multiselect` during `session_start`. `ask_user` dispatches multiselect through `polyfillMultiselect`, which delegates to that patched PromptBus method when present and falls back to `ctx.ui.custom` + `MultiSelectList` for legacy / non-bridge contexts (the fallback is a no-op in pi 0.70 RPC mode — dashboard headless — because pi-coding-agent defines `custom` as `async () => undefined` there). The bridge intentionally registers NO TUI adapter arm for multiselect; routing is bus-only. Browser responses encode `{ values: string[] }` as `JSON.stringify(values)` in `prompt_response.answer`, preserving `[]` as a real empty selection distinct from cancellation.
 
 **First-response-wins (multi-adapter):**
 - Multiple adapters can claim the same prompt (e.g. TUI + dashboard)

@@ -4,6 +4,7 @@
  */
 import { useCallback } from "react";
 import { createInitialState, resolveInteractiveRequest, type SessionState } from "../lib/event-reducer.js";
+import { encodePromptAnswer } from "../lib/prompt-answer-encoder.js";
 import type { DashboardSession } from "@blackbelt-technology/pi-dashboard-shared/types.js";
 import type { TerminalSession } from "@blackbelt-technology/pi-dashboard-shared/terminal-types.js";
 import type { ImageContent } from "@blackbelt-technology/pi-dashboard-shared/types.js";
@@ -55,10 +56,10 @@ export function useSessionActions(deps: SessionActionDeps) {
   const handleRespondToUi = useCallback((requestId: string, result?: unknown, cancelled?: boolean) => {
     if (selectedId) {
       send({ type: "extension_ui_response", sessionId: selectedId, requestId, result, cancelled });
-      // Also send via PromptBus protocol for new-style prompts
-      const answer = cancelled ? undefined : (typeof result === "object" && result !== null
-        ? ((result as any).value ?? (result as any).confirmed?.toString())
-        : String(result ?? ""));
+      // Also send via PromptBus protocol for new-style prompts.
+      // Encoding precedence (multiselect-aware): see prompt-answer-encoder.ts.
+      // Fix: change fix-multiselect-auto-cancel-on-dashboard.
+      const answer = encodePromptAnswer(result, cancelled);
       send({ type: "prompt_response", sessionId: selectedId, promptId: requestId, answer, cancelled, source: "dashboard-default" } as any);
       setSessionStates((prev) => {
         const next = new Map(prev);

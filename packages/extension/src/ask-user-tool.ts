@@ -43,9 +43,26 @@ const MethodEnum = Type.Union(
   },
 );
 
-// Sub-question schema for batch.method — flat object (no nested union) so the
-// emitted JSON Schema stays OpenAI-compatible at every level. Sub-questions
-// cannot themselves be a batch (no nesting); enforced at runtime.
+// Sub-question schema for batch.method — flat object (root: type=object) so
+// the emitted JSON Schema stays OpenAI-compatible at every level.
+//
+// IMPORTANT: this object MUST NOT carry a root-level `oneOf` / `anyOf` /
+// `allOf` / `enum` / `not`. OpenAI strict mode (GPT-4.1+, GPT-5.x, Codex,
+// Responses API) explicitly rejects those at *any* schema's top level
+// with: "schema must have type 'object' and not have 'oneOf' / 'anyOf' /
+// 'allOf' / 'enum' / 'not' at the top level." An earlier draft of
+// fix-multiselect-auto-cancel-on-dashboard tried to add a body-level
+// `oneOf` discriminator to restore Anthropic's per-arm strictness, but
+// real-world OpenAI gpt-5 rejected it; the fallback path documented in
+// tasks.md §9.7 was taken — Layer 2 dropped, Layer 1 ships alone.
+//
+// Per-method requirements (select/multiselect need `options`, batch
+// needs `questions[]`, etc.) are enforced exclusively by
+// `prepareArguments` rescue + the `execute` switch's runtime guards.
+// Sub-questions cannot themselves be a batch (no nesting); enforced at
+// runtime in `execute`.
+//
+// See change: fix-multiselect-auto-cancel-on-dashboard.
 const SubQuestionSchema = Type.Object(
   {
     method: Type.Union(
@@ -146,8 +163,33 @@ export function registerAskUserTool(pi: ExtensionAPI): void {
       "Do not nest batches. Send `options` as a plain string[] — not [{label, value}].",
       "This applies to all workflows including OpenSpec, planning, and any situation where you need user input before proceeding.",
     ],
-    // Flat object schema (root: type=object) for OpenAI/Anthropic compatibility.
-    // Field requirements per method are enforced at runtime, not via JSON Schema.
+    // Flat object schema (root: type=object) for OpenAI strict-mode
+    // compatibility.
+    //
+    // IMPORTANT: this object MUST NOT carry a root-level `oneOf` / `anyOf`
+    // / `allOf` / `enum` / `not`. OpenAI strict mode (GPT-4.1+, GPT-5.x,
+    // Codex, Responses API) explicitly rejects those at the top level with:
+    // "schema must have type 'object' and not have 'oneOf' / 'anyOf' /
+    // 'allOf' / 'enum' / 'not' at the top level."
+    //
+    // An earlier iteration of fix-multiselect-auto-cancel-on-dashboard
+    // ("Layer 2: defense in depth") tried adding a body-level `oneOf`
+    // discriminator over `method` so Anthropic would regain per-arm
+    // `required` + `minItems` enforcement. That worked for Anthropic
+    // models but real-world OpenAI gpt-5 rejected the schema (verified by
+    // the user 2026-04-30). The fallback documented in tasks.md §9.7 was
+    // taken: Layer 2 was dropped; Layer 1 (multiselect dashboard routing)
+    // ships alone, which is what actually fixes the user-reported bug.
+    //
+    // Per-method shape requirements (select/multiselect need `options`,
+    // batch needs `questions[]`, etc.) are enforced exclusively at runtime
+    // by `prepareArguments` (rescue/normalization) and the `execute` switch.
+    //
+    // The `no-root-oneof-in-ask-user-schema` guard test at
+    // packages/extension/src/__tests__/ask-user-schema-discriminator.test.ts
+    // pins this constraint so a future refactor cannot reintroduce it.
+    //
+    // See change: fix-multiselect-auto-cancel-on-dashboard.
     parameters: Type.Object(
       {
         method: MethodEnum,
@@ -180,7 +222,7 @@ export function registerAskUserTool(pi: ExtensionAPI): void {
       },
       {
         description:
-          "Parameters for ask_user. The required fields depend on `method`: confirm→title; select→title+options(>=2); multiselect→title+options(>=1); input→title (placeholder optional); batch→questions[] (title auto-derived from first question if omitted). Validation is enforced at runtime.",
+          "Parameters for ask_user. The required fields depend on `method`: confirm→title; select→title+options(>=2); multiselect→title+options(>=1); input→title (placeholder optional); batch→questions[] (title auto-derived from first question if omitted). Validation is enforced at runtime by prepareArguments + execute (no schema-level discriminator — OpenAI strict mode forbids root-level oneOf).",
       },
     ),
     prepareArguments(args: unknown) {

@@ -205,9 +205,17 @@ jobs:
           exit $FAIL
 
   # ── Electron builds (parallel) ────────────────────────────────
+  # MUST `needs: [prepare, publish]` — the bundled server's `npm install`
+  # in `bundle-server.sh` resolves `@blackbelt-technology/*` sub-packages
+  # from the public npm registry, which only have the just-bumped version
+  # available after `publish` finishes uploading. Gating on `publish`
+  # closes the ETARGET race that broke release run #34. See change:
+  # publish-fix-macos. Locked by
+  # `packages/shared/src/__tests__/publish-workflow-contract.test.ts`.
   electron:
-    needs: prepare
+    needs: [prepare, publish]
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: macos-14

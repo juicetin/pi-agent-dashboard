@@ -126,6 +126,31 @@ The test logic is more interesting than the previous lints because it must:
 
 **Rationale**: both already meet the new contract. Their YAML wrappers (`tee` + step-summary) live in `shell: bash` blocks today. Once the `no-bash-on-windows.test.ts` lint lands, those wrappers must move to `pwsh` on Windows or the `tee`+`heredoc` pattern must be expressed in pwsh syntax. The change covers that conversion.
 
+### D6 — Detect prerelease in `prepare`, route via `--tag next` and `prerelease: true`
+
+**Decision**: extend the `prepare` job to compute a boolean `is_prerelease` from the resolved version string (regex `/^[0-9]+\.[0-9]+\.[0-9]+-/`), expose it as a job output alongside `version` and `tag`, and consume it at two existing sites:
+
+1. **`publish` job's per-package npm publish loop**: append `--tag next` to every `npm publish` invocation when `is_prerelease == 'true'`. No change for stable releases.
+2. **`github-release` job's `softprops/action-gh-release` step**: pass `prerelease: ${{ needs.prepare.outputs.is_prerelease }}`. The action treats the string `"true"` as truthy.
+
+The regex is anchored at the start so it cannot accidentally match a stable version with a numeric build suffix in the middle. The `latest` dist-tag is preserved for any version that does NOT match the prerelease shape — so today's stable releases keep behaving identically.
+
+**Rationale**: a release-candidate tag must NOT update the `latest` dist-tag, otherwise `npm install -g @blackbelt-technology/pi-agent-dashboard` (or any plain `npm install` of a sub-package) immediately picks up the rc — the exact opposite of what "release candidate" means. Symmetrically, a stable GitHub Release marked `prerelease: false` for a version like `0.4.5-rc.1` mislabels it on the Releases page and in any tooling that filters by prerelease state. The single source of truth for both decisions is the version string itself; deriving them in the `prepare` job centralises the rule and keeps the publish + github-release jobs declarative.
+
+**Why now**: this change is the first one in the v0.4.x series that's actually expected to ship a working installer. Without rc-safety, the rc-validation step in the migration plan ("Tag a `v0.4.5-rc.1` ...") is not safe to execute — the rc would land on the `latest` dist-tag and break every consumer's `npm install`. Combining the two changes into one commit avoids the chicken-and-egg ordering problem.
+
+**Alternatives considered**:
+- Always publish to `--tag next` and never to `latest`, requiring users to opt into stable via `npm install @latest`. Rejected — inverts the npm convention. `latest` is the implicit default for billions of `npm install` invocations; flipping it is a breaking expectation change for consumers.
+- Detect prerelease in the `publish` and `github-release` jobs independently. Rejected — two regex sites that must stay in lockstep is exactly the kind of drift this change is fighting against. One source of truth in `prepare` is the canonical fix.
+- Ship the prerelease fix as a separate change. Rejected — the rc-validation step in this change's migration plan literally requires it; splitting would either make this change's rc step unsafe, or block this change behind a separate PR. Combined scope is cleaner.
+
+**Locked by**: extension of `packages/shared/src/__tests__/publish-workflow-contract.test.ts`. New assertions:
+- The `prepare` job's `outputs:` block contains `is_prerelease`.
+- The `publish` job's loop body conditions `--tag next` on `${{ needs.prepare.outputs.is_prerelease == 'true' }}`.
+- The `github-release` job's `with:` block includes `prerelease: ${{ needs.prepare.outputs.is_prerelease == 'true' }}` (or the equivalent `is_prerelease`-keyed expression).
+
+Failure messages cite this change name + the offending line so a contributor who removes any of the three sites gets a self-explanatory test failure.
+
 ## Risks / Trade-offs
 
 - **[Risk] Behavioural drift in `bundle-server.mjs` vs `.sh`.** Mitigation: the Linux x64 CI run still produces a tarball whose byte-shape (size, entry count, structure) can be diffed against the `.sh` output during this change's verification. A sanity test in `packages/shared/src/__tests__/bundle-server-output-shape.test.ts` may pin the manifest schema (file count, presence of expected directories under `node_modules`).
@@ -133,6 +158,8 @@ The test logic is more interesting than the previous lints because it must:
 - **[Risk] Windows arm64 NSIS stays broken if electron-builder has additional Windows-arm64 specific issues.** Mitigation: this change explicitly does NOT target Windows arm64 packaging — that path uses `electron-forge package` (not NSIS) and was not failing on the same code path. It will be re-validated post-change; if a separate bug exists it gets its own follow-up change.
 - **[Trade-off] One more lint to maintain.** Acceptable — the lint runs in milliseconds (regex over ~400-line YAML) and prevents an entire bug class.
 - **[Trade-off] Windows-only contributors with no bash now have one less shared-script surface.** Net positive: those contributors gain the ability to dry-run scripts in their native shell.
+- **[Risk] A version with a SemVer build-metadata segment (`0.4.5+ci.123`) but no prerelease segment is treated as stable.** Acceptable: the regex correctly returns false for `+`-only versions. We don't currently use build-metadata; if we ever do, the regex stays correct.
+- **[Risk] The `is_prerelease` job output is consumed via `${{ needs.prepare.outputs.is_prerelease == 'true' }}` literal-string comparison.** Mitigation: GitHub Actions stringifies all outputs, and the regex unconditionally writes either `"true"` or `"false"` to `$GITHUB_OUTPUT`, never an empty string. Lint test asserts both shapes appear at the consumer sites.
 
 ## Migration Plan
 
@@ -140,8 +167,9 @@ The test logic is more interesting than the previous lints because it must:
 2. Verify locally on Linux: `node packages/electron/scripts/bundle-server.mjs` produces identical output structure to the old `.sh` (manifest of file paths under `resources/server/`).
 3. Verify the lint: temporarily revert one `shell: bash` removal to confirm the test fails with a useful message, restore.
 4. Push to `develop`.
-5. Tag a `v0.4.5-rc.1` or use `workflow_dispatch` with `--platform=win32-x64` matrix only to short-circuit the macOS/Linux paths and validate Windows in isolation.
-6. On rc success: tag the real release. No rollback step beyond `git revert` of this change's commits.
+5. Tag a `v0.4.5-rc.1` or use `workflow_dispatch` with `version: 0.4.5-rc.1`. The `prepare` job detects the prerelease, the `publish` job appends `--tag next` to every `npm publish`, and `github-release` creates a `prerelease: true` Release. Stable consumers running `npm install <pkg>` continue to receive the previous stable from `latest`.
+6. On rc success: tag the real release `v0.4.5`. The `prepare` job sees no prerelease segment, falls back to `latest` + `prerelease: false`. No rollback step beyond `git revert` of this change's commits.
+7. Optional cleanup if the rc went out: `npm dist-tag rm @blackbelt-technology/<pkg> next` for each sub-package once the stable lands and the rc is no longer recommended for installation.
 
 ## Open Questions
 

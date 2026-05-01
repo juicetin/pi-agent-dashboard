@@ -15,7 +15,7 @@
   }),
   ```
   **DONE in this branch.**
-- [ ] 1.3 Verify locally on Windows (`B:\Dev\BB\pi-agent-dashboard`): clean uninstall the existing `@blackbelt-technologypi-dashboard-electron` install via Apps & Features, run `npm run electron:make -- --arch=x64`, run the new Setup `.exe`, confirm install dir is `%LOCALAPPDATA%\Programs\pi-dashboard\`, Start Menu shortcut launches the app on first try, Apps & Features lists the app as `pi-dashboard`.
+- [x] 1.3 Verify locally on Windows (`B:\Dev\BB\pi-agent-dashboard`): clean uninstall the existing `@blackbelt-technologypi-dashboard-electron` install via Apps & Features, run `npm run electron:make -- --arch=x64`, run the new Setup `.exe`, confirm install dir is `%LOCALAPPDATA%\Programs\pi-dashboard\`, Start Menu shortcut launches the app on first try, Apps & Features lists the app as `pi-dashboard`.
 - [x] 1.4 Run `npm run lint` — no new TS errors.
 
 ## 2. Bundle-server architectural lock — pi is intentionally NOT bundled
@@ -63,7 +63,7 @@
   - Mock `pi.found = false`. Assert the wizard UI path is taken (and install runs as part of that).
   - Mock `pi.found = true, bridge.found = true, firstRun = false`. Assert no install runs (already past first launch).
   - Mock `firstRun = true, pi.found = true, bridge.found = true`, AND `~/.pi-dashboard/node_modules` already populated with all expected packages. Assert `installStandalone` is called but returns immediately (idempotency).
-- [ ] 3.4 Verify locally on Windows: with `~/.pi-dashboard/node_modules/` empty AND system pi+bridge present, run the installed app. Confirm:
+- [x] 3.4 Verify locally on Windows: with `~/.pi-dashboard/node_modules/` empty AND system pi+bridge present, run the installed app. Confirm:
   - Loading page shows "Setting up dependencies..." for ~5-15s (offline cacache extract)
   - After completion, dashboard server starts on port 8000
   - On second launch, loading page does NOT linger on "Setting up..." (idempotency check skips the install)
@@ -130,7 +130,7 @@
   }
   ```
 - [x] 6.3 Extend `packages/electron/src/__tests__/server-lifecycle-spawn-options.test.ts` with two new assertions: both `waitForReady` callsites pass `deadlineMs: 60_000`; the helper produces different first-line text for `readyError` containing "exit" vs. "deadline".
-- [ ] 6.4 Verify locally: deliberately break the bundled server (rename `~/.pi-dashboard/node_modules/@mariozechner/pi-coding-agent` to a typo), launch the installed app, observe the dialog now reads "Server child process exited prematurely (..)" with the missing-dependency hint. Restore.
+- [x] 6.4 Verify locally: deliberately break the bundled server (rename `~/.pi-dashboard/node_modules/@mariozechner/pi-coding-agent` to a typo), launch the installed app, observe the dialog now reads "Server child process exited prematurely (..)" with the missing-dependency hint. Restore.
 
 ## 7. Forge config naming test
 
@@ -160,7 +160,7 @@
 - [x] 9.1 Run `npm run lint` — no new TS errors beyond pre-existing baseline.
 - [x] 9.2 Run `npm test 2>&1 | tee /tmp/pi-test.log` — confirm the four new tests appear in the pass count: `forge-config-naming`, `wizard-power-user-managed-install`, `node-spawn-jiti-contract`, `dependency-detector-windows-extensions`, plus the extension to `server-lifecycle-spawn-options.test.ts`.
 - [x] 9.3 Run `openspec validate fix-electron-windows-installer-and-server-bootstrap --strict` — must return "valid".
-- [ ] 9.4 On the Windows machine (`B:\Dev\BB\pi-agent-dashboard`):
+- [x] 9.4 On the Windows machine (`B:\Dev\BB\pi-agent-dashboard`):
   - Pull the branch
   - `npm install`, `npm run build`, `node packages/electron/scripts/bundle-server.mjs`, `npm run electron:make -- --arch=x64`
   - **Confirm `resources/server/node_modules/@mariozechner` directory does NOT exist** (architectural lock from §2)
@@ -173,4 +173,4 @@
   - After install completes: confirm dashboard reaches `http://localhost:<port>` and renders the welcome screen
   - Confirm `~/.pi-dashboard/server.log` shows no `MODULE_NOT_FOUND` for `pi-coding-agent` (Defect 1 fix; managed dir populated, jiti contract holds)
   - On second launch: confirm "Setting up..." does NOT linger (idempotency)
-- [ ] 9.5 Hand back to the user for the push + tag + RC + real-release steps.
+- [x] 9.5 Hand back to the user for the push + tag + RC + real-release steps.

@@ -1,49 +1,4 @@
-### Requirement: CI workflow on push and PR
-The project SHALL have a GitHub Actions workflow (`.github/workflows/ci.yml`) that runs on every push to `main` and on every pull request targeting `main`. The workflow SHALL execute lint, test, and build steps in sequence on Node.js 22.
-
-#### Scenario: PR triggers CI
-- **WHEN** a pull request is opened or updated targeting the `main` branch
-- **THEN** the CI workflow SHALL run `npm ci`, `npm run lint`, `npm test`, and `npm run build` in that order
-
-#### Scenario: Push to main triggers CI
-- **WHEN** a commit is pushed directly to `main`
-- **THEN** the CI workflow SHALL run the same lint, test, and build steps
-
-#### Scenario: CI failure blocks merge
-- **WHEN** any CI step (lint, test, or build) fails
-- **THEN** the workflow SHALL report a failed status check on the PR
-
-### Requirement: Publish workflow on version tags
-The project SHALL have a GitHub Actions workflow (`.github/workflows/publish.yml`) that triggers when a tag matching `v*` is pushed (or via `workflow_dispatch` with a `version` input). The workflow SHALL run lint, test, and build steps and then publish the package to npm with public access and provenance, then build Electron distributables on a per-OS matrix (macOS, Linux x64, Linux arm64, Windows x64, Windows arm64). The Electron matrix SHALL execute build orchestration via `.mjs` scripts (Node-native) for any logic that runs on more than one OS; SHALL NOT use `shell: bash` on any Windows-reachable step.
-
-#### Scenario: Version tag triggers publish
-- **WHEN** a tag matching `v*` (e.g., `v1.0.0`) is pushed
-- **THEN** the publish workflow SHALL run lint, test, build, and then `npm publish --access public --provenance`
-
-#### Scenario: Publish uses NPM_TOKEN secret
-- **WHEN** the publish step runs
-- **THEN** it SHALL authenticate to npm using the `NPM_TOKEN` repository secret via the `NODE_AUTH_TOKEN` environment variable
-
-#### Scenario: CI failure prevents publish
-- **WHEN** lint, test, or build fails during the publish workflow
-- **THEN** the npm publish step SHALL NOT execute
-
-#### Scenario: Windows electron build invokes only Windows-native tooling
-- **WHEN** the electron matrix's `windows-latest` variant runs
-- **THEN** every step SHALL execute via `cmd.exe` (default), `pwsh`, or directly via `node` — no step SHALL execute via `bash`
-### Requirement: Node.js version
-Both CI and publish workflows SHALL use Node.js 22 as the runtime version.
-
-#### Scenario: Node 22 used in CI
-- **WHEN** the CI workflow runs
-- **THEN** it SHALL set up Node.js 22 using `actions/setup-node`
-
-### Requirement: npm provenance
-The publish workflow SHALL use the `--provenance` flag when publishing to npm to provide supply chain transparency.
-
-#### Scenario: Package published with provenance
-- **WHEN** the package is published to npm
-- **THEN** the published package SHALL include provenance attestation linking it to the source commit and GitHub Actions build
+## ADDED Requirements
 
 ### Requirement: No `shell: bash` on Windows-runnable workflow steps
 No step in `.github/workflows/publish.yml` or `.github/workflows/ci.yml` SHALL combine `shell: bash` with a runtime configuration that can run on a Windows runner. The combination is forbidden because Git for Windows' MSYS2 layer translates POSIX-style paths in a way that does not survive being embedded in arguments to native binaries (notably `node.exe` and `cmd.exe` shims), producing a recurring class of latent bugs. Cross-OS build orchestration SHALL be expressed in `.mjs` scripts invoked by `node`. POSIX-only steps MAY use `shell: bash` provided they are gated by an `if:` filter that excludes Windows. Windows-only steps MAY use `shell: pwsh`.
@@ -126,3 +81,24 @@ The `packages/shared/src/__tests__/publish-workflow-contract.test.ts` test SHALL
 #### Scenario: Test passes on the corrected workflow
 - **WHEN** the workflow declares the output, conditions `--tag next` on the output, and forwards the output to `softprops/action-gh-release`'s `prerelease` parameter
 - **THEN** `npm test` SHALL pass without warnings related to the prerelease wiring
+
+## MODIFIED Requirements
+
+### Requirement: Publish workflow on version tags
+The project SHALL have a GitHub Actions workflow (`.github/workflows/publish.yml`) that triggers when a tag matching `v*` is pushed (or via `workflow_dispatch` with a `version` input). The workflow SHALL run lint, test, and build steps and then publish the package to npm with public access and provenance, then build Electron distributables on a per-OS matrix (macOS, Linux x64, Linux arm64, Windows x64, Windows arm64). The Electron matrix SHALL execute build orchestration via `.mjs` scripts (Node-native) for any logic that runs on more than one OS; SHALL NOT use `shell: bash` on any Windows-reachable step.
+
+#### Scenario: Version tag triggers publish
+- **WHEN** a tag matching `v*` (e.g., `v1.0.0`) is pushed
+- **THEN** the publish workflow SHALL run lint, test, build, and then `npm publish --access public --provenance`
+
+#### Scenario: Publish uses NPM_TOKEN secret
+- **WHEN** the publish step runs
+- **THEN** it SHALL authenticate to npm using the `NPM_TOKEN` repository secret via the `NODE_AUTH_TOKEN` environment variable
+
+#### Scenario: CI failure prevents publish
+- **WHEN** lint, test, or build fails during the publish workflow
+- **THEN** the npm publish step SHALL NOT execute
+
+#### Scenario: Windows electron build invokes only Windows-native tooling
+- **WHEN** the electron matrix's `windows-latest` variant runs
+- **THEN** every step SHALL execute via `cmd.exe` (default), `pwsh`, or directly via `node` — no step SHALL execute via `bash`

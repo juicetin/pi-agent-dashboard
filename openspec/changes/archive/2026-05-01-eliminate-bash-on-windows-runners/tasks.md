@@ -46,6 +46,31 @@
 - [x] 4.3 Run `npm test` — the new test must pass.
 - [x] 4.4 Sanity-check: temporarily revert task 3.4 (re-add `shell: bash` to the Bundle dashboard server step), re-run the test, observe failure that names "Bundle dashboard server" and cites change `eliminate-bash-on-windows-runners`. Restore task 3.4 afterwards.
 
+## 4b. Prerelease support (publish to `next` dist-tag + GitHub `prerelease: true`)
+
+- [x] 4b.1 Edit `.github/workflows/publish.yml` `prepare` job's `Resolve version` step. Add a third line right after `tag=...`:
+  ```bash
+  is_prerelease=$([[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+- ]] && echo true || echo false)
+  echo "is_prerelease=$is_prerelease" >> "$GITHUB_OUTPUT"
+  ```
+  Both branches (tag-push and workflow_dispatch) reach the same write since the regex applies to the resolved `$version` value before that line.
+- [x] 4b.2 Edit the `prepare` job's `outputs:` block. Add `is_prerelease: ${{ steps.resolve.outputs.is_prerelease }}` alongside the existing `version` and `tag` outputs.
+- [x] 4b.3 Edit the `publish` job's per-package npm publish loop. Compute the `--tag` argument conditionally before each `npm publish` call:
+  ```bash
+  PRERELEASE="${{ needs.prepare.outputs.is_prerelease }}"
+  TAG_ARG=""
+  if [ "$PRERELEASE" = "true" ]; then TAG_ARG="--tag next"; fi
+  ```
+  Pass `$TAG_ARG` to both invocations (root metapackage AND `--workspace=$pkg` sub-packages). Quoting note: leave `$TAG_ARG` UN-quoted so the empty-string case for stable releases doesn't pass an empty arg to npm.
+- [x] 4b.4 Edit the `github-release` job's `softprops/action-gh-release@v2` step. Add `prerelease: ${{ needs.prepare.outputs.is_prerelease == 'true' }}` to the `with:` block (the literal-string comparison is required because Actions stringifies job outputs).
+- [x] 4b.5 Extend `packages/shared/src/__tests__/publish-workflow-contract.test.ts`. Add three new test cases:
+  - The `prepare` job's `outputs:` block contains `is_prerelease`.
+  - The `publish` job's body contains the literal `--tag next` AND the `is_prerelease == "true"` (or `[ "$PRERELEASE" = "true" ]`) conditional in the same step.
+  - The `github-release` step's body contains `prerelease:` followed by an `is_prerelease`-keyed expression.
+  Failure messages cite change `eliminate-bash-on-windows-runners` per the design D6 contract.
+- [x] 4b.6 Run `HOME=$(mktemp -d) npx vitest run packages/shared/src/__tests__/publish-workflow-contract.test.ts` — must pass.
+- [x] 4b.7 Sanity-check: temporarily revert task 4b.2 (drop the `is_prerelease` from `outputs:`), re-run the test, observe a failure that names the missing output AND cites the change. Restore.
+
 ## 5. Documentation
 
 - [x] 5.1 Update `docs/architecture.md` — add a "Cross-OS build orchestration" section documenting:
@@ -58,13 +83,14 @@
   - Add row for `packages/shared/src/__tests__/no-bash-on-windows.test.ts`.
   - Extend the existing `.github/workflows/publish.yml` row with a one-line invariant statement: "no `shell: bash` step is reachable on a Windows runner; locked by `no-bash-on-windows.test.ts`."
 - [x] 5.3 Add a `### Changed` entry to `CHANGELOG.md`'s `## [Unreleased]` section: "Windows electron builds now use only Windows-native + Node tools (no MSYS/bash). `bundle-server.sh` ported to `bundle-server.mjs`. Pins electron@32.3.3 to unblock NSIS maker. (eliminate-bash-on-windows-runners)"
+- [x] 5.4 Extend the same `### Changed` entry (or add a sibling line) noting prerelease support: "Prerelease versions (e.g. `0.4.5-rc.1`, any version with a SemVer prerelease segment) now publish to npm under the `next` dist-tag (consumers opt in via `npm install <pkg>@next` or `@<exact-version>`) and surface as GitHub `prerelease: true` Releases. Stable versions keep `latest` + regular Release. (eliminate-bash-on-windows-runners)"
 
 ## 6. Verify
 
 - [x] 6.1 Run `npm run lint` — must pass.
 - [x] 6.2 Run `npm test 2>&1 | tee /tmp/pi-test.log` — must pass. Confirm `no-bash-on-windows.test.ts` is in the pass count.
 - [x] 6.3 Run `openspec validate eliminate-bash-on-windows-runners --strict` — must return "valid".
-- [ ] 6.4 Push to `develop` (no tag).
-- [ ] 6.5 Trigger `workflow_dispatch` with a pre-release version (e.g. `0.4.5-rc.1`) and watch the matrix. Capture the run URL.
-- [ ] 6.6 Confirm Windows x64 NSIS produces an `.exe` artifact and Windows arm64 packaging produces a `.zip`. If either fails, capture the log and either fix or rollback.
-- [ ] 6.7 On rc success: tag the real release.
+- [x] 6.4 Push to `develop` (no tag).
+- [x] 6.5 Trigger `workflow_dispatch` with a pre-release version (e.g. `0.4.5-rc.1`) and watch the matrix. Capture the run URL.
+- [x] 6.6 Confirm Windows x64 NSIS produces an `.exe` artifact and Windows arm64 packaging produces a `.zip`. If either fails, capture the log and either fix or rollback.
+- [x] 6.7 On rc success: tag the real release.

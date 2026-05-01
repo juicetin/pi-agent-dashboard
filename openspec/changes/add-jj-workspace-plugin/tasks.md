@@ -2,9 +2,9 @@
 
 ## Phase 0 — Prereqs
 
-- [ ] Verify `dashboard-plugin-architecture` is implemented and shipped
-- [ ] Verify `add-dashboard-shell-slots-runtime` is implemented and shipped
-- [ ] Confirm `flows-plugin` is the canonical reference and read its package layout end-to-end
+- [x] Verify `dashboard-plugin-architecture` is implemented and shipped
+- [x] Verify `add-dashboard-shell-slots-runtime` is implemented and shipped
+- [x] Confirm `flows-plugin` is the canonical reference and read its package layout end-to-end
 
 ## Phase 1 — Tool registry + platform module
 
@@ -54,51 +54,56 @@
 
 ## Phase 4 — Client components
 
-- [ ] `JjWorkspaceBadge` — small chip rendering `Session.jjState.workspaceName`. Predicate-gated to render nothing when `!jjState?.isJjRepo`.
-- [ ] `JjActionBar` — row with buttons:
-  - [ ] `+ Workspace` (when `isInJjRepo`) — opens a name-input dialog, calls `POST /api/jj/workspace/add`, then triggers `spawn` flow
-  - [ ] `Fold back` (when `isInJjWorkspace`) — opens `JjFoldBackDialog`
-  - [ ] `Forget workspace` (when `isInJjWorkspace`) — first attempt sends `force: false`; on HTTP 409 `UNFOLDED_WORK`, render a dialog listing the commits about to be lost and re-issue with `force: true` only after user confirms
-  - [ ] `Enable jj workspaces` (when `isInGitRepoButNotJj && showInitColocatedSuggestion`) — calls `POST /api/jj/init-colocated` after confirm; hidden by default per Decision 11
-- [ ] `JjWorkspaceList` — collapsed sidebar section listing workspaces under the folder
-- [ ] `JjWorkspaceView` — `/jj` route showing status + workspace list + op log (read-only, refresh button)
-- [ ] `JjFoldBackDialog` — explainer + radio buttons (`preserve | squash`), pre-fills the agent prompt with the fold-back skill invocation
-- [ ] `JjPluginSettings` — settings-section form for `defaultPushTarget`, `workspaceRoot`, `allowDirectTrunkPush`
-- [ ] Component tests for each predicate (true/false matrix)
-- [ ] Component tests for badge / action-bar visibility under each `jjState` shape
+- [x] `JjWorkspaceBadge` — chip rendering `jj:<workspaceName>`; predicate-gated; tooltip shows colocated state
+- [x] `JjActionBar` — row with buttons:
+  - [x] `+ Workspace` (when `isInJjRepo`) — prompts for name, calls `POST /api/jj/workspace/add`, server spawns the session
+  - [x] `Fold back` (workspace cards only) — opens `JjFoldBackDialog`
+  - [x] `Forget workspace` (workspace cards only) — first attempt `force:false`; 409 UNFOLDED_WORK opens `JjForgetConfirmDialog` listing commits and re-issues with `force:true` after explicit confirm
+  - [ ] `Enable jj workspaces` plain-git affordance — component scaffolded but the slot needs the manifest's predicate model extended to read plugin config; deferred. The settings toggle exists in `JjPluginSettings`; visibility wiring is the only missing piece.
+- [x] `JjWorkspaceList` — sidebar-folder section; renders only when 2+ workspaces exist; lists name + change-id-short
+- [x] `JjWorkspaceView` — `/jj` route with workspace table + refresh button (read-only)
+- [x] `JjFoldBackDialog` — explainer + radio buttons (preserve / squash / pr); copies skill-invocation prompt to clipboard
+- [x] `JjPluginSettings` — settings-section form for all four configSchema fields
+- [x] Predicate truth-table tests (12 tests in `predicates.test.ts`)
+- [x] Badge visibility tests (4 tests in `JjWorkspaceBadge.test.tsx`)
+- [x] Action-bar visibility tests (4 tests in `JjActionBar.test.tsx`)
+- [x] Fold-back prompt builder tests (6 tests in `JjFoldBackDialog.test.tsx`)
+- [x] Client `DiffPanel` (`FileDiffView` header) renders "(vs &lt;baseLabel&gt;)" pill when `vcsKind === "jj"`
 
 ## Phase 4b — jj-aware session-diff
 
-- [ ] Refactor `packages/server/src/session-diff.ts`:
-  - [ ] Rename existing `enrichWithGitDiff` body to internal `enrichGitPath`
-  - [ ] New `enrichWithVcsDiff(cwd, files, jjState?)` dispatcher chooses git or jj path
-  - [ ] New `enrichJjPath(cwd, files, baseRev, baseLabel)` runs `jj.diff` per file
-  - [ ] Compute `baseRev`: `@-` for default workspace, `fork_point(@, trunk())` for others
-  - [ ] Compute `baseLabel`: bookmark name on `@-` if present, else the revset literal
-- [ ] Add `jj.diff(cwd, fromRev, toRev, path)` Recipe to `platform/jj.ts`
-- [ ] Extend `SessionDiffResponse` with optional `vcsKind`, `diffBase`, `baseLabel`
-- [ ] Update `packages/server/src/routes/session-routes.ts` to thread `Session.jjState` into the enrichment call
-- [ ] Client `DiffPanel`: render a one-line header "Diffing against `<baseLabel>`" when `vcsKind === "jj"`
-- [ ] Tests:
-  - [ ] Plain-git regime byte-equivalence with pre-change behavior
-  - [ ] Default-workspace regime produces same content as `git diff HEAD` (smoke parity)
-  - [ ] Non-default-workspace regime captures all agent commits across multiple `jj new`s
-  - [ ] Untracked file in jj path uses native `jj diff` output, not synthetic
-  - [ ] Old client (no `vcsKind` reader) still renders correctly
+- [x] Refactor `packages/server/src/session-diff.ts`:
+  - [x] Keep existing `enrichWithGitDiff` exported (backwards compat)
+  - [x] New `enrichWithVcsDiff(cwd, files, jjState?)` dispatcher chooses git or jj path
+  - [x] New `enrichWithJjDiff(cwd, files, jjState)` runs `jj.diff` per file
+  - [x] Compute `baseRev` via pure `selectJjDiffBase`: `@-` for default workspace, `fork_point(@, trunk())` for others
+  - [x] Compute `baseLabel`: bookmark name on `@-` if jj resolves it, else the revset literal
+- [x] Add `jj.diff(cwd, fromRev, toRev, path)` Recipe to `platform/jj.ts` (done in Phase 1)
+- [x] Extend `SessionDiffResponse` with optional `vcsKind`, `diffBase`, `baseLabel` (additive, opt-in)
+- [x] Update `packages/server/src/routes/session-routes.ts` to thread `Session.jjState` into the enrichment call
+- [ ] Client `DiffPanel`: render a one-line header "Diffing against `<baseLabel>`" when `vcsKind === "jj"` (deferred to Phase 4 client work)
+- [x] Tests:
+  - [x] `selectJjDiffBase` truth-table (5 tests covering default / undefined / non-default / various names)
+  - [x] Plain-git regime byte-equivalence preserved (existing session-diff.test.ts continues to pass against `enrichWithVcsDiff` via dispatcher)
+  - [ ] Live integration: non-default-workspace regime captures all agent commits across multiple `jj new`s (deferred to Phase 7 integration tests)
+  - [ ] Untracked file in jj path uses native `jj diff` output, not synthetic (covered structurally by code path; integration test deferred)
+  - [x] Old client (no `vcsKind` reader) still renders correctly — fields are optional
 
 ## Phase 5 — Server routes
 
-- [ ] `POST /api/jj/workspace/add` — `{ fromCwd, name, taskDescription? }` → runs `jj.workspaceAdd`, enqueues into `pendingAttachRegistry`, calls `spawnPiSession`
-  - [ ] Validate `name` against `/^[a-z0-9-]+$/`
-  - [ ] Reject if `<workspaceRoot>/<name>` already exists
-- [ ] `POST /api/jj/workspace/forget` — `{ cwd, name, force?: boolean }`
-  - [ ] Inspect for unfolded commits via `jj log -r 'fork_point(<name>@, trunk()) .. <name>@'`
-  - [ ] Refuse with HTTP 409 (`code: "UNFOLDED_WORK"`) if non-empty AND `!force`
-  - [ ] On success/force: run `jj.workspaceForget` then `fs.rm({ recursive: true, force: true })` on the workspace dir
-- [ ] `POST /api/jj/init-colocated` — `{ cwd }` → checks `git status --porcelain` clean, then runs `jj.gitInitColocate`
-- [ ] `GET /api/jj/workspace/list?cwd=...` — returns workspace list (used by `JjWorkspaceList`)
-- [ ] All routes auth-gated (same pattern as `openspec-routes.ts`)
-- [ ] Route tests with the existing test harness
+- [x] `POST /api/jj/workspace/add` — `{ fromCwd, name, baseRev?, taskDescription? }` → runs `jj.workspaceAdd`, enqueues into `pendingAttachRegistry`, calls `spawnPiSession`
+  - [x] Validate `name` against `/^[a-z0-9-]+$/`
+  - [x] Reject if `<workspaceRoot>/<name>` already exists
+  - [x] Resolve `baseRev` from source `@`'s bookmark (fallback `trunk()`)
+- [x] `POST /api/jj/workspace/forget` — `{ cwd, name, force?: boolean }`
+  - [x] Inspect for unfolded commits via `jj log -r 'fork_point(<name>@, trunk()) .. <name>@'`
+  - [x] Refuse with HTTP 409 (`code: "UNFOLDED_WORK"`) if non-empty AND `!force`
+  - [x] On success/force: run `jj.workspaceForget` then `fs.rm({ recursive: true, force: true })` on the workspace dir
+- [x] `POST /api/jj/init-colocated` — `{ cwd }` → INDEX-only dirty check (column-1 status); refuses 409 `DIRTY_INDEX` only on staged changes; allows working-tree dirt
+- [x] `GET /api/jj/workspace/list?cwd=...` — returns workspace list (used by `JjWorkspaceList`)
+- [x] All routes auth-gated via `networkGuard` preHandler
+- [x] Route tests for `checkInitColocatedPreconditions` (8 tests — covers DIRTY_INDEX, ALREADY_JJ, NOT_GIT_REPO, INVALID_CWD, working-tree-dirt-allowed, probe-error-defensive)
+- [x] Routes registered in `server.ts`
 
 ## Phase 6 — Skills
 
@@ -123,12 +128,18 @@
 
 ## Phase 7 — Tests + docs
 
-- [ ] Add `packages/jj-plugin/src/__tests__/predicates.test.ts` exhaustively asserting each predicate's truth table
-- [ ] Add `packages/jj-plugin/src/__tests__/manifest.test.ts` validating the manifest against the loader's validator (mirrors flows-plugin)
-- [ ] Add an integration test that creates a temp git repo, runs `jj.gitInitColocate`, then `jj.workspaceAdd` and asserts the new workspace appears in `jj.workspaceList`
-- [ ] Update `AGENTS.md` with the new package + new `Session.jjState` field documentation
-- [ ] Update `README.md` with a "Jujutsu workspaces" subsection under Features
-- [ ] Update `docs/architecture.md` data-flow section to include the jj poll path
+- [x] `packages/jj-plugin/src/__tests__/predicates.test.ts` — 12 truth-table tests
+- [x] `packages/jj-plugin/src/__tests__/manifest.test.ts` — 8 validator + claim tests
+- [x] `packages/jj-plugin/src/__tests__/JjWorkspaceBadge.test.tsx` — 4 visibility tests
+- [x] `packages/jj-plugin/src/__tests__/JjActionBar.test.tsx` — 4 visibility tests
+- [x] `packages/jj-plugin/src/__tests__/JjFoldBackDialog.test.tsx` — 6 prompt-builder tests
+- [x] `packages/server/src/__tests__/jj-routes.test.ts` — 8 init-precondition tests
+- [x] `packages/server/src/__tests__/session-diff-vcs.test.ts` — 5 diff-base selector tests
+- [ ] Live integration test: temp git repo + `jj git init --colocate` + `jj workspace add` (deferred — requires `jj` on the test runner; ok as a smoke test at release time)
+- [x] Update `AGENTS.md` with the new package + new `Session.jjState` field documentation (8 new rows added)
+- [ ] Update `README.md` with a "Jujutsu workspaces" subsection under Features (deferred to docs pass)
+- [ ] Update `docs/architecture.md` data-flow section to include the jj poll path (deferred to docs pass)
+- [x] Add both skills to the relevant skill index (top-level `.pi/skills/` already auto-discovered)
 
 ## Phase 8 — Publish
 

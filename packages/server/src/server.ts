@@ -52,6 +52,7 @@ import { registerPiCoreRoutes } from "./routes/pi-core-routes.js";
 import { PiCoreChecker } from "./pi-core-checker.js";
 import { PiCoreUpdater } from "./pi-core-updater.js";
 import { registerToolRoutes } from "./routes/tool-routes.js";
+import { registerJjRoutes } from "./routes/jj-routes.js";
 import { registerBootstrapRoutes } from "./routes/bootstrap-routes.js";
 import { createBootstrapState, type BootstrapStateStore } from "./bootstrap-state.js";
 import { createBootstrapQueue } from "./bootstrap-queue.js";
@@ -706,6 +707,7 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
   });
   registerSystemRoutes(fastify, { sessionManager, preferencesStore, metaPersistence, config, networkGuard, version: pkgVersion, directoryService, piGateway });
   registerToolRoutes(fastify, { registry: getDefaultRegistry(), networkGuard });
+  registerJjRoutes(fastify, { browserGateway, pendingAttachRegistry, networkGuard });
 
   // ── Bootstrap REST routes ────────────────────────────────────────
   // The routes module is registered here; state + queue are declared

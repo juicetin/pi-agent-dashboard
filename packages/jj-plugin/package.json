@@ -65,7 +65,9 @@
     "react-dom": ">=18.0.0"
   },
   "dependencies": {
-    "@blackbelt-technology/pi-dashboard-shared": "^0.4.4"
+    "@blackbelt-technology/pi-dashboard-shared": "^0.4.4",
+    "@mdi/js": "^7.4.47",
+    "@mdi/react": "^1.6.1"
   },
   "devDependencies": {
     "@types/react": "^19.0.0",

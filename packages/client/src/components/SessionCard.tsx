@@ -13,8 +13,10 @@ import type { OpenSpecData, OpenSpecChange } from "@blackbelt-technology/pi-dash
 import { SessionOpenSpecActions } from "./SessionOpenSpecActions.js";
 import { OpenSpecActivityBadge } from "./OpenSpecActivityBadge.js";
 import { InlineRenameInput } from "./InlineRenameInput.js";
-import { FlowActivityBadge } from "./FlowActivityBadge.js";
-import { SessionFlowActions } from "./SessionFlowActions.js";
+import {
+  FlowActivityBadge,
+  SessionFlowActions,
+} from "@blackbelt-technology/pi-dashboard-flows-plugin/client";
 import { ProcessList, type ProcessEntry } from "./ProcessList.js";
 import type { CommandInfo, FlowInfo } from "@blackbelt-technology/pi-dashboard-shared/types.js";
 import { useMobile } from "../hooks/useMobile.js";
@@ -55,6 +57,10 @@ const sourceLabels: Record<string, string> = {
 export function getCardPulseClass(session: DashboardSession): string {
   if (session.currentTool === "ask_user") return "card-input-pulse";
   if (session.status === "streaming" || session.resuming) return "card-working-pulse";
+  // Unread state — gray scrolling stripes. Lower priority than the two above
+  // so streaming/ask_user keep their stronger colors.
+  // See change: session-card-unread-stripes.
+  if (session.unread) return "card-unread-pulse";
   return "";
 }
 

@@ -15,9 +15,9 @@ import type {
   ArchitectAgentEntry,
   FlowDetailEntry,
 } from "@blackbelt-technology/pi-dashboard-shared/types.js";
-import { MarkdownContent } from "./MarkdownContent.js";
+import { MarkdownContent } from "../../../client/src/components/MarkdownContent.js";
 import { FlowGraph, architectStepsToGraphSteps } from "./FlowGraph.js";
-import { AgentCardShell } from "./AgentCardShell.js";
+import { AgentCardShell } from "../../../client/src/components/AgentCardShell.js";
 
 // ── Detail view (reuses same patterns as FlowAgentDetail) ─────────
 

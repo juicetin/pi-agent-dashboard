@@ -2,7 +2,7 @@ import React from "react";
 import { Icon } from "@mdi/react";
 import { mdiArrowLeft, mdiCheckCircle, mdiCloseCircle, mdiAlertCircle, mdiCircle, mdiCircleOutline } from "@mdi/js";
 import type { FlowAgentState, FlowDetailEntry } from "@blackbelt-technology/pi-dashboard-shared/types.js";
-import { MarkdownContent } from "./MarkdownContent.js";
+import { MarkdownContent } from "../../../client/src/components/MarkdownContent.js";
 
 function formatTokens(n: number): string {
   if (n < 1000) return String(n);

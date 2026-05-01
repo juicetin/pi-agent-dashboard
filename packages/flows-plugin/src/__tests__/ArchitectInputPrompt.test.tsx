@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import React from "react";
-import { ArchitectInputPrompt } from "../FlowArchitect.js";
+import { ArchitectInputPrompt } from "../client/FlowArchitect.js";
 
 afterEach(cleanup);
 

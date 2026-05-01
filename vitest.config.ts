@@ -16,6 +16,7 @@ export default defineConfig({
       "packages/extension",
       "packages/client",
       "packages/dashboard-plugin-runtime",
+      "packages/flows-plugin",
       // NOTE: packages/electron is intentionally NOT included here — it has
       // pre-existing orphaned tests that depend on ambient PATH/mocks never
       // wired up. Offline-packages tests are runnable via

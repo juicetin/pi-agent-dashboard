@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { computeLayout, type FlowGraphStep } from "../FlowGraph.js";
+import { computeLayout, type FlowGraphStep } from "../client/FlowGraph.js";
 
 describe("computeLayout", () => {
   it("lays out a linear flow A→B→C left-to-right", () => {

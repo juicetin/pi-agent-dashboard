@@ -2,9 +2,9 @@ import React from "react";
 import { Icon } from "@mdi/react";
 import { mdiRefresh, mdiEyeOutline, mdiEyeOffOutline, mdiFileDocumentOutline } from "@mdi/js";
 import type { DashboardSession, FlowAgentState } from "@blackbelt-technology/pi-dashboard-shared/types.js";
-import { AgentCardShell } from "./AgentCardShell.js";
-import { formatTokens, formatDuration } from "./agent-card-utils.js";
-import { AgentMetricSlot } from "./extension-ui/AgentMetricSlot.js";
+import { AgentCardShell } from "../../../client/src/components/AgentCardShell.js";
+import { formatTokens, formatDuration } from "../../../client/src/components/agent-card-utils.js";
+import { AgentMetricSlot } from "../../../client/src/components/extension-ui/AgentMetricSlot.js";
 
 export function FlowAgentCard({
   agent,

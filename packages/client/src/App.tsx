@@ -820,6 +820,7 @@ export default function App() {
         onRename={handleRenameSession}
         showBack
         onBack={isMobile ? () => navigate("/") : goBackDesktop}
+        onResume={selectedId ? (mode) => handleResumeSession(selectedId, mode) : undefined}
         mobileActions={isMobile ? {
           editors: selectedCwd ? editorMap.get(selectedCwd) : undefined,
           openspecChanges: selectedCwd ? openspecMap.get(selectedCwd)?.changes : undefined,

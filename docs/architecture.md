@@ -1258,7 +1258,7 @@ This is separate from the main JSON dashboard WebSocket (`/ws`).
 **Native binary permissions.** `node-pty`'s prebuilt `spawn-helper` (and `pty.node`) must be executable for `pty.spawn` to succeed on macOS/Linux. Three layers of defense ensure this:
 
 1. **Postinstall** — `packages/server/scripts/fix-pty-permissions.cjs` (wired at workspace-root `postinstall`) uses `require.resolve("node-pty/package.json")` to locate the dependency wherever npm placed it and sets mode `0o755` on every `prebuilds/*/spawn-helper` and `prebuilds/*/pty.node`.
-2. **Electron bundle** — `packages/electron/scripts/bundle-server.sh` runs `find … -name spawn-helper -exec chmod +x` after `npm install` and removes macOS quarantine flags (`xattr -d com.apple.quarantine`) from native binaries.
+2. **Electron bundle** — `packages/electron/scripts/bundle-server.mjs` runs `fs.chmodSync` on every `spawn-helper` after `npm install` and removes macOS quarantine flags (`xattr -d com.apple.quarantine`) from native binaries.
 
 ### Package management (install / remove / update / move)
 
@@ -1578,6 +1578,63 @@ Every OS-dependent function takes an optional trailing `platform: NodeJS.Platfor
 `Array.prototype.map` passes `(element, index, array)`. When a function takes `platform` as an optional second argument, the index (a number) gets passed as `platform`, silently failing the `=== "win32"` check and taking the POSIX branch. Always wrap: `.map((p) => normalizePath(p))` instead of `.map(normalizePath)`.
 
 See change: `platform-path-normalization`.
+
+## Cross-OS Build Orchestration
+
+### Principle
+
+Cross-OS build logic SHALL live in `.mjs` scripts invoked by `node`. POSIX-only steps MAY use `shell: bash` provided they are gated by an `if:` filter that excludes Windows. Windows-only steps MAY use `shell: pwsh`. **No GitHub Actions step combines `shell: bash` with a runtime configuration that can run on a Windows runner.**
+
+### Why
+
+Git for Windows' MSYS2 layer translates Win32 paths (`D:\a\...`) to POSIX form (`/d/a/...`) for any bash variable produced by `pwd`, `dirname`, etc. That translated string is invisible to native binaries when embedded in arguments — most notably `node.exe`, which receives the POSIX-form path as a literal `require()` target and rejects it with `MODULE_NOT_FOUND`. The translation only exists on Windows runners; the same script tested on a Linux dev machine cannot reproduce the failure. Result: a class of latent path-in-string bugs that surface only at release time and only on Windows.
+
+MSYS exists for legitimate reasons (porting GCC, Autotools, git itself — software that is already POSIX-shaped and cannot be rewritten). None of those reasons apply to a Node project. Node has cross-OS primitives (`node:path`, `node:fs`, `node:child_process`) that work natively on every host, with zero translation layer and zero per-OS surprise.
+
+### The four-cell failure-mode matrix
+
+```
+                          HOST OS
+                       ┌─────────────┬─────────────────┐
+                       │  POSIX      │  Windows        │
+        ───────────────┼─────────────┼─────────────────┤
+        argv-position  │  works      │  works          │
+        path           │             │  (MSYS converts)│
+        ───────────────┼─────────────┼─────────────────┤
+        EMBEDDED       │  works      │  ❌ broken      │
+        in JS source   │             │  MSYS can't     │
+        passed via     │             │  see inside     │
+        node -e "..."  │             │  string         │
+        ───────────────┼─────────────┼─────────────────┤
+        --import URL   │  works      │  ❌ broken      │
+        as raw path    │             │  Node parses B: │
+        (no file://)   │             │  as URL scheme  │
+        ───────────────┼─────────────┼─────────────────┤
+        inside .mjs    │  works      │  works          │
+        path.resolve   │             │                 │
+        ───────────────┴─────────────┴─────────────────┘
+```
+
+The two broken cells map to existing repo invariants:
+
+- **Embedded path in `node -e "..."`**: avoided by porting build scripts to `.mjs` (see `packages/electron/scripts/bundle-{server,offline-packages,recommended-extensions}.mjs`).
+- **Raw path in `--import` / `--loader`**: locked by `packages/shared/src/__tests__/no-raw-node-import.test.ts`. All real call sites go through `toFileUrl` from `platform/node-spawn.ts` or `buildJitiRegisterUrl` from `resolve-jiti.ts`.
+
+### Shell allowlist
+
+| Shell | When to use | Notes |
+|---|---|---|
+| (default — no `shell:` declared) | A single command that runs identically on every OS (`node X.mjs`, `npm install`, `npm version`) | Cmd on Windows, sh on POSIX. Both invoke the binary natively. |
+| `node` | Any cross-OS logic. Always preferred over a shell. | `node X.mjs` for orchestration, `node -e "..."` for one-line existence checks. |
+| `bash` | POSIX-only logic (`apt-get`, `xattr -d`). MUST be gated by `if: matrix.platform != 'win32'`. | Locked by the lint test. |
+| `pwsh` | Windows-only logic (`Compress-Archive`, `Invoke-WebRequest`, `Tee-Object`). Gated by `if: matrix.platform == 'win32'`. | Available on every CI runner image. |
+| `cmd` | Avoid. Use `pwsh` instead unless calling a `.cmd` shim. | |
+
+### Lock
+
+`packages/shared/src/__tests__/no-bash-on-windows.test.ts` parses every workflow YAML, computes per-step Windows reachability from each step's `if:` filter (small grammar: `matrix.platform == 'X'`, `matrix.platform != 'X'`, `&&`, `||`, `!(...)`, parens), and fails when any `shell: bash` step is reachable on a Windows runner. Failure messages cite this change name + the offending file:line + step name. Unrecognised `if:` expressions fail closed.
+
+See change: `eliminate-bash-on-windows-runners`.
 
 ## Chat Input State (drafts & history recall)
 

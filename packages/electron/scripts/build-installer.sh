@@ -187,7 +187,7 @@ fi
 if [ ! -d "$ELECTRON_DIR/resources/server/node_modules" ]; then
   echo ""
   echo "→ Bundling dashboard server..."
-  bash "$ELECTRON_DIR/scripts/bundle-server.sh"
+  node "$ELECTRON_DIR/scripts/bundle-server.mjs"
 else
   echo "✓ Bundled server already present"
 fi

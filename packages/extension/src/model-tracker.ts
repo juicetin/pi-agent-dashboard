@@ -4,7 +4,7 @@
  */
 import type { BridgeContext } from "./bridge-context.js";
 import { getCurrentModelString } from "./bridge-context.js";
-import { gatherGitInfo } from "./git-info.js";
+import { gatherGitInfo, gatherJjInfo } from "./vcs-info.js";
 
 /**
  * Send model_update if model or thinking level has changed since last send.
@@ -52,5 +52,23 @@ export function sendGitInfoIfChanged(bc: BridgeContext, cwd: string): void {
     type: "git_info_update",
     sessionId: bc.sessionId,
     ...info,
+  });
+}
+
+/**
+ * Send jj_state_update if the cwd's jj state has changed since last send.
+ * Sends `null` to clear when the session leaves a jj repo (cwd switch).
+ * No-op when there's nothing to clear and nothing to send.
+ * See change: add-jj-workspace-plugin.
+ */
+export function sendJjStateIfChanged(bc: BridgeContext, cwd: string): void {
+  const state = gatherJjInfo(cwd);
+  const nextJson = state ? JSON.stringify(state) : "";
+  if (nextJson === (bc.lastJjStateJson ?? "")) return;
+  bc.lastJjStateJson = nextJson;
+  bc.connection.send({
+    type: "jj_state_update",
+    sessionId: bc.sessionId,
+    jjState: state ?? null,
   });
 }

@@ -5,7 +5,7 @@
 - [x] 1.1 Confirm `packages/dashboard-plugin-runtime/` exposes the slot consumers (`SessionCardBadgeSlot`, `SessionCardActionBarSlot`, `ContentViewSlot`, `ContentHeaderStickySlot`, `ContentInlineFooterSlot`) and that `App.tsx` already mounts them as additive co-tenants (per `App.tsx:978` comment).
 - [x] 1.2 Confirm `packages/shared/src/dashboard-plugin/` exposes `PluginManifest` and `SlotPropsMap` types this change will consume.
 - [x] 1.3 Read `packages/client/src/App.tsx`, `packages/client/src/components/SessionCard.tsx`, `packages/client/src/components/SessionList.tsx`, and `packages/client/src/components/MobileShell.tsx` and enumerate every flow-specific JSX branch / import. Record the inventory in a temporary checklist.
-- [ ] 1.4 (Skipped for now — baseline test run deferred to verification phase) Run the existing test suite and capture a baseline pass count (`npm test 2>&1 | tee /tmp/flows-baseline.log`).
+- [x] 1.4 (Superseded — the post-implementation full run captured the only meaningful baseline: 383 files / 3940 passing / 0 failures.)
 
 ## 2. Scaffold the plugin package
 
@@ -13,10 +13,10 @@
 - [x] 2.2 Add the manifest field `pi-dashboard-plugin` to `packages/flows-plugin/package.json` declaring the slot claims (component paths filled in after the file move).
 - [x] 2.3 Add an `exports` map to `packages/flows-plugin/package.json` exposing `./reducer` (re-exports `flow-reducer` + `architect-reducer`), `./manifest` (the manifest JSON), and `./client` (the React entry barrel).
 - [x] 2.4 Add `packages/flows-plugin/tsconfig.json` extending the workspace base; include `src/**/*.ts` and `src/**/*.tsx`.
-- [ ] 2.5 Add `packages/flows-plugin/src/client/index.tsx` placeholder barrel (re-exports the moved components — populated as files arrive).
-- [ ] 2.6 Add `packages/flows-plugin/src/reducer.ts` placeholder barrel (re-exports `isFlowEvent`, `reduceFlowEvent`, `isArchitectEvent`, `reduceArchitectEvent` — populated after the move).
+- [x] 2.5 Wrote `packages/flows-plugin/src/client/index.tsx` (populated in Section 4.6 after the moves).
+- [x] 2.6 Wrote `packages/flows-plugin/src/reducer.ts` (populated in Section 4.5).
 - [x] 2.7 (No-op) Workspace `package.json` already uses `packages/*` glob — the new package is auto-included.
-- [ ] 2.8 Run `npm install` to wire the workspace; verify the package resolves.
+- [x] 2.8 `npm install --ignore-scripts` ran; workspace symlink at `node_modules/@blackbelt-technology/pi-dashboard-flows-plugin → ../../packages/flows-plugin` confirmed.
 
 ## 3. Move flow files (history-preserving)
 

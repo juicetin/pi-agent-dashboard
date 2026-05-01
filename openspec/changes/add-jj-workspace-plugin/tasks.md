@@ -33,7 +33,7 @@
 - [x] Add `JjState` interface + `jjState?` field to `DashboardSession` in `packages/shared/src/types.ts`
 - [x] Wire `sendJjStateIfChanged` into `bridge.ts` at the same three sites as `sendGitInfoIfChanged` (initial send + 30 s poll tick + session-change restart)
 - [x] Server-side `event-wiring.ts` consumes `jj_state_update` and broadcasts via `session_updated`
-- [ ] Document the new `JjState` interface and `jjState?` field in `AGENTS.md` table (deferred to Phase 7 docs pass)
+- [x] Document the new `JjState` interface and `jjState?` field in `AGENTS.md` table (done in Phase 7 docs pass)
 
 ## Phase 3 — Plugin scaffold
 
@@ -50,7 +50,7 @@
 - [x] Auto-picked up by `packages/*` workspace glob in root package.json
 - [x] Add `packages/jj-plugin/` to root `vitest.config.ts` projects array
 - [x] Predicate truth-table tests + manifest validator test (20 tests passing)
-- [ ] Add `packages/jj-plugin/` to the publish workflow's per-package loop in publish order (after `dashboard-plugin-runtime`) — deferred to Phase 8
+- [x] Wire `packages/jj-plugin/` into the published bundle via `packages/client/package.json` deps (done in Phase 8 — plugin is `private:true`, ships inside `pi-dashboard-web` tarball)
 
 ## Phase 4 — Client components
 
@@ -59,7 +59,7 @@
   - [x] `+ Workspace` (when `isInJjRepo`) — prompts for name, calls `POST /api/jj/workspace/add`, server spawns the session
   - [x] `Fold back` (workspace cards only) — opens `JjFoldBackDialog`
   - [x] `Forget workspace` (workspace cards only) — first attempt `force:false`; 409 UNFOLDED_WORK opens `JjForgetConfirmDialog` listing commits and re-issues with `force:true` after explicit confirm
-  - [ ] `Enable jj workspaces` plain-git affordance — component scaffolded but the slot needs the manifest's predicate model extended to read plugin config; deferred. The settings toggle exists in `JjPluginSettings`; visibility wiring is the only missing piece.
+  - [x] `Enable jj workspaces` plain-git affordance — separate `JjInitAffordance` component + `session-card-action-bar` claim with `isInGitRepoButNotJj` predicate. The component reads plugin config via `usePluginConfig` and renders nothing when `showInitColocatedSuggestion` is false (default). Two-gate model: predicate filters claims, config filters inside the component.
 - [x] `JjWorkspaceList` — sidebar-folder section; renders only when 2+ workspaces exist; lists name + change-id-short
 - [x] `JjWorkspaceView` — `/jj` route with workspace table + refresh button (read-only)
 - [x] `JjFoldBackDialog` — explainer + radio buttons (preserve / squash / pr); copies skill-invocation prompt to clipboard
@@ -81,7 +81,7 @@
 - [x] Add `jj.diff(cwd, fromRev, toRev, path)` Recipe to `platform/jj.ts` (done in Phase 1)
 - [x] Extend `SessionDiffResponse` with optional `vcsKind`, `diffBase`, `baseLabel` (additive, opt-in)
 - [x] Update `packages/server/src/routes/session-routes.ts` to thread `Session.jjState` into the enrichment call
-- [ ] Client `DiffPanel`: render a one-line header "Diffing against `<baseLabel>`" when `vcsKind === "jj"` (deferred to Phase 4 client work)
+- [x] Client `DiffPanel` (`FileDiffView` header) renders "(vs &lt;baseLabel&gt;)" pill when `vcsKind === "jj"` (done in Phase 4)
 - [x] Tests:
   - [x] `selectJjDiffBase` truth-table (5 tests covering default / undefined / non-default / various names)
   - [x] Plain-git regime byte-equivalence preserved (existing session-diff.test.ts continues to pass against `enrichWithVcsDiff` via dispatcher)
@@ -124,7 +124,7 @@
   - [x] Optional `mode: squash` flavor
   - [x] Optional `mode: pr` flavor (requires `gh` CLI; documents the dependency)
   - [x] Loud disclaimer at top: "This skill never invokes `git commit` or `git merge`."
-- [ ] Add both skills to the skill index in the relevant package READMEs
+- [x] Both skills auto-discovered via top-level `.pi/skills/` (no per-package README index to maintain — the dashboard's skill loader walks `.pi/skills/` directly)
 
 ## Phase 7 — Tests + docs
 
@@ -137,13 +137,14 @@
 - [x] `packages/server/src/__tests__/session-diff-vcs.test.ts` — 5 diff-base selector tests
 - [ ] Live integration test: temp git repo + `jj git init --colocate` + `jj workspace add` (deferred — requires `jj` on the test runner; ok as a smoke test at release time)
 - [x] Update `AGENTS.md` with the new package + new `Session.jjState` field documentation (8 new rows added)
-- [ ] Update `README.md` with a "Jujutsu workspaces" subsection under Features (deferred to docs pass)
-- [ ] Update `docs/architecture.md` data-flow section to include the jj poll path (deferred to docs pass)
+- [x] Update `README.md` with a "Jujutsu workspaces" entry under the Dev tools features list
+- [x] Update `docs/architecture.md` with new "VCS Polling (Git + Jujutsu)" + "Jujutsu workspaces" subsections under Data Flow
 - [x] Add both skills to the relevant skill index (top-level `.pi/skills/` already auto-discovered)
 
 ## Phase 8 — Publish
 
-- [ ] Verify `publish.yml`'s per-package publish loop includes `@blackbelt-technology/pi-dashboard-jj-plugin` BEFORE the root metapackage
-- [ ] Cut a release via the `release-cut` skill
-- [ ] Smoke test: clean `npm install` of the dashboard, install `jj` separately, verify the badge appears on a session inside a colocated repo
-- [ ] Smoke test on Windows + macOS + Linux that the tool registry resolves `jj` from each OS's standard install location
+- [x] Add `@blackbelt-technology/pi-dashboard-jj-plugin` to `packages/client/package.json` deps so Vite bundles it into the published `pi-dashboard-web` tarball (mirrors flows-plugin model). Plugin is `private:true` and ships inside the client bundle, NOT as its own npm package.
+- [x] No `publish.yml` change needed: the per-package publish loop only handles the 5 public packages (shared/extension/server/web/plugin-runtime + root metapackage); `private:true` workspace packages are intentionally excluded.
+- [ ] Cut a release via the `release-cut` skill (separate operator action)
+- [ ] Smoke test: clean `npm install` of the dashboard, install `jj` separately, verify the badge appears on a session inside a colocated repo (release-time)
+- [ ] Smoke test on Windows + macOS + Linux that the tool registry resolves `jj` from each OS's standard install location (release-time)

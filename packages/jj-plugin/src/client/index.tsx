@@ -15,6 +15,7 @@ export { isInJjRepo, isInJjWorkspace, isInGitRepoButNotJj } from "./predicates.j
 
 export { JjWorkspaceBadge } from "./JjWorkspaceBadge.js";
 export { JjActionBar } from "./JjActionBar.js";
+export { JjInitAffordance } from "./JjInitAffordance.js";
 export { JjForgetConfirmDialog } from "./JjForgetConfirmDialog.js";
 export { JjFoldBackDialog, buildFoldBackPrompt } from "./JjFoldBackDialog.js";
 export { JjWorkspaceList } from "./JjWorkspaceList.js";

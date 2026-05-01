@@ -33,16 +33,24 @@ describe("jj-plugin manifest", () => {
     expect(v.id).toBe("jj");
   });
 
-  it("declares the five expected claims", () => {
+  it("declares the six expected claims (action-bar appears twice with different predicates)", () => {
     const v = validateManifest(manifest, "jj");
     const slots = v.claims.map((c) => c.slot).sort();
     expect(slots).toEqual([
       "command-route",
       "session-card-action-bar",
+      "session-card-action-bar",
       "session-card-badge",
       "settings-section",
       "sidebar-folder-section",
     ]);
+  });
+
+  it("action-bar slot has both isInJjRepo and isInGitRepoButNotJj predicates", () => {
+    const v = validateManifest(manifest, "jj");
+    const actionBars = v.claims.filter((c) => c.slot === "session-card-action-bar");
+    const predicates = actionBars.map((c) => c.predicate).sort();
+    expect(predicates).toEqual(["isInGitRepoButNotJj", "isInJjRepo"]);
   });
 
   it("session-card-badge claim uses the isInJjWorkspace predicate", () => {
@@ -51,11 +59,7 @@ describe("jj-plugin manifest", () => {
     expect(badge?.predicate).toBe("isInJjWorkspace");
   });
 
-  it("session-card-action-bar claim uses the isInJjRepo predicate", () => {
-    const v = validateManifest(manifest, "jj");
-    const bar = v.claims.find((c) => c.slot === "session-card-action-bar");
-    expect(bar?.predicate).toBe("isInJjRepo");
-  });
+
 
   it("/jj is the command-route", () => {
     const v = validateManifest(manifest, "jj");

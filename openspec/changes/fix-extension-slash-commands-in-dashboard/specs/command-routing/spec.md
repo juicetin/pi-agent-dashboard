@@ -59,27 +59,33 @@ The command handler SHALL process `send_prompt` text in this exact order:
 5. Check for `/reload` → extension reload
 6. Check for `/new` → spawn new session in same cwd
 7. Check for `/model provider/id` → model switch via `setModel` callback
-8. Check for `/flows:new` → emit `flows:new-request` event
-9. Check for `/flows:edit` → emit `flows:edit-request` event
-10. Check for `/` prefix matching a known flow name → emit `flow:run` event
-11. Check for `/` prefix matching a known **extension command** (`source: "extension"` in `pi.getCommands()`, excluding `DASHBOARD_NATIVE_COMMANDS`) → dispatch via `pi.dispatchCommand` (when available) OR emit `command_feedback { status: "error" }` stopgap (when unavailable)
-12. Check for `/` prefix → fall through to template expansion + `pi.sendUserMessage()` (handles skills, prompt templates, unrecognized slashes)
-13. Default (no `/` prefix) → `pi.sendUserMessage(text)` (existing passthrough behavior)
+8. Check for `/` prefix matching a known **user-defined flow name** (from `getFlowsList()`) → emit `flow:run` event
+9. Check for `/` prefix matching a known **extension command** (`source: "extension"` in `pi.getCommands()`, excluding `DASHBOARD_NATIVE_COMMANDS`) → dispatch via `pi.dispatchCommand` (when available) OR emit `command_feedback { status: "error" }` stopgap (when unavailable)
+10. Check for `/` prefix → fall through to template expansion + `pi.sendUserMessage()` (handles skills, prompt templates, unrecognized slashes)
+11. Default (no `/` prefix) → `pi.sendUserMessage(text)` (existing passthrough behavior)
+
+Note: pi-flows management commands (`/flows`, `/flows:new`, `/flows:edit`, `/flows:delete`, `/roles`) are registered by the pi-flows extension via `pi.registerCommand` and are therefore handled by step 9 (extension dispatch) when `pi.dispatchCommand` is available, or by the stopgap when it is not. The kebab-menu UI continues to invoke `flows:new-request` / `flows:edit-request` / `flow:run` / `flow:delete-request` directly via the `flow_management` WebSocket message handler in `bridge.ts` — that path is independent of typed-text command routing and is not covered by this requirement.
 
 #### Scenario: Routing precedence — bang beats slash
 - **WHEN** `send_prompt` text is `!!echo /ctx-stats`
 - **THEN** the handler SHALL execute `echo /ctx-stats` as a silent bash command
 - **AND** SHALL NOT invoke any slash routing branch
 
-#### Scenario: Routing precedence — flow fast-path beats extension dispatch
-- **WHEN** `send_prompt` text is `/flows:new` AND `flows:new` appears in `pi.getCommands()` (extension-registered AND flow-fast-path target)
-- **THEN** the handler SHALL emit the `flows:new-request` event via `pi.events.emit(...)` (step 8 wins over step 11)
+#### Scenario: Routing precedence — user-defined flow run beats extension dispatch
+- **WHEN** `send_prompt` text is `/deploy-prod` AND `deploy-prod` is a user-defined flow name returned by `getFlowsList()` AND ALSO appears in `pi.getCommands()`
+- **THEN** the handler SHALL emit `flow:run { flowName: "deploy-prod" }` via `pi.events.emit(...)` (step 8 wins over step 9)
 - **AND** SHALL NOT call `pi.dispatchCommand(...)` for this text
+
+#### Scenario: Routing precedence — typed `/flows:new` rides extension dispatch
+- **WHEN** `send_prompt` text is `/flows:new` AND `getFlowsList()` does NOT contain a user-defined flow named `flows:new` AND `pi.getCommands()` contains `{ name: "flows:new", source: "extension" }` (registered by pi-flows)
+- **THEN** step 8 SHALL NOT match (no user-defined flow)
+- **AND** step 9 SHALL fire: dispatch via `pi.dispatchCommand` when available, stopgap `command_feedback { status: "error" }` otherwise
+- **AND** SHALL NOT call `pi.sendUserMessage(...)` for the slash text
 
 #### Scenario: Extension dispatch beats fall-through
 - **WHEN** `send_prompt` text is `/ctx-stats` AND `ctx-stats` is an extension command AND no earlier step matches
-- **THEN** step 11 fires (extension dispatch or stopgap)
-- **AND** step 12's fall-through to `pi.sendUserMessage(...)` SHALL NOT execute
+- **THEN** step 9 fires (extension dispatch or stopgap)
+- **AND** step 10's fall-through to `pi.sendUserMessage(...)` SHALL NOT execute
 
 ## ADDED Requirements
 

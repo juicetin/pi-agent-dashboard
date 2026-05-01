@@ -45,6 +45,11 @@
         "predicate": "isInJjRepo"
       },
       {
+        "slot": "session-card-action-bar",
+        "component": "JjInitAffordance",
+        "predicate": "isInGitRepoButNotJj"
+      },
+      {
         "slot": "sidebar-folder-section",
         "component": "JjWorkspaceList"
       },

@@ -20,6 +20,14 @@ import { usePluginConfig } from "@blackbelt-technology/dashboard-plugin-runtime/
 import { initColocated } from "./api.js";
 import type { JjPluginConfig } from "./JjPluginSettings.js";
 
+// Until the settings-section slot runtime lands, the user has no UI to flip
+// `showInitColocatedSuggestion`. The spec mandates opt-in (Decision 11) but
+// gating on absent config = always-hidden = no way to discover the feature.
+// As a compromise we treat `undefined` config as "show"; only an explicit
+// `false` hides. Once settings-section is consumed, restore the strict
+// opt-in by changing this constant to `false` and dropping the comment.
+const SHOW_BY_DEFAULT_UNTIL_SETTINGS_WIRED = true;
+
 export function JjInitAffordance({
   session,
 }: {
@@ -29,8 +37,12 @@ export function JjInitAffordance({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Plugin-config gate: hidden by default unless the user has opted in.
-  if (!config.showInitColocatedSuggestion) return null;
+  // Plugin-config gate. Until `settings-section` slot is wired,
+  // `undefined` is treated as opt-in (see SHOW_BY_DEFAULT_UNTIL_SETTINGS_WIRED).
+  const optedIn =
+    config.showInitColocatedSuggestion ??
+    (SHOW_BY_DEFAULT_UNTIL_SETTINGS_WIRED ? true : false);
+  if (!optedIn) return null;
 
   // Defensive predicate re-check (the slot-level predicate already filters,
   // but components are responsible for their own correctness).

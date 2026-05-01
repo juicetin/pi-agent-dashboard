@@ -56,6 +56,22 @@ export function sendGitInfoIfChanged(bc: BridgeContext, cwd: string): void {
 }
 
 /**
+ * Reset the change-detection caches that aren't persisted on the server
+ * side, so a server-restart-driven reconnect re-sends them. `gitBranch`
+ * is already persisted to `.meta.json` so it's tolerable for a tick of
+ * staleness; `jjState` is intentionally NOT persisted (live tool state)
+ * and must be re-emitted on every reconnect.
+ * See change: add-jj-workspace-plugin.
+ */
+export function resetReconnectCaches(bc: BridgeContext): void {
+  bc.lastJjStateJson = undefined;
+  // Defensive: also reset git so a reconnect through a stale state cache
+  // doesn't surface stale branch info if .meta.json wasn't persisted yet.
+  bc.lastGitBranch = undefined;
+  bc.lastGitPrNumber = undefined;
+}
+
+/**
  * Send jj_state_update if the cwd's jj state has changed since last send.
  * Sends `null` to clear when the session leaves a jj repo (cwd switch).
  * No-op when there's nothing to clear and nothing to send.

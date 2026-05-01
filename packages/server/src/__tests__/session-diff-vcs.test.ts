@@ -28,26 +28,30 @@ describe("selectJjDiffBase", () => {
     expect(selectJjDiffBase(state)).toEqual({ diffBase: "@-", baseLabel: "@-" });
   });
 
-  it("returns fork_point for non-default workspaces", () => {
+  it("returns trunk() for non-default workspaces", () => {
     const state: JjState = {
       isJjRepo: true,
       isColocated: true,
       workspaceName: "agent-1",
     };
+    // Uses the `..` range form on jj-side (--from <base> --to @) — base
+    // is `trunk()` so the diff materializes every agent commit in this
+    // workspace. `fork_point()` was avoided because its signature varies
+    // across jj versions (single-arg in 0.40+, two-arg in older docs).
     expect(selectJjDiffBase(state)).toEqual({
-      diffBase: "fork_point(@, trunk())",
+      diffBase: "trunk()",
       baseLabel: "trunk()",
     });
   });
 
-  it("returns fork_point for any workspace name except 'default'", () => {
+  it("returns trunk() for any workspace name except 'default'", () => {
     for (const name of ["feat-x", "experiment", "ws-2", "shadow-7"]) {
       const result = selectJjDiffBase({
         isJjRepo: true,
         isColocated: true,
         workspaceName: name,
       });
-      expect(result.diffBase).toBe("fork_point(@, trunk())");
+      expect(result.diffBase).toBe("trunk()");
     }
   });
 

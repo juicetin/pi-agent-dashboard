@@ -34,7 +34,7 @@ import { scanChildProcesses } from "./process-scanner.js";
 import type { BridgeContext } from "./bridge-context.js";
 import { filterHiddenCommands, extractFirstMessage, getCurrentModelString } from "./bridge-context.js";
 import { sendStateSync as _sendStateSync, replaySessionEntries as _replaySessionEntries, handleSessionChange as _handleSessionChange } from "./session-sync.js";
-import { sendModelUpdateIfChanged as _sendModelUpdateIfChanged, sendSessionNameIfChanged as _sendSessionNameIfChanged, sendGitInfoIfChanged as _sendGitInfoIfChanged, sendJjStateIfChanged as _sendJjStateIfChanged } from "./model-tracker.js";
+import { sendModelUpdateIfChanged as _sendModelUpdateIfChanged, sendSessionNameIfChanged as _sendSessionNameIfChanged, sendGitInfoIfChanged as _sendGitInfoIfChanged, sendJjStateIfChanged as _sendJjStateIfChanged, resetReconnectCaches as _resetReconnectCaches } from "./model-tracker.js";
 import { registerFlowEventListeners, FLOW_EVENT_MAP, SUBAGENT_EVENT_MAP } from "./flow-event-wiring.js";
 import { refreshUiModules, subscribeUiInvalidate, handleUiManagement, type UiModulesBridgeCtx } from "./ui-modules.js";
 
@@ -470,7 +470,23 @@ function initBridge(pi: ExtensionAPI) {
     }),
     onReconnect: safe(() => {
       if (!isActive()) return; // Stale listener guard
+      // Reset caches that aren't persisted server-side so the upcoming
+      // 30s tick (and the inline calls below) re-emit the live state.
+      // See change: add-jj-workspace-plugin.
+      const _bc = syncBc();
+      _resetReconnectCaches(_bc);
+      applyBc(_bc);
       sendStateSync();
+      // Force-emit jj/git state for the active session’s cwd. The bridge
+      // doesn't have direct ctx here, so we walk the active session.
+      try {
+        const activeId = (pi as any).getCurrentSessionId?.();
+        const activeCtx = activeId ? (pi as any).getCtx?.(activeId) : (cachedCtx as any);
+        if (activeCtx?.cwd) {
+          sendGitInfoIfChanged(activeCtx.cwd);
+          sendJjStateIfChanged(activeCtx.cwd);
+        }
+      } catch { /* probe failure non-fatal */ }
       replaySessionEntries();
       // Re-send pending PromptBus requests so dashboard dialogs survive browser refresh.
       // Synchronous within this tick to prevent TUI respond() from interleaving.

@@ -157,6 +157,21 @@ export function registerJjRoutes(fastify: FastifyInstance, deps: JjRoutesDeps) {
           error: `destination already exists: ${destPath}`,
         } satisfies ApiResponse;
       }
+      // Ensure the workspace-root parent directory exists. `jj workspace
+      // add` does NOT create intermediate dirs and fails with
+      // "Cannot access <path>" on a missing parent. mkdir -p is safe and
+      // idempotent. The .shadow root should be in .gitignore (the spec's
+      // FolderOpenSpecSection-style hint is tracked as follow-up).
+      const parentDir = path.dirname(destPath);
+      try {
+        await fs.mkdir(parentDir, { recursive: true });
+      } catch (err) {
+        reply.code(500);
+        return {
+          success: false,
+          error: `failed to create workspace parent dir ${parentDir}: ${err instanceof Error ? err.message : String(err)}`,
+        } satisfies ApiResponse;
+      }
 
       // Resolve the base revision when omitted: current bookmark of fromCwd's
       // working copy, falling back to `trunk()` revset.
@@ -266,12 +281,17 @@ export function registerJjRoutes(fastify: FastifyInstance, deps: JjRoutesDeps) {
         } satisfies ApiResponse;
       }
 
-      // Inspect for unfolded commits: anything between trunk's fork point
-      // and the workspace's `@`. Empty result = clean to forget.
+      // Inspect for unfolded commits: anything in the workspace's `@`
+      // that isn't an ancestor of trunk. `trunk()..<name>@` is the
+      // straight-line revset for that; we filter out empty changes
+      // (`~empty()`) so the empty `@` of a freshly-created workspace
+      // doesn't trigger the unfolded-work refusal.
+      // Note: jj 0.40's `fork_point()` takes a single revset; we use
+      // the simpler `..` range form which works on every supported jj.
       let unfolded: string[] = [];
       const logResult = jj.logRevset({
         cwd,
-        revset: `fork_point(${name}@, trunk())..${name}@ & ~empty()`,
+        revset: `trunk()..${name}@ & ~empty()`,
         template: 'change_id.short() ++ " " ++ description.first_line() ++ "\\n"',
       });
       if (logResult.ok) {

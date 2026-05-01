@@ -195,7 +195,12 @@ export function selectJjDiffBase(jjState: JjState | undefined): {
   if (!workspace || workspace === "default") {
     return { diffBase: "@-", baseLabel: "@-" };
   }
-  return { diffBase: "fork_point(@, trunk())", baseLabel: "trunk()" };
+  // Use the `..` range form (always-supported) instead of `fork_point()`
+  // (which changed signature across jj versions). `trunk()` returns the
+  // most-recent ancestor on main/master/trunk; the diff base is the
+  // single tip of trunk so that `--from <base> --to @` materializes the
+  // cumulative diff across every agent commit in this workspace.
+  return { diffBase: "trunk()", baseLabel: "trunk()" };
 }
 
 /**

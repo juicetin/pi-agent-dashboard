@@ -17,10 +17,19 @@ import {
   FlowActivityBadge,
   SessionFlowActions,
 } from "@blackbelt-technology/pi-dashboard-flows-plugin/client";
+import {
+  JjWorkspaceBadge,
+  JjActionBar,
+  JjInitAffordance,
+  isInJjRepo,
+  isInJjWorkspace,
+  isInGitRepoButNotJj,
+} from "@blackbelt-technology/pi-dashboard-jj-plugin/client";
 import { ProcessList, type ProcessEntry } from "./ProcessList.js";
 import type { CommandInfo, FlowInfo } from "@blackbelt-technology/pi-dashboard-shared/types.js";
 import { useMobile } from "../hooks/useMobile.js";
 import { SessionCardBadgeSlot, SessionCardActionBarSlot } from "@blackbelt-technology/dashboard-plugin-runtime";
+import { CurrentPluginLayer } from "@blackbelt-technology/dashboard-plugin-runtime/context";
 
 export const statusColors: Record<string, string> = {
   active: "bg-green-500",
@@ -611,6 +620,20 @@ export function SessionCard({
 
       {/* Line 4: git info (only for single-session groups) */}
       {showGitInfo && <GitInfo session={session} />}
+
+      {/* jj-plugin row (badge + action bar in one inline row, before
+          OpenSpec). Direct wiring mirrors the flows-plugin pattern until
+          the slot runtime population lands; manifest claims describe the
+          same contract for forward-compat. See change: add-jj-workspace-plugin. */}
+      {(isInJjWorkspace(session) || isInJjRepo(session) || isInGitRepoButNotJj(session)) && (
+        <CurrentPluginLayer pluginId="jj">
+          <div className="flex items-center gap-1.5 flex-wrap" data-testid="jj-row">
+            {isInJjWorkspace(session) && <JjWorkspaceBadge session={session} />}
+            {isInJjRepo(session) && <JjActionBar session={session} />}
+            {isInGitRepoButNotJj(session) && <JjInitAffordance session={session} />}
+          </div>
+        </CurrentPluginLayer>
+      )}
 
       {/* Thin divider before action row */}
       {/* OpenSpec attach/actions */}

@@ -2,17 +2,14 @@
 
 ## 1. Workflow matrix
 
-- [ ] Verify `macos-13` runner image is still listed as available in
-      [GitHub-hosted runners](https://docs.github.com/en/actions/using-github-hosted-runners/about-github-hosted-runners/about-github-hosted-runners#standard-github-hosted-runners-for-public-repositories).
-      If retired sooner than expected, abandon this change and pivot to the
-      universal-binary route.
+- [x] ~~Verify `macos-13` runner image is still listed as available.~~ **2026-05-02 update (post-implementation discovery)**: `macos-13` was retired 2025-12-08; CI confirmed this empirically when the first build queued forever. Migrated to `macos-15-intel` (GitHub-introduced replacement, Intel x86_64 on macOS 15 hardware, EOL 2027-08). See [GitHub changelog](https://github.blog/changelog/2025-09-19-github-actions-macos-13-runner-image-is-closing-down/) and [actions/runner-images#13045](https://github.com/actions/runner-images/issues/13045).
 - [x] Add the `darwin/x64` matrix row to
       `.github/workflows/publish.yml > jobs.electron.strategy.matrix.include`
       (between the existing `macos-14` row and the linux block, alphabetical
       by platform-then-arch is fine):
 
       ```yaml
-      - os: macos-13
+      - os: macos-15-intel  # was macos-13 in the original draft; retired 2025-12-08
         platform: darwin
         arch: x64
         node-arch: x64
@@ -113,8 +110,9 @@ section 3). This task verifies the rename happens automatically.
       - Open a session, verify node-pty terminal works (most likely
         secondary regression — confirms darwin-x64 node-pty prebuild is
         present).
-- [ ] If the GitHub-hosted macos-13 runner cannot resolve, document the
-      blocker and defer.
+- [x] If the GitHub-hosted x86_64 runner cannot resolve, document the
+      blocker and defer. **Hit and resolved 2026-05-02**: `macos-13` retired,
+      migrated to `macos-15-intel`.
 
 ## 6. Local builder — arch-aware caching + `--mac-both`
 

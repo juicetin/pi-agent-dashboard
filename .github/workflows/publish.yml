@@ -239,7 +239,12 @@ jobs:
             platform: darwin
             arch: arm64
             node-arch: arm64
-          - os: macos-13
+          # Intel x86_64 macOS build. macos-13 was retired on 2025-12-08;
+          # macos-15-intel is the replacement label (runs Intel x86_64 on a
+          # macOS 15 host) available until 2027-08. After that, GitHub-hosted
+          # Intel macOS is gone and we'll need to pivot to a universal binary
+          # or self-hosted runner. See change: add-darwin-x64-build.
+          - os: macos-15-intel
             platform: darwin
             arch: x64
             node-arch: x64

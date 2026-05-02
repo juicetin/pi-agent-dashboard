@@ -9,10 +9,11 @@ A GitHub Actions workflow SHALL build Electron installers for all target platfor
 - **AND** the matrix row SHALL declare `platform: darwin, arch: arm64, node-arch: arm64`
 
 #### Scenario: CI produces macOS x64 DMG
-- **WHEN** the CI workflow runs on `macos-13` runner
+- **WHEN** the CI workflow runs on the GitHub-hosted Intel x86_64 macOS runner (currently `macos-15-intel`; was `macos-13` until its retirement on 2025-12-08)
 - **THEN** it SHALL produce a `.dmg` for x64
 - **AND** the matrix row SHALL declare `platform: darwin, arch: x64, node-arch: x64`
 - **AND** the row SHALL NOT be omitted on the grounds that `forge.config.ts` declares `packagerConfig.arch: "universal"` — the workflow's `--arch=${{ matrix.arch }}` CLI flag overrides packagerConfig and the universal hint is a no-op in the current pipeline
+- **AND** when GitHub retires `macos-15-intel` (announced end-of-life 2027-08), the team MUST migrate to a universal-binary build OR a self-hosted Intel runner OR drop x64 macOS support — there will be no GitHub-hosted Intel x86_64 replacement after that date
 
 #### Scenario: CI produces Linux x64 artifacts
 - **WHEN** the CI workflow runs on `ubuntu-latest` runner

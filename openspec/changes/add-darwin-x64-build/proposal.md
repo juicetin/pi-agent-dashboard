@@ -216,12 +216,13 @@ Fix:
 
 ## Risks
 
-### Risk: macos-13 runner retirement
+### Risk: GitHub-hosted Intel macOS runner end-of-life (2027-08)
 
-GitHub-hosted `macos-13` (Intel) is the last Intel runner image. Per GitHub's
-Actions runner deprecation schedule it remains available through approximately
-end of 2026, but a hard date is not published. When retired, this build path
-breaks and the choice is:
+**UPDATED 2026-05-02 — the original "macos-13 available through end of 2026" claim was wrong**: `macos-13` was retired on **2025-12-08** per GitHub's [changelog announcement](https://github.blog/changelog/2025-09-19-github-actions-macos-13-runner-image-is-closing-down/). After retirement, jobs requesting `macos-13` are silently queued forever rather than fail-fast. We hit this on the first CI run after this proposal landed.
+
+The replacement label is **`macos-15-intel`** — GitHub introduced it as a final Intel x86_64 image running on macOS 15 hardware. Per the [actions/runner-images announcement](https://github.com/actions/runner-images/issues/13045), it is available until **August 2027**, and after that date **there will be no GitHub-hosted x86_64 macOS runner at all**.
+
+This change uses `macos-15-intel`. Per the public retirement schedule the runner is good for ~15 months from this writing. When GitHub retires it, this build path breaks and the choice is:
 
 1. Move x64 macOS to a self-hosted Intel mac mini (operational burden).
 2. Cross-compile x64 from `macos-14` arm64 (technically possible, native
@@ -230,7 +231,7 @@ breaks and the choice is:
 4. Pursue universal binary (the deferred option from #4 above).
 
 This is acceptable risk for a stopgap — Intel Mac share is strictly declining,
-and we'd want to revisit before macos-13 is retired anyway.
+and we'd want to revisit before `macos-15-intel` is retired (2027-08) anyway.
 
 ### Risk: existing arm64 release artifact filename rename
 

@@ -684,7 +684,7 @@ This runs CI, publishes to npm with `--provenance` for supply-chain transparency
 | Runner | Platform | Outputs |
 |--------|----------|---------|
 | `macos-14` | macOS arm64 | `.dmg` (Apple Silicon) |
-| `macos-13` | macOS x64 | `.dmg` (Intel) |
+| `macos-15-intel` | macOS x64 | `.dmg` (Intel; last GitHub-hosted x86_64 image, EOL 2027-08) |
 | `ubuntu-latest` | Linux x64 | `.deb` + `.AppImage` |
 | `ubuntu-24.04-arm` | Linux arm64 | `.deb` |
 | `windows-latest` | Windows x64 | `.exe` (NSIS) + `.zip` + portable |

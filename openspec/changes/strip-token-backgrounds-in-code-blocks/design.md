@@ -20,15 +20,26 @@ style sheet:
 Two sets of background declarations live in here:
 
 1. **Wrapper backgrounds** — on `pre[class*="language-"]` and
-   `code[class*="language-"]`. The dashboard already overrides these via
-   `customStyle.background = 'var(--bg-code)'` so the panel follows the active
-   theme.
+   `code[class*="language-"]`. **Correction (post-implementation):** the
+   dashboard's `customStyle.background = 'var(--bg-code)'` is applied only
+   to the outer PreTag (a `<div>` in `MarkdownContent` due to
+   `PreTag="div"`). The inner `<code class="language-xxx">` element is
+   styled by react-syntax-highlighter from the prism style's
+   `code[class*="language-"]` selector, which still carries the prism
+   palette's stock panel color (`hsl(220, 13%, 18%)` for `oneDark`). That
+   inner background paints _over_ the customStyle override on the outer
+   div, so simple syntax-highlighted code blocks display the wrong panel
+   background even after the token-strip lands.
 2. **Token backgrounds** — on `.token.*` selectors. Designed to harmonize
    with the wrapper background that the prism style ships with. When the
    wrapper bg is overridden but the token bgs aren't, those pills render
    against an unrelated panel color and look like decoration noise.
 
-The fix removes the second set without touching the first.
+The fix removes the second set entirely AND strips the inner-code wrapper
+background (`code[class*="language-"]`) so the customStyle override on the
+outer PreTag finally shows through. The outer `pre[class*="language-"]`
+background is left intact as a safety-net default for any future caller
+that does not pass `customStyle`.
 
 ## Goals
 
@@ -59,18 +70,28 @@ The fix removes the second set without touching the first.
 
 ## Decisions
 
-### Decision 1: Strip rule scoped to "any selector containing `.token`"
+### Decision 1: Strip rule covers `.token*` AND the inner `code` wrapper
 
 The clone-and-strip pass walks the cloned style object's keys. For each key
-that contains the substring `".token"`, delete `background` and
-`backgroundColor` from its value. Keys without `.token` (i.e. the two
-wrapper selectors and `::selection`-style global rules) are left alone.
+it deletes `background` and `backgroundColor` when EITHER:
+
+1. The key contains the substring `".token"` (token-level fix), OR
+2. The key matches the inner-code wrapper exactly:
+   `code[class*="language-"]` (panel-bg fix).
+
+Keys without `.token` and that are not the inner-code wrapper (i.e.
+`pre[class*="language-"]`, `::selection`-style global rules, toolbar / line-
+highlight / previewer rules) are left alone.
 
 ```ts
+const INNER_CODE_KEY = 'code[class*="language-"]';
+
 function stripTokenBackgrounds(style: SyntaxStyle): SyntaxStyle {
   const out: SyntaxStyle = {};
   for (const [selector, props] of Object.entries(style)) {
-    if (selector.includes(".token")) {
+    const isToken = selector.includes(".token");
+    const isInnerCode = selector === INNER_CODE_KEY;
+    if (isToken || isInnerCode) {
       const { background, backgroundColor, ...rest } = props as Record<string, unknown>;
       out[selector] = rest as CSSProperties;
     } else {
@@ -81,11 +102,21 @@ function stripTokenBackgrounds(style: SyntaxStyle): SyntaxStyle {
 }
 ```
 
-**Why selector-substring instead of an allowlist of token classes?** The
-prism styles bundle ~30+ token selectors, sometimes with prefixes
+**Why selector-substring for tokens but exact-match for the inner code?** The
+prism styles bundle ~30+ token selectors with various prefixes
 (`code[class*="language-"] .token.string`). A substring match catches them
-all without the maintenance burden of enumerating every Prism token class
-that does or doesn't currently carry a background.
+all without enumerating every Prism token class. The inner-code wrapper
+is a single, well-defined selector — exact-match keeps the rule narrow and
+avoids accidentally stripping background from other `code[...]` selectors
+(toolbar / diff-highlight / previewer) that legitimately carry one.
+
+**Why keep `pre[class*="language-"]` background?** Safety net for any
+caller that omits `customStyle`. All four current call sites in the
+dashboard pass `customStyle.background`, so this is theoretical — but
+leaving it intact preserves the prism contract for any future caller and
+costs nothing visually (the outer pre's background is hidden by the inner
+code's solid bg before this fix; after this fix the inner code is
+transparent and the outer customStyle wins).
 
 **Why delete instead of overwrite to `transparent`?** Avoids accidentally
 masking inherited values from neighboring selectors and keeps the style

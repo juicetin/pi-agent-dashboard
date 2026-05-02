@@ -9,6 +9,23 @@
         the resolved prism style before returning (also on the fallback
         path that returns `oneLight` / `oneDark` directly).
 
+- [x] 1b. **Follow-up: also strip the inner `code` wrapper background**
+      (post-implementation, the original strip missed this and simple
+      syntax-highlighted code blocks still show the prism palette's stock
+      panel color behind characters).
+  - [x] 1b.1 In `stripTokenBackgrounds()`, also delete `background` /
+        `backgroundColor` when the selector key is exactly
+        `code[class*="language-"]`. Leave `pre[class*="language-"]`
+        intact (safety-net default).
+  - [x] 1b.2 Extend the unit test: `code[class*="language-"]` has no
+        `background` / `backgroundColor` property after the strip; AND
+        `pre[class*="language-"]` still has its original `background`
+        property.
+  - [x] 1b.3 Visual smoke: open chat, send a fenced ```ts code block;
+        confirm the panel uses `var(--bg-code)` and no opaque inner-code
+        background paints over it. Repeat under `dracula`, `nord`,
+        `github`, `catppuccin` themes.
+
 - [x] 2. Migrate `DiffPanel` "File" view onto `getSyntaxTheme()`
   - [x] 2.1 Import `useThemeContext` and `getSyntaxTheme` in
         `packages/client/src/components/DiffPanel.tsx`.
@@ -30,14 +47,14 @@
   - [x] 3.4 Pin diff washes: `.token.deleted` and `.token.inserted` have no
         `background*` property after the strip.
 
-- [ ] 4. Visual smoke (manual, post-implementation)
-  - [ ] 4.1 Open the dashboard in dev mode under the default ("base") theme.
-  - [ ] 4.2 Send a chat message containing a fenced ```diff block with
+- [x] 4. Visual smoke (manual, post-implementation)
+  - [x] 4.1 Open the dashboard in dev mode under the default ("base") theme.
+  - [x] 4.2 Send a chat message containing a fenced ```diff block with
         added/removed lines; confirm no red/green per-line pills inside
         characters.
-  - [ ] 4.3 Open a `Read` tool result for any `.ts` file; confirm the panel
+  - [x] 4.3 Open a `Read` tool result for any `.ts` file; confirm the panel
         bg is `--bg-code` and tokens carry no per-character pills.
-  - [ ] 4.4 Open the diff/file view (`/api/session-diff`) for a session
+  - [x] 4.4 Open the diff/file view (`/api/session-diff`) for a session
         with file edits; switch to "File" view; confirm tokens have no
         per-character pills and that switching to a different theme
         retints the code.
@@ -49,17 +66,17 @@
   - [x] 5.2 Note the same in `packages/client/src/components/DiffPanel.tsx`'s
         AGENTS.md row.
 
-- [ ] 6. Bind `<DiffView>`'s `diffViewTheme` to the active app theme
-  - [ ] 6.1 In `packages/client/src/components/DiffPanel.tsx`, replace
+- [x] 6. Bind `<DiffView>`'s `diffViewTheme` to the active app theme
+  - [x] 6.1 In `packages/client/src/components/DiffPanel.tsx`, replace
         `diffViewTheme="dark"` on the `<DiffView>` element with
         `diffViewTheme={theme === "light" ? "light" : "dark"}` using the
         `theme` already captured from `useThemeContext()` for task 2.
-  - [ ] 6.2 Confirm no other call site renders `<DiffView>` (it is only
+  - [x] 6.2 Confirm no other call site renders `<DiffView>` (it is only
         used in this component); if a future site appears, route it
         through the same hook.
 
-- [ ] 7. Test: diff view theme tracking
-  - [ ] 7.1 Add a render test (or extend `ToolRendererTheme.test.tsx`-style
+- [x] 7. Test: diff view theme tracking
+  - [x] 7.1 Add a render test (or extend `ToolRendererTheme.test.tsx`-style
         coverage) that mounts `<DiffPanel>` with a `ThemeProvider` set to
         light and asserts the rendered `<DiffView>` receives
         `diffViewTheme="light"`; flip the provider to dark and assert
@@ -72,7 +89,7 @@
         light and dark; confirm `<DiffView>`'s background, gutter, and
         hunk header chrome re-theme on every toggle.
 
-- [ ] 9. Documentation
-  - [ ] 9.1 Update the `packages/client/src/components/DiffPanel.tsx`
+- [x] 9. Documentation
+  - [x] 9.1 Update the `packages/client/src/components/DiffPanel.tsx`
         AGENTS.md row to also note the `diffViewTheme` binding (in
         addition to the File-view migration already documented).

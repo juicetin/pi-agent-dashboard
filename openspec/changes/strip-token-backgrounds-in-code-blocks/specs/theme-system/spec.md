@@ -3,20 +3,33 @@
 ### Requirement: Syntax highlighter strips token backgrounds
 Prism styles returned by `getSyntaxTheme()` SHALL have `background` and
 `backgroundColor` properties removed from every selector that targets
-Prism tokens (selectors containing `.token`). Wrapper selectors
-(`pre[class*="language-"]`, `code[class*="language-"]`) SHALL be left
-untouched so the dashboard's `customStyle.background = 'var(--bg-code)'`
-override continues to drive the code panel background.
+Prism tokens (selectors containing `.token`). Additionally, the inner
+`code[class*="language-"]` wrapper selector SHALL also be stripped so
+that the dashboard's `customStyle.background = 'var(--bg-code)'` (applied
+only to the outer PreTag) is no longer obscured by the prism palette's
+stock inner-code background. The outer `pre[class*="language-"]` wrapper
+background SHALL be left intact as a safety-net default for callers that
+do not pass a `customStyle` override.
 
 #### Scenario: Token foreground colors preserved
 - **WHEN** the syntax theme returned by `getSyntaxTheme()` is inspected
 - **THEN** every selector containing `.token` retains its `color` property
 - **AND** every such selector has no `background` or `backgroundColor` property
 
-#### Scenario: Wrapper background untouched
+#### Scenario: Outer pre wrapper background untouched
 - **WHEN** the syntax theme returned by `getSyntaxTheme()` is inspected
 - **THEN** `pre[class*="language-"]` retains the prism style's original
-  `background` property (so it can be overridden by `customStyle`, not stripped)
+  `background` property (so it remains the safety-net default for callers
+  that do not pass `customStyle`)
+
+#### Scenario: Inner code wrapper background stripped
+- **WHEN** the syntax theme returned by `getSyntaxTheme()` is inspected
+- **THEN** `code[class*="language-"]` has no `background` or
+  `backgroundColor` property
+- **AND** any caller that wraps `<SyntaxHighlighter>` and passes
+  `customStyle={{ background: 'var(--bg-code)' }}` to the outer PreTag
+  SHALL see the customStyle background paint behind every token (the
+  inner `<code>` is now transparent and does not paint over it)
 
 #### Scenario: Diff token washes stripped
 - **WHEN** the syntax theme returned by `getSyntaxTheme()` is inspected

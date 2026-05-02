@@ -17,9 +17,16 @@ render colored on the panel cleanly without their own pills.
 
 - Extend `getSyntaxTheme()` in `packages/client/src/lib/syntax-theme.ts` to
   strip `background` and `backgroundColor` from every token-level selector in
-  the cloned prism style (selectors matching `.token`), while leaving the
-  wrapper selectors (`pre[class*="language-"]`, `code[class*="language-"]`)
-  untouched so the panel background remains overridable to `var(--bg-code)`.
+  the cloned prism style (selectors matching `.token`).
+- **Also strip the inner `code[class*="language-"]` wrapper background** so
+  that callers' `customStyle.background = 'var(--bg-code)'` (applied only to
+  the outer PreTag) actually shows through. Without this, the inner
+  `<code>` element paints the prism palette's stock panel color
+  (`hsl(220, 13%, 18%)` for `oneDark`) over the customStyle override and
+  every simple syntax-highlighted code block in chat / Read / Write tool
+  results displays the wrong panel background. Leave
+  `pre[class*="language-"]` background intact (it's the safety-net default
+  for any caller that doesn't pass `customStyle`).
 - Route `DiffPanel`'s "File" view through `getSyntaxTheme(theme, themeName)`
   instead of importing `oneDark` directly, so the same strip applies.
 - Strip applies to ALL token classes including semantic ones like
@@ -30,6 +37,10 @@ render colored on the panel cleanly without their own pills.
   light / dark.
 - Add a unit test asserting no `.token*` selector retains a `background` /
   `backgroundColor` property after `getSyntaxTheme()` returns.
+- Add a sibling unit test asserting `code[class*="language-"]` has no
+  `background` / `backgroundColor` property after the strip; AND asserting
+  `pre[class*="language-"]` retains its background (the outer-pre wrapper
+  is the safety-net default and stays).
 
 ## Capabilities
 
@@ -38,8 +49,10 @@ None.
 
 ### Modified Capabilities
 - `theme-system`: extends the existing "Syntax highlighter background matches
-  theme" requirement with a sibling clause that token-level backgrounds SHALL
-  be stripped from prism styles before they are applied.
+  theme" requirement with sibling clauses that (a) token-level backgrounds
+  SHALL be stripped from prism styles before they are applied, and (b) the
+  inner `code[class*="language-"]` wrapper background SHALL also be stripped
+  so the customStyle override on the outer PreTag wins.
 
 ## Impact
 

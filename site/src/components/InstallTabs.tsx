@@ -6,6 +6,12 @@ interface Tab {
   subline: string;
   code: string;
   note?: string;
+  /**
+   * When true, render the OS-specific unsigned-binary unblocking notes
+   * (Windows SmartScreen / macOS Gatekeeper) under the code block.
+   * Removed once Authenticode signing + macOS notarization ship.
+   */
+  unsignedNote?: boolean;
 }
 
 const TABS: Tab[] = [
@@ -14,7 +20,8 @@ const TABS: Tab[] = [
     label: "Electron app",
     subline: "Zero prerequisites. Guided setup wizard.",
     code: "# Download an installer:\n# https://github.com/BlackBeltTechnology/pi-agent-dashboard/releases\n#\n# macOS    — .dmg (arm64 / x64)\n# Linux    — .deb / .AppImage\n# Windows  — .exe / .zip / portable",
-    note: "Bundles Node.js, auto-installs pi + openspec. System tray integration.",
+    note: "Bundles Node.js, auto-installs pi + openspec. System tray integration. Builds are not yet code-signed — see the unblocking notes below.",
+    unsignedNote: true,
   },
   {
     id: "pi",
@@ -35,6 +42,32 @@ function hashToTabId(): string {
   if (typeof window === "undefined") return TABS[0].id;
   const id = window.location.hash.replace(/^#/, "");
   return TABS.some((t) => t.id === id) ? id : TABS[0].id;
+}
+
+function UnsignedBinaryNote() {
+  return (
+    <div className="mt-4 rounded-md border border-pi-border/60 bg-pi-surface/40 p-3 text-xs leading-relaxed text-pi-muted">
+      <p className="font-medium text-pi-fg/90 mb-2">First-run unblocking</p>
+      <p className="mb-2">
+        <span className="font-medium text-pi-fg/80">Windows:</span>{" "}
+        SmartScreen will warn on first launch. Either click{" "}
+        <em>More info → Run anyway</em>, or right-click the downloaded{" "}
+        <code className="font-mono">.exe</code> /{" "}
+        <code className="font-mono">.zip</code> →{" "}
+        <em>Properties</em> → tick <em>Unblock</em> → <em>OK</em> before
+        running. For ZIPs, unblock the archive before extracting.
+      </p>
+      <p>
+        <span className="font-medium text-pi-fg/80">macOS:</span> the DMGs
+        are not yet notarized. Either right-click (or Control-click){" "}
+        <em>PI Dashboard.app</em> → <em>Open</em> the first time, or clear
+        the quarantine attribute from the terminal:
+      </p>
+      <pre className="mt-2 overflow-x-auto rounded border border-pi-border/60 bg-pi-bg p-2 font-mono text-[11px] text-pi-fg/80">
+        xattr -d com.apple.quarantine &quot;/Applications/PI Dashboard.app&quot;
+      </pre>
+    </div>
+  );
 }
 
 export default function InstallTabs() {
@@ -117,6 +150,7 @@ export default function InstallTabs() {
         {current.note && (
           <p className="mt-3 text-xs text-pi-muted">{current.note}</p>
         )}
+        {current.unsignedNote && <UnsignedBinaryNote />}
       </div>
     </div>
   );

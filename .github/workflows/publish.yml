@@ -628,6 +628,18 @@ jobs:
           else
             echo "fallback=false" >> "$GITHUB_OUTPUT"
           fi
+          # Append the static first-launch-unblocking footer (Windows
+          # SmartScreen + macOS Gatekeeper workarounds) so every release —
+          # whether the body comes from CHANGELOG.md or the GitHub-generated
+          # fallback — surfaces the workarounds for unsigned/un-notarized
+          # binaries. Edit `.github/release-notes-footer.md` to update;
+          # delete the file (or this step) once Authenticode signing AND
+          # macOS notarization both ship. See changes:
+          # `windows-authenticode-signing`, `macos-notarization` (planned).
+          if [ -f .github/release-notes-footer.md ]; then
+            printf '\n\n' >> release-notes.md
+            cat .github/release-notes-footer.md >> release-notes.md
+          fi
           echo "--- release-notes.md ---"
           cat release-notes.md
           echo "--- end ---"

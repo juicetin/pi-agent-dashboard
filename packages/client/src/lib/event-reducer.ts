@@ -181,31 +181,59 @@ const TURN_BOUNDARY_ROLES: ReadonlySet<ChatMessage["role"]> = new Set([
  * that any subsequent toolResult / interactiveUi rows pushed during the same
  * message land BELOW the assistant text in messages[], not above it.
  *
- * Idempotent guard: if `state.streamingTextFlushed` is already true OR
- * `streamingText` is empty, returns state unchanged.
+ * The pushed row's `id` is `flush-${toolCallId}` — content-stable across
+ * replay so re-running the same `tool_execution_start` event does NOT push
+ * a duplicate row. The third parameter `toolCallId` is the id of the tool
+ * whose start triggered the flush (already in scope at the single caller
+ * inside the `tool_execution_start` reducer arm).
+ *
+ * Idempotent guards:
+ *   - `state.streamingTextFlushed === true`           → return state unchanged
+ *   - `state.streamingText` empty                      → return state unchanged
+ *   - a row with id `flush-${toolCallId}` already exists → return state unchanged
  *
  * Returns a new state with:
- *   - messages: [...state.messages, new assistant row (entryId/nonce both
- *     undefined; will be stamped at message_end)]
+ *   - messages: [...state.messages, new assistant row (id = flush-${toolCallId},
+ *     entryId/nonce both undefined; will be stamped at message_end via
+ *     findFlushedAssistantRowIndex)]
  *   - streamingText: ""
  *   - streamingTextFlushed: true
  *
  * Pure: input is not mutated.
  *
- * See change: fix-streaming-text-vs-interactive-ui-order.
+ * See changes: fix-streaming-text-vs-interactive-ui-order,
+ * fix-replay-duplicates-tool-and-flushed-rows.
+ *
+ * @param state Current session state
+ * @param timestamp Event timestamp (used as the row's `timestamp`)
+ * @param toolCallId Id of the upcoming tool — used as the row's stable id anchor
  */
 export function flushStreamingTextAsAssistantRow(
   state: SessionState,
   timestamp: number,
+  toolCallId: string,
 ): SessionState {
   if (state.streamingTextFlushed) return state;
   if (!state.streamingText) return state;
+  // Replay safety: if a flush row already exists for this toolCallId, do not
+  // push again. The reducer arm calling us is unconditional on every
+  // tool_execution_start; this guard makes it idempotent.
+  // See change: fix-replay-duplicates-tool-and-flushed-rows.
+  const flushId = `flush-${toolCallId}`;
+  const existingIdx = state.messages.findLastIndex(
+    (m) => m.role === "assistant" && m.id === flushId,
+  );
+  if (existingIdx !== -1) {
+    // Mark the flag so message_update stops re-populating streamingText
+    // for this message; the row already exists.
+    return { ...state, streamingText: "", streamingTextFlushed: true };
+  }
   return {
     ...state,
     messages: [
       ...state.messages,
       {
-        id: `msg-${state.messages.length}`,
+        id: flushId,
         role: "assistant",
         content: state.streamingText,
         timestamp,
@@ -840,20 +868,22 @@ export function reduceEvent(state: SessionState, event: DashboardEvent): Session
     }
 
     case "tool_execution_start": {
+      const toolCallId = data.toolCallId as string;
+      const toolName = data.toolName as string;
+
       // Flush any pending streamingText into a permanent assistant row
       // BEFORE pushing the new toolResult, so the message's content-array
       // order is preserved in messages[] for the entire tool runtime —
-      // not just at message_end. See change:
-      // fix-streaming-text-vs-interactive-ui-order.
+      // not just at message_end. The flush row's id is keyed on toolCallId
+      // so replay is idempotent. See changes:
+      // fix-streaming-text-vs-interactive-ui-order,
+      // fix-replay-duplicates-tool-and-flushed-rows.
       if (next.streamingText && !next.streamingTextFlushed) {
         Object.assign(
           next,
-          flushStreamingTextAsAssistantRow(next, event.timestamp),
+          flushStreamingTextAsAssistantRow(next, event.timestamp, toolCallId),
         );
       }
-
-      const toolCallId = data.toolCallId as string;
-      const toolName = data.toolName as string;
       const args = data.args as Record<string, unknown> | undefined;
       next.toolCalls.set(toolCallId, {
         toolCallId,
@@ -867,6 +897,30 @@ export function reduceEvent(state: SessionState, event: DashboardEvent): Session
       const toolLower = toolName.toLowerCase();
       if (toolLower === "write" || toolLower === "edit") {
         next.hasFileChanges = true;
+      }
+
+      // Idempotency on toolCallId: if any row already exists for this
+      // toolCallId (re-replay, reconnect re-replay), update it in place
+      // instead of pushing a duplicate React key. The id `tool-${toolCallId}`
+      // is the React key, so a fresh push would always collide — there's no
+      // safe "fall-through to push" branch. We refresh args/toolName/timestamps
+      // only; result/duration/toolDetails/images/toolStatus remain so terminal
+      // rows keep their finalised data on re-replay of the start event.
+      // See change: fix-replay-duplicates-tool-and-flushed-rows.
+      const existingToolIdx = next.messages.findLastIndex(
+        (m) => m.role === "toolResult" && m.toolCallId === toolCallId,
+      );
+      if (existingToolIdx !== -1) {
+        next.messages = [...next.messages];
+        next.messages[existingToolIdx] = {
+          ...next.messages[existingToolIdx],
+          toolName,
+          args,
+          // Keep startedAt/timestamp from the original row — the existing
+          // values are already correct for terminal rows, and refreshing them
+          // would invalidate `duration` derived from startedAt at end-time.
+        };
+        break;
       }
 
       // Add tool message immediately (visible while running)

@@ -831,4 +831,80 @@ describe("Task 4.1c: R6 — interleaved free-floating row does not break orderin
     // Only one assistant row (no duplicate from message_end).
     expect(state.messages.filter((m) => m.role === "assistant")).toHaveLength(1);
   });
+
+  // ── fix-replay-duplicates-tool-and-flushed-rows ---------------------------
+  it("flush row id is stable across replay (fix-replay-duplicates)", () => {
+    const events: DashboardEvent[] = [
+      asstStart(100),
+      textDelta(110, "intro prose."),
+      toolStart(120, "t1", "bash", { command: "ls" }),
+      toolEnd(130, "t1", "ok"),
+      asstEnd(
+        140,
+        [
+          { type: "text", text: "intro prose." },
+          { type: "toolCall", id: "t1", name: "bash" },
+        ],
+        { entryId: "a1" },
+      ),
+    ];
+
+    // First pass: build the flushed row.
+    let s = events.reduce(reduceEvent, createInitialState());
+    const flushRowsRun1 = s.messages.filter(
+      (m) => m.role === "assistant" && typeof m.id === "string" && m.id.startsWith("flush-"),
+    );
+    expect(flushRowsRun1).toHaveLength(1);
+    expect(flushRowsRun1[0].id).toBe("flush-t1");
+
+    // Replay the SAME events on top of the existing state — simulates the
+    // production bug where event_replay was delivered without a state reset.
+    // The id `flush-t1` is content-stable (derived from toolCallId, not
+    // messages.length), so the second pass MUST find the existing row and
+    // skip the push.
+    for (const e of events) s = reduceEvent(s, e);
+
+    const flushRowsRun2 = s.messages.filter(
+      (m) => m.role === "assistant" && typeof m.id === "string" && m.id.startsWith("flush-"),
+    );
+    expect(flushRowsRun2).toHaveLength(1);
+    expect(flushRowsRun2[0].id).toBe("flush-t1");
+  });
+
+  it("flush row id is derived from toolCallId, not messages.length (fix-replay-duplicates)", () => {
+    // Two distinct flushes in two distinct messages — each must carry its
+    // own toolCallId-anchored id, never an index-derived one.
+    const events: DashboardEvent[] = [
+      asstStart(100),
+      textDelta(110, "first"),
+      toolStart(120, "alpha", "bash", { command: "echo a" }),
+      toolEnd(130, "alpha", "a"),
+      asstEnd(
+        140,
+        [
+          { type: "text", text: "first" },
+          { type: "toolCall", id: "alpha", name: "bash" },
+        ],
+        { entryId: "a1" },
+      ),
+      asstStart(200),
+      textDelta(210, "second"),
+      toolStart(220, "beta", "bash", { command: "echo b" }),
+      toolEnd(230, "beta", "b"),
+      asstEnd(
+        240,
+        [
+          { type: "text", text: "second" },
+          { type: "toolCall", id: "beta", name: "bash" },
+        ],
+        { entryId: "a2" },
+      ),
+    ];
+
+    const s = events.reduce(reduceEvent, createInitialState());
+    const flushRows = s.messages.filter(
+      (m) => m.role === "assistant" && typeof m.id === "string" && m.id.startsWith("flush-"),
+    );
+    expect(flushRows.map((m) => m.id).sort()).toEqual(["flush-alpha", "flush-beta"]);
+  });
 });

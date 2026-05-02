@@ -35,10 +35,12 @@ This change DEPENDS ON `dashboard-plugin-architecture` and `add-dashboard-shell-
 
 ## Out of Scope
 
+- **OpenSpec ↔ workspace lifecycle binding** — auto-creating a workspace per OpenSpec change, redirecting the existing 🎬 spawn-attached button into a workspace, "promote parent session into workspace" flow, and archive-time fold-back-and-forget. All of this is the subject of a SEPARATE proposal `add-openspec-jj-bridge` (a bridge plugin that composes this plugin's public surface with OpenSpec core's public surface; activates only when both are present; modifies neither). This proposal stays openspec-agnostic so the jj plugin remains usable on its own — generic ad-hoc parallel workspaces for non-openspec workflows.
 - **rclone / FUSE / WinFsp / macFUSE overlay shadowing** — explicitly dropped. `jj workspace` provides the isolation we need without kernel extensions or per-OS install pain. If a user wants a true overlay they can mount it outside the dashboard.
 - **Distributed parallel agents on a network drive** — `jj`'s store is single-host. This change targets same-machine parallelism only. A separate proposal is required if multi-host is ever needed.
 - **Blocking guardrails for `git commit` / `git rebase` inside jj-colocated cwds** — desirable safety net but a separate concern; the knoopx `guardrails` extension covers this and can be installed independently. The fold-back skill carries the warning loudly.
 - **Auto-renaming spawned sessions to the workspace name** — possible via `proposal-attach-naming.ts` precedent, deferred to a follow-up if users ask.
+- **Promoting an existing parent session into a fresh workspace** (relocate-via-respawn while preserving chat history) — the bridge proposal owns this since the primary motivating use case is openspec-bound. Generic relocate is a separable follow-up.
 - **Migrating the bridge's git-info poll to a generic VCS-info poll** — refactoring opportunity; for this change we add jj probing alongside the existing git probe and leave the unification for later.
 
 ## Capabilities

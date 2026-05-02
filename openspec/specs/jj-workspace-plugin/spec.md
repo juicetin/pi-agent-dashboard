@@ -1,7 +1,8 @@
-# Capability: jj-workspace-plugin
+# jj-workspace-plugin Specification
 
-## ADDED Requirements
-
+## Purpose
+TBD - created by archiving change add-jj-workspace-plugin. Update Purpose after archive.
+## Requirements
 ### Requirement: Plugin manifest and slot claims
 
 The dashboard SHALL load `@blackbelt-technology/pi-dashboard-jj-plugin` as a workspace package whose `package.json` carries the `pi-dashboard-plugin` manifest with `id: "jj"`.
@@ -295,3 +296,41 @@ The bridge's per-session 30 s cwd probe SHALL:
 - **WHEN** the bridge probe tick fires
 - **THEN** zero `jj` subprocesses SHALL be spawned
 - **AND** `Session.jjState` SHALL remain undefined or `{ isJjRepo: false }`
+
+### Requirement: Workspace sessions group under their parent repo
+
+The client's `groupSessionsByDirectory()` in `packages/client/src/lib/session-grouping.ts` SHALL choose a session's group key in this priority order:
+
+1. If `pathKey(session.cwd)` matches an entry in `pinnedDirectories`, use `session.cwd` (explicit pin wins).
+2. Else if `session.jjState?.workspaceRoot` is non-empty, use `workspaceRoot` (collapse the workspace into its parent repo's group).
+3. Else use `session.cwd` (status quo).
+
+Within a group, sessions SHALL be pre-sorted such that all sessions sharing the same `(jjState?.workspaceName ?? "")` value cluster together while preserving the existing alive-first / startedAt ordering inside each cluster.
+
+#### Scenario: Workspace session collapses under its parent repo
+
+- **GIVEN** a session with `cwd = /repo/.shadow/np-tp/` and `jjState.workspaceRoot = /repo/`
+- **AND** another session with `cwd = /repo/` and no `jjState`
+- **WHEN** `groupSessionsByDirectory` runs
+- **THEN** both sessions SHALL appear in a single folder group keyed on `/repo/`
+- **AND** the workspace session SHALL render its `JjWorkspaceBadge` ("np-tp") on its card
+
+#### Scenario: Explicit pin on a workspace path overrides collapse
+
+- **GIVEN** `pinnedDirectories` contains `/repo/.shadow/np-tp/`
+- **AND** a session with `cwd = /repo/.shadow/np-tp/` and `jjState.workspaceRoot = /repo/`
+- **WHEN** `groupSessionsByDirectory` runs
+- **THEN** the session SHALL group under the pinned `/repo/.shadow/np-tp/` directory, NOT under `/repo/`
+
+#### Scenario: Mixed group ordering keeps workspaces clustered
+
+- **GIVEN** four sessions in `/repo/`: A (no workspace), B (workspace-X), C (no workspace), D (workspace-X)
+- **WHEN** `groupSessionsByDirectory` runs
+- **THEN** the resulting cluster order SHALL group A and C adjacently (no workspace) and B and D adjacently (workspace-X), not interleaved
+
+#### Scenario: Sessions without `jjState` continue to group by cwd
+
+- **GIVEN** a session with `cwd = /repo/` and no `jjState` field
+- **WHEN** `groupSessionsByDirectory` runs
+- **THEN** the session SHALL group under `/repo/` exactly as before this change (regression guard)
+

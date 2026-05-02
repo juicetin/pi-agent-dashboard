@@ -249,6 +249,27 @@ The bridge's git-info poll is **extended in place**. The first dashboard restart
 
 **Why:** Per-repo config doubles the surface area (two sources of truth, merge rules, persistence) for a use case we have no concrete user for yet. Users with genuinely-divergent needs across repos can either (a) call the REST endpoints directly with explicit args, or (b) we add per-repo override later as a separate change once the need is real. Premature flexibility is a real cost.
 
+### Decision 15 — Workspace sessions group under their parent repo, not as separate folder cards
+
+**What:** When `Session.jjState.workspaceRoot` is populated (i.e. the session is inside a `.shadow/<name>/` workspace), `groupSessionsByDirectory()` in `packages/client/src/lib/session-grouping.ts` SHALL use `workspaceRoot` as the group key instead of `cwd`. The `JjWorkspaceBadge` (already specced) carries the workspace identity on the session card.
+
+**Why:** Without this, every workspace creates its own top-level folder card in the sidebar, severing the visual link to the parent repo. Users observed this immediately on first use of the `+ Workspace` button: the parent project's card and the new `.shadow/np-tp/` card sit side-by-side as if unrelated. Grouping by `workspaceRoot` collapses them under the parent (Option 1 — "flat collapse" — in the discovery analysis).
+
+**Pinned-folder edge case:** If `session.cwd` itself matches an entry in `pinnedDirectories` (someone explicitly pinned `.shadow/<name>/`), the grouping function SHALL prefer `cwd` over `workspaceRoot` for that session's group key. This preserves user intent for the rare "pin a workspace independently" case and keeps the rule predictable: explicit pins always win.
+
+**Decision-tree** (executed per session in `groupSessionsByDirectory`):
+```
+  if (pinnedKeys.has(pathKey(session.cwd)))  use cwd          ← explicit pin wins
+  else if (session.jjState?.workspaceRoot)   use workspaceRoot ← collapse into parent
+  else                                        use cwd          ← status quo
+```
+
+**Implication for the cluster ordering inside a group:** sessions are pre-sorted by `(workspaceName ?? "")` so all main-tree sessions cluster, then ws-A sessions cluster, etc. — with a thin separator row (no collapsible header) when the workspace name changes. This is the cheap version of the "Option 1b" hybrid; upgrading to a full collapsible nested section (Option 2) is a separable later change once usage justifies it.
+
+**Alternatives considered:**
+- *Keep grouping by raw `cwd` and rely on the badge alone* (status quo). Rejected — the badge is invisible to anyone who hasn't already realized a workspace is a workspace; the folder-card split makes the relationship harder to discover, not easier.
+- *Nested collapsible workspace section* (Option 2). Better at scale (5+ workspaces) but adds a new collapsible UI and workspace-as-object semantics this proposal isn't ready to commit to. Captured as a deferred enhancement.
+
 ## Open Questions
 
 - **Should `jj-workspace-fold-back` be exposed as a slash command (e.g. `/jj-fold`) or only as a skill?** Slash commands are easier to discover; skills can be more reactive. Probably both — the slash command invokes the skill.

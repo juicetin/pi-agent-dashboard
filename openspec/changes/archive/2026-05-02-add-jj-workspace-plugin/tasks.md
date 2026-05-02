@@ -141,6 +141,20 @@
 - [x] Update `docs/architecture.md` with new "VCS Polling (Git + Jujutsu)" + "Jujutsu workspaces" subsections under Data Flow
 - [x] Add both skills to the relevant skill index (top-level `.pi/skills/` already auto-discovered)
 
+## Phase 4c — Workspace-aware session grouping (Decision 15)
+
+- [x] Modify `packages/client/src/lib/session-grouping.ts::groupSessionsByDirectory`:
+  - [x] Accept session `jjState` via the existing `DashboardSession` parameter (no signature change — already on the type)
+  - [x] Per-session group-key resolution: explicit pin wins → `workspaceRoot` → `cwd`
+  - [x] Within a group, pre-sort by `(workspaceName ?? "")` so workspace clusters stay adjacent
+  - [ ] Optional thin separator row in `SessionList`/`Sidebar` when the workspace name changes between adjacent cards (deferred — cosmetic enhancement; data-layer clustering already enables it without UI change)
+- [x] Unit tests in `packages/client/src/lib/__tests__/session-grouping.test.ts`:
+  - [x] Workspace session collapses under parent repo's group when `workspaceRoot` is set
+  - [x] Explicit `cwd`-pin overrides `workspaceRoot` collapse
+  - [x] Mixed group: main-tree + workspace-A + workspace-B sessions cluster in deterministic order
+  - [x] Sessions with no `jjState` continue to group by `cwd` (regression guard)
+- [x] Update `AGENTS.md` `session-grouping.ts` row documenting the new group-key precedence and the change name `add-jj-workspace-plugin` (Decision 15)
+
 ## Phase 8 — Publish
 
 - [x] Add `@blackbelt-technology/pi-dashboard-jj-plugin` to `packages/client/package.json` deps so Vite bundles it into the published `pi-dashboard-web` tarball (mirrors flows-plugin model). Plugin is `private:true` and ships inside the client bundle, NOT as its own npm package.

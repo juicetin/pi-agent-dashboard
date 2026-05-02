@@ -2,10 +2,13 @@
 export interface Props {
   /** Vertical offset of the glow's center, as CSS (e.g. "20%"). */
   y?: string;
+  /** Show the masked dot-grid layer (default false; the hero hides dots
+   *  globally now via KrakenBrainBackdrop's scrim). */
+  showDots?: boolean;
   /** Extra classes. */
   class?: string;
 }
-const { y = "-10%", class: cls = "" } = Astro.props;
+const { y = "-10%", showDots = false, class: cls = "" } = Astro.props;
 ---
 
 <div
@@ -21,8 +24,10 @@ const { y = "-10%", class: cls = "" } = Astro.props;
     style={`top: ${y}; background: radial-gradient(closest-side, rgb(129 140 248 / 0.35), rgb(139 92 246 / 0.15) 50%, transparent 75%);`}
   >
   </div>
-  <div
-    class="absolute inset-0 pi-dot-grid [mask-image:radial-gradient(ellipse_at_center,black_30%,transparent_75%)]"
-  >
-  </div>
+  {showDots && (
+    <div
+      class="absolute inset-0 pi-dot-grid [mask-image:radial-gradient(ellipse_at_center,black_30%,transparent_75%)]"
+    >
+    </div>
+  )}
 </div>

@@ -1,6 +1,7 @@
 ---
 import BrowserFrame from "./BrowserFrame.astro";
 import GlowBackdrop from "./GlowBackdrop.astro";
+import KrakenBrainBackdrop from "./KrakenBrainBackdrop.astro";
 import HeroAnimation from "./HeroAnimation.tsx";
 import { fetchLatestRelease } from "~/lib/github-release";
 
@@ -10,6 +11,7 @@ const downloadLabel = release ? `Download ${release.tagName}` : "Get the app";
 ---
 
 <section class="relative isolate overflow-hidden">
+  <KrakenBrainBackdrop centerSelector="#hero-headline" />
   <GlowBackdrop />
   <div
     class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 pt-20 md:pt-28 pb-20 md:pb-28"
@@ -24,6 +26,7 @@ const downloadLabel = release ? `Download ${release.tagName}` : "Get the app";
         pi-dashboard is open source
       </span>
       <h1
+        id="hero-headline"
         class="text-4xl sm:text-6xl md:text-7xl font-bold tracking-tight text-balance"
       >
         Your pi agents,

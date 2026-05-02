@@ -57,7 +57,9 @@ The macOS DMG SHALL declare a deployment target of macOS 10.15 (Catalina) so bin
 #### Scenario: CI verifies the produced floor matches the spec
 - **WHEN** the produced DMG is mounted post-build
 - **THEN** the workflow SHALL extract `LSMinimumSystemVersion` from `<App>.app/Contents/Info.plist` and fail the job if the value is anything other than `10.15`
-- **AND** the workflow SHALL run `otool -l` against the inner Mach-O `pi-dashboard` binary and fail if `LC_BUILD_VERSION.minos` reads anything higher than `10.15` (i.e. the runner SDK leaked into the binary)
+- **AND** the workflow SHALL run `otool -l` against the inner Mach-O `pi-dashboard` binary and apply a per-arch `minos` floor check: `darwin/x64` SHALL have `LC_BUILD_VERSION.minos` major-version equal to `10` (10.15 target), `darwin/arm64` SHALL have major-version equal to `11` (Apple Silicon hardware launched on macOS Big Sur 11.0; arm64 binaries cannot declare a lower minos)
+- **AND** the job SHALL fail if the major version exceeds the arch's expected floor (e.g., `12` on x64 or `12` on arm64), which would indicate the runner's host SDK leaked into the produced binary
+- **AND** the job SHALL emit a `::warning::` (not fail) if `minos` cannot be extracted at all (e.g., binary uses an unrecognized load-command format), so the verification is robust to future Mach-O format changes
 
 ### Requirement: Local builder produces correct artifacts across arches
 The local-build helper `packages/electron/scripts/build-installer.sh` SHALL produce arch-correct macOS DMGs when invoked back-to-back with different `--arch` values, without requiring the user to manually clean intermediate caches between runs.

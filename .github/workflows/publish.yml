@@ -491,18 +491,52 @@ jobs:
             hdiutil detach "$MOUNT_POINT" -quiet || true
             exit 1
           fi
-          # 2. Mach-O LC_BUILD_VERSION minos for the main binary
+          # 2. Mach-O LC_BUILD_VERSION minos for the main binary.
+          # Per-arch floor: x64 must be 10.x (10.15 target); arm64 must be 11.x
+          # (Apple Silicon hardware launched on Big Sur/11.0 — arm64 binaries
+          # CANNOT declare minos < 11). Anything higher than the arch's floor
+          # major means the runner SDK leaked into the build.
           BIN="$APP/Contents/MacOS/pi-dashboard"
           if [ -f "$BIN" ]; then
-            MINOS=$(otool -l "$BIN" | awk '/LC_BUILD_VERSION/,/cmdsize/' | grep -E '^\s+minos' | awk '{print $2}' | head -1)
-            echo "  Mach-O minos = $MINOS"
-            # Accept exact 10.15 or any older floor (e.g. 10.13). Reject anything 11+
-            # which would mean the build host SDK leaked in.
-            MAJOR="${MINOS%%.*}"
-            if [ -n "$MAJOR" ] && [ "$MAJOR" -gt 10 ] 2>/dev/null; then
-              echo "::error::Mach-O minos is '$MINOS' (major=$MAJOR). The runner SDK leaked into the binary. Verify MACOSX_DEPLOYMENT_TARGET is set on the make step. See change: add-darwin-x64-build."
-              hdiutil detach "$MOUNT_POINT" -quiet || true
-              exit 1
+            # Capture minos via a state-machine awk that's tolerant of otool's
+            # actual layout (LC_BUILD_VERSION header is followed by cmd /
+            # cmdsize / platform / minos lines, then the next Load command).
+            # Disable pipefail locally because grep may not match if the
+            # binary uses LC_VERSION_MIN_MACOSX (older format) instead of
+            # LC_BUILD_VERSION; we fall through to the legacy probe below.
+            set +o pipefail
+            MINOS=$(otool -l "$BIN" 2>/dev/null | awk '
+              /^Load command/ { in_bv = 0 }
+              /LC_BUILD_VERSION/ { in_bv = 1; next }
+              in_bv && /minos/ { print $2; exit }
+            ')
+            # Fall back to LC_VERSION_MIN_MACOSX (older Mach-Os) if needed.
+            if [ -z "$MINOS" ]; then
+              MINOS=$(otool -l "$BIN" 2>/dev/null | awk '
+                /^Load command/ { in_vm = 0 }
+                /LC_VERSION_MIN_MACOSX/ { in_vm = 1; next }
+                in_vm && /version/ { print $2; exit }
+              ')
+            fi
+            set -o pipefail
+            echo "  Mach-O minos = ${MINOS:-<not-found>}"
+            if [ -z "$MINOS" ]; then
+              echo "::warning::Could not extract minos from $BIN — skipping otool floor check"
+            else
+              MAJOR="${MINOS%%.*}"
+              # Per-arch expected floor major version
+              case "${{ matrix.arch }}" in
+                x64)   EXPECTED_MAJOR=10 ;;
+                arm64) EXPECTED_MAJOR=11 ;;
+                *)     EXPECTED_MAJOR=10 ;;
+              esac
+              if ! [ "$MAJOR" -eq "$MAJOR" ] 2>/dev/null; then
+                echo "::warning::minos major is non-numeric ('$MAJOR') — skipping floor check"
+              elif [ "$MAJOR" -gt "$EXPECTED_MAJOR" ]; then
+                echo "::error::Mach-O minos is '$MINOS' (major=$MAJOR), expected major=$EXPECTED_MAJOR for arch=${{ matrix.arch }}. The runner SDK leaked into the binary. Verify MACOSX_DEPLOYMENT_TARGET is set on the make step. See change: add-darwin-x64-build."
+                hdiutil detach "$MOUNT_POINT" -quiet || true
+                exit 1
+              fi
             fi
           else
             echo "::warning::Main binary not found at $BIN — skipping otool check"

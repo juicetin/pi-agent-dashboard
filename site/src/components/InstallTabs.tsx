@@ -27,13 +27,13 @@ const TABS: Tab[] = [
     id: "pi",
     label: "pi package",
     subline: "Already using pi? Add it as a package.",
-    code: "# From inside any pi session:\n/packages add @blackbelt-technology/pi-dashboard\n\n# That's it. Dashboard auto-starts\n# next time you launch pi.",
+    code: "# From inside any pi session:\n/packages add @blackbelt-technology/pi-agent-dashboard\n\n# That's it. Dashboard auto-starts\n# next time you launch pi.",
   },
   {
     id: "npm",
     label: "npm (CLI)",
     subline: "Classic Node.js install. Runs everywhere.",
-    code: "npm install -g @blackbelt-technology/pi-dashboard\n\n# Start the server:\npi-dashboard start\n# or in dev mode:\npi-dashboard start --dev",
+    code: "npm install -g @blackbelt-technology/pi-agent-dashboard\n\n# Start the server:\npi-dashboard start\n# or in dev mode:\npi-dashboard start --dev",
     note: "Requires Node.js 20+ and a working pi installation.",
   },
 ];

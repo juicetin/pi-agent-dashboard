@@ -73,6 +73,7 @@ import type { ServerToBrowserMessage } from "@blackbelt-technology/pi-dashboard-
 import type { ToolContext } from "./components/tool-renderers/index.js";
 import type { ContextUsageInfo } from "./components/SessionList.js";
 import { ApiContext, deriveApiBase, VITE_API_URL, setGlobalApiBase } from "./lib/api-context.js";
+import { SessionAssetsProvider } from "./lib/SessionAssetsContext.js";
 import { PluginContextProvider, applyPluginConfigUpdate } from "@blackbelt-technology/dashboard-plugin-runtime/context";
 import {
   ContentViewSlot,
@@ -1088,6 +1089,7 @@ export default function App() {
               </div>
             </div>
           }>
+            <SessionAssetsProvider assets={selectedSession?.assets}>
             <ChatView ref={chatViewRef} sessionId={selectedId} state={selectedState} toolContext={toolContext} onCancelPending={handleCancelPending} onRespondToUi={handleRespondToUi} onAbort={handleAbort} onForceKill={handleForceKill} onForkFromMessage={selectedId ? (entryId) => handleResumeSession(selectedId, "fork", entryId) : undefined} onRetryAfterError={selectedId ? () => handleResumeSession(selectedId, "continue") : undefined} onDismissError={selectedId ? () => {
               setSessionStates((prev) => {
                 const next = new Map(prev);
@@ -1098,6 +1100,7 @@ export default function App() {
                 return next;
               });
             } : undefined} />
+            </SessionAssetsProvider>
           </ErrorBoundary>
           <StatusBar
             model={selectedState.model ?? selectedSession?.model}

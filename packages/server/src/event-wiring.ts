@@ -678,6 +678,34 @@ export function wireEvents(deps: EventWiringDeps): void {
       } as any);
     }
 
+    // ── Asset register: per-session image asset cache + broadcast ──
+    // See change: chat-markdown-local-images-and-math.
+    if (msg.type === "asset_register") {
+      const { hash, mimeType, data } = msg;
+      // Reject malformed messages defensively. The bridge always populates
+      // these fields; this guard is purely defense-in-depth so a
+      // misbehaving extension cannot inject placeholder asset entries.
+      if (typeof hash === "string" && hash.length > 0 &&
+          typeof mimeType === "string" && mimeType.length > 0 &&
+          typeof data === "string" && data.length > 0) {
+        const session = sessionManager.get(sessionId);
+        if (session) {
+          const next = { ...(session.assets ?? {}) };
+          next[hash] = { data, mimeType };
+          sessionManager.update(sessionId, { assets: next });
+        }
+        // Broadcast verbatim regardless of whether the session is known —
+        // mirrors the Phase-1 / Phase-2 contract for extension UI messages.
+        browserGateway.sendToSubscribers(sessionId, {
+          type: "asset_register",
+          sessionId,
+          hash,
+          mimeType,
+          data,
+        } as any);
+      }
+    }
+
     // ── Extension UI System (Phase 2): live decorator cache + broadcast ──
     // See change: add-extension-ui-decorations.
     if (msg.type === "ext_ui_decorator") {

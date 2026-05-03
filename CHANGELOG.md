@@ -11,6 +11,7 @@ see [`docs/release-process.md`](docs/release-process.md).
 ## [Unreleased]
 
 ### Added
+- **Chat markdown now renders local-file images and LaTeX math.** Agents can reference local screenshots inline as `![alt](/abs/path.png)` or `![alt](./relative.png)`; the bridge inlines the bytes via a new streaming-safe `pi-asset:<hash>` token + side-channel `asset_register` WebSocket event so each unique image's bytes ride exactly once per session regardless of how many `message_update` chunks repeat the token. Math expressions — inline `$x = \beta$` and display `$$\sum_i^n i$$` (block-level) — are typeset via `remark-math` + `rehype-katex` with `throwOnError:false` so half-formed mid-stream expressions render as a fallback rather than crashing the markdown view. SVG, PNG, JPEG, GIF, WebP, AVIF, and BMP are supported with caps of 5 MB per image and 20 MB of new bytes per message; oversized / unreadable / unsupported-type tokens render as a visible placeholder rather than a broken-image glyph. The dashboard server adds zero new HTTP routes — image bytes flow through the existing event stream pattern that Read-tool images already use. (change: `chat-markdown-local-images-and-math`)
 
 ### Changed
 

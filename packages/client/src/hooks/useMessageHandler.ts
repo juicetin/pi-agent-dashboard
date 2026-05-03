@@ -141,6 +141,22 @@ export function useMessageHandler(
         }
         break;
 
+      // chat-markdown-local-images-and-math: bridge-emitted local-image asset.
+      // Stored on `DashboardSession.assets` so `MarkdownContent`'s
+      // `pi-asset:` resolver (via `SessionAssetsContext`) can render
+      // `data:` URLs without re-fetching. Idempotent on duplicate hashes.
+      case "asset_register":
+        setSessions((prev) => {
+          const next = new Map(prev);
+          const existing = next.get(msg.sessionId);
+          if (!existing) return prev;
+          const assets = { ...(existing.assets ?? {}) };
+          assets[msg.hash] = { data: msg.data, mimeType: msg.mimeType };
+          next.set(msg.sessionId, { ...existing, assets });
+          return next;
+        });
+        break;
+
       case "commands_list":
         setSessionCommands((prev) => {
           const next = new Map(prev);

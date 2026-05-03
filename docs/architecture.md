@@ -505,6 +505,48 @@ Inline stop buttons also appear on running tool cards in `ToolCallStep`, providi
 ### Repeated Tool Call Collapsing
 Consecutive tool calls with the same name and identical args (e.g. health check polling loops) are collapsed into a single expandable group showing a count badge (e.g. "×24"). Implemented via `groupConsecutiveToolCalls()` in the chat rendering pipeline. Groups require 3+ calls; running tools are never grouped.
 
+### Local-image inlining + LaTeX math in chat
+
+Assistant messages containing markdown image references to local files (`![alt](/abs/path.png)` or `![alt](./relative.png)`) are inlined by the bridge before the text leaves the agent process; LaTeX math (`$x = \beta$` and block-level `$$\n…\n$$`) is typeset client-side via KaTeX. Both behaviors live entirely in the chat-rendering pipeline — the dashboard server adds zero new HTTP routes.
+
+```mermaid
+sequenceDiagram
+    participant pi as pi (agent)
+    participant bridge as Bridge (extension)
+    participant server as Dashboard server
+    participant client as Browser (MarkdownContent)
+
+    pi->>bridge: message_update / message_end<br/>{ message.content: "![pic](/home/me/shot.png) and …" }
+    bridge->>bridge: parseImageTokens → isLocalSrc → readFile<br/>(5MB/image, 20MB/message caps; MIME allowlist)<br/>hash = sha256(bytes).slice(0,16)
+    bridge->>server: asset_register { sessionId, hash, mimeType, data:base64 }<br/>(only if hash not yet emitted this session)
+    bridge->>server: message_update / message_end<br/>{ message.content: "![pic](pi-asset:abc1234567890123) and …" }
+    server->>server: asset_register → Session.assets[hash]<br/>= { data, mimeType }
+    server->>client: asset_register (broadcast to subscribers)
+    server->>client: event_forward (rewritten message text)
+    client->>client: useMessageHandler.asset_register →<br/>setSessions → DashboardSession.assets[hash]<br/>SessionAssetsContext re-renders descendants
+    client->>client: MarkdownContent.PiAssetImg resolves<br/>pi-asset:abc1234567890123 →<br/>data:image/png;base64,… → <img>
+```
+
+Key invariants:
+
+- **Server adds no new HTTP route.** No `/api/file/raw`. Image bytes ride inside the existing event/asset stream, mirroring how Read-tool images already work.
+- **Bandwidth-bounded streaming.** Each unique image's bytes are sent exactly once per session via `asset_register`. Subsequent `message_update` chunks only re-ship the short `pi-asset:<hash>` token (~25 chars) in the streaming text.
+- **Asset registry lives on `Session.assets`** (in-memory, not in the rolling event buffer). Subscription replay re-emits one `asset_register` per entry BEFORE the events array, so reconnecting browsers see the registry populated by the time their `message_update` events are reduced. Cold-start full-server-restart loses bytes; older `pi-asset:` tokens render as a placeholder until a fresh assistant message references the same file.
+- **Math plugin chain.** `MarkdownContent.tsx` registers `remarkPlugins: [remarkGfm, remarkMath]` and `rehypePlugins: [rehypeRaw, [rehypeKatex, { throwOnError: false }], stripReactRefAttributes]`. `rehypeRaw` runs FIRST (so embedded HTML is parsed before KaTeX emits its own). `throwOnError:false` keeps streaming half-formed expressions like `$x = 10 +` from crashing the markdown render. `urlTransform={(v)=>v}` disables ReactMarkdown's default scheme-stripping so `pi-asset:` and `data:` srcs reach the `img` override intact.
+
+Failure modes (placeholders are visible, not silent):
+
+| Condition | Placeholder text |
+|---|---|
+| File missing or unreadable (ENOENT/EACCES) | `[image not found: <originalSrc>]` |
+| Path resolves to a directory or other non-file | `[image read failed: <originalSrc>]` |
+| Extension not in image allowlist | `[unsupported image type: <originalSrc>]` |
+| File > 5 MB | `[image too large: <originalSrc> (<sizeInMB> MB)]` |
+| Per-message budget (20 MB new bytes) exhausted | `[message asset budget exhausted: <originalSrc>]` |
+| `pi-asset:<hash>` arrived before its `asset_register` | dashed-bordered `⦿ <alt> (loading…)` span; auto-swaps when bytes arrive |
+
+See change: `chat-markdown-local-images-and-math`.
+
 ### Edit Tool Diff Rendering (desktop vs mobile)
 `ToolCallStep` gates renderer mounting with `{expanded && <Renderer />}` — Edit cards default to collapsed, so no diff tokenization runs until the user expands. On expand, `EditToolRenderer` branches on `useMobile()` (the project-wide `width < 768px OR height < 600px` predicate):
 - **Desktop** (`!isMobile`): renders `<RichDiff oldText newText filePath maxHeight="20rem" />` — syntax-highlighted via `@git-diff-view/react` + lowlight, matching `FileDiffView` quality; height capped for chat scroll UX.

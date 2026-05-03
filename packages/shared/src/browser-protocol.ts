@@ -362,6 +362,23 @@ export interface BrowserExtUiDecoratorMessage {
   removed?: boolean;
 }
 
+/**
+ * Server → browser: register a base64-encoded image asset under a content
+ * hash for the given session. Forwarded verbatim from the bridge's
+ * `asset_register` message and replayed to reconnecting browsers (in
+ * chronological position relative to its referencing `message_update` /
+ * `message_end`). The client populates a per-session `Map<hash,{data,mime}>`
+ * consumed by the `MarkdownContent` `pi-asset:` resolver.
+ * See change: chat-markdown-local-images-and-math.
+ */
+export interface BrowserAssetRegisterMessage {
+  type: "asset_register";
+  sessionId: string;
+  hash: string;
+  mimeType: string;
+  data: string;
+}
+
 /** Sent when a plugin's config changes; carries only that plugin's namespace. */
 export interface PluginConfigUpdateMessage {
   type: "plugin_config_update";
@@ -416,7 +433,8 @@ export type ServerToBrowserMessage =
   | BootstrapTicketCompleteMessage
   | BrowserUiModulesListMessage
   | BrowserUiDataListMessage
-  | BrowserExtUiDecoratorMessage;
+  | BrowserExtUiDecoratorMessage
+  | BrowserAssetRegisterMessage;
 
 // ── Browser → Server ────────────────────────────────────────────────
 

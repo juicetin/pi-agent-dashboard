@@ -286,6 +286,27 @@ export interface ExtUiDecoratorMessage {
   removed?: boolean;
 }
 
+// ── Markdown asset inlining (chat-markdown-local-images-and-math) ──
+//
+// Bridge → server: register a base64-encoded image asset under a content
+// hash. Emitted by the bridge BEFORE the `message_update` / `message_end`
+// event whose text references `pi-asset:<hash>`. Bytes ride exactly once
+// per (session, hash) pair — subsequent references in later events emit
+// no further `asset_register`. Persisted in `events.jsonl` alongside the
+// referencing message events so reconnect/replay rebuilds the per-session
+// asset registry deterministically. See change:
+// chat-markdown-local-images-and-math.
+export interface AssetRegisterMessage {
+  type: "asset_register";
+  sessionId: string;
+  /** Content hash (sha256 truncated to 16 hex chars). */
+  hash: string;
+  /** MIME type (one of the bridge's image allowlist). */
+  mimeType: string;
+  /** Base64-encoded file bytes. */
+  data: string;
+}
+
 export type ExtensionToServerMessage =
   | SessionRegisterMessage
   | SessionUnregisterMessage
@@ -312,7 +333,8 @@ export type ExtensionToServerMessage =
   | ProcessListMessage
   | UiModulesListMessage
   | UiDataListMessage
-  | ExtUiDecoratorMessage;
+  | ExtUiDecoratorMessage
+  | AssetRegisterMessage;
 
 // ── Server → Extension ──────────────────────────────────────────────
 

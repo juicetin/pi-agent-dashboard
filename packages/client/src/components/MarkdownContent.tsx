@@ -1,7 +1,9 @@
 import React, { useRef, useCallback, useMemo, useEffect } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
 import rehypeRaw from "rehype-raw";
+import rehypeKatex from "rehype-katex";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { useThemeContext } from "./ThemeProvider.js";
 import { getSyntaxTheme } from "../lib/syntax-theme.js";
@@ -10,6 +12,7 @@ import { mdiContentCopy, mdiTable } from "@mdi/js";
 import { CopyButton } from "./CopyButton.js";
 import { wrapAsciiTables } from "../lib/wrap-ascii-tables.js";
 import { MermaidBlock } from "./MermaidBlock.js";
+import { useSessionAssets } from "../lib/SessionAssetsContext.js";
 
 interface Props {
   content: string;
@@ -196,6 +199,48 @@ function fixWideCharsInCodeBlocks(container: HTMLElement) {
   }
 }
 
+/**
+ * `img` component override for ReactMarkdown that resolves
+ * `pi-asset:<hash>` srcs against the active `SessionAssetsContext` map
+ * (populated from `asset_register` WS messages). All other src schemes
+ * (`data:`, `http(s):`, `blob:`, fragment, relative) fall through to a
+ * default `<img>` with the original `src` so existing web-image and
+ * tool-result-image behavior is preserved.
+ *
+ * When the hash is not yet in the map (e.g. `asset_register` arrives in
+ * a later chunk), the placeholder element renders. The component
+ * re-renders automatically when the context value changes, swapping the
+ * placeholder for the resolved image without remount.
+ *
+ * See change: chat-markdown-local-images-and-math.
+ */
+function PiAssetImg(props: React.ImgHTMLAttributes<HTMLImageElement>) {
+  const assets = useSessionAssets();
+  const { src, alt, ...rest } = props;
+  if (typeof src === "string" && src.startsWith("pi-asset:")) {
+    const hash = src.slice("pi-asset:".length);
+    const asset = assets[hash];
+    if (asset) {
+      return (
+        <img
+          {...rest}
+          src={`data:${asset.mimeType};base64,${asset.data}`}
+          alt={alt}
+        />
+      );
+    }
+    return (
+      <span
+        className="inline-block px-2 py-1 my-1 text-xs italic text-[var(--text-muted)] bg-[var(--bg-surface)] rounded border border-dashed border-[var(--border-secondary)]"
+        title={`Asset ${hash} not yet loaded`}
+      >
+        ⦿ {alt || "image"} (loading…)
+      </span>
+    );
+  }
+  return <img {...rest} src={src} alt={alt} />;
+}
+
 export const MarkdownContent = React.memo(function MarkdownContent({ content }: Props) {
   // ASCII table monospace fixer — disabled pending further refinement
   // const processedContent = useMemo(() => wrapAsciiTables(content), [content]);
@@ -214,8 +259,23 @@ export const MarkdownContent = React.memo(function MarkdownContent({ content }: 
   return (
     <div ref={containerRef} className="markdown-content text-sm">
       <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        rehypePlugins={[rehypeRaw, stripReactRefAttributes]}
+        remarkPlugins={[remarkGfm, remarkMath]}
+        // Plugin order matters:
+        //  - rehypeRaw FIRST so embedded HTML in markdown source is parsed
+        //    before rehype-katex emits its own KaTeX HTML (KaTeX HTML must
+        //    NOT be re-parsed by rehype-raw).
+        //  - rehypeKatex with throwOnError:false so half-formed mid-stream
+        //    expressions like `$x = 10 +` render as a fallback rather than
+        //    crashing the markdown render.
+        //  - stripReactRefAttributes LAST.
+        // See change: chat-markdown-local-images-and-math.
+        rehypePlugins={[rehypeRaw, [rehypeKatex, { throwOnError: false }], stripReactRefAttributes]}
+        // ReactMarkdown's default urlTransform sanitizes unknown schemes
+        // (e.g. `pi-asset:`, `data:`) to an empty string before our `img`
+        // override sees them. Pass through every src verbatim and let the
+        // PiAssetImg / a / etc. overrides do the gating.
+        // See change: chat-markdown-local-images-and-math.
+        urlTransform={(value) => value}
         components={{
           code({ className, children, ...props }) {
             const match = /language-(\w+)/.exec(className || "");
@@ -287,6 +347,7 @@ export const MarkdownContent = React.memo(function MarkdownContent({ content }: 
               </a>
             );
           },
+          img: PiAssetImg,
         }}
       >
         {processedContent}

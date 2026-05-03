@@ -37,6 +37,7 @@ import { sendStateSync as _sendStateSync, replaySessionEntries as _replaySession
 import { sendModelUpdateIfChanged as _sendModelUpdateIfChanged, sendSessionNameIfChanged as _sendSessionNameIfChanged, sendGitInfoIfChanged as _sendGitInfoIfChanged, sendJjStateIfChanged as _sendJjStateIfChanged, resetReconnectCaches as _resetReconnectCaches } from "./model-tracker.js";
 import { registerFlowEventListeners, FLOW_EVENT_MAP, SUBAGENT_EVENT_MAP } from "./flow-event-wiring.js";
 import { refreshUiModules, subscribeUiInvalidate, handleUiManagement, type UiModulesBridgeCtx } from "./ui-modules.js";
+import { inlineMessageText, type ReadFileOutcome } from "./markdown-image-inliner.js";
 
 const HEARTBEAT_INTERVAL = 15_000;
 const GIT_POLL_INTERVAL = 30_000;
@@ -208,6 +209,96 @@ function initBridge(pi: ExtensionAPI) {
   const nextNonce = (): string => `n-${++nonceCounter}-${Date.now()}`;
   let appendMessageWrapped = false;
   let lastWrappedSm: any = null;
+
+  // ---------------------------------------------------------------------
+  // Markdown-image inliner state (chat-markdown-local-images-and-math).
+  // Per-sessionId set of asset hashes for which an `asset_register` has
+  // already been emitted on this WebSocket. Survives across message events
+  // within the same session; reset when the session id changes (in
+  // session_start). The Map keys are sessionId strings.
+  // ---------------------------------------------------------------------
+  const emittedAssetHashesBySession = new Map<string, Set<string>>();
+  function getEmittedAssetHashes(sid: string): Set<string> {
+    let s = emittedAssetHashesBySession.get(sid);
+    if (!s) {
+      s = new Set<string>();
+      emittedAssetHashesBySession.set(sid, s);
+    }
+    return s;
+  }
+
+  /**
+   * Synchronous fs probe + read for the inliner. Wraps `fs.statSync` /
+   * `fs.readFileSync` and maps Node errno strings to the
+   * `ReadFileOutcome.kind` enum used by the pure inliner. Order: stat
+   * first so directories report EISDIR even when the path has no file
+   * extension.
+   */
+  function inlinerReadFile(absolutePath: string): ReadFileOutcome {
+    try {
+      const st = fs.statSync(absolutePath);
+      if (st.isDirectory()) return { ok: false, kind: "EISDIR" };
+      if (!st.isFile()) return { ok: false, kind: "EOTHER" };
+      const bytes = fs.readFileSync(absolutePath);
+      return { ok: true, bytes };
+    } catch (err: any) {
+      const code = err?.code;
+      if (code === "ENOENT") return { ok: false, kind: "ENOENT" };
+      if (code === "EACCES") return { ok: false, kind: "EACCES" };
+      if (code === "EISDIR") return { ok: false, kind: "EISDIR" };
+      return { ok: false, kind: "EOTHER" };
+    }
+  }
+
+  /**
+   * Apply the markdown-image inliner to an assistant message_update /
+   * message_end event. Mutates `event.message.content` in place (string
+   * → rewritten string; array<{type:"text",text}> → rewritten text in
+   * each text block). Emits `asset_register` messages BEFORE returning so
+   * the caller's subsequent `connection.send(eventForward)` lands AFTER
+   * the assets it references. User-role and thinking events are no-ops.
+   */
+  function maybeInlineAssistantImages(event: any): void {
+    const msg = event?.message;
+    if (!msg || typeof msg !== "object") return;
+    if (msg.role !== "assistant") return;
+    // Use the *current* live cwd if available; fall back to the bridge
+    // process cwd. The inliner resolves relative `./pic.png` against this.
+    const cwd = (cachedCtx?.cwd as string | undefined) ?? process.cwd();
+    const alreadyEmitted = getEmittedAssetHashes(sessionId);
+    const allAssets: { hash: string; mimeType: string; data: string }[] = [];
+
+    const rewriteOne = (text: string): string => {
+      const r = inlineMessageText(text, {
+        readFile: inlinerReadFile,
+        cwd,
+        alreadyEmitted,
+      });
+      for (const a of r.assetsToEmit) allAssets.push(a);
+      return r.rewritten;
+    };
+
+    if (typeof msg.content === "string") {
+      msg.content = rewriteOne(msg.content);
+    } else if (Array.isArray(msg.content)) {
+      for (const block of msg.content) {
+        if (block && typeof block === "object" && block.type === "text" && typeof block.text === "string") {
+          block.text = rewriteOne(block.text);
+        }
+      }
+    }
+
+    // Send each new asset BEFORE the (rewritten) message event lands.
+    for (const a of allAssets) {
+      connection.send({
+        type: "asset_register",
+        sessionId,
+        hash: a.hash,
+        mimeType: a.mimeType,
+        data: a.data,
+      });
+    }
+  }
 
   /**
    * Wrap ctx.sessionManager.appendMessage once per session so that when pi
@@ -765,6 +856,11 @@ function initBridge(pi: ExtensionAPI) {
         if (messageRef && typeof messageRef === "object" && !pendingNonces.has(messageRef as object)) {
           pendingNonces.set(messageRef as object, nonce);
         }
+        // Apply markdown image inliner to assistant content. Mutates
+        // event.message.content in place AND ships any new asset_register
+        // messages immediately so they precede the deferred message_end
+        // send below. See change: chat-markdown-local-images-and-math.
+        maybeInlineAssistantImages(event);
         setTimeout(() => {
           if (!isActive() || !sessionReady) return;
           const entryId =
@@ -776,6 +872,13 @@ function initBridge(pi: ExtensionAPI) {
           connection.send(protoMsg);
         }, 0);
         return;
+      }
+
+      // Apply markdown image inliner to assistant message_update events.
+      // For other event types this is a no-op (role check inside the helper).
+      // See change: chat-markdown-local-images-and-math.
+      if (eventType === "message_update") {
+        maybeInlineAssistantImages(event);
       }
 
       const msg = mapEventToProtocol(sessionId, event);

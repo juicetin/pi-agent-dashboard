@@ -125,6 +125,15 @@ export interface DashboardSession {
    * the entry. See change: add-extension-ui-decorations.
    */
   uiDecorators?: Record<string, DecoratorDescriptor>;
+  /**
+   * Per-session image asset registry, keyed by content hash. Populated by
+   * `asset_register` events emitted by the bridge for local-file images
+   * referenced as `![](path)` in assistant markdown. Survives event-buffer
+   * eviction (lives on Session, not in the rolling event buffer) so
+   * `pi-asset:<hash>` references in older messages still resolve.
+   * See change: chat-markdown-local-images-and-math.
+   */
+  assets?: Record<string, { data: string; mimeType: string }>;
 }
 
 // ── Extension UI System (Phase 1: management-modal slot) ───────────

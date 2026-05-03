@@ -12,8 +12,13 @@ import type {
   BrowserPromptDismissMessage,
   BrowserPromptCancelMessage,
   BrowserExtUiDecoratorMessage,
+  BrowserAssetRegisterMessage,
 } from "../browser-protocol.js";
-import type { ExtensionToServerMessage, ExtUiDecoratorMessage } from "../protocol.js";
+import type {
+  ExtensionToServerMessage,
+  ExtUiDecoratorMessage,
+  AssetRegisterMessage,
+} from "../protocol.js";
 import type { DecoratorDescriptor } from "../types.js";
 
 // Type-level assertion: if these types are NOT in the union, this will fail to compile.
@@ -26,6 +31,11 @@ type _PromptCancelInUnion = AssertExtends<BrowserPromptCancelMessage, ServerToBr
 // esbuild strips the switch arms in production builds.
 type _ExtUiDecoratorInExtensionUnion = AssertExtends<ExtUiDecoratorMessage, ExtensionToServerMessage>;
 type _ExtUiDecoratorInBrowserUnion   = AssertExtends<BrowserExtUiDecoratorMessage, ServerToBrowserMessage>;
+// chat-markdown-local-images-and-math: asset_register must live in BOTH the
+// extension→server union (so the server's switch arm survives esbuild) AND
+// the server→browser union (so the client's reducer arm survives esbuild).
+type _AssetRegisterInExtensionUnion = AssertExtends<AssetRegisterMessage, ExtensionToServerMessage>;
+type _AssetRegisterInBrowserUnion   = AssertExtends<BrowserAssetRegisterMessage, ServerToBrowserMessage>;
 
 // Runtime verification that the type discriminants are reachable in a switch
 function extractPromptType(msg: ServerToBrowserMessage): string | null {
@@ -117,5 +127,41 @@ describe("ext_ui_decorator is a member of both protocol unions", () => {
     };
     expect(msg.type).toBe("ext_ui_decorator");
     expect(msg.descriptor.kind).toBe("footer-segment");
+  });
+});
+
+// chat-markdown-local-images-and-math: asset_register switch-arm reachability.
+function extractAssetHash(msg: ServerToBrowserMessage): string | null {
+  switch (msg.type) {
+    case "asset_register":
+      return msg.hash;
+    default:
+      return null;
+  }
+}
+
+describe("asset_register is a member of both protocol unions", () => {
+  it("server→browser asset_register is a valid discriminant", () => {
+    const msg: BrowserAssetRegisterMessage = {
+      type: "asset_register",
+      sessionId: "s1",
+      hash: "abc1234567890123",
+      mimeType: "image/png",
+      data: "iVBORw0KGgo=",
+    };
+    expect(extractAssetHash(msg)).toBe("abc1234567890123");
+  });
+
+  it("extension→server asset_register carries the same shape", () => {
+    const msg: AssetRegisterMessage = {
+      type: "asset_register",
+      sessionId: "s1",
+      hash: "abc1234567890123",
+      mimeType: "image/svg+xml",
+      data: "PHN2Zy8+",
+    };
+    expect(msg.type).toBe("asset_register");
+    expect(msg.hash).toBe("abc1234567890123");
+    expect(msg.mimeType).toBe("image/svg+xml");
   });
 });

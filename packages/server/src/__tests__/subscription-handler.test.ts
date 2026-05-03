@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { handleSubscribe } from "../browser-handlers/subscription-handler.js";
+import { handleSubscribe, replaySessionAssets } from "../browser-handlers/subscription-handler.js";
 import { createMemoryEventStore } from "../memory-event-store.js";
 import { createMemorySessionManager } from "../memory-session-manager.js";
 import type { BrowserHandlerContext } from "../browser-handlers/handler-context.js";
@@ -191,5 +191,73 @@ describe("handleSubscribe — stale lastSeq detection", () => {
     const replays = calls.filter(([, msg]) => msg.type === "event_replay");
     const allEvents = replays.flatMap(([, msg]: any) => msg.events);
     expect(allEvents).toHaveLength(3);
+  });
+});
+
+// chat-markdown-local-images-and-math
+describe("replaySessionAssets — emits one asset_register per Session.assets entry", () => {
+  it("sends nothing when session has no assets", () => {
+    const ctx = createMockContext();
+    ctx.sessionManager.register({ id: "s1", cwd: "/c", source: "dashboard" } as any);
+    replaySessionAssets({} as any, "s1", ctx);
+    expect((ctx.sendTo as any).mock.calls).toHaveLength(0);
+  });
+
+  it("sends one asset_register per asset on the session", () => {
+    const ctx = createMockContext();
+    ctx.sessionManager.register({ id: "s1", cwd: "/c", source: "dashboard" } as any);
+    ctx.sessionManager.update("s1", {
+      assets: {
+        abc: { data: "AAAA", mimeType: "image/png" },
+        def: { data: "BBBB", mimeType: "image/svg+xml" },
+      },
+    } as any);
+    const ws = {} as any;
+    replaySessionAssets(ws, "s1", ctx);
+    const calls = (ctx.sendTo as any).mock.calls as Array<[any, ServerToBrowserMessage]>;
+    const assetMsgs = calls.filter(([, m]) => m.type === "asset_register");
+    expect(assetMsgs).toHaveLength(2);
+    const byHash = Object.fromEntries(assetMsgs.map(([, m]: any) => [m.hash, m]));
+    expect(byHash.abc).toMatchObject({ data: "AAAA", mimeType: "image/png", sessionId: "s1" });
+    expect(byHash.def).toMatchObject({ data: "BBBB", mimeType: "image/svg+xml", sessionId: "s1" });
+  });
+
+  it("skips malformed asset entries defensively", () => {
+    const ctx = createMockContext();
+    ctx.sessionManager.register({ id: "s1", cwd: "/c", source: "dashboard" } as any);
+    // Force a malformed entry past the type check.
+    ctx.sessionManager.update("s1", {
+      assets: {
+        good: { data: "AAAA", mimeType: "image/png" },
+        bad: { data: 123, mimeType: "image/png" } as any,
+      },
+    } as any);
+    replaySessionAssets({} as any, "s1", ctx);
+    const calls = (ctx.sendTo as any).mock.calls as Array<[any, ServerToBrowserMessage]>;
+    const assetMsgs = calls.filter(([, m]) => m.type === "asset_register");
+    expect(assetMsgs).toHaveLength(1);
+    expect((assetMsgs[0][1] as any).hash).toBe("good");
+  });
+});
+
+describe("handleSubscribe — asset replay precedes events", () => {
+  it("sends asset_register messages before event_replay batches", async () => {
+    const ctx = createMockContext();
+    ctx.sessionManager.register({ id: "s1", cwd: "/c", source: "dashboard" } as any);
+    ctx.sessionManager.update("s1", {
+      assets: { h1: { data: "AAAA", mimeType: "image/png" } },
+    } as any);
+    ctx.eventStore.insertEvent("s1", makeEvent("message_update"));
+
+    const subs = new Set<string>();
+    handleSubscribe({ type: "subscribe", sessionId: "s1", lastSeq: 0 }, subs, ctx);
+    await new Promise((r) => setTimeout(r, 50));
+
+    const calls = (ctx.sendTo as any).mock.calls as Array<[any, ServerToBrowserMessage]>;
+    const firstAssetIdx = calls.findIndex(([, m]) => m.type === "asset_register");
+    const firstEventIdx = calls.findIndex(([, m]) => m.type === "event_replay");
+    expect(firstAssetIdx).toBeGreaterThanOrEqual(0);
+    expect(firstEventIdx).toBeGreaterThanOrEqual(0);
+    expect(firstAssetIdx).toBeLessThan(firstEventIdx);
   });
 });

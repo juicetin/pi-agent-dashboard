@@ -102,6 +102,7 @@ Remove with `pi remove /path/to/pi-agent-dashboard`. Alternatively, add the pack
 - **Command autocomplete** — `/` prefix triggers a filtering dropdown
 - **Mobile-friendly** — responsive layout with swipe drawer, touch targets, and mobile action menus
 - **Markdown preview** — rendered markdown views with search, mermaid diagrams, syntax highlighting, and safe handling for raw HTML `ref` attributes
+- **Local-image inlining + LaTeX math in chat** — agents can reference local screenshots inline as `![alt](/abs/path.png)` or `![alt](./relative.png)` and they render in chat (the bridge inlines bytes via a streaming-safe `pi-asset:<hash>` channel — each unique image's bytes ride exactly once per session, no matter how many streaming chunks repeat the token). Math expressions — inline `$x = \beta$` and display `$$\sum_i^n i$$` (block-level) — are typeset via KaTeX. PNG / JPEG / GIF / WebP / SVG / AVIF / BMP supported with a 5 MB-per-image, 20 MB-per-message cap; oversized or unreadable references render as a visible placeholder rather than a broken-image glyph. The dashboard server adds zero new HTTP routes.
 - **Searchable select dialogs** — keyboard-navigable picker with real-time filtering (OpenSpec changes, flow commands)
 
 **Integrations**

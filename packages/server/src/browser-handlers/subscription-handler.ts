@@ -68,7 +68,7 @@ async function sendEventBatches(
  * Called immediately after every `replayPendingUiRequests` site so the full
  * replay ordering is:
  *
- *   events → pending UI requests → ui_modules_list → ui_data_list → ext_ui_decorator
+ *   asset_register batch → events → pending UI requests → ui_modules_list → ui_data_list → ext_ui_decorator
  *
  * Exported so unit tests can drive it without standing up a full subscribe
  * pipeline. See changes: add-extension-ui-modal, add-extension-ui-decorations.
@@ -93,6 +93,35 @@ export function replayUiState(
     for (const descriptor of Object.values(session.uiDecorators)) {
       sendTo(ws, { type: "ext_ui_decorator", sessionId, descriptor } as any);
     }
+  }
+}
+
+/**
+ * Replay the per-session image asset registry to a single browser. Sends one
+ * `asset_register` message per `(hash, { data, mimeType })` entry in
+ * `Session.assets`. Called BEFORE `sendEventBatches` so any `pi-asset:<hash>`
+ * tokens in replayed `message_update` / `message_end` events have their
+ * referent in the client's session map by the time they're reduced.
+ *
+ * See change: chat-markdown-local-images-and-math.
+ */
+export function replaySessionAssets(
+  ws: WebSocket,
+  sessionId: string,
+  ctx: Pick<BrowserHandlerContext, "sessionManager" | "sendTo">,
+): void {
+  const { sessionManager, sendTo } = ctx;
+  const session = sessionManager.get(sessionId);
+  if (!session?.assets) return;
+  for (const [hash, asset] of Object.entries(session.assets)) {
+    if (!asset || typeof asset.data !== "string" || typeof asset.mimeType !== "string") continue;
+    sendTo(ws, {
+      type: "asset_register",
+      sessionId,
+      hash,
+      mimeType: asset.mimeType,
+      data: asset.data,
+    } as any);
   }
 }
 
@@ -122,6 +151,10 @@ export function handleSubscribe(
       if (MAX_REPLAY_EVENTS > 0 && events.length > MAX_REPLAY_EVENTS) {
         events = events.slice(events.length - MAX_REPLAY_EVENTS);
       }
+      // Replay asset registry BEFORE events so pi-asset:<hash> tokens in
+      // message_update / message_end resolve on first reduce.
+      // See change: chat-markdown-local-images-and-math.
+      replaySessionAssets(ws, msg.sessionId, ctx);
       markReplaying(ws, msg.sessionId);
       sendEventBatches(ws, msg.sessionId, events, sendTo).then((lastSent) => {
         clearReplaying(ws, msg.sessionId, lastSent);
@@ -133,6 +166,10 @@ export function handleSubscribe(
       if (MAX_REPLAY_EVENTS > 0 && events.length > MAX_REPLAY_EVENTS) {
         events = events.slice(events.length - MAX_REPLAY_EVENTS);
       }
+      // Replay asset registry on every subscribe (delta or full). Cheap when
+      // empty; assets already known to the client are simply re-overwritten
+      // with identical bytes. See change: chat-markdown-local-images-and-math.
+      replaySessionAssets(ws, msg.sessionId, ctx);
       // Suppress live events during delta replay to prevent out-of-order delivery
       if (lastSeq > 0 && events.length > 0) {
         markReplaying(ws, msg.sessionId);
@@ -172,6 +209,8 @@ export function handleSubscribe(
           }
           const subscribers = getSubscribers(msg.sessionId);
           for (const sub of subscribers) {
+            // Asset registry first — see change: chat-markdown-local-images-and-math.
+            replaySessionAssets(sub, msg.sessionId, ctx);
             await sendEventBatches(sub, msg.sessionId, stored, sendTo);
             replayPendingUiRequests(sub, msg.sessionId);
             replayUiState(sub, msg.sessionId, ctx);

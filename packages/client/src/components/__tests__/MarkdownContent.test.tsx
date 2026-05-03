@@ -3,6 +3,7 @@ import { render, screen, act } from "@testing-library/react";
 import React, { useState } from "react";
 import { MarkdownContent, tableToMarkdown, tableToTsv } from "../MarkdownContent.js";
 import { ThemeProvider } from "../ThemeProvider.js";
+import { SessionAssetsProvider } from "../../lib/SessionAssetsContext.js";
 
 beforeAll(() => {
   Object.defineProperty(window, "matchMedia", {
@@ -299,6 +300,110 @@ describe("MarkdownContent", () => {
       const link = container.querySelector("a");
       expect(link?.className).toContain("text-blue-400");
       expect(link?.className).toContain("hover:underline");
+    });
+  });
+
+  // chat-markdown-local-images-and-math: math + image rendering
+  describe("LaTeX math", () => {
+    it("renders inline single-dollar math as a KaTeX node", () => {
+      const { container } = renderMd("Pythagoras: $a^2 + b^2 = c^2$.");
+      expect(container.querySelector(".katex")).not.toBeNull();
+    });
+
+    it("renders display double-dollar math as katex-display when on its own line", () => {
+      // remark-math treats `$$…$$` as DISPLAY math only when it's a
+      // block-level construct (preceded/followed by blank lines or at
+      // the start/end of input). Inline `$$…$$` is treated as inline.
+      const { container } = renderMd("$$\n\\sum_{i=0}^{n} i\n$$");
+      expect(container.querySelector(".katex-display")).not.toBeNull();
+    });
+
+    it("renders \\beta as the beta glyph", () => {
+      const { container } = renderMd("$x = \\beta$");
+      const katex = container.querySelector(".katex");
+      expect(katex).not.toBeNull();
+      // The actual rendered text should contain a beta glyph (β) somewhere
+      expect(container.textContent).toMatch(/β/);
+    });
+
+    it("does NOT throw on half-formed math (throwOnError:false)", () => {
+      // Half-formed `$x = 10 +` simulates a streaming chunk before the
+      // closing dollar arrives. Pre-fix this would throw a ParseError;
+      // post-fix it must render without crashing.
+      expect(() => renderMd("Working: $x = 10 +")).not.toThrow();
+    });
+  });
+
+  describe("pi-asset image resolution", () => {
+    function renderWithAssets(
+      content: string,
+      assets: Record<string, { data: string; mimeType: string }>,
+    ) {
+      return render(
+        <ThemeProvider>
+          <SessionAssetsProvider assets={assets}>
+            <MarkdownContent content={content} />
+          </SessionAssetsProvider>
+        </ThemeProvider>,
+      );
+    }
+
+    it("resolves pi-asset:<hash> against the session asset map to a data: URL", () => {
+      const { container } = renderWithAssets(
+        "![pic](pi-asset:abc1234567890123)",
+        { abc1234567890123: { data: "AAAA", mimeType: "image/png" } },
+      );
+      const img = container.querySelector("img");
+      expect(img).not.toBeNull();
+      expect(img!.getAttribute("src")).toBe("data:image/png;base64,AAAA");
+      expect(img!.getAttribute("alt")).toBe("pic");
+    });
+
+    it("renders a visible placeholder when the hash is not in the map", () => {
+      const { container } = renderWithAssets("![pic](pi-asset:zzz)", {});
+      // The placeholder is a <span>, not an <img>. The original alt should
+      // appear in the placeholder text.
+      expect(container.querySelector("img")).toBeNull();
+      expect(container.textContent).toContain("pic");
+      expect(container.textContent).toMatch(/loading/i);
+    });
+
+    it("falls through to default <img> for external https URLs", () => {
+      const { container } = renderMd("![logo](https://example.com/logo.png)");
+      const img = container.querySelector("img");
+      expect(img).not.toBeNull();
+      expect(img!.getAttribute("src")).toBe("https://example.com/logo.png");
+    });
+
+    it("falls through to default <img> for data: URLs", () => {
+      const { container } = renderMd("![](data:image/png;base64,XXX)");
+      const img = container.querySelector("img");
+      expect(img).not.toBeNull();
+      expect(img!.getAttribute("src")).toBe("data:image/png;base64,XXX");
+    });
+
+    it("placeholder swaps to resolved image when assets context updates", () => {
+      // Re-render with the same MarkdownContent instance but a populated
+      // asset map; the resolver should reactively render the image.
+      const content = "![pic](pi-asset:hhh)";
+      const { container, rerender } = render(
+        <ThemeProvider>
+          <SessionAssetsProvider assets={{}}>
+            <MarkdownContent content={content} />
+          </SessionAssetsProvider>
+        </ThemeProvider>,
+      );
+      expect(container.querySelector("img")).toBeNull();
+      rerender(
+        <ThemeProvider>
+          <SessionAssetsProvider assets={{ hhh: { data: "BBBB", mimeType: "image/jpeg" } }}>
+            <MarkdownContent content={content} />
+          </SessionAssetsProvider>
+        </ThemeProvider>,
+      );
+      const img = container.querySelector("img");
+      expect(img).not.toBeNull();
+      expect(img!.getAttribute("src")).toBe("data:image/jpeg;base64,BBBB");
     });
   });
 

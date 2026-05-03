@@ -352,6 +352,7 @@ source: system
 path:   C:/Program Files/nodejs/node.exe
 tried:
   override     no override set
+  managed      missing: <HOME>/.pi-dashboard/node/node.exe
   managed      missing: <HOME>/.pi-dashboard/node_modules/.bin/node.cmd
   where        ok
 argv:

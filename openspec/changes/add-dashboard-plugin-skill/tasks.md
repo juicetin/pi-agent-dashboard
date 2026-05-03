@@ -1,36 +1,36 @@
 ## 1. Skill package scaffolding
 
-- [ ] 1.1 Create `packages/dashboard-plugin-skill/package.json` with `name: @blackbelt-technology/pi-dashboard-plugin-skill`, `private: false`, and a `pi.skills` declaration pointing at `skills/dashboard-plugin-scaffold/SKILL.md`.
-- [ ] 1.2 Add the package to the workspace root `package.json` `workspaces` array.
-- [ ] 1.3 Add a stub `vitest.config.ts` and `tsconfig.json` that mirror `packages/dashboard-plugin-runtime/`.
-- [ ] 1.4 Add `packages/dashboard-plugin-skill/README.md` describing how to install (`npm i -g @blackbelt-technology/pi-dashboard-plugin-skill`) and how to invoke from a pi session.
+- [x] 1.1 Create `packages/dashboard-plugin-skill/package.json` with `name: @blackbelt-technology/pi-dashboard-plugin-skill`, `private: false`, and a `pi.skills` declaration pointing at `skills/dashboard-plugin-scaffold/SKILL.md`.
+- [x] 1.2 Add the package to the workspace root `package.json` `workspaces` array. (covered by existing `packages/*` glob)
+- [x] 1.3 Add a stub `vitest.config.ts` and `tsconfig.json` that mirror `packages/dashboard-plugin-runtime/`.
+- [x] 1.4 Add `packages/dashboard-plugin-skill/README.md` describing how to install (`npm i -g @blackbelt-technology/pi-dashboard-plugin-skill`) and how to invoke from a pi session.
 
 ## 2. Skill markdown
 
-- [ ] 2.1 Author `skills/dashboard-plugin-scaffold/SKILL.md` with the hybrid contract: the up-front `ask_user` batch, the mode branch, and the prescriptive steps for each mode.
-- [ ] 2.2 Author `references/slot-taxonomy.md` covering all 10 React slot ids: when to use, prop contract, multiplicity, ordering rules, example snippet.
-- [ ] 2.3 Author `references/manifest-schema.md` mirroring `dashboard-plugin-loader/spec.md` Requirement 1 (the canonical schema).
-- [ ] 2.4 Author `references/plugin-context-api.md` documenting the public exports of `@blackbelt-technology/dashboard-plugin-runtime/context` (the de-facto client SDK).
-- [ ] 2.5 Author `references/server-context-api.md` documenting the `ServerPluginContext` from `dashboard-plugin-loader/spec.md` Requirement 3.
-- [ ] 2.6 Author `references/tui-to-dashboard-mapping.md` with the canonical mapping table (from this proposal's design.md §"TUI → dashboard mapping").
-- [ ] 2.7 Author `references/build-integration.md` summarising the Vite plugin behavior, dev vs prod fixture filtering, and tree-shaking.
+- [x] 2.1 Author `skills/dashboard-plugin-scaffold/SKILL.md` with the hybrid contract: the up-front `ask_user` batch, the mode branch, and the prescriptive steps for each mode.
+- [x] 2.2 Author `references/slot-taxonomy.md` covering all 10 React slot ids: when to use, prop contract, multiplicity, ordering rules, example snippet.
+- [x] 2.3 Author `references/manifest-schema.md` mirroring `dashboard-plugin-loader/spec.md` Requirement 1 (the canonical schema).
+- [x] 2.4 Author `references/plugin-context-api.md` documenting the public exports of `@blackbelt-technology/dashboard-plugin-runtime/context` (the de-facto client SDK).
+- [x] 2.5 Author `references/server-context-api.md` documenting the `ServerPluginContext` from `dashboard-plugin-loader/spec.md` Requirement 3.
+- [x] 2.6 Author `references/tui-to-dashboard-mapping.md` with the canonical mapping table (from this proposal's design.md §"TUI → dashboard mapping").
+- [x] 2.7 Author `references/build-integration.md` summarising the Vite plugin behavior, dev vs prod fixture filtering, and tree-shaking.
 
 ## 3. Templates (mode `new`)
 
-- [ ] 3.1 `templates/plugin-package.json.tmpl` with a `pi-dashboard-plugin` manifest, `requiredApi: "^0.x"`, and placeholder `{{ id }}` / `{{ displayName }}` / `{{ priority }}` / `{{ claims }}`.
-- [ ] 3.2 `templates/client.tsx.tmpl` with one section per slot id, each commented with the prop contract and a TODO marker. The renderer keeps only sections matching the user's `multiselect`.
-- [ ] 3.3 `templates/server-index.ts.tmpl` exporting a default `registerPlugin(ctx)` with example REST route + WS handler scaffolds.
-- [ ] 3.4 `templates/bridge-index.ts.tmpl` exporting a stub pi-extension entry. (Only emitted when the user opts in.)
-- [ ] 3.5 `templates/configSchema.json.tmpl` — empty JSON Schema 7 object with a `$schema` header.
-- [ ] 3.6 `templates/tsconfig.json.tmpl` matching the conventions in `packages/dashboard-plugin-runtime/tsconfig.json`.
-- [ ] 3.7 `templates/vitest.config.ts.tmpl` matching the conventions in `packages/dashboard-plugin-runtime/vitest.config.ts`.
-- [ ] 3.8 `templates/README.md.tmpl` summarising the plugin's claims and how to develop it.
-- [ ] 3.9 `templates/test/index.test.ts.tmpl` with one assertion per claim type, using vitest.
+- [x] 3.1 `templates/plugin-package.json.tmpl` with a `pi-dashboard-plugin` manifest, `requiredApi: "^0.x"`, and placeholder `{{ id }}` / `{{ displayName }}` / `{{ priority }}` / `{{ claims }}`.
+- [x] 3.2 `templates/client.tsx.tmpl` + `templates/slot-sections.ts` with one section per slot id, each commented with the prop contract and a TODO marker. The renderer keeps only sections matching the user's `multiselect`.
+- [x] 3.3 `templates/server-index.ts.tmpl` exporting a default `registerPlugin(ctx)` with example REST route + WS handler scaffolds.
+- [x] 3.4 `templates/bridge-index.ts.tmpl` exporting a stub pi-extension entry. (Only emitted when the user opts in.)
+- [x] 3.5 `templates/configSchema.json.tmpl` — empty JSON Schema 7 object with a `$schema` header.
+- [x] 3.6 `templates/tsconfig.json.tmpl` matching the conventions in `packages/dashboard-plugin-runtime/tsconfig.json`.
+- [x] 3.7 `templates/vitest.config.ts.tmpl` matching the conventions in `packages/dashboard-plugin-runtime/vitest.config.ts`.
+- [x] 3.8 `templates/README.md.tmpl` summarising the plugin's claims and how to develop it.
+- [x] 3.9 `templates/test-index.test.ts.tmpl` with one assertion per claim type, using vitest.
 
 ## 4. Scripts
 
-- [ ] 4.1 `scripts/grep-tui-surface.sh` — runs the grep prelude (`ctx.ui.*`, `pi.registerTool`, `registerExtensionUI`, session-replacement bans) and emits a JSON callsite list.
-- [ ] 4.2 `scripts/register-workspace.sh` — idempotently adds `packages/<id>-plugin` to the root `package.json#workspaces` array, atomic write via tmp+rename.
+- [x] 4.1 `scripts/grep-tui-surface.sh` — runs the grep prelude (`ctx.ui.*`, `pi.registerTool`, `registerExtensionUI`, session-replacement bans) and emits a JSON callsite list.
+- [x] 4.2 `scripts/register-workspace.sh` — idempotently adds `packages/<id>-plugin` to the root `package.json#workspaces` array, atomic write via tmp+rename.
 
 ## 5. Mode `new` flow tests
 

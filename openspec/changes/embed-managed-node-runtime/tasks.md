@@ -21,9 +21,9 @@
 
 ## 4. Bootstrap chain wire-up
 
-- [ ] 4.1 Edit `packages/electron/src/lib/dependency-installer.ts::installAllTools` to invoke `installManagedNode(MANAGED_DIR)` before the first `bootstrapInstall(...)` call, emitting progress through the existing `onProgress` channel as a distinct step (e.g. `step: "node-runtime"`)
-- [ ] 4.2 Verify `bootstrapInstall(...)` resolves npm via `ToolRegistry` (current code path through `resolveNpmArgv` already does — confirm and add a regression test if missing)
-- [ ] 4.3 Add an integration-style test under `packages/shared/src/__tests__/install-managed-node-bootstrap-order.test.ts` asserting that `installAllTools` calls `installManagedNode` strictly before `bootstrapInstall`
+- [x] 4.1 Edit `packages/electron/src/lib/dependency-installer.ts::installAllTools` to invoke `installManagedNode(MANAGED_DIR)` before the first `bootstrapInstall(...)` call, emitting progress through the existing `onProgress` channel as a distinct step (e.g. `step: "node-runtime"`) _(wired into actual entry `installStandalone`; `step: "node-runtime"` emitted via the shared `installManagedNode` progress channel)_
+- [x] 4.2 Verify `bootstrapInstall(...)` resolves npm via `ToolRegistry` (current code path through `resolveNpmArgv` already does — confirm and add a regression test if missing) _(regression test `bootstrap-install-resolve-npm.test.ts` added)_
+- [x] 4.3 Add an integration-style test under `packages/shared/src/__tests__/install-managed-node-bootstrap-order.test.ts` asserting that `installAllTools` calls `installManagedNode` strictly before `bootstrapInstall` _(script-text test pinning the call-order in `installStandalone`)_
 
 ## 5. Spawn-site PATH injection
 

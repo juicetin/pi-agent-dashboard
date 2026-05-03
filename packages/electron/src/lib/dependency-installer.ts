@@ -16,6 +16,12 @@ import path from "node:path";
 import os from "node:os";
 import { getBundledNodePath, getBundledNpmPath } from "./bundled-node.js";
 import { getDefaultRegistry } from "@blackbelt-technology/pi-dashboard-shared/tool-registry/index.js";
+import { installManagedNode } from "@blackbelt-technology/pi-dashboard-shared/bootstrap-install.js";
+import {
+  getManagedNodeBinary,
+  isManagedNodePresent,
+  prependManagedNodeToPath,
+} from "@blackbelt-technology/pi-dashboard-shared/platform/managed-node-path.js";
 import { MANAGED_DIR } from "./managed-paths.js";
 import {
   resolveOfflinePackages,
@@ -55,23 +61,42 @@ function ensureManagedDir(): void {
   }
 }
 
-/** Resolve the npm command to use (system or bundled).
+/** Resolve the npm command to use (managed > bundled > system).
  *
- * On Windows, system npm is `npm.cmd` (a batch wrapper). `child_process.spawn("npm", ...)`
- * without the `.cmd` extension fails with ENOENT because Windows doesn't auto-append
- * extensions during spawn. Prefer the bundled Node + npm-cli.js pair unconditionally
- * on Windows — it's a direct `node.exe` invocation with no `.cmd` intermediary — and
- * fall back to bundled even when system Node is present to avoid the spawn-npm-ENOENT
- * failure observed on fresh Windows installs.
+ * Order:
+ *   1. Managed Node runtime (`<managedDir>/node/...`) when installed by
+ *      `installManagedNode`. Persistent across Electron upgrades and
+ *      always present once first-run install completes.
+ *      See change: embed-managed-node-runtime.
+ *   2. Bundled Node + npm-cli.js (`<app>/resources/node/...`). Used
+ *      before the managed copy exists (i.e. the very first call inside
+ *      `installStandalone`).
+ *   3. System npm via PATH (Unix only — Windows would hit the npm.cmd
+ *      ENOENT issue without the .cmd extension).
+ *
+ * On Windows, both managed and bundled paths use
+ * `"<node.exe>" "<npm-cli.js>"` to bypass the .cmd shim entirely.
  */
 function resolveNpm(): string {
-  // Bundled first on Windows (avoids .cmd spawn issue).
+  // 1. Managed runtime first (when installed).
+  if (isManagedNodePresent()) {
+    const managedNode = getManagedNodeBinary();
+    // npm-cli.js layout: Windows root vs Unix lib/.
+    const managedNpmCli = process.platform === "win32" // platform-branch-ok: npm-cli.js layout differs Windows vs Unix
+      ? path.join(MANAGED_DIR, "node", "node_modules", "npm", "bin", "npm-cli.js")
+      : path.join(MANAGED_DIR, "node", "lib", "node_modules", "npm", "bin", "npm-cli.js");
+    if (existsSync(managedNpmCli)) {
+      return `"${managedNode}" "${managedNpmCli}"`;
+    }
+  }
+
+  // 2. Bundled Electron resources.
   const nodePath = getBundledNodePath();
   const npmPath = getBundledNpmPath();
   if (process.platform === "win32" && nodePath && npmPath) {
     return `"${nodePath}" "${npmPath}"`;
   }
-  // System npm on Unix (posix has no extension issue). Use the shared
+  // 3. System npm on Unix (posix has no extension issue). Use the shared
   // registry so the same node-resolution strategy applies across Electron
   // and the CLI. See change: unified-bootstrap-install.
   const registry = getDefaultRegistry();
@@ -86,13 +111,23 @@ function resolveNpm(): string {
   throw new Error("No Node.js available. Cannot install dependencies.");
 }
 
-/** Build env with bundled Node on PATH so postinstall scripts can find `node`. */
+/**
+ * Build env with managed Node + bundled Node on PATH so postinstall
+ * scripts can find `node` / `npm`. Managed first (when present) so
+ * children resolve to the persistent runtime; bundled second as a
+ * fallback for the very first install before the managed copy exists.
+ *
+ * See change: embed-managed-node-runtime.
+ */
 function buildInstallEnv(): NodeJS.ProcessEnv {
-  const env = { ...process.env };
+  // Start with managed-node prepend (no-op when not yet installed).
+  let env = prependManagedNodeToPath(process.env);
   const nodePath = getBundledNodePath();
   if (nodePath) {
     const binDir = path.dirname(nodePath);
-    env.PATH = `${binDir}${path.delimiter}${env.PATH || ""}`;
+    if (!(env.PATH ?? "").split(path.delimiter).includes(binDir)) {
+      env = { ...env, PATH: `${binDir}${path.delimiter}${env.PATH || ""}` };
+    }
   }
   return env;
 }
@@ -160,6 +195,33 @@ function runNpmInstall(
  */
 export async function installStandalone(onProgress?: ProgressCallback, skipPackages?: string[]): Promise<void> {
   ensureManagedDir();
+
+  // Install the managed Node runtime first — the very next npm spawn
+  // (and every future one, including the Update button) resolves
+  // node/npm out of <managedDir>/node/ via the ToolRegistry. No-ops
+  // when running outside Electron (no bundled resources).
+  // See change: embed-managed-node-runtime.
+  const bundledNodeBinary = getBundledNodePath();
+  // bundledNodeDir is the parent of `node.exe` on Win or grandparent
+  // of `bin/node` on Unix — i.e. the dir laid out as the upstream Node
+  // distribution.
+  const bundledNodeDir = bundledNodeBinary
+    ? (process.platform === "win32" // platform-branch-ok: Node distribution layout differs Windows vs Unix
+        ? path.dirname(bundledNodeBinary)
+        : path.dirname(path.dirname(bundledNodeBinary)))
+    : null;
+  const managedNodeRes = await installManagedNode({
+    bundledNodeDir,
+    managedDir: MANAGED_DIR,
+    progress: onProgress as unknown as (p: SharedInstallProgress) => void,
+  });
+  if (!managedNodeRes.ok) {
+    // Continue even if the managed Node copy failed — the bundled
+    // fallback in resolveNpm() still works for this install. Just
+    // log so QA can spot it.
+    console.error("[dependency-installer] installManagedNode failed:", managedNodeRes.error);
+  }
+
   const npmCmd = resolveNpm();
 
   // Note: @blackbelt-technology/pi-dashboard is bundled with the Electron app

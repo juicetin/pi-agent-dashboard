@@ -1,8 +1,8 @@
 ## 1. Bundle fix (precondition)
 
-- [ ] 1.1 Update `packages/electron/scripts/docker-make.sh` Windows branch to also `cp` `npm.cmd` and `npx.cmd` from `/tmp/node-$VERSION-win-$ARCH/` into `$NODE_DIR/` alongside the existing `node.exe` + `node_modules/` copies
-- [ ] 1.2 Add a script-text test at `packages/electron/src/__tests__/docker-make-windows-bundle.test.ts` that greps `docker-make.sh` for the `npm.cmd` and `npx.cmd` copy lines so the regression cannot land silently
-- [ ] 1.3 Manually re-run a Windows packaged build locally (or via the Docker cross-build) and verify `<app>/resources/node/npm.cmd` exists and `npm.cmd --version` exits 0
+- [x] 1.1 Update `packages/electron/scripts/docker-make.sh` Windows branch to also `cp` `npm.cmd` and `npx.cmd` from `/tmp/node-$VERSION-win-$ARCH/` into `$NODE_DIR/` alongside the existing `node.exe` + `node_modules/` copies
+- [x] 1.2 Add a script-text test at `packages/electron/src/__tests__/docker-make-windows-bundle.test.ts` that greps `docker-make.sh` for the `npm.cmd` and `npx.cmd` copy lines so the regression cannot land silently
+- [ ] 1.3 Manually re-run a Windows packaged build locally (or via the Docker cross-build) and verify `<app>/resources/node/npm.cmd` exists and `npm.cmd --version` exits 0 _(deferred — manual VM QA, per session scope)_
 
 ## 2. Pure helpers (no production wire-up yet)
 

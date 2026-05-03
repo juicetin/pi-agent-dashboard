@@ -114,6 +114,12 @@ if [ "$PLATFORM" = "win32" ]; then
   cd /tmp && unzip -q node-win.zip && cd /build/"$ELECTRON_DIR"
   cp "/tmp/node-$VERSION-win-$ARCH/node.exe" "$NODE_DIR/"
   cp -r "/tmp/node-$VERSION-win-$ARCH/node_modules" "$NODE_DIR/"
+  # Copy the npm/npx Windows shim scripts so the bundled dir is
+  # invocable as `npm`/`npx` directly. Without these, `where npm`
+  # returns nothing on Windows even though node.exe + node_modules/npm
+  # are present. See change: embed-managed-node-runtime (task 1.1).
+  cp "/tmp/node-$VERSION-win-$ARCH/npm.cmd" "$NODE_DIR/"
+  cp "/tmp/node-$VERSION-win-$ARCH/npx.cmd" "$NODE_DIR/"
 
   # Package with Forge (package only — skip makers, NSIS can't run on Linux)
   cd /build/packages/electron

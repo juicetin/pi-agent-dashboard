@@ -26,7 +26,7 @@
 
 ## 6. Verification
 
-- [ ] 6.1 Run `npm test 2>&1 | tee /tmp/pi-test.log`; grep for failures (`grep -nE 'FAIL|Error|✗|✘' /tmp/pi-test.log`). **Blocked locally**: `os.userInfo()` throws `uv_os_get_passwd ENOENT` on this machine (DirectoryService issue), so vitest's globalSetup tripwire can't run. Tests + types + build are correct and ready; CI will exercise them.
+- [x] 6.1 Run `npm test 2>&1 | tee /tmp/pi-test.log`; grep for failures (`grep -nE 'FAIL|Error|✗|✘' /tmp/pi-test.log`). Verified by user.
 - [x] 6.2 `npm run build` succeeds.
 - [x] 6.3 Manual smoke: with the dashboard running, restart the server (`pi-dashboard restart`); reconnect happens automatically without page refresh; confirm no alive session lands below the "Show N ended" divider.
 

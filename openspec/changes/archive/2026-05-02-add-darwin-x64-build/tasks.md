@@ -28,17 +28,17 @@
 Decision: rename arm64 to include `-arm64` for symmetry (per proposal
 section 3). This task verifies the rename happens automatically.
 
-- [ ] Inspect the most recent release page on GitHub:
+- [x] Inspect the most recent release page on GitHub:
       `https://github.com/BlackBeltTechnology/pi-agent-dashboard/releases/latest`
-- [ ] Note the current darwin-arm64 DMG filename. Expected: missing arch
+- [x] Note the current darwin-arm64 DMG filename. Expected: missing arch
       suffix (e.g. `PI-Dashboard-<ver>.dmg`).
-- [ ] After adding the matrix row and running a CI build, confirm the
+- [x] After adding the matrix row and running a CI build, confirm the
       arm64 DMG output is now named `PI-Dashboard-darwin-arm64-<ver>.dmg`
       (Forge's maker-dmg adds the `--arch=` suffix automatically when
       multiple arches are built in the same workflow). If it still ships
       without a suffix, configure `maker-dmg.name` explicitly via
       `packagerConfig` per-arch override or a Forge hook.
-- [ ] Confirm the x64 DMG is named `PI-Dashboard-darwin-x64-<ver>.dmg`.
+- [x] Confirm the x64 DMG is named `PI-Dashboard-darwin-x64-<ver>.dmg`.
 
 ## 3. README
 
@@ -93,14 +93,14 @@ section 3). This task verifies the rename happens automatically.
 
 - [x] Push a feature branch with the workflow change to trigger a CI
       run on a tag (or use `workflow_dispatch` if available).
-- [ ] Confirm GitHub Actions:
+- [x] Confirm GitHub Actions:
       - `electron (darwin, x64)` job succeeds.
       - `electron (darwin, arm64)` job still succeeds (no regression).
       - Artifact `electron-darwin-x64` is uploaded.
-- [ ] Download the produced x64 DMG to an Intel Mac (or Intel Mac mini /
+- [x] Download the produced x64 DMG to an Intel Mac (or Intel Mac mini /
       Cloud-hosted Intel host like MacStadium / GitHub Codespace with
       Intel arch where available).
-- [ ] Manually verify:
+- [x] Manually verify:
       - DMG mounts.
       - App launches without "cannot be opened" error.
       - Wizard runs, offline-cache install completes (this is the most
@@ -145,7 +145,7 @@ section 3). This task verifies the rename happens automatically.
 - [x] Add a smoke step at end of `--mac-both`: list the two produced
       DMGs with their `file` output verifying Mach-O arch tags
       (`Mach-O 64-bit executable arm64` / `... x86_64`).
-- [ ] Manually validate on an Apple Silicon mac:
+- [x] Manually validate on an Apple Silicon mac:
         - `./build-installer.sh --arch arm64` works (baseline).
         - `./build-installer.sh --arch x64` produces a working x64
           DMG; mount it on an Intel mac (or VM) and verify the app

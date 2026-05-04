@@ -82,4 +82,6 @@ This change scopes Section 6 to **import-path updates only**: every `import` of 
 - [ ] 10.2 (Manual smoke test — deferred to user verification) `pi-dashboard restart` and manually exercise: launch a flow → verify badge appears → click into agent detail → verify architect view → flow completes → verify summary footer renders → dismiss → verify session card returns to non-flow state. Behavior must be identical to pre-extraction (this change moves files but does not migrate JSX to slots).
 - [x] 10.3 `openspec validate extract-flows-as-plugin --strict` passes.
 - [x] 10.4 `openspec status --change extract-flows-as-plugin` reports 4/4 artifacts complete.
-- [ ] 10.5 (Defer to user) Open a follow-up change `migrate-flows-jsx-to-slots` capturing the deferred Section 6 JSX migration / Section 7 fallback guardrail / Section 8.2 disabled-plugin test / Section 8.3 sticky-stack regression test work.
+- [x] 10.5 Follow-up changes opened:
+  - `openspec/changes/migrate-flows-jsx-to-slots/` — session-card slots (badge + action-bar) and the predicate-emission gap. Pre-existing; addresses the parallel `wire-plugin-registry-into-shell` deferral.
+  - `openspec/changes/migrate-flows-content-slots/` — NEW. Richer slots: `content-header-sticky` (FlowArchitect + FlowDashboard), `content-view` (FlowAgentDetail, FlowArchitectDetail, FlowYamlPreview), `content-inline-footer` (FlowSummary), plus `/flows*` command-router extraction. Includes Section 7 slot-fallback guardrail and Section 8.2/8.3 tests.

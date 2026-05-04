@@ -29,22 +29,13 @@
   "files": [
     "src/"
   ],
+  "//pi-dashboard-plugin-deferred-claims": "session-card-badge (FlowActivityBadge) and session-card-action-bar (SessionFlowActions) are deferred until migrate-flows-jsx-to-slots adapts those components to accept {session} and pull app state from context. Until then they remain wired via direct JSX in SessionCard.tsx.",
   "pi-dashboard-plugin": {
     "id": "flows",
     "displayName": "Flows",
     "priority": 100,
     "client": "./src/client/index.tsx",
-    "claims": [
-      {
-        "slot": "session-card-badge",
-        "component": "FlowActivityBadge",
-        "predicate": "hasActiveFlow"
-      },
-      {
-        "slot": "session-card-action-bar",
-        "component": "SessionFlowActions"
-      }
-    ]
+    "claims": []
   },
   "peerDependencies": {
     "react": ">=18.0.0",

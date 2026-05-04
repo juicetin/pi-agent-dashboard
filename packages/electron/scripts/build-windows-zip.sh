@@ -47,6 +47,15 @@ node packages/electron/scripts/bundle-server.mjs
 # Required by the Electron wizard to install pi/openspec/tsx on first run.
 # Mirrors the Node download step in docker-make.sh.
 NODE_DIR="$ELECTRON_DIR/resources/node"
+# Skip download only if the node tree is COMPLETE. minizlib's nested
+# package.json is the canary: bash unzip silently drops it on macOS, leaving
+# node.exe present but the npm install path broken. If the canary is missing,
+# wipe the tree and re-extract with the lossless extractor below.
+MINIZLIB_CANARY="$NODE_DIR/node_modules/npm/node_modules/minizlib/dist/commonjs/package.json"
+if [ -f "$NODE_DIR/node.exe" ] && [ ! -f "$MINIZLIB_CANARY" ]; then
+  echo "--- Step 1b: existing resources/node is incomplete (minizlib canary missing), wiping for re-extraction"
+  rm -rf "$NODE_DIR"
+fi
 if [ ! -f "$NODE_DIR/node.exe" ]; then
   echo "--- Step 1b: downloading Windows Node.js $NODE_VERSION ($ARCH) for resources/node/"
   NODE_ZIP="/tmp/node-win-$ARCH.zip"

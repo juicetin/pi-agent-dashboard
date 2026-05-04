@@ -130,9 +130,10 @@ try {
     console.log(`  using bundled npm: ${bundledNodeExe} ${bundledNpmCli}`);
   } else if (existsSync(bundledNodeExe) && !targetMatchesHost) {
     console.log(
-      `  bundled npm present but target=${TARGET_OS} ≠ host=${process.platform}; " +
-      "using system npm (cache integrity hashes are universal, but cache keys may " +
-      "differ from the runtime npm — build on a matching host or in Docker for parity).`,
+      `  bundled npm present but target=${TARGET_OS} ≠ host=${process.platform}; using system npm`,
+    );
+    console.log(
+      `  (cache integrity hashes are universal, but cache keys may differ from runtime npm — build on matching host or in Docker for parity)`,
     );
   } else {
     console.log(`  bundled npm not found, using system npm`);

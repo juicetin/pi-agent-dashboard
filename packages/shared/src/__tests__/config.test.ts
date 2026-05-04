@@ -471,3 +471,51 @@ describe("loadConfig reattachPlacement", () => {
     expect(content.reattachPlacement).toBeUndefined();
   });
 });
+
+describe("loadConfig spawnRegisterTimeoutMs", () => {
+  let testDir: string;
+  let configFile: string;
+  let origHome: string;
+
+  beforeEach(() => {
+    testDir = path.join(os.tmpdir(), `test-config-srt-${Date.now()}`);
+    fs.mkdirSync(path.join(testDir, ".pi", "dashboard"), { recursive: true });
+    configFile = path.join(testDir, ".pi", "dashboard", "config.json");
+    origHome = process.env.HOME!;
+    process.env.HOME = testDir;
+  });
+
+  afterEach(() => {
+    process.env.HOME = origHome;
+    if (fs.existsSync(testDir)) fs.rmSync(testDir, { recursive: true });
+  });
+
+  it("defaults to 30000 when field is omitted", () => {
+    expect(loadConfig().spawnRegisterTimeoutMs).toBe(30000);
+  });
+
+  it("preserves in-range value", () => {
+    fs.writeFileSync(configFile, JSON.stringify({ spawnRegisterTimeoutMs: 45000 }));
+    expect(loadConfig().spawnRegisterTimeoutMs).toBe(45000);
+  });
+
+  it("clamps below-range value to 5000", () => {
+    fs.writeFileSync(configFile, JSON.stringify({ spawnRegisterTimeoutMs: 1000 }));
+    expect(loadConfig().spawnRegisterTimeoutMs).toBe(5000);
+  });
+
+  it("clamps above-range value to 120000", () => {
+    fs.writeFileSync(configFile, JSON.stringify({ spawnRegisterTimeoutMs: 999999 }));
+    expect(loadConfig().spawnRegisterTimeoutMs).toBe(120000);
+  });
+
+  it("falls back to default for non-number string", () => {
+    fs.writeFileSync(configFile, JSON.stringify({ spawnRegisterTimeoutMs: "thirty" }));
+    expect(loadConfig().spawnRegisterTimeoutMs).toBe(30000);
+  });
+
+  it("falls back to default for null", () => {
+    fs.writeFileSync(configFile, JSON.stringify({ spawnRegisterTimeoutMs: null }));
+    expect(loadConfig().spawnRegisterTimeoutMs).toBe(30000);
+  });
+});

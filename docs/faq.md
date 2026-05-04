@@ -1635,3 +1635,7 @@ Cross-refs:
 - docs/architecture.md — Bootstrap & First Run → Managed Node runtime
 - packages/shared/src/bootstrap-install.ts (`installManagedNode`)
 - packages/shared/src/platform/managed-node-path.ts (`prependManagedNodeToPath`)
+
+## How do I see why a session spawn failed?
+
+Check banner in folder card (shows code, hint, preflight reasons, stderr tail). Open Settings → General → Recent Spawn Failures for history. Raw log at `~/.pi/dashboard/sessions/spawn-failures.log`. Fetch last N via `GET /api/spawn-failures?limit=N`.

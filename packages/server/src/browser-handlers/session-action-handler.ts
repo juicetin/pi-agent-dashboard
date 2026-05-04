@@ -4,7 +4,11 @@
 import type { BrowserToServerMessage } from "@blackbelt-technology/pi-dashboard-shared/browser-protocol.js";
 import type { BrowserHandlerContext } from "./handler-context.js";
 import { spawnPiSession } from "../process-manager.js";
+import { ToolResolver } from "@blackbelt-technology/pi-dashboard-shared/platform/binary-lookup.js";
 import { loadConfig } from "@blackbelt-technology/pi-dashboard-shared/config.js";
+import { preflightSpawn } from "../spawn-preflight.js";
+import { getSpawnRegisterWatchdog } from "../spawn-register-watchdog.js";
+import { appendSpawnFailure } from "../spawn-failure-log.js";
 import { createBranchedSessionFile } from "../session-file-reader.js";
 import {
   killPidWithGroup,
@@ -313,6 +317,24 @@ export async function handleSpawnSession(
     pendingAttachRegistry?.enqueue(msg.cwd, msg.attachProposal);
   }
 
+  // ── Preflight: fast synchronous checks before spawning. See change: spawn-failure-diagnostics.
+  const preflightResolver = new ToolResolver({ processExecPath: process.execPath, useLoginShell: false });
+  const preflight = preflightSpawn(msg.cwd, { resolver: preflightResolver });
+  if (!preflight.ok) {
+    const message = preflight.reasons.map((r) => r.message).join("; ");
+    sendTo(ws, { type: "spawn_result", cwd: msg.cwd, success: false, message });
+    sendTo(ws, { type: "spawn_error", cwd: msg.cwd, strategy, message, code: "PREFLIGHT_FAILED", reasons: preflight.reasons });
+    appendSpawnFailure({
+      ts: new Date().toISOString(),
+      cwd: msg.cwd,
+      strategy,
+      code: "PREFLIGHT_FAILED",
+      message,
+      reasons: preflight.reasons,
+    });
+    return;
+  }
+
   // Catch both thrown exceptions and { success: false } results; surface as
   // spawn_error so the UI can render a retryable banner instead of failing
   // silently. Previous behaviour left the user staring at an empty state
@@ -327,13 +349,49 @@ export async function handleSpawnSession(
     }
     sendTo(ws, { type: "spawn_result", cwd: msg.cwd, success: spawnResult.success, message: spawnResult.message });
     if (!spawnResult.success) {
-      sendTo(ws, { type: "spawn_error", cwd: msg.cwd, strategy, message: spawnResult.message });
+      sendTo(ws, {
+        type: "spawn_error",
+        cwd: msg.cwd,
+        strategy,
+        message: spawnResult.message,
+        ...(spawnResult.code ? { code: spawnResult.code } : {}),
+        ...(spawnResult.stderr ? { stderr: spawnResult.stderr } : {}),
+      });
+      appendSpawnFailure({
+        ts: new Date().toISOString(),
+        cwd: msg.cwd,
+        strategy,
+        code: spawnResult.code ?? "SPAWN_ERRNO",
+        message: spawnResult.message,
+        ...(spawnResult.stderr ? { stderrTail: spawnResult.stderr } : {}),
+      });
+    } else {
+      // Arm watchdog for every successful spawn. See change: spawn-failure-diagnostics.
+      const watchdog = getSpawnRegisterWatchdog();
+      watchdog.arm({
+        pid: spawnResult.pid,
+        cwd: msg.cwd,
+        mechanism: strategy as import("@blackbelt-technology/pi-dashboard-shared/platform/spawn-mechanism.js").SpawnMechanism,
+        logPath: spawnResult.logPath,
+        // Read-on-arm: pass current config value so a Settings change takes effect
+        // on the next spawn without a server restart. See change: spawn-failure-diagnostics (fix W1).
+        timeoutMs: config.spawnRegisterTimeoutMs,
+        ws,
+      });
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     const stderr = err instanceof Error && "stderr" in err ? String((err as { stderr: unknown }).stderr).slice(-2048) : undefined;
     sendTo(ws, { type: "spawn_result", cwd: msg.cwd, success: false, message });
-    sendTo(ws, { type: "spawn_error", cwd: msg.cwd, strategy, message, stderr });
+    sendTo(ws, { type: "spawn_error", cwd: msg.cwd, strategy, message, code: "SPAWN_ERRNO", stderr });
+    appendSpawnFailure({
+      ts: new Date().toISOString(),
+      cwd: msg.cwd,
+      strategy,
+      code: "SPAWN_ERRNO",
+      message,
+      ...(stderr ? { stderrTail: stderr } : {}),
+    });
   }
 }
 

@@ -15,7 +15,7 @@ Five gaps:
 **Goals:**
 - Every `spawnPiSession` failure return path SHALL set a structured `code`.
 - Windows-headless immediate-exit SHALL return the tail of pi's stderr in the result.
-- The UI SHALL receive a distinct event when a spawned PID never registers within 10 s.
+- The UI SHALL receive a distinct event when a spawned PID never registers within the configured `spawnRegisterTimeoutMs` window (default 30 s, clamped 5–120 s).
 - A synchronous preflight gate SHALL run before spawn and refuse with classified reasons.
 - Failed spawns SHALL persist to a rolling log that the UI can fetch via REST.
 - Additive changes only — existing message strings, success cases, and event shapes preserved.
@@ -23,7 +23,7 @@ Five gaps:
 **Non-Goals:**
 - No retry/auto-recovery logic. Diagnostics only.
 - No Linux/macOS stderr-tail parity in this change. The Unix headless wrapper (`sh -c "tail -f /dev/null | pi"`) does not currently capture pi stderr to a file. Out of scope.
-- No new global config knobs (the 10 s watchdog window and 10 MB log cap are constants).
+- No new global config knobs beyond `spawnRegisterTimeoutMs` (the 10 MB log cap stays a constant).
 - No backfill of historical failures into the rolling log.
 - No UI redesign of the existing spawn-error banner — only additive fields rendered.
 
@@ -118,8 +118,9 @@ type SpawnError = { type: "spawn_error"; cwd: string; strategy: string; message:
                     code?: SpawnFailureCode;           // NEW
                     reasons?: PreflightReason[]; };    // NEW (only for PREFLIGHT_FAILED)
 
-// New
-type SpawnRegisterTimeout = { type: "spawn_register_timeout"; cwd: string; pid: number; stderrTail?: string };
+// New — pid optional (tmux/wt/wsl-tmux own the PID, not pi)
+type SpawnRegisterTimeout    = { type: "spawn_register_timeout";    cwd: string; pid?: number; stderrTail?: string };
+type SpawnRegisterRecovered  = { type: "spawn_register_recovered";  cwd: string; pid?: number };
 ```
 No version bump. Old clients ignore unknown fields/messages.
 
@@ -134,7 +135,7 @@ No version bump. Old clients ignore unknown fields/messages.
 
 - **PID reuse on the watchdog window** (R1, low). Mitigated by `cwd` co-storage; a stale fire is at worst a phantom banner the user dismisses. Not worth a second key.
 - **Stderr tail leaks paths/secrets** (R2, low). Pi's stderr already shows on the user's own log file; we're forwarding it to the same user's WebSocket. No new attack surface.
-- **10 s watchdog could be too short on slow hardware** (R3, medium). If user reports false positives, lift to a config field `spawnRegisterTimeoutMs` in a follow-up. Constant for v1 to avoid config sprawl.
+- **Watchdog window could be too short on slow hardware** (R3, medium). Mitigated by exposing `spawnRegisterTimeoutMs` in config (default 30 s, range 5–120 s) so users on slow disks / heavy AV can extend it without a code change.
 - **`spawn-failures.log` could leak user `cwd` paths** (R4, low). The file is under `~/.pi/dashboard/`, same trust boundary as `server.log`. No change in posture.
 - **Preflight adds 1–2 stat calls per spawn click** (R5, negligible). Sub-millisecond on local disk; user-perceptible only on a hung NFS mount, where the current spawn would also hang.
 - **Tail of NDJSON not crash-safe on partial writes** (R6, low). `appendSpawnFailure` writes one `\n`-terminated line via `fs.appendFileSync`. Power-loss could leave a partial last line; `readSpawnFailures` skips malformed lines. Acceptable for diagnostics.

@@ -9,7 +9,29 @@ import { encodeFolderPath } from "../lib/folder-encoding.js";
 import type { TerminalSession } from "@blackbelt-technology/pi-dashboard-shared/terminal-types.js";
 import type { EditorInstanceStatus } from "@blackbelt-technology/pi-dashboard-shared/editor-types.js";
 import type { DiscoveredServerInfo } from "../components/ServerSelector.js";
-import type { ServerToBrowserMessage } from "@blackbelt-technology/pi-dashboard-shared/browser-protocol.js";
+import type {
+  ServerToBrowserMessage,
+  SpawnFailureCode,
+  PreflightReason,
+} from "@blackbelt-technology/pi-dashboard-shared/browser-protocol.js";
+
+/**
+ * Rich spawn error detail stored per cwd.
+ * `kind: "error"` is a normal spawn failure; `kind: "timeout"` is a
+ * spawn_register_timeout (pi started but never connected).
+ * See change: spawn-failure-diagnostics.
+ */
+export interface SpawnErrorDetail {
+  kind: "error" | "timeout";
+  message: string;
+  code?: SpawnFailureCode;
+  reasons?: PreflightReason[];
+  stderr?: string;
+  strategy?: string;
+  pid?: number;
+  /** Effective watchdog timeout in ms, for rendering "30s" in the timeout banner. */
+  timeoutMs?: number;
+}
 import { applyPluginConfigUpdate } from "@blackbelt-technology/dashboard-plugin-runtime/context";
 
 export interface MessageHandlerSetters {
@@ -27,7 +49,7 @@ export interface MessageHandlerSetters {
   setTerminals: React.Dispatch<React.SetStateAction<Map<string, TerminalSession>>>;
   setEditorStatuses: React.Dispatch<React.SetStateAction<Map<string, { id: string; status: EditorInstanceStatus }>>>;
   setDiscoveredServers: React.Dispatch<React.SetStateAction<DiscoveredServerInfo[]>>;
-  setSpawnErrors: React.Dispatch<React.SetStateAction<Map<string, string>>>;
+  setSpawnErrors: React.Dispatch<React.SetStateAction<Map<string, SpawnErrorDetail>>>;
   setResumeErrors: React.Dispatch<React.SetStateAction<Map<string, string>>>;
 }
 
@@ -293,12 +315,16 @@ export function useMessageHandler(
         setSpawnResult({ success: msg.success, message: msg.message });
         if (!msg.success) {
           clearSpawningCwd(msg.cwd);
+          // Leave the spawn_error message to fill the rich detail; set a placeholder if not yet present.
           setSpawnErrors((prev) => {
             const next = new Map(prev);
-            next.set(msg.cwd, msg.message ?? "Spawn failed");
+            if (!next.has(msg.cwd)) {
+              next.set(msg.cwd, { kind: "error", message: msg.message ?? "Spawn failed" });
+            }
             return next;
           });
         } else {
+          // Successful spawn clears error AND timeout banners for this cwd.
           setSpawnErrors((prev) => {
             const next = new Map(prev);
             next.delete(msg.cwd);
@@ -311,11 +337,47 @@ export function useMessageHandler(
         // Enriches the spawn_result error with strategy + optional stderr tail.
         // Carried as its own message so esbuild preserves this switch case in
         // production builds (per AGENTS.md ServerToBrowserMessage invariant).
+        // See change: spawn-failure-diagnostics for new code/reasons/stderr fields.
         clearSpawningCwd(msg.cwd);
-        const detail = msg.stderr ? `${msg.message}\n\u2014 stderr \u2014\n${msg.stderr}` : msg.message;
         setSpawnErrors((prev) => {
           const next = new Map(prev);
-          next.set(msg.cwd, `[${msg.strategy}] ${detail}`);
+          next.set(msg.cwd, {
+            kind: "error",
+            message: msg.message,
+            code: msg.code,
+            reasons: msg.reasons,
+            stderr: msg.stderr,
+            strategy: msg.strategy,
+          });
+          return next;
+        });
+        break;
+      }
+
+      case "spawn_register_timeout": {
+        // Pi started but never called session_register within timeout window.
+        // See change: spawn-failure-diagnostics.
+        setSpawnErrors((prev) => {
+          const next = new Map(prev);
+          next.set(msg.cwd, {
+            kind: "timeout",
+            message: "",
+            pid: msg.pid,
+            stderr: msg.stderrTail,
+            timeoutMs: msg.timeoutMs,
+          });
+          return next;
+        });
+        break;
+      }
+
+      case "spawn_register_recovered": {
+        // Pi finally registered after the watchdog fired — auto-clear the timeout banner.
+        // See change: spawn-failure-diagnostics.
+        setSpawnErrors((prev) => {
+          const next = new Map(prev);
+          const existing = next.get(msg.cwd);
+          if (existing?.kind === "timeout") next.delete(msg.cwd);
           return next;
         });
         break;

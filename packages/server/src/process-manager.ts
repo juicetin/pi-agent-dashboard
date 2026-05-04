@@ -15,7 +15,7 @@
  *
  * See change: consolidate-windows-spawn-and-platform-handlers.
  */
-import { existsSync, mkdirSync, openSync, closeSync } from "node:fs";
+import { existsSync, mkdirSync, openSync, closeSync, readFileSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import type { ChildProcess } from "@blackbelt-technology/pi-dashboard-shared/platform/exec.js";
@@ -35,6 +35,7 @@ import {
   type SpawnMechanism,
   type UserSpawnStrategy,
 } from "@blackbelt-technology/pi-dashboard-shared/platform/spawn-mechanism.js";
+import type { SpawnFailureCode } from "@blackbelt-technology/pi-dashboard-shared/browser-protocol.js";
 
 // ── Resolver seam (injectable for tests) ────────────────────────────────────
 
@@ -65,6 +66,12 @@ export interface SpawnResult {
   process?: ChildProcess;
   /** True when spawned from the dashboard (for writing session meta) */
   dashboardSpawned?: boolean;
+  /** Structured failure classifier. Set on every { success: false } path. See change: spawn-failure-diagnostics. */
+  code?: SpawnFailureCode;
+  /** Tail of pi's stderr log (Windows headless PI_CRASHED only). See change: spawn-failure-diagnostics. */
+  stderr?: string;
+  /** Path to the per-session stderr log (Windows headless). Forwarded to watchdog. See change: spawn-failure-diagnostics. */
+  logPath?: string;
 }
 
 /**
@@ -269,7 +276,7 @@ export async function spawnPiSession(
   options?: SessionOptions & { electronMode?: boolean },
 ): Promise<SpawnResult> {
   if (!existsSync(cwd)) {
-    return { success: false, message: `Directory does not exist: ${cwd}` };
+    return { success: false, code: "DIR_MISSING", message: `Directory does not exist: ${cwd}` };
   }
 
   const mechanism = chooseMechanism(options, options?.electronMode ?? false);
@@ -295,7 +302,7 @@ function spawnTmux(cwd: string, options?: SessionOptions): SpawnResult {
       message: `Pi session spawned in tmux (${exists ? "new window" : "new session"})`,
     };
   } catch (err: any) {
-    return { success: false, message: `Failed to spawn session: ${err.message}` };
+    return { success: false, code: "TMUX_MISSING", message: `Failed to spawn session: ${err.message}` };
   }
 }
 
@@ -305,18 +312,18 @@ function spawnWslTmux(cwd: string, options?: SessionOptions): SpawnResult {
     execSync(cmd, { stdio: "ignore" });
     return { success: true, dashboardSpawned: true, message: "Pi session spawned via WSL tmux" };
   } catch (err: any) {
-    return { success: false, message: `Failed to spawn via WSL tmux: ${err.message}` };
+    return { success: false, code: "TMUX_MISSING", message: `Failed to spawn via WSL tmux (wsl-tmux mechanism): ${err.message}` };
   }
 }
 
 async function spawnWt(cwd: string, options?: SessionOptions): Promise<SpawnResult> {
   const wt = resolver.which("wt");
   if (!wt) {
-    return { success: false, message: "Windows Terminal (wt.exe) not found" };
+    return { success: false, code: "WT_MISSING", message: "Windows Terminal (wt.exe) not found" };
   }
   const piCmd = resolvePiCommand();
   if (!piCmd) {
-    return { success: false, message: `pi binary not found. Checked: ${MANAGED_BIN} and system PATH.` };
+    return { success: false, code: "PI_NOT_FOUND", message: `pi binary not found. Checked: ${MANAGED_BIN} and system PATH.` };
   }
 
   const piArgv = [...piCmd, ...buildInteractivePiArgs(options)];
@@ -330,7 +337,7 @@ async function spawnWt(cwd: string, options?: SessionOptions): Promise<SpawnResu
   });
 
   if (!r.ok) {
-    return { success: false, message: `Failed to launch Windows Terminal: ${r.error}` };
+    return { success: false, code: "SPAWN_ERRNO", message: `Failed to launch Windows Terminal: ${r.error}` };
   }
 
   return {
@@ -347,7 +354,7 @@ async function spawnHeadless(cwd: string, options?: SessionOptions): Promise<Spa
   const env = buildSpawnEnv();
   const piCmd = resolvePiCommand();
   if (!piCmd) {
-    return { success: false, message: `pi binary not found. Checked: ${MANAGED_BIN} and system PATH.` };
+    return { success: false, code: "PI_NOT_FOUND", message: `pi binary not found. Checked: ${MANAGED_BIN} and system PATH.` };
   }
   const [bin, ...prefixArgs] = piCmd;
 
@@ -369,7 +376,7 @@ async function spawnHeadless(cwd: string, options?: SessionOptions): Promise<Spa
     env,
   });
   if (!r.ok) {
-    return { success: false, message: `Failed to spawn headless (Unix): ${r.error}` };
+    return { success: false, code: "SPAWN_ERRNO", message: `Failed to spawn headless (Unix): ${r.error}` };
   }
   return {
     success: true,
@@ -410,6 +417,7 @@ async function spawnHeadlessDetached(
   if (bin.toLowerCase().endsWith(".cmd") || bin.toLowerCase().endsWith(".bat")) {
     return {
       success: false,
+      code: "WIN_PI_CMD_ONLY",
       message:
         "Windows pi spawn requires node.exe + cli.js (managed install). " +
         "Found only pi.cmd on PATH. Run the dashboard setup wizard or " +
@@ -478,6 +486,8 @@ async function spawnHeadlessDetached(
   if (!r.ok || !r.process || !r.pid) {
     return {
       success: false,
+      code: "SPAWN_ERRNO",
+      logPath: logFd !== undefined ? logPath : undefined,
       message: `Failed to spawn pi: ${r.error ?? "unknown error"}. Command: ${cmdForLog}`,
     };
   }
@@ -486,8 +496,16 @@ async function spawnHeadlessDetached(
   // but still catch immediate crashes (missing modules, config errors).
   const gate = await waitForNoCrash({ child: r.process, windowMs: 300 });
   if (!gate.ok) {
+    // Read last 4 KB of stderr log for diagnostic forwarding. See change: spawn-failure-diagnostics.
+    let stderrTail: string | undefined;
+    if (logFd !== undefined) {
+      stderrTail = readLogTail(logPath);
+    }
     return {
       success: false,
+      code: "PI_CRASHED",
+      logPath: logFd !== undefined ? logPath : undefined,
+      stderr: stderrTail,
       message:
         `Pi process exited immediately (code ${gate.exitCode}). ` +
         `See ${logPath} for details.\nCommand: ${cmdForLog}`,
@@ -500,5 +518,25 @@ async function spawnHeadlessDetached(
     message: `Pi session spawned headless (pid ${r.pid})`,
     pid: r.pid,
     process: r.process,
+    logPath: logFd !== undefined ? logPath : undefined,
   };
+}
+
+/**
+ * Read last `maxBytes` bytes of `filePath`, stripping leading UTF-8 continuation bytes.
+ * Returns `undefined` on any error or if file is empty.
+ * See change: spawn-failure-diagnostics.
+ */
+function readLogTail(filePath: string, maxBytes = 4096): string | undefined {
+  try {
+    const buf = readFileSync(filePath);
+    if (!buf.length) return undefined;
+    const slice = buf.length <= maxBytes ? buf : buf.slice(buf.length - maxBytes);
+    // Strip leading UTF-8 continuation bytes (0x80..0xBF)
+    let start = 0;
+    while (start < slice.length && (slice[start]! & 0xC0) === 0x80) start++;
+    return slice.slice(start).toString("utf-8");
+  } catch {
+    return undefined;
+  }
 }

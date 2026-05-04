@@ -160,6 +160,12 @@ export interface DashboardConfig {
   /** Persisted list of known remote servers */
   knownServers: KnownServer[];
   /**
+   * How long (ms) to wait for a spawned pi session to send `session_register`
+   * before emitting a timeout warning. Default 30000 (30s). Clamped [5000, 120000].
+   * See change: spawn-failure-diagnostics.
+   */
+  spawnRegisterTimeoutMs: number;
+  /**
    * Per-plugin config namespaces. Reserved top-level key.
    * Each plugin's config lives at plugins.<id>.*
    * Plugin-shaped legacy top-level keys (e.g. openspec.*) stay at top-level
@@ -177,6 +183,13 @@ const VALID_SPAWN_STRATEGIES: SpawnStrategy[] = ["tmux", "headless"];
 
 /** Default ask_user prompt timeout: 300 seconds (5 minutes). */
 export const DEFAULT_ASK_USER_PROMPT_TIMEOUT_SECONDS = 300;
+
+/** Default + clamp for spawnRegisterTimeoutMs. See change: spawn-failure-diagnostics. */
+export const DEFAULT_SPAWN_REGISTER_TIMEOUT_MS = 30000;
+export function clampSpawnRegisterTimeoutMs(v: unknown): number {
+  if (typeof v !== "number" || isNaN(v)) return DEFAULT_SPAWN_REGISTER_TIMEOUT_MS;
+  return Math.max(5000, Math.min(120000, v));
+}
 
 const DEFAULTS: DashboardConfig = {
   plugins: {},
@@ -199,6 +212,7 @@ const DEFAULTS: DashboardConfig = {
   knownServers: [],
   askUserPromptTimeoutSeconds: DEFAULT_ASK_USER_PROMPT_TIMEOUT_SECONDS,
   reattachPlacement: DEFAULT_REATTACH_PLACEMENT,
+  spawnRegisterTimeoutMs: 30000,
 };
 
 /**
@@ -399,6 +413,7 @@ export function loadConfig(): DashboardConfig {
       askUserPromptTimeoutSeconds: typeof parsed.askUserPromptTimeoutSeconds === "number"
         ? parsed.askUserPromptTimeoutSeconds
         : defaults.askUserPromptTimeoutSeconds,
+      spawnRegisterTimeoutMs: clampSpawnRegisterTimeoutMs(parsed.spawnRegisterTimeoutMs),
     };
 
     // Compute resolvedTrustedNetworks: merge trustedNetworks + auth.bypassHosts

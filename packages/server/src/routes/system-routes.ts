@@ -19,6 +19,7 @@ import { spawn } from "@blackbelt-technology/pi-dashboard-shared/platform/exec.j
 import path from "node:path";
 import os from "node:os";
 import { localhostGuard, netmaskToCidrBits, networkAddress } from "../localhost-guard.js";
+import { readSpawnFailures } from "../spawn-failure-log.js";
 import { getPluginStatusStore } from "@blackbelt-technology/dashboard-plugin-runtime/server";
 import type { NetworkInterface } from "@blackbelt-technology/pi-dashboard-shared/rest-api.js";
 
@@ -269,6 +270,18 @@ export function registerSystemRoutes(
   );
 
   // Network interfaces for trusted networks UI (localhost-only for security)
+  // GET /api/spawn-failures — rolling log of failed spawn attempts. See change: spawn-failure-diagnostics.
+  fastify.get<{ Querystring: { limit?: string } }>(
+    "/api/spawn-failures",
+    async (request) => {
+      const rawLimit = request.query.limit;
+      const parsed = rawLimit !== undefined ? parseInt(rawLimit, 10) : NaN;
+      const limit = Number.isNaN(parsed) ? 50 : parsed;
+      const entries = readSpawnFailures(limit);
+      return { entries };
+    },
+  );
+
   fastify.get(
     "/api/network-interfaces",
     { preHandler: localhostGuard },

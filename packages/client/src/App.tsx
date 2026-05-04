@@ -81,9 +81,18 @@ import {
   ContentInlineFooterSlot,
 } from "@blackbelt-technology/dashboard-plugin-runtime";
 import { createSlotRegistry } from "@blackbelt-technology/dashboard-plugin-runtime";
+import { PLUGIN_REGISTRY } from "./generated/plugin-registry.js";
 
-// Empty registry until real plugins register claims at build time
+// Populate the slot registry from the build-time generated plugin manifest.
+// PLUGIN_REGISTRY is `[]` on a fresh checkout (committed stub) — slot consumers
+// then render zero contributions, which is fine. The vite plugin overwrites the
+// generated file on dev start and on every build.
 const _pluginRegistry = createSlotRegistry();
+for (const entry of PLUGIN_REGISTRY) {
+  for (const claim of entry.claims) {
+    _pluginRegistry.addClaim(claim);
+  }
+}
 
 const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
 const wsPort = window.location.port ? `:${window.location.port}` : "";
@@ -195,7 +204,7 @@ export default function App() {
   const [modelsMap, setModelsMap] = useState<Map<string, ModelInfo[]>>(new Map());
   const [rolesMap, setRolesMap] = useState<Map<string, RoleInfo>>(new Map());
   const [spawnResult, setSpawnResult] = useState<{ success: boolean; message: string } | null>(null);
-  const [spawnErrors, setSpawnErrors] = useState<Map<string, string>>(new Map());
+  const [spawnErrors, setSpawnErrors] = useState<Map<string, import("./hooks/useMessageHandler.js").SpawnErrorDetail>>(new Map());
   const [resumeErrors, setResumeErrors] = useState<Map<string, string>>(new Map());
   const [spawningCwds, setSpawningCwds] = useState<Set<string>>(new Set());
   const spawningCwdsRef = useRef<Set<string>>(spawningCwds);

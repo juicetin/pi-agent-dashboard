@@ -10,7 +10,7 @@ import { ModelSelector } from "./ModelSelector.js";
 import { KnownServersSection } from "./KnownServersSection.js";
 import { NetworkDiscoverySection } from "./NetworkDiscoverySection.js";
 import { PackageBrowser } from "./PackageBrowser.js";
-import { ToolsSection } from "./ToolsSection.js";
+import { ToolsSection, SpawnFailuresSection } from "./ToolsSection.js";
 import { PackageInstallConfirmDialog } from "./PackageInstallConfirmDialog.js";
 import { PackageReadmeDialog } from "./PackageReadmeDialog.js";
 import { useInstalledPackages } from "../hooks/useInstalledPackages.js";
@@ -66,6 +66,8 @@ interface Config {
   reattachPlacement?: "preserve" | "streaming-only" | "always";
   /** Timeout for ask_user prompts in seconds; -1 (or <=0) disables timeout. */
   askUserPromptTimeoutSeconds?: number;
+  /** How long (ms) to wait for spawned pi to connect before a warning. Default 30000. See change: spawn-failure-diagnostics. */
+  spawnRegisterTimeoutMs?: number;
   tunnel: { enabled: boolean };
   devBuildOnReload: boolean;
   defaultModel: string;
@@ -109,6 +111,7 @@ export function SettingsPanel({ availableModels }: { availableModels?: Array<{ p
   const [originalLlmProviders, setOriginalLlmProviders] = useState<LlmProvider[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [spawnTimeoutInvalid, setSpawnTimeoutInvalid] = useState(false);
   const [restarting, setRestarting] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error" | "warn"; text: string } | null>(null);
   const [activeTab, setActiveTab] = useState(() => {
@@ -164,6 +167,9 @@ export function SettingsPanel({ availableModels }: { availableModels?: Array<{ p
     }
     if (config.askUserPromptTimeoutSeconds !== original.askUserPromptTimeoutSeconds) {
       partial.askUserPromptTimeoutSeconds = config.askUserPromptTimeoutSeconds ?? 300;
+    }
+    if (config.spawnRegisterTimeoutMs !== original.spawnRegisterTimeoutMs) {
+      partial.spawnRegisterTimeoutMs = config.spawnRegisterTimeoutMs ?? 30000;
     }
     if (config.tunnel.enabled !== original.tunnel.enabled) partial.tunnel = { enabled: config.tunnel.enabled };
     if (config.devBuildOnReload !== original.devBuildOnReload) partial.devBuildOnReload = config.devBuildOnReload;
@@ -348,7 +354,7 @@ export function SettingsPanel({ availableModels }: { availableModels?: Array<{ p
         </button>
         <button
           onClick={handleSave}
-          disabled={saving || restarting}
+          disabled={saving || restarting || spawnTimeoutInvalid}
           data-testid="save-btn"
           className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium disabled:opacity-50"
         >
@@ -437,6 +443,32 @@ export function SettingsPanel({ availableModels }: { availableModels?: Array<{ p
                     How long an interactive ask_user prompt waits for an answer before auto-cancelling. Use <code>-1</code> (or <code>0</code>) to wait forever. Default: 300 (5&nbsp;min).
                   </p>
                 </div>
+                <div>
+                  <div className="flex items-center justify-between">
+                    <label className="text-sm text-[var(--text-secondary)]">Spawn register timeout (ms)</label>
+                    <input
+                      type="number"
+                      className={`w-28 bg-[var(--bg-secondary)] border rounded px-2 py-1 text-sm text-[var(--text-primary)] text-right ${
+                        spawnTimeoutInvalid
+                          ? "border-red-500 text-red-400"
+                          : "border-[var(--border-secondary)]"
+                      }`}
+                      value={config.spawnRegisterTimeoutMs ?? 30000}
+                      onChange={(e) => {
+                        const v = parseInt(e.target.value, 10);
+                        const invalid = isNaN(v) || v < 5000 || v > 120000;
+                        setSpawnTimeoutInvalid(invalid);
+                        if (!invalid) update((c) => { c.spawnRegisterTimeoutMs = v; });
+                      }}
+                    />
+                  </div>
+                  {spawnTimeoutInvalid && (
+                    <p className="mt-1 text-xs text-red-400">Must be an integer between 5000 and 120000.</p>
+                  )}
+                  <p className="mt-1 text-xs text-[var(--text-tertiary)]">
+                    How long to wait for a spawned pi session to connect before showing a warning. Default 30000 (30s). Range 5000–120000.
+                  </p>
+                </div>
                 <div className="flex items-center justify-between">
                   <label className="text-sm text-[var(--text-secondary)]">Default Model</label>
                   <ModelSelector
@@ -456,6 +488,7 @@ export function SettingsPanel({ availableModels }: { availableModels?: Array<{ p
               </Section>
 
               <ToolsSection />
+              <SpawnFailuresSection />
               {/* Plugin slot: settings-section (general tab) */}
               <SettingsSectionSlot tab="general" />
             </>

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { SpawnErrorBanner } from "./SpawnErrorBanner.js";
 import { getApiBase } from "../lib/api-context.js";
 import { useLocation } from "wouter";
 import { Icon } from "@mdi/react";
@@ -104,8 +105,8 @@ interface Props {
   headerExtra?: React.ReactNode;
   /** Set of session IDs that have an active error */
   errorSessionIds?: Set<string>;
-  /** Per-workspace spawn errors (cwd → message) */
-  spawnErrors?: Map<string, string>;
+  /** Per-workspace spawn errors (cwd → detail). See change: spawn-failure-diagnostics. */
+  spawnErrors?: Map<string, import("../hooks/useMessageHandler.js").SpawnErrorDetail>;
   /** Dismiss a spawn error for a workspace */
   onDismissSpawnError?: (cwd: string) => void;
   /** Per-session resume errors (sessionId → message) */
@@ -503,18 +504,12 @@ export function SessionList({ sessions, selectedId, onSelect, contextUsageMap, o
         {/* Session + terminal cards — animated collapse */}
         <div className={`group-collapse ${isCollapsed ? "collapsed" : "expanded"}`}>
         <div className="space-y-1 pt-1">
-          {/* Spawn error banner */}
+          {/* Spawn error banner — see change: spawn-failure-diagnostics */}
           {spawnErrors?.get(group.cwd) && (
-            <div data-testid="spawn-error-banner" className="mx-2 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2 flex items-center gap-2 text-xs text-red-300">
-              <span className="flex-1">Spawn failed: {spawnErrors.get(group.cwd)}</span>
-              {onDismissSpawnError && (
-                <button
-                  data-testid="spawn-error-dismiss"
-                  onClick={() => onDismissSpawnError(group.cwd)}
-                  className="text-red-400 hover:text-red-300 shrink-0"
-                >✕</button>
-              )}
-            </div>
+            <SpawnErrorBanner
+              detail={spawnErrors.get(group.cwd)!}
+              onDismiss={onDismissSpawnError ? () => onDismissSpawnError(group.cwd) : undefined}
+            />
           )}
           {spawningCwds?.has(group.cwd) && <PlaceholderSessionCard />}
           {(() => {

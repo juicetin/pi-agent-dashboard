@@ -128,6 +128,33 @@ export interface SpawnResultBrowserMessage {
 }
 
 /**
+ * Failure classification codes for spawn errors.
+ * Set on every `{ success: false }` path inside process-manager and the
+ * session-action-handler. Additive — clients that do not know a code fall
+ * back to the `message` string.
+ * See change: spawn-failure-diagnostics.
+ */
+export type SpawnFailureCode =
+  | "DIR_MISSING"
+  | "PI_NOT_FOUND"
+  | "WIN_PI_CMD_ONLY"
+  | "WT_MISSING"
+  | "TMUX_MISSING"
+  | "PI_CRASHED"
+  | "SPAWN_ERRNO"
+  | "PREFLIGHT_FAILED"
+  | "REGISTER_TIMEOUT";
+
+/**
+ * A single reason from the synchronous spawn preflight check.
+ * See change: spawn-failure-diagnostics.
+ */
+export interface PreflightReason {
+  code: string;
+  message: string;
+}
+
+/**
  * Emitted when a session spawn fails — either because `spawnPiSession` threw,
  * returned `{ success: false }`, or the spawned child crashed immediately.
  * Carries enough context for the UI to render a retryable error banner
@@ -140,6 +167,37 @@ export interface SpawnErrorMessage {
   message: string;
   /** Up to ~2 KB tail of stderr captured from the failed child, if any. */
   stderr?: string;
+  /** Structured failure classifier. Additive — old clients ignore this field. See change: spawn-failure-diagnostics. */
+  code?: SpawnFailureCode;
+  /** Preflight failure reasons. Only set when code === "PREFLIGHT_FAILED". See change: spawn-failure-diagnostics. */
+  reasons?: PreflightReason[];
+}
+
+/**
+ * Emitted when a spawned pi session never sends `session_register` within
+ * the configured `spawnRegisterTimeoutMs` window.
+ * See change: spawn-failure-diagnostics.
+ */
+export interface SpawnRegisterTimeoutMessage {
+  type: "spawn_register_timeout";
+  cwd: string;
+  /** Present for headless spawns; absent for tmux/wt/wsl-tmux. */
+  pid?: number;
+  /** Last 4 KB of the per-session stderr log, if available. */
+  stderrTail?: string;
+  /** The effective watchdog timeout in ms — so the UI can render e.g. "30s". See change: spawn-failure-diagnostics (fix W2). */
+  timeoutMs?: number;
+}
+
+/**
+ * Emitted when pi finally registers AFTER the watchdog already fired.
+ * The UI uses it to auto-clear the timeout banner for the given cwd.
+ * See change: spawn-failure-diagnostics.
+ */
+export interface SpawnRegisterRecoveredMessage {
+  type: "spawn_register_recovered";
+  cwd: string;
+  pid?: number;
 }
 
 export interface SessionsReorderedMessage {
@@ -431,6 +489,8 @@ export type ServerToBrowserMessage =
   | ResumeResultBrowserMessage
   | SpawnResultBrowserMessage
   | SpawnErrorMessage
+  | SpawnRegisterTimeoutMessage
+  | SpawnRegisterRecoveredMessage
   | SessionsReorderedMessage
   | SessionsSnapshotMessage
   | PinnedDirsUpdatedMessage

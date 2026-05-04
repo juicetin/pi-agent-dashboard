@@ -5,6 +5,7 @@ import { WebSocketServer, WebSocket } from "ws";
 import type { ExtensionToServerMessage, ServerToExtensionMessage } from "@blackbelt-technology/pi-dashboard-shared/protocol.js";
 import type { DashboardSession } from "@blackbelt-technology/pi-dashboard-shared/types.js";
 import type { SessionManager } from "./memory-session-manager.js";
+import { getSpawnRegisterWatchdog } from "./spawn-register-watchdog.js";
 
 export const HEARTBEAT_TIMEOUT = 180_000;
 export const WS_PING_INTERVAL = 60_000;
@@ -273,6 +274,11 @@ export function createPiGateway(
             }
 
             if (msg.type === "session_register") {
+              // Clear spawn-register watchdog BEFORE any throwing logic. See change: spawn-failure-diagnostics.
+              const watchdog = getSpawnRegisterWatchdog();
+              if (msg.pid !== undefined) watchdog.clearByPid(msg.pid);
+              watchdog.clearByCwd(msg.cwd);
+
               // If session ID changed (e.g., after /reload), clean up the old placeholder
               if (currentSessionId && currentSessionId !== msg.sessionId) {
                 const oldSession = sessionManager.get(currentSessionId);

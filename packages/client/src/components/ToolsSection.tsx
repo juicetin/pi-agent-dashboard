@@ -6,6 +6,7 @@
  * See change: consolidate-tool-resolution (specs/tool-settings-ui).
  */
 import React, { useCallback, useEffect, useState } from "react";
+import { getApiBase } from "../lib/api-context.js";
 import { Icon } from "@mdi/react";
 import {
   mdiCheck, mdiClose, mdiAlert, mdiRefresh, mdiChevronDown, mdiChevronRight,
@@ -286,5 +287,93 @@ function StatusBadge({ tool, invalidOverride }: { tool: Resolution; invalidOverr
     <span className="flex-shrink-0 text-red-500" title="Not found">
       <Icon path={mdiClose} size={0.6} />
     </span>
+  );
+}
+
+// ── Spawn Failures Panel ────────────────────────────────────────────────────────────
+
+interface SpawnFailureEntry {
+  ts: string;
+  cwd: string;
+  strategy: string;
+  code: string;
+  message: string;
+  stderrTail?: string;
+  pid?: number;
+}
+
+/**
+ * Collapsible list of the last 50 failed spawn attempts.
+ * Fetched from GET /api/spawn-failures. See change: spawn-failure-diagnostics.
+ */
+export function SpawnFailuresSection() {
+  const [entries, setEntries] = useState<SpawnFailureEntry[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+
+  const load = useCallback(async () => {
+    if (entries !== null) { setExpanded(true); return; }
+    setLoading(true);
+    try {
+      const res = await fetch(`${getApiBase()}/api/spawn-failures?limit=50`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json() as { entries: SpawnFailureEntry[] };
+      setEntries(data.entries ?? []);
+      setExpanded(true);
+    } catch {
+      setEntries([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [entries]);
+
+  return (
+    <div className="border border-[var(--border-secondary)] rounded-lg overflow-hidden">
+      <button
+        onClick={expanded ? () => setExpanded(false) : load}
+        className="w-full flex items-center justify-between px-4 py-2.5 bg-[var(--bg-secondary)] hover:bg-[var(--bg-tertiary)] text-sm font-medium text-[var(--text-primary)]"
+      >
+        <span>Recent Spawn Failures</span>
+        <span className="text-[var(--text-tertiary)] text-xs">{loading ? "Loading…" : expanded ? "▲" : "▼"}</span>
+      </button>
+      {expanded && entries !== null && (
+        <div className="divide-y divide-[var(--border-secondary)]">
+          {entries.length === 0 ? (
+            <p className="px-4 py-3 text-sm text-[var(--text-tertiary)]">No spawn failures recorded.</p>
+          ) : (
+            entries.map((e, i) => <SpawnFailureRow key={i} entry={e} />)
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SpawnFailureRow({ entry }: { entry: SpawnFailureEntry }) {
+  const [open, setOpen] = useState(false);
+  const date = new Date(entry.ts).toLocaleString();
+  return (
+    <div className="px-4 py-2 text-xs">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-start gap-2 text-left hover:text-[var(--text-primary)]"
+      >
+        <span className="font-mono text-[var(--text-tertiary)] shrink-0">{date}</span>
+        <span className="font-medium text-red-400 shrink-0">[{entry.code}]</span>
+        <span className="text-[var(--text-secondary)] truncate">{entry.cwd}</span>
+        <span className="ml-auto shrink-0 text-[var(--text-tertiary)]">{open ? "▲" : "▼"}</span>
+      </button>
+      {open && (
+        <div className="mt-1.5 space-y-1 pl-2">
+          <p className="text-[var(--text-secondary)]">{entry.message}</p>
+          {entry.stderrTail && (
+            <details>
+              <summary className="cursor-pointer text-[var(--text-tertiary)]">Pi stderr</summary>
+              <pre className="mt-1 text-[10px] font-mono text-[var(--text-tertiary)] whitespace-pre-wrap break-all max-h-24 overflow-y-auto">{entry.stderrTail}</pre>
+            </details>
+          )}
+        </div>
+      )}
+    </div>
   );
 }

@@ -2,12 +2,20 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import path from "node:path";
-// NOTE: viteDashboardPluginsPlugin is wired here but only active when
-// packages/dashboard-plugin-runtime is installed. The dynamic import
-// is deferred to avoid vite.config.ts failures during fresh installs.
+// Import via a relative workspace path so vite's esbuild config-loader bundles
+// the plugin (and its transitive .ts deps) into the temp config bundle. Using
+// the package specifier "@blackbelt-technology/dashboard-plugin-runtime"
+// instead would externalize the module and hit ERR_MODULE_NOT_FOUND because
+// the runtime ships raw .ts (no compiled dist) and Node can't resolve
+// `.js`-extensioned internal imports back to `.ts` at runtime.
+import { viteDashboardPluginsPlugin } from "../dashboard-plugin-runtime/src/vite-plugin/index.js";
 
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [
+    react(),
+    tailwindcss(),
+    viteDashboardPluginsPlugin(path.resolve(__dirname, "../..")),
+  ],
   root: "src",
   // publicDir is resolved relative to `root` (= packages/client/src/), so three
   // `../` hops are needed to reach the project-root public/ directory which

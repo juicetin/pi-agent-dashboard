@@ -35,6 +35,7 @@ const CLIENT_SRC = path.resolve(__dirname, "..");
 /** Files to scan. Add more entry points here as the shell grows. */
 const SCAN_FILES = [
   "App.tsx",
+  "components/SessionCard.tsx",
 ];
 
 /**

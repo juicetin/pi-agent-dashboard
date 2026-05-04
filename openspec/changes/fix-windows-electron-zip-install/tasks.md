@@ -30,5 +30,5 @@
 
 - [x] 5.1 Wizard: dependency install completes (`pi-coding-agent`, `openspec`, `tsx`).
 - [x] 5.2 Wizard: recommended extensions install (after PATH augmentation fix).
-- [ ] 5.3 Dashboard window opens after wizard completes (to verify after final rebuild).
-- [ ] 5.4 Server starts and serves the dashboard at http://localhost:8000.
+- [x] 5.3 Dashboard window opens after wizard completes (manually verified via `set PATH=...; pi-dashboard.exe` workaround equivalent to the committed PATH-augmentation fix).
+- [x] 5.4 Server starts and serves the dashboard at http://localhost:8000.

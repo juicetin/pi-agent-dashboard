@@ -289,6 +289,7 @@ This section lists only the **architectural backbone** — the files agents touc
 | `packages/dashboard-plugin-runtime/src/server/plugin-status-store.ts` | In-memory `PluginStatusStore` for `/api/health.plugins[]` |
 | `src/server/routes/plugin-config-routes.ts` | `POST /api/config/plugins/:id` — validates and merges plugin config (auth-gated) |
 | `packages/demo-plugin/` | Private fixture plugin exercising settings-section + tool-renderer slots |
+| `packages/dashboard-plugin-skill/` | Pi skill `dashboard-plugin-scaffold`. Modes: `new` (scaffold packages/<id>-plugin/), `augment` (inject manifest + src/dashboard/ into pi-extension at cwd). |
 | `src/shared/stats-extractor.ts` | Extracts token/cost stats from turn_end events |
 | `src/server/session-stats-reader.ts` | Reads cumulative stats + context usage from session JSONL files |
 | `src/server/server.ts` | HTTP + WebSocket server (composes route modules + wiring) |

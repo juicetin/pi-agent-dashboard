@@ -21,6 +21,7 @@ A web-based dashboard for monitoring and interacting with [pi](https://github.co
 - [Configuration](#configuration)
 - [Usage](#usage)
 - [Recommended extensions](#recommended-extensions)
+- [Authoring a dashboard plugin](#authoring-a-dashboard-plugin)
 - [Troubleshooting](#troubleshooting)
 - [Architecture](#architecture)
 - [Monitoring](#monitoring)
@@ -221,6 +222,8 @@ OAuth2 authentication guards external (tunnel) access. Localhost is always ungua
 
 **Callback URL:** register `https://<tunnel-url>/auth/callback/<provider>` in your OAuth provider settings. The tunnel URL is stable across restarts (reserved shares are auto-created).
 
+> **Security note:** `/api/spawn-failures` is reachable to any caller on deployments without auth; entries contain `cwd` paths. Enable auth before exposing via tunnel.
+
 ### Tunnel (zrok)
 
 The dashboard auto-connects a [zrok](https://zrok.io/) tunnel on start when `tunnel.enabled` is `true`. Install with `brew install zrok` (macOS) and run `zrok enable <token>` to enrol — the dashboard reads zrok's own config (`~/.zrok2/environment.json`), no keys are stored in the dashboard. Reserved shares provide persistent URLs across restarts.
@@ -365,6 +368,29 @@ The dashboard integrates tightly with a small, curated set of pi extensions — 
 | `pi-agent-browser` | `npm:pi-agent-browser` | optional | `browser` tool (open, snapshot, click, screenshot) |
 
 Authoritative source: `packages/shared/src/recommended-extensions.ts`. Descriptions, versions, and installed-state are enriched live via `GET /api/packages/recommended` (offline fallback).
+
+---
+
+## Authoring a dashboard plugin
+
+The dashboard's UI is composed of named **slots** that plugins claim with React components. To create a new plugin, install the scaffolding skill:
+
+```bash
+npm i -g @blackbelt-technology/pi-dashboard-plugin-skill
+```
+
+Then, from any pi session:
+
+```
+/skill dashboard-plugin-scaffold
+```
+
+The skill has two modes:
+
+- **`new`** — scaffold a fresh `packages/<id>-plugin/` inside this monorepo. Pick which of the 10 React slots to claim (`session-card-badge`, `content-view`, `settings-section`, `tool-renderer`, …); the skill renders package.json (with `pi-dashboard-plugin` manifest), `src/client.tsx` with stubs, optional `src/server/index.ts`, optional `src/bridge/index.ts`, `configSchema.json`, and tests.
+- **`augment`** — retrofit an existing pi-extension project on disk. The skill greps for TUI surface (`ctx.ui.*`, `pi.registerTool`, …), drives the agent through a canonical mapping table, asks per-callsite what to port, then injects a manifest field into `package.json` and adds `src/dashboard/`. Purely additive — your existing TUI keeps working in pure-pi sessions.
+
+For the slot taxonomy, the manifest schema, and the plugin context API, see the skill's reference docs (or the runtime: [`@blackbelt-technology/dashboard-plugin-runtime`](https://www.npmjs.com/package/@blackbelt-technology/dashboard-plugin-runtime)). The reference fixture is [`packages/demo-plugin/`](packages/demo-plugin/).
 
 ---
 

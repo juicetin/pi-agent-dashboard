@@ -22,3 +22,13 @@ plugins when `NODE_ENV=production`, so no demo code appears in release builds.
 
 This package is deleted (or kept as a test fixture) once at least one `extract-*-as-plugin`
 change ships and provides a real plugin for end-to-end runtime validation.
+
+## Scaffolding your own plugin
+
+This package is what the [`dashboard-plugin-scaffold`](../dashboard-plugin-skill/) skill produces — same layout, same manifest shape, same `usePluginConfig` / `usePluginSend` import paths. To create a new plugin, use the skill instead of copying this fixture:
+
+```bash
+npm i -g @blackbelt-technology/pi-dashboard-plugin-skill
+# then in any pi session:
+# /skill dashboard-plugin-scaffold
+```

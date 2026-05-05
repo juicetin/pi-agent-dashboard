@@ -43,7 +43,6 @@ import { BootstrapBanner } from "./components/BootstrapBanner.js";
 import { useBootstrapStatus } from "./hooks/useBootstrapStatus.js";
 import { MissingRequiredBanner } from "./components/MissingRequiredBanner.js";
 import { useInstallPrompt } from "./hooks/useInstallPrompt.js";
-import { TerminalView } from "./components/TerminalView.js";
 import { TerminalsView } from "./components/TerminalsView.js";
 import { EditorView } from "./components/EditorView.js";
 import { decodeFolderPath, encodeFolderPath } from "./lib/folder-encoding.js";
@@ -156,7 +155,11 @@ export default function App() {
   }, [wsUrl]);
   const [, navigate] = useLocation();
   const [match, params] = useRoute("/session/:id");
-  const [termMatch, termParams] = useRoute("/terminal/:id");
+  // Legacy /terminal/:id route removed — see change:
+  // fix-terminal-half-height-dual-mount. Terminals are reached via
+  // /folder/:encodedCwd/terminals. The dual-mount it caused (one
+  // <TerminalView> here + one inside <TerminalsView>) was the root
+  // cause of half-height rendering and competing FitAddon resizes.
   const [folderTermMatch, folderTermParams] = useRoute("/folder/:encodedCwd/terminals");
   const [folderEditorMatch, folderEditorParams] = useRoute("/folder/:encodedCwd/editor");
   const [settingsMatch] = useRoute("/settings");
@@ -172,7 +175,6 @@ export default function App() {
     connectionStatus: status,
     send,
   });
-  const selectedTerminalId = termMatch ? termParams?.id : undefined;
   const folderTermCwd = folderTermMatch ? decodeFolderPath(folderTermParams?.encodedCwd ?? "") : null;
   const folderEditorCwd = folderEditorMatch ? decodeFolderPath(folderEditorParams?.encodedCwd ?? "") : null;
   const sidebar = useSidebarState();
@@ -734,7 +736,7 @@ export default function App() {
     <SessionList
       sessions={Array.from(sessions.values())}
       terminals={Array.from(terminals.values())}
-      selectedId={selectedId ?? selectedTerminalId}
+      selectedId={selectedId}
       onSelect={handleSelect}
       contextUsageMap={contextUsageMap}
       openspecMap={openspecMap}
@@ -1335,20 +1337,6 @@ export default function App() {
     </div>
   ) : null;
 
-  // Terminal keep-alive views — always mounted, CSS toggled (for legacy /terminal/:id route)
-  const terminalViews = useMemo(() => {
-    return Array.from(terminals.values()).map((t) => (
-      <TerminalView
-        key={t.id}
-        terminalId={t.id}
-        visible={selectedTerminalId === t.id}
-        terminalName={t.title || t.shell.split("/").pop()}
-        onTitle={handleTerminalTitle}
-        onClose={handleKillTerminal}
-      />
-    ));
-  }, [terminals, selectedTerminalId, handleTerminalTitle, handleKillTerminal]);
-
   // Get terminals for a specific folder cwd
   const getTerminalsForCwd = useCallback((cwd: string) => {
     return Array.from(terminals.values()).filter((t) => t.cwd === cwd);
@@ -1381,21 +1369,6 @@ export default function App() {
     return null;
   }, [folderTermCwd, folderEditorCwd, getTerminalsForCwd, handleCreateTerminal, handleKillTerminal, handleRenameTerminal, handleTerminalTitle, handleEditorClose]);
 
-  // Navigate away from terminal when it's removed
-  useEffect(() => {
-    if (selectedTerminalId && !terminals.has(selectedTerminalId)) {
-      navigate("/");
-    }
-  }, [selectedTerminalId, terminals, navigate]);
-
-  // Navigate away from invalid terminal URL (same as session logic)
-  const terminalsLoaded = terminals.size > 0 || sessions.size > 0;
-  useEffect(() => {
-    if (selectedTerminalId && terminalsLoaded && !terminals.has(selectedTerminalId)) {
-      navigate("/");
-    }
-  }, [selectedTerminalId, terminalsLoaded, terminals, navigate]);
-
   const allSessionsList = useMemo(() => Array.from(sessions.values()), [sessions]);
 
   const apiProvider = (children: React.ReactNode) => (
@@ -1414,7 +1387,6 @@ export default function App() {
   if (isMobile) {
     const mobileDepth = getMobileDepth({
       selectedId,
-      selectedTerminalId,
       folderTermCwd,
       folderEditorCwd,
       settingsMatch: !!settingsMatch,
@@ -1529,11 +1501,9 @@ export default function App() {
               />
             ) : folderEditorCwd ? (
               <EditorView cwd={folderEditorCwd} onClose={handleEditorClose} />
-            ) : selectedTerminalId ? (
-              <div className="flex-1 flex flex-col min-w-0 h-full">
-                {terminalViews}
-              </div>
             ) : sessionDetail ?? (
+            // Legacy /terminal/:id branch removed — see change:
+            // fix-terminal-half-height-dual-mount.
               <LandingPage
                 providersReady={providersReady.ready}
                 pinnedCount={pinnedDirectories.length}
@@ -1578,14 +1548,17 @@ export default function App() {
 
       <div className="flex-1 flex flex-col min-w-0 min-h-0">
         {connectionBanner}
-        {/* Terminal views are always mounted (keep-alive), CSS hidden/shown */}
-        {terminalViews}
-        {/* Folder views (TerminalsView or EditorView) */}
+        {/* Folder views (TerminalsView or EditorView) — single owner of
+            <TerminalView> mounting. The legacy keep-alive list above
+            (mounted unconditionally for the /terminal/:id route) was
+            removed; it caused dual-mounting per terminal id and the
+            half-height rendering bug. See change:
+            fix-terminal-half-height-dual-mount. */}
         {folderViewContent && (
           <div className="flex-1 flex flex-col min-w-0 min-h-0">{folderViewContent}</div>
         )}
-        {/* Show session detail or landing page when no terminal/folder view is selected */}
-        {!selectedTerminalId && !folderTermCwd && !folderEditorCwd && !settingsMatch && !tunnelSetupMatch && (
+        {/* Show session detail or landing page when no folder view is selected */}
+        {!folderTermCwd && !folderEditorCwd && !settingsMatch && !tunnelSetupMatch && (
           archiveBrowserCwd ? (
             <ArchiveBrowserView
               cwd={archiveBrowserCwd}

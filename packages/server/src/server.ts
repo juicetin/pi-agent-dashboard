@@ -559,7 +559,9 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
   });
 
   // Auto-shutdown idle timer
-  const idleTimer = createIdleTimer(config, piGateway);
+  // Active terminals keep the server alive even when no pi sessions are
+  // attached. See change: fix-terminal-half-height-dual-mount.
+  const idleTimer = createIdleTimer(config, piGateway, () => terminalManager.list().length > 0);
 
   const fastify = Fastify({
     logger: false,

@@ -300,6 +300,13 @@ export function getSessionInfo(): { provider: string; modelId: string } {
 type PiAiHelpers = {
   findEnvKeys?: (id: string) => string[] | undefined;
   getEnvApiKey?: (id: string) => string | undefined;
+  /**
+   * Pi-ai's built-in provider list (from its static MODELS table).
+   * Used to filter custom-registered providers (e.g. user's proxy entry
+   * from ~/.pi/agent/providers.json) out of the catalogue — those are
+   * already managed by the dashboard's dedicated LLM Providers section.
+   */
+  getProviders?: () => string[];
 };
 
 export function _buildProviderCatalogue(
@@ -310,9 +317,18 @@ export function _buildProviderCatalogue(
   const oauthIds = new Set<string>(
     (modelRegistry.authStorage?.getOAuthProviders?.() ?? []).map((p: any) => p.id),
   );
+  // Built-in provider whitelist. Filters out user-registered custom
+  // providers (proxy/your-llmproxy/etc. from ~/.pi/agent/providers.json),
+  // which are already managed by the dashboard's LLM Providers section.
+  // When piAi.getProviders is unavailable, fall through to the legacy
+  // unfiltered behaviour (test-friendly + safe degradation).
+  // See change: replace-hardcoded-provider-lists (filter-custom follow-up).
+  const builtInIds = piAi.getProviders ? new Set<string>(piAi.getProviders()) : null;
   const allIds = new Set<string>(oauthIds);
   for (const m of (modelRegistry.getAll?.() ?? []) as Array<{ provider?: string }>) {
-    if (m.provider) allIds.add(m.provider);
+    if (!m.provider) continue;
+    if (builtInIds && !builtInIds.has(m.provider) && !oauthIds.has(m.provider)) continue;
+    allIds.add(m.provider);
   }
   return [...allIds].map((id) => {
     let displayName = id;
@@ -364,7 +380,11 @@ async function loadPiAi(): Promise<PiAiHelpers> {
   _piAiLoadAttempted = true;
   try {
     const mod: any = await import("@mariozechner/pi-ai");
-    _piAiModule = { findEnvKeys: mod.findEnvKeys, getEnvApiKey: mod.getEnvApiKey };
+    _piAiModule = {
+      findEnvKeys: mod.findEnvKeys,
+      getEnvApiKey: mod.getEnvApiKey,
+      getProviders: mod.getProviders,
+    };
     return _piAiModule;
   } catch {
     return {};

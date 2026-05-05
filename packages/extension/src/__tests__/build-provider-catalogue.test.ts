@@ -125,6 +125,44 @@ describe("_buildProviderCatalogue", () => {
     expect(cat[0].ambient).toBeUndefined();
   });
 
+  it("filters out custom providers not in piAi.getProviders()", () => {
+    const reg = makeRegistry({
+      models: [
+        { provider: "deepseek", id: "deepseek-chat" },
+        { provider: "proxy", id: "opus-4" },         // custom (registered via providers.json)
+        { provider: "your-llmproxy", id: "foo" },    // custom
+      ],
+    });
+    const cat = _buildProviderCatalogue(reg, {
+      getProviders: () => ["anthropic", "deepseek", "openai", "groq"],
+    });
+    const ids = cat.map((c) => c.id).sort();
+    expect(ids).toEqual(["deepseek"]);
+    expect(ids).not.toContain("proxy");
+    expect(ids).not.toContain("your-llmproxy");
+  });
+
+  it("OAuth-handler ids survive the filter even if absent from piAi.getProviders()", () => {
+    const reg = makeRegistry({
+      oauthIds: ["google-antigravity"],   // dashboard-only OAuth, not in pi-ai's static list
+      models: [{ provider: "google-antigravity", id: "x" }, { provider: "deepseek", id: "y" }],
+    });
+    const cat = _buildProviderCatalogue(reg, {
+      getProviders: () => ["deepseek"],
+    });
+    const ids = cat.map((c) => c.id).sort();
+    expect(ids).toEqual(["deepseek", "google-antigravity"]);
+  });
+
+  it("falls back to unfiltered behaviour when piAi.getProviders is missing", () => {
+    const reg = makeRegistry({
+      models: [{ provider: "deepseek", id: "x" }, { provider: "proxy", id: "y" }],
+    });
+    const cat = _buildProviderCatalogue(reg, {});
+    const ids = cat.map((c) => c.id).sort();
+    expect(ids).toEqual(["deepseek", "proxy"]);
+  });
+
   it("does not throw when getProviderDisplayName throws", () => {
     const reg = {
       authStorage: { getOAuthProviders: () => [], getAuthStatus: () => ({ configured: false }), get: () => undefined },

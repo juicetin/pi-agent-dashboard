@@ -4,10 +4,12 @@
 The module `packages/server/src/spawn-register-watchdog.ts` SHALL export a class `SpawnRegisterWatchdog` with `arm({ pid?, cwd, mechanism, logPath?, ws })`, `clearByPid(pid)`, `clearByCwd(cwd)`, and a constructor accepting `timeoutMs` (default `30000`, sourced from `config.spawnRegisterTimeoutMs`, clamped to `[5000, 120000]`).
 
 The watchdog SHALL maintain two internal maps:
-- `byPid: Map<number, Entry>` for entries with a known PID (headless spawns).
-- `byCwd: Map<string, Entry>` for entries without a PID (tmux/wt/wsl-tmux spawns).
+- `byCwd: Map<string, Entry>` — primary index, populated for every armed entry.
+- `byPid: Map<number, Entry>` — secondary index, populated only when `pid` is provided.
 
-On `arm`, if `pid` is provided the entry SHALL be indexed in `byPid`; otherwise it SHALL be indexed in `byCwd`. A `setTimeout(timeoutMs)` SHALL be started for every armed entry. On clear, the matching timer SHALL be cancelled and the entry deleted (idempotent — clearing an unknown key SHALL be a no-op). On timer fire, the watchdog SHALL emit `spawn_register_timeout` to the stored `ws` and delete the entry.
+On `arm`, the entry SHALL be indexed in `byCwd` unconditionally; when `pid` is provided the same entry SHALL additionally be indexed in `byPid`. Indexing in both maps is required because the PID reported at arm time can differ from the PID reported in `session_register` — e.g. on Unix the headless mechanism wraps pi in `sh -c "tail -f /dev/null | pi …"`, so `SpawnResult.pid` is the `sh` wrapper while the bridge later registers with pi's actual `process.pid`. Either `clearByPid(pid)` or `clearByCwd(cwd)` SHALL therefore be sufficient to cancel the watchdog.
+
+A `setTimeout(timeoutMs)` SHALL be started for every armed entry. Each `clear*` call SHALL cancel the timer and remove the entry from BOTH maps when the entry it points to is the same arm (identity comparison). Clearing an unknown key SHALL be a no-op. On timer fire, the watchdog SHALL emit `spawn_register_timeout` to the stored `ws` and remove the entry from both maps. If a subsequent `arm` reuses an existing `cwd` (or `pid`), any prior pending timer for that key SHALL be cancelled before the new entry is installed.
 
 #### Scenario: headless arm then clearByPid clears watchdog
 - **WHEN** `watchdog.arm({ pid: 123, cwd, mechanism: "headless", ws })` is called and `watchdog.clearByPid(123)` is called within `timeoutMs`
@@ -16,6 +18,11 @@ On `arm`, if `pid` is provided the entry SHALL be indexed in `byPid`; otherwise 
 #### Scenario: tmux arm then clearByCwd clears watchdog
 - **WHEN** `watchdog.arm({ cwd: "/p/x", mechanism: "tmux", ws })` is called (no pid) and `watchdog.clearByCwd("/p/x")` is called within `timeoutMs`
 - **THEN** the timer SHALL be cancelled and no `spawn_register_timeout` SHALL be sent
+
+#### Scenario: headless arm with pid then clearByCwd (pid mismatch) clears watchdog
+- **WHEN** `watchdog.arm({ pid: 51250, cwd: "/p/x", mechanism: "headless", ws })` is called and `watchdog.clearByCwd("/p/x")` is called within `timeoutMs` (the bridge registered with pi's actual pid, not the `sh` wrapper pid stored at arm time)
+- **THEN** the timer SHALL be cancelled and no `spawn_register_timeout` SHALL be sent
+- **AND** the entry SHALL be removed from BOTH `byPid` and `byCwd`
 
 #### Scenario: arm without register fires watchdog
 - **WHEN** `watchdog.arm(...)` is called and neither `clearByPid` nor `clearByCwd` is called within `timeoutMs`
@@ -74,6 +81,7 @@ The pi-gateway message handler for `session_register` SHALL call BOTH `watchdog.
 #### Scenario: headless spawn arms watchdog with pid
 - **WHEN** `handleSpawnSession` receives `SpawnResult { success: true, pid: 123, process }` from a headless spawn
 - **THEN** `watchdog.arm({ pid: 123, cwd, mechanism: "headless", logPath: result.logPath, ws })` SHALL be called once
+- **AND** the entry SHALL be reachable via BOTH `clearByPid(123)` AND `clearByCwd(cwd)` (the spawner's pid may not match the bridge's reported pid on Unix headless)
 
 #### Scenario: tmux spawn arms watchdog by cwd only
 - **WHEN** `handleSpawnSession` receives `SpawnResult { success: true }` from a tmux/wt/wsl-tmux spawn (no `pid`)

@@ -49,6 +49,18 @@ describe("SpawnRegisterWatchdog", () => {
     expect(messages).toHaveLength(0);
   });
 
+  it("headless arm + clearByCwd (pid mismatch) still cancels watchdog", () => {
+    // Regression: Unix headless wraps pi in `sh -c "… | pi"`, so spawnResult.pid
+    // is the sh wrapper while session_register reports pi's real pid. Watchdog
+    // must clear via cwd even when pid was indexed at arm time.
+    const { ws, messages } = makeMockWs();
+    const w = new SpawnRegisterWatchdog(10000);
+    w.arm({ pid: 51250, cwd: "/p/x", mechanism: "headless", ws });
+    w.clearByCwd("/p/x");
+    vi.advanceTimersByTime(15000);
+    expect(messages).toHaveLength(0);
+  });
+
   it("tmux arm + clearByCwd cancels watchdog", () => {
     const { ws, messages } = makeMockWs();
     const w = new SpawnRegisterWatchdog(10000);

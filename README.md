@@ -13,6 +13,18 @@ A web-based dashboard for monitoring and interacting with [pi](https://github.co
 
 ---
 
+## Screenshots
+
+<table>
+<tr>
+<td width="33%" align="center"><a href="docs/screenshots/readme-overview.png"><img src="docs/screenshots/readme-overview.png" alt="Sessions overview — folders, branches, OpenSpec changes, live token spend" /></a><br/><sub><b>Overview</b> — sessions grouped by folder, branch & OpenSpec context, live cost</sub></td>
+<td width="33%" align="center"><a href="docs/screenshots/readme-session.png"><img src="docs/screenshots/readme-session.png" alt="Active session — chat, attached OpenSpec change, ask_user prompt, token gauge" /></a><br/><sub><b>Session</b> — chat, OpenSpec apply, interactive <code>ask_user</code>, context gauge</sub></td>
+<td width="33%" align="center"><a href="docs/screenshots/readme-settings.png"><img src="docs/screenshots/readme-settings.png" alt="Settings — ports, spawn strategy, tunnel, resolved tools table" /></a><br/><sub><b>Settings</b> — ports, spawn strategy, zrok tunnel, tool resolution</sub></td>
+</tr>
+</table>
+
+---
+
 ## Table of contents
 
 - [Quickstart](#quickstart)

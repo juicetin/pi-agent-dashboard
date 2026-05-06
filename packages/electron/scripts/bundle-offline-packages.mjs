@@ -166,10 +166,28 @@ try {
     },
   );
   if (npmInstall.status !== 0) {
+    // Surface every signal spawnSync exposes — empty stderr+stdout alone
+    // (which is what we hit on win32-x64 + win32-arm64 runners, see
+    // https://github.com/BlackBeltTechnology/pi-agent-dashboard/actions/runs/25410379440)
+    // is meaningless without status / signal / error.code. Print them all
+    // so the next CI run tells us which branch failed (ENOENT vs exec
+    // format error vs npm crash vs long-path violation vs ...).
     console.error("✗ npm install failed:");
-    const log = (npmInstall.stderr || "") + (npmInstall.stdout || "");
-    const lines = log.trim().split(/\r?\n/);
-    console.error(lines.slice(-20).join("\n"));
+    console.error(`  cmd    : ${npmSpawnCmd} ${npmSpawnArgs.join(" ")}`);
+    console.error(`  status : ${npmInstall.status}`);
+    console.error(`  signal : ${npmInstall.signal}`);
+    if (npmInstall.error) {
+      console.error(
+        `  error  : code=${npmInstall.error.code} errno=${npmInstall.error.errno} syscall=${npmInstall.error.syscall}`,
+      );
+      console.error(`  message: ${npmInstall.error.message}`);
+    } else {
+      console.error("  error  : (none)");
+    }
+    const stderrTxt = (npmInstall.stderr || "").trim();
+    const stdoutTxt = (npmInstall.stdout || "").trim();
+    console.error(`  stderr : ${stderrTxt ? "\n" + stderrTxt : "(empty)"}`);
+    console.error(`  stdout : ${stdoutTxt ? "\n" + stdoutTxt : "(empty)"}`);
     process.exit(1);
   }
 

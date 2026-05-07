@@ -437,4 +437,62 @@ describe("ChatView", () => {
       expect(container.querySelector('button[title="Copy as Markdown"]')).not.toBeNull();
     });
   });
+
+  describe("retry banner integration (provider-retry-state)", () => {
+    it("does not render retry banner when retryState is undefined", () => {
+      const state = createInitialState();
+      const { container } = render(
+        <ThemeProvider>
+          <ChatView state={state} toolContext={defaultToolContext} />
+        </ThemeProvider>,
+      );
+      expect(container.querySelector('[data-testid="retry-banner"]')).toBeNull();
+    });
+
+    it("renders retry banner when retryState is set with delayMs >= 500", () => {
+      const state = {
+        ...createInitialState(),
+        retryState: { attempt: 1, maxAttempts: 3, delayMs: 2000, reason: "rate limit", startedAt: 0 },
+      };
+      const { container } = render(
+        <ThemeProvider>
+          <ChatView state={state} toolContext={defaultToolContext} />
+        </ThemeProvider>,
+      );
+      expect(container.querySelector('[data-testid="retry-banner"]')).not.toBeNull();
+    });
+
+    it("renders retry banner with indeterminate state when delayMs is sentinel -1", () => {
+      const state = {
+        ...createInitialState(),
+        retryState: { attempt: 1, maxAttempts: -1, delayMs: -1, reason: "x", startedAt: 0 },
+      };
+      const { container } = render(
+        <ThemeProvider>
+          <ChatView state={state} toolContext={defaultToolContext} />
+        </ThemeProvider>,
+      );
+      expect(container.querySelector('[data-testid="retry-banner"]')).not.toBeNull();
+      expect(container.querySelector('[data-testid="retry-banner-indeterminate"]')).not.toBeNull();
+    });
+
+    it("retry banner and error banner can coexist (retry above error)", () => {
+      const state = {
+        ...createInitialState(),
+        retryState: { attempt: 2, maxAttempts: 3, delayMs: 4000, reason: "x", startedAt: 0 },
+        lastError: { message: "boom", timestamp: 0 },
+      };
+      const { container } = render(
+        <ThemeProvider>
+          <ChatView state={state} toolContext={defaultToolContext} />
+        </ThemeProvider>,
+      );
+      const retry = container.querySelector('[data-testid="retry-banner"]');
+      const error = container.querySelector('[data-testid="error-banner"]');
+      expect(retry).not.toBeNull();
+      expect(error).not.toBeNull();
+      // Retry must appear before error in document order (compareDocumentPosition: 4 = following)
+      expect(retry!.compareDocumentPosition(error!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+  });
 });

@@ -732,6 +732,16 @@ export default function App() {
     return ids;
   }, [sessionStates]);
 
+  // Compute set of session IDs in active provider-retry phase (retryState set,
+  // no terminal error). See change: fix-provider-retry-infinite-loop.
+  const retrySessionIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const [id, state] of sessionStates) {
+      if (state.retryState && !state.lastError) ids.add(id);
+    }
+    return ids;
+  }, [sessionStates]);
+
   const sessionList = (
     <SessionList
       sessions={Array.from(sessions.values())}
@@ -795,6 +805,7 @@ export default function App() {
       editorStatuses={editorStatuses}
       editorAvailable={editorAvailable}
       errorSessionIds={errorSessionIds}
+      retrySessionIds={retrySessionIds}
       spawnErrors={spawnErrors}
       onDismissSpawnError={(cwd) => setSpawnErrors((prev) => { const next = new Map(prev); next.delete(cwd); return next; })}
       resumeErrors={resumeErrors}
@@ -1154,6 +1165,7 @@ export default function App() {
             fileResults={fileResults}
             disabled={false}
             sessionStatus={selectedState.status}
+            retrying={selectedState.retryState !== undefined}
             onAbort={handleAbort}
             onForceKill={handleForceKill}
             pendingPrompt={!!selectedState.pendingPrompt}

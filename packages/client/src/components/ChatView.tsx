@@ -2,6 +2,7 @@ import React, { useRef, useEffect, useCallback, useState, useMemo, forwardRef, u
 import { Icon } from "@mdi/react";
 import { mdiContentCopy, mdiTextBox, mdiLoading, mdiChevronDown, mdiSourceFork } from "@mdi/js";
 import { ErrorBanner } from "./ErrorBanner";
+import { RetryBanner } from "./RetryBanner";
 import type { SessionState, ChatImage, InteractiveUiRequest } from "../lib/event-reducer.js";
 import type { ToolContext } from "./tool-renderers/index.js";
 import { MarkdownContent } from "./MarkdownContent.js";
@@ -459,6 +460,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView({ se
             <span className="inline-block w-1.5 h-4 bg-[var(--bg-surface)] animate-pulse ml-0.5" />
           </div>
         </div>
+      )}
+
+      {/* Retry banner — visible while a synthesized provider retry is in flight.
+          Bridge sends `delayMs: -1` / `maxAttempts: -1` sentinels (pi does not
+          expose its retry settings); RetryBanner renders an indeterminate state.
+          See change: fix-provider-retry-infinite-loop. */}
+      {state.retryState && (
+        <RetryBanner retryState={state.retryState} onAbort={onAbort} />
       )}
 
       {/* Error banner */}

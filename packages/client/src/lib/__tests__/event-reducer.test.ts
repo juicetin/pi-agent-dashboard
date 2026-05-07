@@ -1976,3 +1976,113 @@ describe("pendingPrompt safety", () => {
     expect(state.lastError).toBeDefined();
   });
 });
+
+describe("auto_retry events (provider-retry-state)", () => {
+  it("sets retryState on auto_retry_start", () => {
+    let state = createInitialState();
+    state = reduceEvent(state, {
+      eventType: "auto_retry_start",
+      timestamp: 5000,
+      data: { attempt: 1, maxAttempts: 3, delayMs: 2000, errorMessage: "rate limit exceeded" },
+    });
+    expect(state.retryState).toEqual({
+      attempt: 1,
+      maxAttempts: 3,
+      delayMs: 2000,
+      reason: "rate limit exceeded",
+      startedAt: 5000,
+    });
+    expect(state.lastError).toBeUndefined();
+  });
+
+  it("clears retryState on auto_retry_end with success", () => {
+    let state = createInitialState();
+    state = reduceEvent(state, {
+      eventType: "auto_retry_start",
+      timestamp: 5000,
+      data: { attempt: 1, maxAttempts: 3, delayMs: 2000, errorMessage: "rate limit" },
+    });
+    state = reduceEvent(state, {
+      eventType: "auto_retry_end",
+      timestamp: 6000,
+      data: { success: true, attempt: 2 },
+    });
+    expect(state.retryState).toBeUndefined();
+    expect(state.lastError).toBeUndefined();
+  });
+
+  it("clears retryState and surfaces lastError on auto_retry_end with failure", () => {
+    let state = createInitialState();
+    state = reduceEvent(state, {
+      eventType: "auto_retry_start",
+      timestamp: 5000,
+      data: { attempt: 1, maxAttempts: 3, delayMs: 2000, errorMessage: "rate limit" },
+    });
+    state = reduceEvent(state, {
+      eventType: "auto_retry_end",
+      timestamp: 7000,
+      data: { success: false, attempt: 3, finalError: "Rate limit exceeded" },
+    });
+    expect(state.retryState).toBeUndefined();
+    expect(state.lastError).toEqual({ message: "Rate limit exceeded", timestamp: 7000 });
+  });
+
+  it("does not overwrite existing lastError on auto_retry_end failure", () => {
+    let state = createInitialState();
+    state.lastError = { message: "earlier error", timestamp: 100 };
+    state = reduceEvent(state, {
+      eventType: "auto_retry_start",
+      timestamp: 5000,
+      data: { attempt: 1, maxAttempts: 3, delayMs: 2000, errorMessage: "rate limit" },
+    });
+    state = reduceEvent(state, {
+      eventType: "auto_retry_end",
+      timestamp: 7000,
+      data: { success: false, finalError: "new error" },
+    });
+    expect(state.retryState).toBeUndefined();
+    expect(state.lastError).toEqual({ message: "earlier error", timestamp: 100 });
+  });
+
+  it("agent_start defensively clears stale retryState", () => {
+    let state = createInitialState();
+    state = reduceEvent(state, {
+      eventType: "auto_retry_start",
+      timestamp: 5000,
+      data: { attempt: 1, maxAttempts: 3, delayMs: 2000, errorMessage: "x" },
+    });
+    state = reduceEvent(state, { eventType: "agent_start", timestamp: 6000, data: {} });
+    expect(state.retryState).toBeUndefined();
+  });
+
+  it("agent_end defensively clears retryState while still extracting lastError", () => {
+    let state = createInitialState();
+    state = reduceEvent(state, {
+      eventType: "auto_retry_start",
+      timestamp: 5000,
+      data: { attempt: 1, maxAttempts: 3, delayMs: 2000, errorMessage: "x" },
+    });
+    state = reduceEvent(state, {
+      eventType: "agent_end",
+      timestamp: 8000,
+      data: {
+        messages: [
+          { role: "assistant", stopReason: "error", errorMessage: "final boom", content: [] },
+        ],
+      },
+    });
+    expect(state.retryState).toBeUndefined();
+    expect(state.lastError).toEqual({ message: "final boom", timestamp: 8000 });
+  });
+
+  it("auto_retry_end without prior retryState is a no-op", () => {
+    let state = createInitialState();
+    state = reduceEvent(state, {
+      eventType: "auto_retry_end",
+      timestamp: 6000,
+      data: { success: false, finalError: "stale" },
+    });
+    expect(state.retryState).toBeUndefined();
+    expect(state.lastError).toBeUndefined();
+  });
+});

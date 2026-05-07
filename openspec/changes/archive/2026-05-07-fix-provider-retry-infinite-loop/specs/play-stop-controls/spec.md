@@ -1,7 +1,5 @@
-## Purpose
+## MODIFIED Requirements
 
-Give the user a single inline control to interrupt an in-flight session: send `abort` first; escalate to `force_kill` after a grace period if the agent does not quiesce.
-## Requirements
 ### Requirement: Stop button during streaming
 A red Stop button (■) SHALL appear at the end of the input field when the session is streaming OR when a pending prompt exists OR when `SessionState.retryState` is set. When clicked, it SHALL send an `abort` message and transition to a "Force Stop" state.
 
@@ -57,4 +55,3 @@ When a force kill has been initiated, the button SHALL show a "Killing..." label
 #### Scenario: Killing state clears on session end
 - **WHEN** the session status changes to "ended" after a force kill
 - **THEN** the button SHALL be hidden (standard behavior for ended sessions)
-

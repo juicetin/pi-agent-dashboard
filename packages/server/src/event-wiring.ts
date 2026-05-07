@@ -628,14 +628,18 @@ export function wireEvents(deps: EventWiringDeps): void {
       // subscribe) re-send identical content; broadcasting unconditionally
       // wipes every browser's modelsMap and — because App.tsx's
       // auto-subscribe effect skips re-requesting models for any session
-      // that's already in `subscribedRef` — leaves previously-visited
-      // sessions with an empty model selector until reconnect. See changes:
-      // replace-hardcoded-provider-lists,
-      // fix-providers-list-spurious-models-refreshed.
-      const { changed } = setCatalogueForSession(sessionId, msg.providers);
-      if (changed) {
-        browserGateway.broadcastToAll({ type: "models_refreshed" } as any);
-      }
+      // that's already in `subscribedRef`, leaves previously-visited
+      // sessions with an empty model selector until reconnect.
+      //
+      // The catalogue cache is now a pure read consumer for the Settings
+      // UI (`GET /api/provider-auth/status`). No broadcast: the model-
+      // selector dropdown lives on the independent `models_list` channel
+      // which is per-session-broadcast already; per-session updates are
+      // self-healing without a global wipe.
+      // See changes: replace-hardcoded-provider-lists,
+      //              fix-providers-list-spurious-models-refreshed,
+      //              simplify-model-selection-channels.
+      setCatalogueForSession(sessionId, msg.providers);
     }
 
     if (msg.type === "roles_list") {

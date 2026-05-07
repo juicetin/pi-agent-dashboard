@@ -88,8 +88,12 @@ export function registerProviderAuthRoutes(
   const { piGateway, browserGateway } = deps;
 
   function notifyBridges() {
+    // Tell every bridge to reload auth.json + refresh its model registry.
+    // Each bridge will then push a fresh per-session models_list (and
+    // providers_list); browsers pick those up via the existing per-session
+    // broadcast and update modelsMap / catalogue cache without needing a
+    // global wipe. See change: simplify-model-selection-channels.
     piGateway.broadcast({ type: "credentials_updated" });
-    browserGateway.broadcastToAll({ type: "models_refreshed" });
   }
 
   // List OAuth providers

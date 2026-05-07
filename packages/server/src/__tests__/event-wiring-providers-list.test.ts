@@ -1,12 +1,13 @@
 /**
  * End-to-end test: `providers_list` arriving from a (fake) bridge updates
  * the provider-catalogue cache, and `getAuthStatus()` reflects it.
- * Also pins the broadcast-gating contract: `models_refreshed` is emitted to
- * browsers only when the catalogue contents actually changed (regression for
- * the over-aggressive global wipe that left previously-visited sessions
- * with empty model selectors).
+ * Pins the contract that the server emits NO `models_refreshed` broadcast
+ * on `providers_list` arrival — the catalogue is a pure read consumer for
+ * the Settings UI, the model-selector dropdown lives on the independent
+ * `models_list` channel which is per-session-broadcast already.
  * See changes: replace-hardcoded-provider-lists,
- *              fix-providers-list-spurious-models-refreshed.
+ *              fix-providers-list-spurious-models-refreshed,
+ *              simplify-model-selection-channels.
  */
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { WebSocket } from "ws";
@@ -90,8 +91,14 @@ describe("providers_list — server wiring", () => {
     piWs.close();
   });
 
-  // Regression — see change: fix-providers-list-spurious-models-refreshed.
-  it("broadcasts models_refreshed only when catalogue contents actually change", async () => {
+  // Regression — see change: simplify-model-selection-channels.
+  // The server MUST NOT emit `models_refreshed` on routine providers_list
+  // arrivals. The previous implementation broadcast on every push (or, in
+  // the interim fix, on content change), which globally wiped browsers'
+  // modelsMap and left previously-visited sessions with empty model
+  // selectors. Per-session `models_list` updates are now the sole signal
+  // for dropdown contents.
+  it("never broadcasts models_refreshed on providers_list arrival (any flavour)", async () => {
     const piWs = await connectSession(piPort, "p1");
     const browserWs = new WebSocket(`ws://localhost:${browserPort}/ws`);
     const browserMessages: any[] = [];
@@ -112,31 +119,36 @@ describe("providers_list — server wiring", () => {
       { id: "deepseek", displayName: "DeepSeek", hasOAuth: false, configured: false },
       { id: "fireworks", displayName: "Fireworks", hasOAuth: false, configured: false, envVar: "FIREWORKS_API_KEY" },
     ];
-
-    // 1) First push — must broadcast.
-    piWs.send(JSON.stringify({ type: "providers_list", sessionId: "p1", providers: cat1 }));
-    await wait(80);
-    const refreshes1 = browserMessages.filter((m) => m.type === "models_refreshed");
-    expect(refreshes1.length).toBe(1);
-    browserMessages.length = 0;
-
-    // 2) Identical re-push (the routine state-sync case) — must NOT broadcast.
-    piWs.send(JSON.stringify({ type: "providers_list", sessionId: "p1", providers: cat1 }));
-    await wait(80);
-    const refreshes2 = browserMessages.filter((m) => m.type === "models_refreshed");
-    expect(refreshes2.length).toBe(0);
-
-    // 3) Push with a flipped `custom` flag — must broadcast (catalogue truly changed).
     const cat2 = [
       { id: "deepseek", displayName: "DeepSeek", hasOAuth: false, configured: false, custom: true },
       { id: "fireworks", displayName: "Fireworks", hasOAuth: false, configured: false, envVar: "FIREWORKS_API_KEY" },
     ];
+
+    // First push — no broadcast.
+    piWs.send(JSON.stringify({ type: "providers_list", sessionId: "p1", providers: cat1 }));
+    await wait(80);
+    expect(browserMessages.filter((m) => m.type === "models_refreshed").length).toBe(0);
+
+    // Identical re-push — no broadcast.
+    piWs.send(JSON.stringify({ type: "providers_list", sessionId: "p1", providers: cat1 }));
+    await wait(80);
+    expect(browserMessages.filter((m) => m.type === "models_refreshed").length).toBe(0);
+
+    // Content change (custom flag flip) — still no broadcast.
     piWs.send(JSON.stringify({ type: "providers_list", sessionId: "p1", providers: cat2 }));
     await wait(80);
-    const refreshes3 = browserMessages.filter((m) => m.type === "models_refreshed");
-    expect(refreshes3.length).toBe(1);
+    expect(browserMessages.filter((m) => m.type === "models_refreshed").length).toBe(0);
+
+    // New session sending its first push — still no broadcast (this was the
+    // exact scenario that defeated the per-session `changed` gate from the
+    // previous fix).
+    const piWs2 = await connectSession(piPort, "p2");
+    piWs2.send(JSON.stringify({ type: "providers_list", sessionId: "p2", providers: cat1 }));
+    await wait(80);
+    expect(browserMessages.filter((m) => m.type === "models_refreshed").length).toBe(0);
 
     piWs.close();
+    piWs2.close();
     browserWs.close();
   });
 });

@@ -567,11 +567,16 @@ export function useMessageHandler(
         setDiscoveredServers(msg.servers as DiscoveredServerInfo[]);
         break;
 
+      // `models_refreshed` was a global signal that wiped modelsMap and
+      // re-requested only for the selected session, leaving previously-
+      // visited sessions in `subscribedRef` with empty model lists. The
+      // signal is gone (see change: simplify-model-selection-channels):
+      // each bridge pushes its own `models_list` per-session on credential
+      // changes, so modelsMap is updated incrementally without a wipe.
+      // The case is preserved as a no-op for protocol-compatibility with
+      // older bridges that may still emit it; deleting the case would
+      // throw on receipt under strict-union message handlers.
       case "models_refreshed":
-        setModelsMap(new Map());
-        if (selectedSessionIdRef.current) {
-          send({ type: "request_models", sessionId: selectedSessionIdRef.current });
-        }
         break;
 
       // ── Extension UI System (Phase 1) ──

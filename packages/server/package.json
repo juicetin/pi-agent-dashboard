@@ -15,8 +15,8 @@
     "node": ">=22.18.0"
   },
   "piCompatibility": {
-    "minimum": "0.70.0",
-    "recommended": "0.70.0",
+    "minimum": "0.74.0",
+    "recommended": "0.74.0",
     "maximum": null
   },
   "main": "src/cli.ts",

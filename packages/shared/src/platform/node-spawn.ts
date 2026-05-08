@@ -118,29 +118,37 @@ export function toFileUrl(pathOrUrl: string): string {
  * host can exercise the Windows branch without mutating `process.platform`.
  *
  * !! JITI VERSION CONTRACT !!
- * The Windows-non-tsx arm assumes the jiti loader is from
- * `@earendil-works/pi-coding-agent@0.70.x` (jiti 2.x with the `file:///`
- * triple-slash URL handling fix). jiti 2.x correctly handles `file:///`
- * URL entries on Windows — it was the version we carved this contract
- * around in change `fix-windows-entry-script-url`.
+ * The Windows-non-tsx arm relies on jiti's `file:///` triple-slash URL
+ * handling. Verified-good baselines (must be one of these in the
+ * offline cacache):
+ *   • `@earendil-works/pi-coding-agent@0.74.x` (jiti `^2.7.0`)  — current
+ *   • `@mariozechner/pi-coding-agent@0.70.x`  (jiti 2.x)        — legacy
  *
- * Newer jiti versions (e.g. jiti 2.6.5 in `pi-coding-agent@0.71.x`)
- * MISBEHAVE on `file:///` entries: they normalize triple-slash to
- * single-slash and prepend cwd as if the entry were a relative
- * specifier, producing `<cwd>/file:/...` ENOENT errors.
+ * Both ship a jiti that correctly normalises `file:///` entries on
+ * Windows. The contract was originally carved around 0.70.x in change
+ * `fix-windows-entry-script-url` and re-anchored at 0.74.x in change
+ * `migrate-pi-fork-to-earendil` (E.7).
  *
- * The Electron Windows codepath defends against this version drift by
- * resolving jiti from the managed dir's `pi-coding-agent@0.70.0` (the
- * version pinned in `packages/electron/offline-packages.json` and
- * extracted into `~/.pi-dashboard/` by `installStandalone()` on first
- * launch — see Defect 1 of change
- * `fix-electron-windows-installer-and-server-bootstrap`). Since the
- * managed-dir tree is pinned, the contract holds regardless of what
- * jiti is on the user's PATH.
+ * Known-broken (do NOT pin): `pi-coding-agent@0.71.x` shipping
+ * `jiti@2.6.5`. That jiti version misnormalises triple-slash to
+ * single-slash and prepends cwd as if the entry were a relative
+ * specifier, producing `<cwd>/file:/...` ENOENT errors. Keep the
+ * 0.71.x / 2.6.5 mention here so contributors recognise the
+ * regression pattern if it recurs in a future jiti.
+ *
+ * The Electron Windows codepath defends against version drift by
+ * resolving jiti from the managed dir's pinned `pi-coding-agent`
+ * (currently `@earendil-works/pi-coding-agent@0.74.0`, pinned in
+ * `packages/electron/offline-packages.json` and extracted into
+ * `~/.pi-dashboard/` by `installStandalone()` on first launch — see
+ * Defect 1 of change `fix-electron-windows-installer-and-server-bootstrap`).
+ * Since the managed-dir tree is pinned, the contract holds regardless
+ * of what jiti is on the user's PATH.
  *
  * If a future change bumps the offline-cacache `pi-coding-agent` pin to
- * a version with a different jiti, RE-VERIFY this contract on Windows
- * manually (run a packaged Electron app on Win10 + Win11) and either:
+ * a version OUTSIDE the verified baselines, RE-VERIFY this contract on
+ * Windows manually (run a packaged Electron app on Win10 + Win11) and
+ * either:
  *   1. Update the contract (fix the file:// URL handling expectation), OR
  *   2. Add a per-jiti-version branch here, OR
  *   3. Switch the bundled loader to tsx (which has its own contract).

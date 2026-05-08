@@ -9,9 +9,15 @@
  * The Electron app's wizard auto-skips its UI when `pi.found && bridge.found`.
  * Pre-fix, that auto-skip ALSO skipped `installStandalone()`, leaving
  * `~/.pi-dashboard/node_modules/` empty. The bundled server then fell back
- * to the user's system pi for the TS loader, hitting jiti-version drift on
- * machines with `pi-coding-agent@0.71.x` (jiti 2.6.5) and crashing with
- * `MODULE_NOT_FOUND` before the dashboard could start.
+ * to the user's system pi for the TS loader, hitting jiti-version drift
+ * (the original failure mode was `pi-coding-agent@0.71.x` shipping
+ * `jiti@2.6.5`, which misnormalised file:/// URLs on Windows — see
+ * `node-spawn.ts::shouldUrlWrapEntry`). The crash was `MODULE_NOT_FOUND`
+ * before the dashboard could start.
+ *
+ * The current managed pin is `@earendil-works/pi-coding-agent@0.74.x`
+ * (jiti `^2.7.0`); the 0.71.x / 2.6.5 reference is kept as the canonical
+ * known-broken marker.
  *
  * Fix: every first launch SHALL run `installStandalone()` regardless of
  * wizard-UI state. This module:

@@ -69,7 +69,19 @@ This change:
 - **MODIFY**: `packages/server/src/__tests__/package-manager-wrapper-resolve.test.ts` — managed-install fixture relocated under `@earendil-works/` so the new probe order finds it on first alias.
 - **DELETE**: `packages/shared/src/__tests__/bootstrap/{,/families}/__snapshots__/*.snap` (9 files) — bootstrap probe order + alias names changed; snapshots regenerate on next `vitest run`.
 
-### Phase E — Electron launch-path bug fix (cwd for managed CLI shebang)
+### Phase E — Version pin consistency (pi-coding-agent + sibling packages)
+
+The pre-migration code pinned `@mariozechner/pi-coding-agent@0.70.0` in `piCompatibility` and the offline cache. The dashboard's actual runtime target is now `@earendil-works/pi-coding-agent@0.74.0`. This phase makes every version reference consistent.
+
+- **MODIFY**: `packages/server/package.json` — `piCompatibility.minimum` and `piCompatibility.recommended` bumped from `"0.70.0"` to `"0.74.0"`. The fork-name change is implicit (the version-skew code already probes both fork names — see `pi-version-skew.ts::readCurrentPiVersion`).
+- **NOT ADDING**: separate `piCompatibility` entries for `pi-ai` / `pi-tui` / `pi-agent-core`. Rationale: those siblings publish in lockstep with `pi-coding-agent` (the earendil 0.74 build pins them as `"^0.74.0"` exact-minor in its own `package.json`). Pinning pi-coding-agent's version transitively pins the siblings via npm dep resolution. Adding sibling entries would require schema and consumer changes (`pi-version-skew.ts`, `BootstrapCompatibility`, the version-skew UI banner) without buying any additional safety. If a sibling ever desyncs from pi-coding-agent's release train, that's the moment to extend the schema — until then it's dead code.
+- **MODIFY**: `packages/electron/offline-packages.json` — pin flips from `@mariozechner/pi-coding-agent@0.70.0` to `@earendil-works/pi-coding-agent@0.74.0`. This is Phase H.1 from the original proposal, brought into scope.
+- **REGENERATE**: `packages/electron/resources/offline-packages/{manifest.json,npm-cache.tar.gz}` via `node packages/electron/scripts/bundle-offline-packages.mjs`. Produces a fresh cacache for the new pin.
+- **MODIFY**: `packages/shared/src/__tests__/node-spawn-jiti-contract.test.ts` — the `0.70.x` assertion flips to accept `@earendil-works/pi-coding-agent@0.74.x`. The Windows file:/// URL contract that originally motivated this test was a jiti 2.x quirk; the earendil 0.74 build ships `jiti@^2.7.0` which post-dates the broken 2.6.5 and is expected to honour the file:/// behaviour. Re-verification on Windows is recommended but out-of-scope for this change (tracked in tasks H.1 follow-up — "Re-verify Windows file:/// jiti behaviour against jiti 2.7+").
+- **MODIFY**: `packages/server/src/__tests__/pi-version-skew.test.ts` — fixture at line ~200 flips from `@mariozechner/pi-coding-agent@0.70.0` to `@earendil-works/pi-coding-agent@0.74.0` to match the bumped piCompatibility floor.
+- **MODIFY**: stale comments in `packages/shared/src/platform/node-spawn.ts` (JITI VERSION CONTRACT block) and `packages/electron/src/lib/power-user-install.ts` (header block) — replace `0.70.x` / `0.71.x` references with the current `0.74.x` baseline. Keep the historical 2.6.5 / 0.71.x failure marker because it documents what NOT to ship.
+
+### Phase F — Electron launch-path bug fix (cwd for managed CLI shebang)
 
 - **MODIFY**: `packages/electron/src/lib/server-lifecycle.ts::launchViaCli`
   - `cwd: process.cwd()` → `cwd: MANAGED_DIR` (= `~/.pi-dashboard/`).
@@ -78,8 +90,8 @@ This change:
 
 ## Impact
 
-- **Affected specs**: `bootstrap-install`, `dependency-installer`, `first-run-wizard`, `pi-core-version-check`, `package-management`, `bridge-extension` (doc-only path comment).
-- **Affected code**: 49 source/test/config files. Net diff: +354 / −154 lines plus 9 snapshot deletions.
+- **Affected specs**: `bootstrap-install`, `dependency-installer`, `first-run-wizard`, `pi-core-version-check`, `package-management`, `bridge-extension` (doc-only path comment), `bundled-recommended-extensions` (offline-cache pin).
+- **Affected code**: ~55 source/test/config files (49 from Phases A–D, F + ~6 added in Phase E for version pins). Plus 9 deleted snapshots and a regenerated `npm-cache.tar.gz`.
 - **Behaviour**:
   - Users on `@earendil-works/pi-coding-agent` (the new default global pi) get a working dashboard.
   - Users on legacy `@mariozechner/pi-coding-agent` continue to work via the fallback alias.
@@ -89,6 +101,6 @@ This change:
 ## Non-goals
 
 - **Not** changing `@mariozechner/clipboard` (separate package, unrelated to the pi fork).
-- **Not** updating `packages/electron/offline-packages.json` (the offline npm cache manifest still pins `@mariozechner/pi-coding-agent`). When earendil cacaches are republished, the manifest and `node-spawn-jiti-contract.test.ts` flip together as a follow-up.
+- ~~**Not** updating `packages/electron/offline-packages.json`~~ — moved into scope as Phase E. The manifest now pins `@earendil-works/pi-coding-agent@0.74.0` and the contract test is flipped to match.
 - **Not** updating `packages/client/**` or `packages/electron/scripts/**` (test fixtures and shell installer scripts still contain `@mariozechner/pi-coding-agent` literals — separate pass when the npm-published name flips for new installs).
 - **Not** removing the `@mariozechner/pi-coding-agent` legacy alias. Carrying it forward is the cost of a graceful migration; removal is a follow-up change once telemetry shows ≤epsilon use of that alias.

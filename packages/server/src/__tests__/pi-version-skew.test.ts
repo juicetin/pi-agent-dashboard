@@ -187,17 +187,17 @@ describe("pi-version-skew", () => {
     }
 
     it("npm-global symlinked bin launcher resolves to the real package.json", () => {
-      // Simulate ~/.nvm/.../bin/pi → ../lib/node_modules/@mariozechner/pi-coding-agent/dist/cli.js
+      // Simulate ~/.nvm/.../bin/pi → ../lib/node_modules/@earendil-works/pi-coding-agent/dist/cli.js
       const nodeRoot = path.join(tmpDir, "node-install");
       const binDir = path.join(nodeRoot, "bin");
-      const pkgDir = path.join(nodeRoot, "lib", "node_modules", "@mariozechner", "pi-coding-agent");
+      const pkgDir = path.join(nodeRoot, "lib", "node_modules", "@earendil-works", "pi-coding-agent");
       const distDir = path.join(pkgDir, "dist");
       fs.mkdirSync(binDir, { recursive: true });
       fs.mkdirSync(distDir, { recursive: true });
       fs.writeFileSync(path.join(distDir, "cli.js"), "// stub");
       fs.writeFileSync(
         path.join(pkgDir, "package.json"),
-        JSON.stringify({ name: "@mariozechner/pi-coding-agent", version: "0.70.0" }),
+        JSON.stringify({ name: "@earendil-works/pi-coding-agent", version: "0.74.0" }),
       );
       // The bad path (what old code computed) must NOT exist.
       // That is: nodeRoot/package.json. We leave it absent.
@@ -210,7 +210,7 @@ describe("pi-version-skew", () => {
       );
 
       const registry = stubRegistry(binLink);
-      expect(readCurrentPiVersion(registry)).toBe("0.70.0");
+      expect(readCurrentPiVersion(registry)).toBe("0.74.0");
     });
 
     it("non-symlinked path is a no-op under realpath", () => {

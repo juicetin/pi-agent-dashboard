@@ -2,7 +2,8 @@ import React from "react";
 import { Icon } from "@mdi/react";
 import { mdiArrowLeft, mdiCheckCircle, mdiCloseCircle, mdiAlertCircle, mdiCircle, mdiCircleOutline } from "@mdi/js";
 import type { FlowAgentState, FlowDetailEntry } from "@blackbelt-technology/pi-dashboard-shared/types.js";
-import { MarkdownContent } from "../../../client/src/components/MarkdownContent.js";
+import { UI_PRIMITIVE_KEYS } from "@blackbelt-technology/pi-dashboard-shared/dashboard-plugin/ui-primitives.js";
+import { useUiPrimitive } from "@blackbelt-technology/dashboard-plugin-runtime";
 
 function formatTokens(n: number): string {
   if (n < 1000) return String(n);
@@ -62,6 +63,7 @@ function ToolCallEntry({ entry }: { entry: FlowDetailEntry & { kind: "tool" } })
 }
 
 function TextEntry({ text }: { text: string }) {
+  const MarkdownContent = useUiPrimitive(UI_PRIMITIVE_KEYS.markdownContent);
   return (
     <div className="py-1.5 pl-3">
       <MarkdownContent content={text} />
@@ -96,6 +98,7 @@ export function FlowAgentDetail({
   agent: FlowAgentState;
   onBack: () => void;
 }) {
+  const MarkdownContent = useUiPrimitive(UI_PRIMITIVE_KEYS.markdownContent);
   const displayName = agent.label || agent.agentName;
   const isComplete = agent.status === "complete" || agent.status === "error" || agent.status === "blocked";
 

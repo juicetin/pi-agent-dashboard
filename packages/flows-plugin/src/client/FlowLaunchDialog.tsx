@@ -1,10 +1,15 @@
 import React, { useState, useRef, useEffect } from "react";
 import { Icon } from "@mdi/react";
 import { mdiPlay } from "@mdi/js";
-import { DialogPortal } from "@blackbelt-technology/pi-dashboard-client-utils/DialogPortal";
+import { UI_PRIMITIVE_KEYS } from "@blackbelt-technology/pi-dashboard-shared/dashboard-plugin/ui-primitives.js";
+import { useUiPrimitive } from "@blackbelt-technology/dashboard-plugin-runtime";
+// GateSlot is a slot CONSUMER and aggregateGateState is a pure helper —
+// neither qualifies as a primitive. Direct import. See add-plugin-ui-primitive-
+// registry Decision 4.
 import { GateSlot, aggregateGateState } from "@blackbelt-technology/pi-dashboard-client-utils/extension-ui/GateSlot";
 import type { DashboardSession } from "@blackbelt-technology/pi-dashboard-shared/types.js";
 
+// Registry lookup hoisted into the exported component below — see body.
 export function FlowLaunchDialog({
   flowName,
   description,
@@ -19,6 +24,7 @@ export function FlowLaunchDialog({
   /** Phase-2 decorator host — used to gate the Run button when an extension declares the flow unavailable. */
   session?: Pick<DashboardSession, "uiDecorators">;
 }) {
+  const DialogPortal = useUiPrimitive(UI_PRIMITIVE_KEYS.dialogPortal);
   // Phase-2 (`add-extension-ui-decorations`): aggregate any `gate` decorators
   // targeting this flowId. Most-restrictive-wins: any `available: false`
   // disables the Run button and renders the reason inline.

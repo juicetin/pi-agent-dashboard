@@ -278,6 +278,9 @@ This section lists only the **architectural backbone** — the files agents touc
 | `.pi/skills/openspec-shared/scripts/effective-status.sh` | Bash wrapper around `openspec status` applying R1/R2/R3 promotion |
 | `src/shared/state-replay.ts` | Synthesizes events from pi entries (shared, used by server + bridge) |
 | `src/shared/dashboard-plugin/slot-types.ts` | Frozen slot taxonomy: `SlotId`, `Multiplicity`, `PayloadTier`, `SLOT_DEFINITIONS` |
+| `src/shared/dashboard-plugin/ui-primitives.ts` | UI primitive registry contracts: `UI_PRIMITIVE_KEYS`, `UiPrimitiveMap`, per-primitive prop interfaces. See `docs/plugin-ui-primitives.md`. |
+| `packages/dashboard-plugin-runtime/src/ui-primitive-{registry,context}.tsx` | Registry runtime: `createUiPrimitiveRegistry`, `registerUiPrimitive`, `<UiPrimitiveProvider>`, `useUiPrimitive` (strict), `useUiPrimitiveOrNull` (soft). |
+| `packages/dashboard-plugin-runtime/src/test-support/withUiPrimitiveProvider.tsx` | Test helper that wraps a render in a UiPrimitiveProvider populated with mock impls. |
 | `src/shared/dashboard-plugin/manifest-types.ts` | `PluginManifest` and `PluginClaim` interfaces |
 | `src/shared/dashboard-plugin/slot-props.ts` | `SlotPropsMap` and `SlotProps<SlotId>` typed prop contracts per slot id |
 | `src/shared/dashboard-plugin/plugin-status.ts` | `PluginStatus` (for `/api/health`) and `PluginConfigUpdate` (WS payload) |

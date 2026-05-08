@@ -1,6 +1,9 @@
 import React, { useMemo, useRef, useState, useEffect } from "react";
+// useZoomPan is a HOOK — it cannot go through the registry (Rules of Hooks).
+// Stays as a direct import. See add-plugin-ui-primitive-registry Decision 4.
 import { useZoomPan } from "@blackbelt-technology/pi-dashboard-client-utils/useZoomPan";
-import { ZoomControls } from "@blackbelt-technology/pi-dashboard-client-utils/ZoomControls";
+import { UI_PRIMITIVE_KEYS } from "@blackbelt-technology/pi-dashboard-shared/dashboard-plugin/ui-primitives.js";
+import { useUiPrimitive } from "@blackbelt-technology/dashboard-plugin-runtime";
 import { graphlib } from "dagre-d3-es";
 import { layout as dagreLayout } from "dagre-d3-es/src/dagre/index.js";
 import type { FlowState, ArchitectDagStep } from "@blackbelt-technology/pi-dashboard-shared/types.js";
@@ -398,6 +401,7 @@ export function FlowGraph({ steps }: { steps: FlowGraphStep[] }) {
     }
   }, [steps]);
 
+  const ZoomControls = useUiPrimitive(UI_PRIMITIVE_KEYS.zoomControls);
   const { state: zoom, handlers, zoomIn, zoomOut, reset } = useZoomPan();
   const [hovered, setHovered] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);

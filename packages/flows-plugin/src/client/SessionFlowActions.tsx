@@ -3,8 +3,9 @@ import { Icon } from "@mdi/react";
 import { mdiPlay, mdiPlus } from "@mdi/js";
 import type { FlowInfo } from "@blackbelt-technology/pi-dashboard-shared/types.js";
 import { FlowLaunchDialog } from "./FlowLaunchDialog.js";
-import { ConfirmDialog } from "@blackbelt-technology/pi-dashboard-client-utils/ConfirmDialog";
-import { SearchableSelectDialog, type SelectOption } from "@blackbelt-technology/pi-dashboard-client-utils/SearchableSelectDialog";
+import { UI_PRIMITIVE_KEYS } from "@blackbelt-technology/pi-dashboard-shared/dashboard-plugin/ui-primitives.js";
+import type { UiSelectOption as SelectOption } from "@blackbelt-technology/pi-dashboard-shared/dashboard-plugin/ui-primitives.js";
+import { useUiPrimitive } from "@blackbelt-technology/dashboard-plugin-runtime";
 
 export function SessionFlowActions({
   flows,
@@ -19,6 +20,8 @@ export function SessionFlowActions({
   hasFlowsDelete?: boolean;
   onFlowAction: (action: string, opts?: { flowName?: string; task?: string; description?: string }) => void;
 }) {
+  const ConfirmDialog = useUiPrimitive(UI_PRIMITIVE_KEYS.confirmDialog);
+  const SearchableSelectDialog = useUiPrimitive(UI_PRIMITIVE_KEYS.searchableSelectDialog);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [editPickerOpen, setEditPickerOpen] = useState(false);
   const [editFlowName, setEditFlowName] = useState<string | null>(null);

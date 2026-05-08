@@ -20,6 +20,8 @@
     "prepare": "vite build && node scripts/precompress.mjs"
   },
   "dependencies": {
+    "@blackbelt-technology/dashboard-plugin-runtime": "^0.5.3",
+    "@blackbelt-technology/pi-dashboard-client-utils": "^0.5.3",
     "@blackbelt-technology/pi-dashboard-flows-plugin": "^0.5.3",
     "@blackbelt-technology/pi-dashboard-jj-plugin": "^0.5.3",
     "@blackbelt-technology/pi-dashboard-shared": "^0.5.3",

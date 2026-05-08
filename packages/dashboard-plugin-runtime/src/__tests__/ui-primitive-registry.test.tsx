@@ -21,6 +21,7 @@ import {
   useUiPrimitive,
   useUiPrimitiveOrNull,
 } from "../index.js";
+import { withUiPrimitiveProvider } from "../test-support/withUiPrimitiveProvider.js";
 
 // Minimal stub primitives used as registration impls in tests.
 const StubMarkdown: UiPrimitiveMap["ui:markdown-content"] = ({ content }) => (
@@ -211,6 +212,38 @@ describe("UI primitive registry", () => {
         { wrapper },
       );
       expect(result.current).toBe(StubMarkdown);
+    });
+  });
+
+  describe("withUiPrimitiveProvider test helper", () => {
+    it("wraps children in a provider populated with the supplied impls", () => {
+      const Consumer = () => {
+        const fn = useUiPrimitive(UI_PRIMITIVE_KEYS.formatTokens);
+        return <span data-testid="helper-out">{fn(99)}</span>;
+      };
+      const { getByTestId } = render(
+        withUiPrimitiveProvider(
+          { [UI_PRIMITIVE_KEYS.formatTokens]: stubFormatTokens },
+          <Consumer />,
+        ),
+      );
+      expect(getByTestId("helper-out").textContent).toBe("99t");
+    });
+
+    it("throws via strict hook for keys NOT supplied (matches prod semantics)", () => {
+      const Consumer = () => {
+        useUiPrimitive(UI_PRIMITIVE_KEYS.markdownContent);
+        return null;
+      };
+      const origError = console.error;
+      console.error = () => {};
+      try {
+        expect(() =>
+          render(withUiPrimitiveProvider({}, <Consumer />)),
+        ).toThrow(/UI primitive "ui:markdown-content" is not registered/);
+      } finally {
+        console.error = origError;
+      }
     });
   });
 

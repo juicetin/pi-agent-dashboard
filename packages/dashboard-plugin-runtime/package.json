@@ -31,6 +31,10 @@
     "./manifest-validator": {
       "types": "./src/manifest-validator.ts",
       "default": "./src/manifest-validator.ts"
+    },
+    "./test-support": {
+      "types": "./src/test-support/index.ts",
+      "default": "./src/test-support/index.ts"
     }
   },
   "files": [

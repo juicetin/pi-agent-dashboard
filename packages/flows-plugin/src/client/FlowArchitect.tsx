@@ -15,9 +15,9 @@ import type {
   ArchitectAgentEntry,
   FlowDetailEntry,
 } from "@blackbelt-technology/pi-dashboard-shared/types.js";
-import { MarkdownContent } from "../../../client/src/components/MarkdownContent.js";
+import { UI_PRIMITIVE_KEYS } from "@blackbelt-technology/pi-dashboard-shared/dashboard-plugin/ui-primitives.js";
+import { useUiPrimitive } from "@blackbelt-technology/dashboard-plugin-runtime";
 import { FlowGraph, architectStepsToGraphSteps } from "./FlowGraph.js";
-import { AgentCardShell } from "@blackbelt-technology/pi-dashboard-client-utils/AgentCardShell";
 
 // ── Detail view (reuses same patterns as FlowAgentDetail) ─────────
 
@@ -81,6 +81,7 @@ function ToolCallEntry({
 }
 
 function TextEntry({ text }: { text: string }) {
+  const MarkdownContent = useUiPrimitive(UI_PRIMITIVE_KEYS.markdownContent);
   return (
     <div className="py-1.5 pl-3">
       <MarkdownContent content={text} />
@@ -333,6 +334,7 @@ function ArchitectAgentCard({
   agent: ArchitectAgentEntry;
   onViewSource?: () => void;
 }) {
+  const AgentCardShell = useUiPrimitive(UI_PRIMITIVE_KEYS.agentCard);
   return (
     <AgentCardShell
       name={agent.name}

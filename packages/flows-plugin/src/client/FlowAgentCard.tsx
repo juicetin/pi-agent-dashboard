@@ -2,8 +2,10 @@ import React from "react";
 import { Icon } from "@mdi/react";
 import { mdiRefresh, mdiEyeOutline, mdiEyeOffOutline, mdiFileDocumentOutline } from "@mdi/js";
 import type { DashboardSession, FlowAgentState } from "@blackbelt-technology/pi-dashboard-shared/types.js";
-import { AgentCardShell } from "@blackbelt-technology/pi-dashboard-client-utils/AgentCardShell";
-import { formatTokens, formatDuration } from "@blackbelt-technology/pi-dashboard-client-utils/agent-card-utils";
+import { UI_PRIMITIVE_KEYS } from "@blackbelt-technology/pi-dashboard-shared/dashboard-plugin/ui-primitives.js";
+import { useUiPrimitive } from "@blackbelt-technology/dashboard-plugin-runtime";
+// AgentMetricSlot is a slot CONSUMER (Phase-2 decorator slot), not a primitive
+// — it stays as a direct import. See add-plugin-ui-primitive-registry Decision 4.
 import { AgentMetricSlot } from "@blackbelt-technology/pi-dashboard-client-utils/extension-ui/AgentMetricSlot";
 
 export function FlowAgentCard({
@@ -24,6 +26,10 @@ export function FlowAgentCard({
   /** Phase-2 decorator host — used for `agent-metric` filtering by agentId. */
   session?: Pick<DashboardSession, "uiDecorators">;
 }) {
+  const AgentCardShell = useUiPrimitive(UI_PRIMITIVE_KEYS.agentCard);
+  const formatTokens = useUiPrimitive(UI_PRIMITIVE_KEYS.formatTokens);
+  const formatDuration = useUiPrimitive(UI_PRIMITIVE_KEYS.formatDuration);
+
   const displayName = agent.label || agent.stepId || agent.agentName;
   const displayRole = agent.cardRole || agent.model || "";
   const isComplete = agent.status === "complete" || agent.status === "error" || agent.status === "blocked";

@@ -199,12 +199,25 @@ function emptyDirCache(): DirCache {
   return { listMtimeMs: undefined, listResult: undefined, changes: new Map(), data: undefined };
 }
 
+export interface DirectoryServiceOptions {
+  /**
+   * Optional async post-processor applied to `OpenSpecData` after
+   * `buildOpenSpecData` and before caching. Used to inject the per-cwd
+   * `groupId` join from the OpenSpec change-grouping store.
+   * Errors propagate as a logged warning + the unenriched data.
+   * See change: add-openspec-change-grouping.
+   */
+  enrichOpenSpecData?: (cwd: string, data: OpenSpecData) => Promise<OpenSpecData> | OpenSpecData;
+}
+
 export function createDirectoryService(
   preferencesStore: PreferencesStore,
   sessionManager: SessionManager,
   initialConfig?: Partial<OpenSpecPollConfig>,
+  options: DirectoryServiceOptions = {},
 ): DirectoryService {
   let cfg: OpenSpecPollConfig = { ...DEFAULT_OPENSPEC_POLL, ...(initialConfig ?? {}) };
+  const enrichOpenSpecData = options.enrichOpenSpecData;
 
   const caches = new Map<string, DirCache>();
   const piResourcesCache = new Map<string, PiResourcesResult>();
@@ -377,12 +390,26 @@ export function createDirectoryService(
     }));
 
     // ── Step 3: build + cache + return ──
-    const data = buildOpenSpecData(
+    let data = buildOpenSpecData(
       { changes: listResult ?? [] },
       statusResults,
       createFsProbeFactory(cwd),
       createFsSpecsProbeFactory(cwd),
     );
+    if (enrichOpenSpecData) {
+      try {
+        data = await enrichOpenSpecData(cwd, data);
+      } catch (err) {
+        // Don\'t fail the whole poll if the enricher (e.g. group-store read)
+        // throws — log and continue with the unenriched data. See change:
+        // add-openspec-change-grouping.
+        // eslint-disable-next-line no-console
+        if (typeof process !== "undefined" && /pi-dashboard|openspec-poll/.test(process.env?.DEBUG ?? "")) {
+          // eslint-disable-next-line no-console
+          console.warn(`[directory-service] enrichOpenSpecData(${cwd}) threw:`, err);
+        }
+      }
+    }
 
     // Stamp the cache with the pre-call mtime — i.e. the mtime that
     // demonstrably reflects the file state observed by the CLI. Skip racy

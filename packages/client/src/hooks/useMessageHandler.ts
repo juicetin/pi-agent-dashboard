@@ -4,7 +4,7 @@
  */
 import { useCallback } from "react";
 import { createInitialState, reduceEvent, addInteractiveRequest, resolveInteractiveRequest, dismissInteractiveRequest, type SessionState } from "../lib/event-reducer.js";
-import type { DashboardSession, CommandInfo, FlowInfo, FileEntry, OpenSpecData, ModelInfo, RoleInfo } from "@blackbelt-technology/pi-dashboard-shared/types.js";
+import type { DashboardSession, CommandInfo, FlowInfo, FileEntry, OpenSpecData, OpenSpecGroup, ModelInfo, RoleInfo } from "@blackbelt-technology/pi-dashboard-shared/types.js";
 import { encodeFolderPath } from "../lib/folder-encoding.js";
 import type { TerminalSession } from "@blackbelt-technology/pi-dashboard-shared/terminal-types.js";
 import type { EditorInstanceStatus } from "@blackbelt-technology/pi-dashboard-shared/editor-types.js";
@@ -41,6 +41,7 @@ export interface MessageHandlerSetters {
   setSessionFlows: React.Dispatch<React.SetStateAction<Map<string, FlowInfo[]>>>;
   setFileResults: React.Dispatch<React.SetStateAction<{ query: string; files: FileEntry[] } | null>>;
   setOpenspecMap: React.Dispatch<React.SetStateAction<Map<string, OpenSpecData>>>;
+  setOpenspecGroupsMap: React.Dispatch<React.SetStateAction<Map<string, { groups: OpenSpecGroup[]; assignments: Record<string, string> }>>>;
   setModelsMap: React.Dispatch<React.SetStateAction<Map<string, ModelInfo[]>>>;
   setRolesMap: React.Dispatch<React.SetStateAction<Map<string, RoleInfo>>>;
   setSpawnResult: React.Dispatch<React.SetStateAction<{ success: boolean; message: string } | null>>;
@@ -78,7 +79,7 @@ export function useMessageHandler(
 ): (msg: ServerToBrowserMessage) => void {
   const {
     setSessions, setSessionStates, setSessionCommands, setSessionFlows,
-    setFileResults, setOpenspecMap, setModelsMap, setRolesMap, setSpawnResult,
+    setFileResults, setOpenspecMap, setOpenspecGroupsMap, setModelsMap, setRolesMap, setSpawnResult,
     setSessionOrderMap, setPinnedDirectories, setTerminals, setEditorStatuses,
     setDiscoveredServers, setSpawnErrors, setResumeErrors,
   } = setters;
@@ -262,6 +263,14 @@ export function useMessageHandler(
         setOpenspecMap((prev) => {
           const next = new Map(prev);
           next.set(msg.cwd, msg.data);
+          return next;
+        });
+        break;
+
+      case "openspec_groups_update":
+        setOpenspecGroupsMap((prev) => {
+          const next = new Map(prev);
+          next.set(msg.cwd, { groups: msg.groups, assignments: msg.assignments });
           return next;
         });
         break;

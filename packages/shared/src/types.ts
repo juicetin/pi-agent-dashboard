@@ -404,6 +404,40 @@ export interface OpenSpecChange {
    * "Archive anyway" escape hatch when artifacts are authored but tasks remain unchecked.
    */
   isComplete?: boolean;
+  /**
+   * Group assignment joined server-side from `<cwd>/openspec/groups/groups.json`.
+   * `null` or absent means Ungrouped. Clients SHALL NOT recompute the join.
+   * See change: add-openspec-change-grouping.
+   */
+  groupId?: string | null;
+}
+
+/** Schema version for the per-repo OpenSpec groups file at
+ *  `<cwd>/openspec/groups/groups.json`. Bumped only on incompatible shape changes.
+ *  See change: add-openspec-change-grouping. */
+export const OPENSPEC_GROUPS_SCHEMA_VERSION = 1 as const;
+
+/** A user-defined group of OpenSpec changes within a single repo.
+ *  See change: add-openspec-change-grouping. */
+export interface OpenSpecGroup {
+  /** Server-generated slug from `name` plus collision suffix. Stable across rename. */
+  id: string;
+  /** User-visible label; editable. */
+  name: string;
+  /** Optional CSS hex color (`#RRGGBB`). Clients fall back to a default palette when omitted. */
+  color?: string;
+  /** Display order; server keeps values contiguous `0..groups.length - 1` after every reorder. */
+  order: number;
+}
+
+/** Shape of the on-disk groups file at `<cwd>/openspec/groups/groups.json`.
+ *  Single combined file for groups + assignments — one read, one write, atomic.
+ *  See change: add-openspec-change-grouping. */
+export interface OpenSpecGroupsFile {
+  schemaVersion: number;
+  groups: OpenSpecGroup[];
+  /** `changeName` → `groupId`. Unassigned changes have no entry. */
+  assignments: Record<string, string>;
 }
 
 /** Lifecycle state of an OpenSpec change, derived from artifacts + task status */

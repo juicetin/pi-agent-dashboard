@@ -57,7 +57,7 @@ import { selectViewedSessionId } from "./lib/selectViewedSessionId.js";
 import { useSessionActions } from "./hooks/useSessionActions.js";
 import { usePendingPromptTimeout } from "./hooks/usePendingPromptTimeout.js";
 import { useOpenSpecActions } from "./hooks/useOpenSpecActions.js";
-import type { DashboardSession, CommandInfo, FlowInfo, FileEntry, OpenSpecData, ModelInfo, RoleInfo, ImageContent } from "@blackbelt-technology/pi-dashboard-shared/types.js";
+import type { DashboardSession, CommandInfo, FlowInfo, FileEntry, OpenSpecData, OpenSpecGroup, ModelInfo, RoleInfo, ImageContent } from "@blackbelt-technology/pi-dashboard-shared/types.js";
 import { SearchableSelectDialog, type SelectOption } from "./components/SearchableSelectDialog.js";
 import { FlowLaunchDialog } from "@blackbelt-technology/pi-dashboard-flows-plugin/client";
 import { GenericExtensionDialog } from "./components/extension-ui/GenericExtensionDialog.js";
@@ -203,6 +203,7 @@ export default function App() {
   const [sessionFlows, setSessionFlows] = useState<Map<string, FlowInfo[]>>(new Map());
   const [fileResults, setFileResults] = useState<{ query: string; files: FileEntry[] } | null>(null);
   const [openspecMap, setOpenspecMap] = useState<Map<string, OpenSpecData>>(new Map());
+  const [openspecGroupsMap, setOpenspecGroupsMap] = useState<Map<string, { groups: OpenSpecGroup[]; assignments: Record<string, string> }>>(new Map());
   const [modelsMap, setModelsMap] = useState<Map<string, ModelInfo[]>>(new Map());
   const [rolesMap, setRolesMap] = useState<Map<string, RoleInfo>>(new Map());
   const [spawnResult, setSpawnResult] = useState<{ success: boolean; message: string } | null>(null);
@@ -297,6 +298,7 @@ export default function App() {
           setSessionCommands(new Map());
           setSessionFlows(new Map());
           setOpenspecMap(new Map());
+          setOpenspecGroupsMap(new Map());
           setTerminals(new Map());
           subscribedRef.current.clear();
         },
@@ -341,7 +343,7 @@ export default function App() {
   }, []);
 
   const handleMessage = useMessageHandler(
-    { setSessions, setSessionStates, setSessionCommands, setSessionFlows, setFileResults, setOpenspecMap, setModelsMap, setRolesMap, setSpawnResult, setSessionOrderMap, setPinnedDirectories, setTerminals, setEditorStatuses, setDiscoveredServers, setSpawnErrors, setResumeErrors },
+    { setSessions, setSessionStates, setSessionCommands, setSessionFlows, setFileResults, setOpenspecMap, setOpenspecGroupsMap, setModelsMap, setRolesMap, setSpawnResult, setSessionOrderMap, setPinnedDirectories, setTerminals, setEditorStatuses, setDiscoveredServers, setSpawnErrors, setResumeErrors },
     { send, navigate, clearSpawningCwd, spawningCwdsRef, subscribedRef, pendingTerminalCwdRef, lastCreatedTerminalIdRef, maxSeqMapRef, selectedSessionIdRef, pendingSpawnsRef },
   );
 
@@ -756,6 +758,7 @@ export default function App() {
       onSelect={handleSelect}
       contextUsageMap={contextUsageMap}
       openspecMap={openspecMap}
+      openspecGroupsMap={openspecGroupsMap}
       sessionOrderMap={sessionOrderMap}
       onReorderSessions={(cwd, sessionIds) => {
         setSessionOrderMap((prev) => {

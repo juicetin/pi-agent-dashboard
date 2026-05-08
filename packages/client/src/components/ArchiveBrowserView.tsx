@@ -1,15 +1,23 @@
-import React, { useState, useCallback, useRef } from "react";
+import React, { useState, useCallback, useRef, useEffect } from "react";
 import { Icon } from "@mdi/react";
 import { mdiArrowLeft, mdiMagnify } from "@mdi/js";
 import { useArchiveListing, groupByDate, filterEntries } from "../hooks/useArchiveListing.js";
 import { ArtifactLetters } from "./openspec-helpers.js";
 import { MarkdownPreviewView } from "./MarkdownPreviewView.js";
 import { useOpenSpecReader } from "../hooks/useOpenSpecReader.js";
-import type { OpenSpecArtifact } from "@blackbelt-technology/pi-dashboard-shared/types.js";
+import { OpenSpecGroupPills } from "./OpenSpecGroupPills.js";
+import { OpenSpecGroupSection } from "./OpenSpecGroupSection.js";
+import { fetchGroups } from "../lib/openspec-groups-api.js";
+import type { OpenSpecArtifact, OpenSpecGroup } from "@blackbelt-technology/pi-dashboard-shared/types.js";
+import type { ArchiveEntry } from "../hooks/useArchiveListing.js";
 
 interface Props {
   cwd: string;
   onBack: () => void;
+  /** Externally-pushed groups (from WS broadcast). */
+  groups?: OpenSpecGroup[];
+  /** Externally-pushed assignments (from WS broadcast). */
+  assignments?: Record<string, string>;
 }
 
 /** Inner reader for an archived change — wraps useOpenSpecReader with archive flag. */
@@ -41,9 +49,13 @@ function ArchiveArtifactReader({
   );
 }
 
-export function ArchiveBrowserView({ cwd, onBack }: Props) {
+export function ArchiveBrowserView({ cwd, onBack, groups: externalGroups, assignments: externalAssignments }: Props) {
   const { entries, isLoading, error } = useArchiveListing(cwd);
   const [search, setSearch] = useState("");
+  const [activePill, setActivePill] = useState<string | null>(null);
+  const [collapseState, setCollapseState] = useState<Record<string, boolean>>({});
+  const [localGroups, setLocalGroups] = useState<OpenSpecGroup[]>([]);
+  const [localAssignments, setLocalAssignments] = useState<Record<string, string>>({});
   const [readerState, setReaderState] = useState<{
     changeName: string;
     artifactId: string;
@@ -51,8 +63,27 @@ export function ArchiveBrowserView({ cwd, onBack }: Props) {
   } | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
+  const groups = externalGroups ?? localGroups;
+  const assignments = externalAssignments ?? localAssignments;
+  const hasGroups = groups.length > 0;
+  const sortedGroups = [...groups].sort((a, b) => a.order - b.order);
+
+  // Fetch groups on mount
+  useEffect(() => {
+    if (externalGroups) return;
+    let cancelled = false;
+    fetchGroups(cwd).then((result) => {
+      if (cancelled) return;
+      setLocalGroups(result.groups);
+      setLocalAssignments(result.assignments);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [cwd, externalGroups]);
+
+  useEffect(() => { if (externalGroups) setLocalGroups(externalGroups); }, [externalGroups]);
+  useEffect(() => { if (externalAssignments) setLocalAssignments(externalAssignments); }, [externalAssignments]);
+
   const handleReadArtifact = useCallback((changeName: string, artifactId: string) => {
-    // Find the entry to get its artifacts
     const entry = entries.find((e) => e.name === changeName);
     if (!entry) return;
     setReaderState({ changeName, artifactId, artifacts: entry.artifacts });
@@ -62,7 +93,6 @@ export function ArchiveBrowserView({ cwd, onBack }: Props) {
     setReaderState(null);
   }, []);
 
-  // Two-level navigation: if reader is open, show it; otherwise show list
   if (readerState) {
     return (
       <ArchiveArtifactReader
@@ -76,7 +106,116 @@ export function ArchiveBrowserView({ cwd, onBack }: Props) {
   }
 
   const filtered = filterEntries(entries, search);
-  const groups = groupByDate(filtered);
+
+  // Get group for an entry
+  const getEntryGroupId = (entry: ArchiveEntry): string | null =>
+    assignments[entry.name] ?? null;
+
+  // Filter by pill
+  const pillFiltered = activePill === null
+    ? filtered
+    : activePill === "__ungrouped__"
+      ? filtered.filter((e) => getEntryGroupId(e) === null)
+      : filtered.filter((e) => getEntryGroupId(e) === activePill);
+
+  const renderEntryRow = (entry: ArchiveEntry) => (
+    <div
+      key={entry.name}
+      className="flex items-center gap-2 px-2 py-1 rounded hover:bg-[var(--bg-tertiary)] cursor-pointer"
+      data-testid="archive-entry"
+      onClick={() => entry.artifacts.length > 0 && handleReadArtifact(entry.name, entry.artifacts[0].id)}
+    >
+      <span className="text-[11px] font-medium text-[var(--text-secondary)] truncate flex-1">
+        {entry.name.replace(/^\d{4}-\d{2}-\d{2}-/, "")}
+      </span>
+      <ArtifactLetters
+        artifacts={entry.artifacts}
+        changeName={entry.name}
+        onReadArtifact={handleReadArtifact}
+      />
+    </div>
+  );
+
+  const renderGroupedContent = () => {
+    const partitioned = new Map<string, ArchiveEntry[]>();
+    const ungroupedEntries: ArchiveEntry[] = [];
+    for (const e of pillFiltered) {
+      const gId = getEntryGroupId(e);
+      if (gId && groups.find((g) => g.id === gId)) {
+        const list = partitioned.get(gId) ?? [];
+        list.push(e);
+        partitioned.set(gId, list);
+      } else {
+        ungroupedEntries.push(e);
+      }
+    }
+
+    return (
+      <div className="space-y-2">
+        {sortedGroups.map((g) => {
+          const items = partitioned.get(g.id) ?? [];
+          if (activePill !== null && activePill !== g.id) return null;
+          const dateGroups = groupByDate(items);
+          return (
+            <OpenSpecGroupSection
+              key={g.id}
+              name={g.name}
+              color={g.color}
+              count={items.length}
+              expanded={collapseState[g.id] !== false}
+              onToggle={() => setCollapseState((prev) => ({ ...prev, [g.id]: !prev[g.id] }))}
+              testId={`archive-group-${g.id}`}
+            >
+              {items.length > 0
+                ? dateGroups.map((dg) => (
+                    <div key={dg.date} className="mb-2" data-testid="archive-date-group">
+                      <div className="text-[10px] font-semibold text-[var(--text-tertiary)] uppercase mb-0.5">
+                        {dg.date}
+                      </div>
+                      <div className="space-y-0.5">{dg.entries.map(renderEntryRow)}</div>
+                    </div>
+                  ))
+                : <p className="text-[10px] text-[var(--text-muted)] px-2 py-1">No entries in this group</p>}
+            </OpenSpecGroupSection>
+          );
+        })}
+        {/* Ungrouped last */}
+        {(activePill === null || activePill === "__ungrouped__") && (
+          <OpenSpecGroupSection
+            name="Ungrouped"
+            color={null}
+            count={ungroupedEntries.length}
+            expanded={collapseState["__ungrouped__"] !== false}
+            onToggle={() => setCollapseState((prev) => ({ ...prev, ["__ungrouped__"]: !prev["__ungrouped__"] }))}
+            testId="archive-group-ungrouped"
+          >
+            {ungroupedEntries.length > 0
+              ? groupByDate(ungroupedEntries).map((dg) => (
+                  <div key={dg.date} className="mb-2" data-testid="archive-date-group">
+                    <div className="text-[10px] font-semibold text-[var(--text-tertiary)] uppercase mb-0.5">
+                      {dg.date}
+                    </div>
+                    <div className="space-y-0.5">{dg.entries.map(renderEntryRow)}</div>
+                  </div>
+                ))
+              : <p className="text-[10px] text-[var(--text-muted)] px-2 py-1">No ungrouped entries</p>}
+          </OpenSpecGroupSection>
+        )}
+      </div>
+    );
+  };
+
+  const renderFlatContent = () => {
+    const dateGroups = groupByDate(pillFiltered);
+    return dateGroups.map((group) => (
+      <div key={group.date} className="mb-3" data-testid="archive-date-group">
+        <div className="text-[10px] font-semibold text-[var(--text-tertiary)] uppercase mb-1">
+          {group.date}
+        </div>
+        <div className="space-y-0.5">{group.entries.map(renderEntryRow)}</div>
+      </div>
+    ));
+  };
 
   return (
     <div className="flex-1 flex flex-col min-h-0" data-testid="archive-browser">
@@ -96,6 +235,17 @@ export function ArchiveBrowserView({ cwd, onBack }: Props) {
           {entries.length} changes
         </span>
       </div>
+
+      {/* Pills */}
+      {hasGroups && (
+        <div className="px-4 pt-1">
+          <OpenSpecGroupPills
+            groups={sortedGroups}
+            activeGroupId={activePill}
+            onSelect={setActivePill}
+          />
+        </div>
+      )}
 
       {/* Search */}
       <div className="flex items-center gap-2 px-4 py-1.5 border-b border-[var(--border-secondary)]">
@@ -121,37 +271,14 @@ export function ArchiveBrowserView({ cwd, onBack }: Props) {
           <p className="text-xs text-[var(--text-muted)] py-4 text-center">Loading archive...</p>
         ) : error ? (
           <p className="text-xs text-red-400 py-4 text-center">{error}</p>
-        ) : filtered.length === 0 ? (
+        ) : pillFiltered.length === 0 ? (
           <p className="text-xs text-[var(--text-muted)] py-4 text-center">
             {search ? "No matching entries" : "No archived changes"}
           </p>
+        ) : hasGroups ? (
+          renderGroupedContent()
         ) : (
-          groups.map((group) => (
-            <div key={group.date} className="mb-3" data-testid="archive-date-group">
-              <div className="text-[10px] font-semibold text-[var(--text-tertiary)] uppercase mb-1">
-                {group.date}
-              </div>
-              <div className="space-y-0.5">
-                {group.entries.map((entry) => (
-                  <div
-                    key={entry.name}
-                    className="flex items-center gap-2 px-2 py-1 rounded hover:bg-[var(--bg-tertiary)] cursor-pointer"
-                    data-testid="archive-entry"
-                    onClick={() => entry.artifacts.length > 0 && handleReadArtifact(entry.name, entry.artifacts[0].id)}
-                  >
-                    <span className="text-[11px] font-medium text-[var(--text-secondary)] truncate flex-1">
-                      {entry.name.replace(/^\d{4}-\d{2}-\d{2}-/, "")}
-                    </span>
-                    <ArtifactLetters
-                      artifacts={entry.artifacts}
-                      changeName={entry.name}
-                      onReadArtifact={handleReadArtifact}
-                    />
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))
+          renderFlatContent()
         )}
       </div>
     </div>

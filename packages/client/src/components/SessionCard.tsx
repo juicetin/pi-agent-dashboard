@@ -9,7 +9,7 @@ import { selectBadgeTimestamp } from "../lib/session-card-time.js";
 import type { DetectedEditor } from "../lib/editor-api.js";
 import { ContextUsageBar } from "./ContextUsageBar.js";
 import type { ContextUsageInfo } from "./SessionList.js";
-import type { OpenSpecData, OpenSpecChange } from "@blackbelt-technology/pi-dashboard-shared/types.js";
+import type { OpenSpecData, OpenSpecChange, OpenSpecGroup } from "@blackbelt-technology/pi-dashboard-shared/types.js";
 import { SessionOpenSpecActions } from "./SessionOpenSpecActions.js";
 import { OpenSpecActivityBadge } from "./OpenSpecActivityBadge.js";
 import { InlineRenameInput } from "./InlineRenameInput.js";
@@ -292,6 +292,8 @@ export function SessionCard({
   onUnhide,
   contextUsage,
   openspecChanges,
+  openspecGroups,
+  openspecAssignments,
   onSendPrompt,
   onFlowAction,
   onAttachProposal,
@@ -318,6 +320,8 @@ export function SessionCard({
   onUnhide: (id: string) => void;
   contextUsage?: ContextUsageInfo;
   openspecChanges?: OpenSpecChange[];
+  openspecGroups?: OpenSpecGroup[];
+  openspecAssignments?: Record<string, string>;
   onSendPrompt?: (text: string, images?: ImageContent[]) => void;
   onFlowAction?: (action: string, opts?: { flowName?: string; task?: string; description?: string }) => void;
   onAttachProposal?: (changeName: string) => void;
@@ -634,6 +638,8 @@ export function SessionCard({
           onSendPrompt={onSendPrompt}
           onReadArtifact={onReadArtifact}
           onBulkArchive={onBulkArchive}
+          groups={openspecGroups}
+          assignments={openspecAssignments}
         />
       )}
       {/* Plugin slot: session-card-badge (additive, coexists with OpenSpec/Flow badges) */}

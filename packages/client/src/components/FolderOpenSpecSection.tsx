@@ -1,44 +1,133 @@
-import React, { useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { Icon } from "@mdi/react";
-import { mdiRefresh, mdiChevronDown, mdiChevronRight, mdiArchiveOutline, mdiFileDocumentOutline, mdiPlay } from "@mdi/js";
-import type { OpenSpecData, DashboardSession } from "@blackbelt-technology/pi-dashboard-shared/types.js";
+import { mdiRefresh, mdiChevronDown, mdiChevronRight, mdiArchiveOutline, mdiFileDocumentOutline, mdiPlay, mdiPlus } from "@mdi/js";
+import { DndContext, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
+import type { OpenSpecData, OpenSpecChange, OpenSpecGroup, DashboardSession } from "@blackbelt-technology/pi-dashboard-shared/types.js";
 import { ArtifactLettersButton } from "./openspec-helpers.js";
 import { DialogPortal } from "./DialogPortal.js";
 import { TasksPopover } from "./TasksPopover.js";
+import { OpenSpecGroupPills } from "./OpenSpecGroupPills.js";
+import { OpenSpecGroupSection } from "./OpenSpecGroupSection.js";
+import { OpenSpecGroupPicker } from "./OpenSpecGroupPicker.js";
+import { OpenSpecGroupManager } from "./OpenSpecGroupManager.js";
+import { DraggableChangeRow } from "./DraggableChangeRow.js";
+import { fetchGroups, createGroup, setAssignment, updateGroup, deleteGroup } from "../lib/openspec-groups-api.js";
+import { GROUP_PALETTE } from "../lib/openspec-group-palette.js";
 
 interface Props {
   data: OpenSpecData;
   cwd: string;
   onRefresh: () => void;
   onReadArtifact?: (changeName: string, artifactId: string) => void;
-  /** Sessions in this folder group (for session links) */
   sessions?: DashboardSession[];
-  /** Navigate to a session */
   onNavigateToSession?: (sessionId: string) => void;
-  /** Open the main specs browser */
   onOpenSpecs?: () => void;
-  /** Open the archive browser */
   onOpenArchive?: () => void;
-  /**
-   * Spawn a new pi session in this folder with the given change pre-attached.
-   * When omitted, the per-row spawn-attached button is hidden.
-   * See change: add-folder-task-checker-and-spawn-attach.
-   */
   onSpawnAttached?: (cwd: string, changeName: string) => void;
+  /** Externally-pushed groups (from WS broadcast). */
+  groups?: OpenSpecGroup[];
+  /** Externally-pushed assignments (from WS broadcast). */
+  assignments?: Record<string, string>;
 }
 
-export function FolderOpenSpecSection({ data, cwd, onRefresh, onReadArtifact, sessions, onNavigateToSession, onOpenSpecs, onOpenArchive, onSpawnAttached }: Props) {
+export function FolderOpenSpecSection({ data, cwd, onRefresh, onReadArtifact, sessions, onNavigateToSession, onOpenSpecs, onOpenArchive, onSpawnAttached, groups: externalGroups, assignments: externalAssignments }: Props) {
   const [expanded, setExpanded] = useState(false);
-  // Which change's TasksPopover is currently open (one at a time).
-  // See change: add-folder-task-checker-and-spawn-attach.
   const [tasksOpenForChange, setTasksOpenForChange] = useState<string | null>(null);
+  const [activePill, setActivePill] = useState<string | null>(null);
+  const [searchFilter, setSearchFilter] = useState("");
+  const [collapseState, setCollapseState] = useState<Record<string, boolean>>({});
+  const [localGroups, setLocalGroups] = useState<OpenSpecGroup[]>([]);
+  const [localAssignments, setLocalAssignments] = useState<Record<string, string>>({});
+  const [managerOpen, setManagerOpen] = useState(false);
+  const [showBootstrapCreate, setShowBootstrapCreate] = useState(false);
 
-  // Cold-boot signaling: openspec dir detected for this cwd but the slow
-  // poll has not yet returned. Render a small grey spinner where the
-  // collapsed `OPENSPEC (N CHANGES)` label normally goes; suppress all
-  // controls; section is non-expandable. Header layout matches the
-  // populated header to avoid layout shift on transition.
-  // See change: fix-cold-boot-openspec-protocol.
+  // Use external groups (from WS) if available, otherwise local fetch
+  const groups = externalGroups ?? localGroups;
+  const assignments = externalAssignments ?? localAssignments;
+
+  // Fetch groups on mount (unless provided externally)
+  useEffect(() => {
+    if (externalGroups) return;
+    let cancelled = false;
+    fetchGroups(cwd).then((result) => {
+      if (cancelled) return;
+      setLocalGroups(result.groups);
+      setLocalAssignments(result.assignments);
+    }).catch(() => {/* tolerate */});
+    return () => { cancelled = true; };
+  }, [cwd, externalGroups]);
+
+  // Sync external groups into local state
+  useEffect(() => {
+    if (externalGroups) setLocalGroups(externalGroups);
+  }, [externalGroups]);
+  useEffect(() => {
+    if (externalAssignments) setLocalAssignments(externalAssignments);
+  }, [externalAssignments]);
+
+  const refreshGroups = useCallback(async () => {
+    try {
+      const result = await fetchGroups(cwd);
+      setLocalGroups(result.groups);
+      setLocalAssignments(result.assignments);
+    } catch {/* tolerate */}
+  }, [cwd]);
+
+  const handleCreateGroup = useCallback(async (name: string, color: string) => {
+    const group = await createGroup(cwd, { name, color });
+    setLocalGroups((prev) => [...prev, group]);
+    return group;
+  }, [cwd]);
+
+  const handleAssign = useCallback(async (changeName: string, groupId: string | null) => {
+    await setAssignment(cwd, { changeName, groupId });
+    setLocalAssignments((prev) => {
+      const next = { ...prev };
+      if (groupId === null) delete next[changeName];
+      else next[changeName] = groupId;
+      return next;
+    });
+  }, [cwd]);
+
+  const handleUpdateGroup = useCallback(async (id: string, update: { name?: string; color?: string; order?: number }) => {
+    await updateGroup(cwd, id, update);
+    await refreshGroups();
+  }, [cwd, refreshGroups]);
+
+  const handleDeleteGroup = useCallback(async (id: string) => {
+    await deleteGroup(cwd, id);
+    await refreshGroups();
+  }, [cwd, refreshGroups]);
+
+  const toggleCollapse = useCallback((groupId: string) => {
+    setCollapseState((prev) => ({ ...prev, [groupId]: !prev[groupId] }));
+  }, []);
+
+  // Drag-and-drop: move changes between groups
+  const dndSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+  );
+
+  // Resolve effective groupId (defined early for drag handler)
+  const resolveGroupId = useCallback((changeName: string): string | null =>
+    assignments[changeName] ?? data.changes.find((c) => c.name === changeName)?.groupId ?? null,
+  [assignments, data.changes]);
+
+  const handleDragEnd = useCallback((event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over) return;
+    const changeData = active.data.current;
+    const groupData = over.data.current;
+    if (changeData?.type !== "openspec-change" || groupData?.type !== "openspec-group") return;
+    const changeName = changeData.changeName as string;
+    const rawGroupId = groupData.groupId as string;
+    const targetGroupId = rawGroupId === "__ungrouped__" ? null : rawGroupId || null;
+    const currentGroupId = resolveGroupId(changeName);
+    if (currentGroupId === targetGroupId) return;
+    handleAssign(changeName, targetGroupId);
+  }, [resolveGroupId, handleAssign]);
+
+  // Pending state (cold boot)
   if (!data.initialized && data.pending) {
     return (
       <div data-testid="folder-openspec-section-pending" onClick={(e) => e.stopPropagation()}>
@@ -61,6 +150,214 @@ export function FolderOpenSpecSection({ data, cwd, onRefresh, onReadArtifact, se
     ...data.changes.filter((c) => c.status === "complete"),
   ];
 
+  const sortedGroups = [...groups].sort((a, b) => a.order - b.order);
+  const hasGroups = groups.length > 0;
+
+  // Resolve effective groupId for each change (prefer assignments map, fall back to change.groupId)
+  const getGroupId = (c: OpenSpecChange): string | null =>
+    assignments[c.name] ?? c.groupId ?? null;
+
+  // Filter by pill + search
+  const filterChanges = (changes: OpenSpecChange[]): OpenSpecChange[] => {
+    let filtered = changes;
+    if (activePill !== null) {
+      if (activePill === "__ungrouped__") {
+        filtered = filtered.filter((c) => getGroupId(c) === null);
+      } else {
+        filtered = filtered.filter((c) => getGroupId(c) === activePill);
+      }
+    }
+    if (searchFilter) {
+      const lower = searchFilter.toLowerCase();
+      filtered = filtered.filter((c) => c.name.toLowerCase().includes(lower));
+    }
+    return filtered;
+  };
+
+  // Partition changes into groups
+  const partitionByGroup = (changes: OpenSpecChange[]) => {
+    const grouped = new Map<string, OpenSpecChange[]>();
+    const ungrouped: OpenSpecChange[] = [];
+
+    for (const c of changes) {
+      const gId = getGroupId(c);
+      if (gId && groups.find((g) => g.id === gId)) {
+        const list = grouped.get(gId) ?? [];
+        list.push(c);
+        grouped.set(gId, list);
+      } else {
+        ungrouped.push(c);
+      }
+    }
+    return { grouped, ungrouped };
+  };
+
+  const filteredChanges = filterChanges(sortedChanges);
+  const { grouped, ungrouped } = partitionByGroup(filteredChanges);
+
+  const renderChangeRow = (c: OpenSpecChange, opts?: { showGroupPicker?: boolean }) => {
+    const showPicker = opts?.showGroupPicker ?? true;
+    const linkedSessions = sessions?.filter((s) => s.attachedProposal === c.name) ?? [];
+    return (
+      <div key={c.name} className="px-2 py-1">
+        {/* Line 1: change name + task count + controls */}
+        <div className="flex items-center gap-2">
+          <span data-testid="change-name" className="text-[11px] font-medium text-[var(--text-secondary)] truncate min-w-0">
+            {c.name}
+          </span>
+          {c.totalTasks > 0 ? (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setTasksOpenForChange((current) => (current === c.name ? null : c.name));
+              }}
+              data-testid={`folder-tasks-counter-${c.name}`}
+              title="Toggle tasks"
+              className="text-[10px] text-[var(--text-tertiary)] hover:text-blue-400 whitespace-nowrap ml-auto cursor-pointer"
+            >
+              {c.completedTasks}/{c.totalTasks} tasks
+            </button>
+          ) : (
+            <span className="ml-auto" />
+          )}
+          {hasGroups && showPicker && (
+            <OpenSpecGroupPicker
+              groups={groups}
+              currentGroupId={getGroupId(c)}
+              onAssign={(groupId) => handleAssign(c.name, groupId)}
+              onCreateGroup={async (name, color) => {
+                const g = await handleCreateGroup(name, color);
+                return g;
+              }}
+            />
+          )}
+          <ArtifactLettersButton artifacts={c.artifacts} changeName={c.name} onReadArtifact={onReadArtifact} />
+          {onSpawnAttached && (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onSpawnAttached(cwd, c.name); }}
+              data-testid={`spawn-attached-btn-${c.name}`}
+              title="Spawn session attached to this change"
+              className="text-[var(--text-muted)] hover:text-green-400"
+            >
+              <Icon path={mdiPlay} size={0.5} />
+            </button>
+          )}
+        </div>
+        {/* Line 2+: linked sessions — always stack full-width for readable list of names */}
+        {linkedSessions.length > 0 && (
+          <div className="mt-0.5 flex flex-col items-stretch gap-0.5">
+            {linkedSessions.map((s) => (
+              <button
+                key={s.id}
+                data-testid="session-link"
+                onClick={(e) => { e.stopPropagation(); onNavigateToSession?.(s.id); }}
+                className="text-[9px] px-1 py-0.5 rounded bg-[var(--bg-tertiary)] text-blue-400 hover:text-blue-300 truncate text-left w-full"
+                title={s.name || s.id}
+              >
+                {s.name || s.id.slice(0, 8)}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderDraggableChangeRow = (c: OpenSpecChange, opts?: { showGroupPicker?: boolean }) => (
+    <DraggableChangeRow key={c.name} changeName={c.name}>
+      {renderChangeRow(c, opts)}
+    </DraggableChangeRow>
+  );
+
+  const renderGroupedView = () => (
+    <DndContext sensors={dndSensors} onDragEnd={handleDragEnd}>
+    <div className="space-y-1" data-testid="folder-openspec-grouped">
+      {sortedGroups.map((g) => {
+        const items = grouped.get(g.id) ?? [];
+        const isExpanded = activePill === null || activePill === g.id
+          ? collapseState[g.id] !== false  // default expanded
+          : false;                          // inactive pill → collapsed
+
+        // When a pill is active and this isn't the active group, show header but collapsed
+        // Clicking switches pill (task 7.7)
+        const handleHeaderClick = () => {
+          if (activePill !== null && activePill !== g.id) {
+            setActivePill(g.id);
+            setCollapseState((prev) => ({ ...prev, [g.id]: true }));
+          } else {
+            toggleCollapse(g.id);
+          }
+        };
+
+        return (
+          <OpenSpecGroupSection
+            key={g.id}
+            name={g.name}
+            color={g.color}
+            count={items.length}
+            expanded={isExpanded}
+            onToggle={handleHeaderClick}
+            testId={`group-section-${g.id}`}
+            droppableId={g.id}
+          >
+            {items.length > 0
+              ? items.map((c) => renderDraggableChangeRow(c, { showGroupPicker: false }))
+              : (
+                <p className="text-[10px] text-[var(--text-muted)] px-2 py-1">
+                  {searchFilter ? `No matching changes in '${g.name}'` : "No changes in this group yet"}
+                </p>
+              )}
+          </OpenSpecGroupSection>
+        );
+      })}
+
+      {/* Ungrouped section — always rendered as drop target. Collapsed when inactive pill. */}
+      {(() => {
+        const isUngroupedActive = activePill === null || activePill === "__ungrouped__";
+        const isExpanded = isUngroupedActive ? collapseState["__ungrouped__"] !== false : false;
+        const handleHeaderClick = () => {
+          if (!isUngroupedActive) {
+            setActivePill("__ungrouped__");
+            setCollapseState((prev) => ({ ...prev, ["__ungrouped__"]: true }));
+          } else {
+            toggleCollapse("__ungrouped__");
+          }
+        };
+        return (
+        <OpenSpecGroupSection
+          name="Ungrouped"
+          color={null}
+          count={ungrouped.length}
+          expanded={isExpanded}
+          onToggle={handleHeaderClick}
+          testId="group-section-ungrouped"
+          droppableId="__ungrouped__"
+        >
+          {ungrouped.length > 0
+            ? ungrouped.map((c) => renderDraggableChangeRow(c, { showGroupPicker: true }))
+            : (
+              <p className="text-[10px] text-[var(--text-muted)] px-2 py-1">
+                {searchFilter ? "No matching ungrouped changes" : "No ungrouped changes"}
+              </p>
+            )}
+        </OpenSpecGroupSection>
+        );
+      })()}
+    </div>
+    </DndContext>
+  );
+
+  const renderFlatView = () => (
+    <div className="space-y-0.5" data-testid="folder-openspec-changes">
+      {filteredChanges.map(renderChangeRow)}
+    </div>
+  );
+
+  // Bootstrap CTA (task 7.8): show "Create group" when 0 groups + ≥1 changes
+  const showBootstrapCta = !hasGroups && data.changes.length > 0;
+
   return (
     <div data-testid="folder-openspec-section" onClick={(e) => e.stopPropagation()}>
       {/* Header */}
@@ -74,13 +371,23 @@ export function FolderOpenSpecSection({ data, cwd, onRefresh, onReadArtifact, se
           <span>OpenSpec ({data.changes.length} changes)</span>
         </button>
         <button
-          onClick={(e) => { e.stopPropagation(); onRefresh(); }}
+          onClick={(e) => { e.stopPropagation(); onRefresh(); refreshGroups(); }}
           className="text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
           title="Refresh"
           data-testid="folder-openspec-refresh"
         >
           <Icon path={mdiRefresh} size={0.5} />
         </button>
+        {showBootstrapCta && expanded && (
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); setShowBootstrapCreate(true); }}
+            className="text-[10px] text-[var(--text-muted)] hover:text-blue-400 flex items-center gap-0.5"
+            data-testid="bootstrap-create-group-btn"
+          >
+            <Icon path={mdiPlus} size={0.35} />Create group
+          </button>
+        )}
         <span className="flex-1" />
         {onOpenArchive && (
           <button
@@ -102,63 +409,51 @@ export function FolderOpenSpecSection({ data, cwd, onRefresh, onReadArtifact, se
         )}
       </div>
 
-      {/* Expanded change list */}
+      {/* Expanded content */}
       {expanded && (
-        <div className="ml-5 mt-1 space-y-0.5" data-testid="folder-openspec-changes">
-          {sortedChanges.map((c) => {
-            const linkedSessions = sessions?.filter((s) => s.attachedProposal === c.name) ?? [];
-            return (
-              <div key={c.name} className="flex items-center gap-2 px-2 py-1">
-                <span data-testid="change-name" className="text-[11px] font-medium text-[var(--text-secondary)] truncate">
-                  {c.name}
-                </span>
-                {linkedSessions.length > 0 && (
-                  <span className="flex items-center gap-1">
-                    {linkedSessions.map((s) => (
-                      <button
-                        key={s.id}
-                        data-testid="session-link"
-                        onClick={(e) => { e.stopPropagation(); onNavigateToSession?.(s.id); }}
-                        className="text-[9px] px-1 py-0.5 rounded bg-[var(--bg-tertiary)] text-blue-400 hover:text-blue-300 truncate max-w-[80px]"
-                        title={s.name || s.id}
-                      >
-                        {s.name || s.id.slice(0, 8)}
-                      </button>
-                    ))}
-                  </span>
-                )}
-                {c.totalTasks > 0 ? (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setTasksOpenForChange((current) => (current === c.name ? null : c.name));
-                    }}
-                    data-testid={`folder-tasks-counter-${c.name}`}
-                    title="Toggle tasks"
-                    className="text-[10px] text-[var(--text-tertiary)] hover:text-blue-400 whitespace-nowrap ml-auto cursor-pointer"
-                  >
-                    {c.completedTasks}/{c.totalTasks} tasks
-                  </button>
-                ) : (
-                  <span className="ml-auto" />
-                )}
-                <ArtifactLettersButton artifacts={c.artifacts} changeName={c.name} onReadArtifact={onReadArtifact} />
-                {onSpawnAttached && (
-                  <button
-                    type="button"
-                    onClick={(e) => { e.stopPropagation(); onSpawnAttached(cwd, c.name); }}
-                    data-testid={`spawn-attached-btn-${c.name}`}
-                    title="Spawn session attached to this change"
-                    className="text-[var(--text-muted)] hover:text-green-400"
-                  >
-                    <Icon path={mdiPlay} size={0.5} />
-                  </button>
-                )}
-              </div>
-            );
-          })}
+        <div className="ml-5 mt-1">
+          {/* Pills + search */}
+          {hasGroups && (
+            <div className="space-y-1 mb-1">
+              <OpenSpecGroupPills
+                groups={sortedGroups}
+                activeGroupId={activePill}
+                onSelect={setActivePill}
+                onManageGroups={() => setManagerOpen(true)}
+              />
+              <input
+                type="text"
+                value={searchFilter}
+                onChange={(e) => setSearchFilter(e.target.value)}
+                placeholder="Filter changes..."
+                className="w-full text-[11px] bg-transparent border border-[var(--border-secondary)] rounded px-2 py-0.5 text-[var(--text-primary)] placeholder:text-[var(--text-muted)] outline-none focus:border-blue-500/50"
+                onClick={(e) => e.stopPropagation()}
+                data-testid="folder-openspec-search"
+              />
+            </div>
+          )}
+
+          {/* Changes list */}
+          {hasGroups ? renderGroupedView() : renderFlatView()}
         </div>
+      )}
+
+      {/* Bootstrap inline create */}
+      {showBootstrapCreate && (
+        <DialogPortal>
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowBootstrapCreate(false)}>
+            <div className="bg-[var(--bg-primary)] border border-[var(--border-primary)] rounded-lg p-4 w-72" onClick={(e) => e.stopPropagation()}>
+              <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-2">Create Group</h3>
+              <BootstrapCreateForm
+                onSave={async (name, color) => {
+                  await handleCreateGroup(name, color);
+                  setShowBootstrapCreate(false);
+                }}
+                onCancel={() => setShowBootstrapCreate(false)}
+              />
+            </div>
+          </div>
+        </DialogPortal>
       )}
 
       {tasksOpenForChange && (
@@ -170,6 +465,77 @@ export function FolderOpenSpecSection({ data, cwd, onRefresh, onReadArtifact, se
           />
         </DialogPortal>
       )}
+
+      {managerOpen && (
+        <DialogPortal>
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setManagerOpen(false)}>
+            <div className="bg-[var(--bg-primary)] border border-[var(--border-primary)] rounded-lg p-4 w-80 max-h-[60vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+              <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-3">Manage Groups</h3>
+              <OpenSpecGroupManager
+                groups={sortedGroups}
+                onCreateGroup={async (name, color) => { await handleCreateGroup(name, color); }}
+                onUpdateGroup={handleUpdateGroup}
+                onDeleteGroup={handleDeleteGroup}
+              />
+              <div className="flex justify-end mt-3">
+                <button
+                  type="button"
+                  onClick={() => setManagerOpen(false)}
+                  className="text-[11px] px-3 py-1 rounded border border-[var(--border-secondary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                >
+                  Done
+                </button>
+              </div>
+            </div>
+          </div>
+        </DialogPortal>
+      )}
+    </div>
+  );
+}
+
+/** Simple inline form for bootstrap create. */
+function BootstrapCreateForm({ onSave, onCancel }: { onSave: (name: string, color: string) => void; onCancel: () => void }) {
+  const [name, setName] = useState("");
+  const [color, setColor] = useState(GROUP_PALETTE[0].hex);
+  return (
+    <div className="space-y-2">
+      <input
+        type="text"
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && name.trim()) onSave(name.trim(), color);
+          if (e.key === "Escape") onCancel();
+        }}
+        placeholder="Group name"
+        className="w-full text-[12px] bg-transparent border border-[var(--border-secondary)] rounded px-2 py-1 text-[var(--text-primary)] placeholder:text-[var(--text-muted)] outline-none focus:border-blue-500/50"
+        autoFocus
+        data-testid="bootstrap-group-name-input"
+      />
+      <div className="flex gap-1.5">
+        {GROUP_PALETTE.map((p) => (
+          <button
+            key={p.id}
+            type="button"
+            onClick={() => setColor(p.hex)}
+            className={`w-5 h-5 rounded-sm border-2 ${color === p.hex ? "border-white/60" : "border-transparent hover:border-white/30"}`}
+            style={{ backgroundColor: p.hex }}
+          />
+        ))}
+      </div>
+      <div className="flex gap-1.5 justify-end">
+        <button type="button" onClick={onCancel} className="text-[10px] px-2 py-0.5 rounded border border-[var(--border-secondary)] text-[var(--text-muted)]">Cancel</button>
+        <button
+          type="button"
+          onClick={() => name.trim() && onSave(name.trim(), color)}
+          disabled={!name.trim()}
+          className="text-[10px] px-2 py-0.5 rounded border border-blue-500/50 text-blue-400 hover:bg-blue-500/10 disabled:opacity-40"
+          data-testid="bootstrap-save-btn"
+        >
+          Create
+        </button>
+      </div>
     </div>
   );
 }

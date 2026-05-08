@@ -9,6 +9,7 @@ import type {
   ImageContent,
   FileEntry,
   OpenSpecData,
+  OpenSpecGroup,
   ModelInfo,
   PiSessionInfo,
   ExtensionUiModule,
@@ -94,6 +95,19 @@ export interface BrowserOpenSpecUpdateMessage {
   type: "openspec_update";
   cwd: string;
   data: OpenSpecData;
+}
+
+/**
+ * Per-repo OpenSpec change-grouping update. Broadcast after every successful
+ * write to `<cwd>/openspec/groups/groups.json`, debounced 100 ms per cwd.
+ * Full payload (no incremental delta) so client logic stays simple.
+ * See change: add-openspec-change-grouping.
+ */
+export interface BrowserOpenSpecGroupsUpdateMessage {
+  type: "openspec_groups_update";
+  cwd: string;
+  groups: OpenSpecGroup[];
+  assignments: Record<string, string>;
 }
 
 export interface BrowserModelsListMessage {
@@ -514,6 +528,7 @@ export type ServerToBrowserMessage =
   | BrowserUiDismissMessage
   | BrowserFilesListMessage
   | BrowserOpenSpecUpdateMessage
+  | BrowserOpenSpecGroupsUpdateMessage
   | BrowserModelsListMessage
   | SessionsListBrowserMessage
   | ResumeResultBrowserMessage

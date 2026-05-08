@@ -9,8 +9,17 @@ vi.mock("../../lib/openspec-tasks-api.js", () => ({
   LineMismatchError: class LineMismatchError extends Error {},
 }));
 
+// Stub the groups API.
+vi.mock("../../lib/openspec-groups-api.js", () => ({
+  fetchGroups: vi.fn(async () => ({ schemaVersion: 1, groups: [], assignments: {} })),
+  createGroup: vi.fn(async () => ({ id: "new", name: "New", order: 0 })),
+  updateGroup: vi.fn(async () => ({ id: "ui", name: "UI", order: 0 })),
+  deleteGroup: vi.fn(async () => {}),
+  setAssignment: vi.fn(async () => {}),
+}));
+
 import { FolderOpenSpecSection } from "../FolderOpenSpecSection.js";
-import type { OpenSpecData, DashboardSession } from "@blackbelt-technology/pi-dashboard-shared/types.js";
+import type { OpenSpecData, OpenSpecGroup, DashboardSession } from "@blackbelt-technology/pi-dashboard-shared/types.js";
 
 afterEach(() => cleanup());
 
@@ -271,5 +280,119 @@ describe("FolderOpenSpecSection", () => {
     expect(screen.getByTestId("folder-openspec-changes")).toBeTruthy();
     fireEvent.click(screen.getByTestId("spawn-attached-btn-feat-in-progress"));
     expect(screen.getByTestId("folder-openspec-changes")).toBeTruthy();
+  });
+});
+
+// ── Group integration tests (task 7.9) ──
+
+const testGroups: OpenSpecGroup[] = [
+  { id: "ui", name: "UI", color: "#3b82f6", order: 0 },
+  { id: "server", name: "Server", color: "#22c55e", order: 1 },
+];
+const testAssignments: Record<string, string> = {
+  "feat-in-progress": "ui",
+};
+
+describe("FolderOpenSpecSection — groups", () => {
+  it("shows grouped view when groups are provided", () => {
+    render(
+      <FolderOpenSpecSection
+        {...defaultProps}
+        groups={testGroups}
+        assignments={testAssignments}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("folder-openspec-header"));
+    expect(screen.getByTestId("group-pills")).toBeTruthy();
+    expect(screen.getByTestId("group-section-ui")).toBeTruthy();
+    expect(screen.getByTestId("group-section-server")).toBeTruthy();
+    expect(screen.getByTestId("group-section-ungrouped")).toBeTruthy();
+  });
+
+  it("preserves flat view with zero groups (today's behavior)", () => {
+    render(<FolderOpenSpecSection {...defaultProps} groups={[]} assignments={{}} />);
+    fireEvent.click(screen.getByTestId("folder-openspec-header"));
+    expect(screen.getByTestId("folder-openspec-changes")).toBeTruthy();
+    expect(screen.queryByTestId("group-pills")).toBeNull();
+  });
+
+  it("pill switching filters changes", () => {
+    render(
+      <FolderOpenSpecSection
+        {...defaultProps}
+        groups={testGroups}
+        assignments={testAssignments}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("folder-openspec-header"));
+    // Click the UI pill
+    fireEvent.click(screen.getByTestId("group-pill-ui"));
+    // feat-in-progress is assigned to "ui" and should be in the UI section
+    const uiSection = screen.getByTestId("group-section-ui");
+    expect(uiSection.textContent).toContain("feat-in-progress");
+  });
+
+  it("search filter composes with pill (AND)", () => {
+    render(
+      <FolderOpenSpecSection
+        {...defaultProps}
+        groups={testGroups}
+        assignments={testAssignments}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("folder-openspec-header"));
+    const searchInput = screen.getByTestId("folder-openspec-search");
+    fireEvent.change(searchInput, { target: { value: "nonexistent" } });
+    // All sections should show empty-state messages
+    expect(screen.queryAllByTestId("change-name").length).toBe(0);
+  });
+
+  it("unfiltered header count stays correct", () => {
+    render(
+      <FolderOpenSpecSection
+        {...defaultProps}
+        groups={testGroups}
+        assignments={testAssignments}
+      />,
+    );
+    // Header should show total count regardless of filter
+    expect(screen.getByTestId("folder-openspec-header").textContent).toContain("2 changes");
+  });
+
+  it("bootstrap CTA visible when 0 groups + ≥1 changes", () => {
+    render(<FolderOpenSpecSection {...defaultProps} groups={[]} assignments={{}} />);
+    fireEvent.click(screen.getByTestId("folder-openspec-header"));
+    expect(screen.getByTestId("bootstrap-create-group-btn")).toBeTruthy();
+  });
+
+  it("no bootstrap CTA when groups exist", () => {
+    render(
+      <FolderOpenSpecSection
+        {...defaultProps}
+        groups={testGroups}
+        assignments={testAssignments}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("folder-openspec-header"));
+    expect(screen.queryByTestId("bootstrap-create-group-btn")).toBeNull();
+  });
+
+  it("no bootstrap CTA when zero changes", () => {
+    const noChanges: OpenSpecData = { initialized: true, changes: [] };
+    render(<FolderOpenSpecSection {...defaultProps} data={noChanges} groups={[]} assignments={{}} />);
+    fireEvent.click(screen.getByTestId("folder-openspec-header"));
+    expect(screen.queryByTestId("bootstrap-create-group-btn")).toBeNull();
+  });
+
+  it("per-row group picker visible when groups exist", () => {
+    render(
+      <FolderOpenSpecSection
+        {...defaultProps}
+        groups={testGroups}
+        assignments={testAssignments}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("folder-openspec-header"));
+    expect(screen.queryAllByTestId("group-picker").length).toBeGreaterThan(0);
   });
 });

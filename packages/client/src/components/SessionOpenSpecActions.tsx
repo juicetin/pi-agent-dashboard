@@ -15,7 +15,7 @@ import {
   mdiDotsHorizontal,
   mdiFormatListChecks,
 } from "@mdi/js";
-import type { DashboardSession, OpenSpecChange, ImageContent } from "@blackbelt-technology/pi-dashboard-shared/types.js";
+import type { DashboardSession, OpenSpecChange, OpenSpecGroup, ImageContent } from "@blackbelt-technology/pi-dashboard-shared/types.js";
 import { ChangeState, deriveChangeState } from "@blackbelt-technology/pi-dashboard-shared/types.js";
 import { ExploreDialog } from "./ExploreDialog.js";
 import { ConfirmDialog } from "./ConfirmDialog.js";
@@ -23,6 +23,7 @@ import { DialogPortal } from "./DialogPortal.js";
 import { ArtifactLettersButton } from "./openspec-helpers.js";
 import { NewChangeDialog } from "./NewChangeDialog.js";
 import { SearchableSelectDialog, type SelectOption } from "./SearchableSelectDialog.js";
+import { GroupedAttachDialog } from "./GroupedAttachDialog.js";
 import { StatePill } from "./StatePill.js";
 import { TasksPopover } from "./TasksPopover.js";
 
@@ -47,9 +48,13 @@ interface Props {
   onSendPrompt: (text: string, images?: ImageContent[]) => void;
   onReadArtifact?: (changeName: string, artifactId: string) => void;
   onBulkArchive?: () => void;
+  /** Group definitions for grouped attach dialog. */
+  groups?: OpenSpecGroup[];
+  /** Group assignments map. */
+  assignments?: Record<string, string>;
 }
 
-export function SessionOpenSpecActions({ session, changes, onAttach, onDetach, onSendPrompt, onReadArtifact, onBulkArchive }: Props) {
+export function SessionOpenSpecActions({ session, changes, onAttach, onDetach, onSendPrompt, onReadArtifact, onBulkArchive, groups, assignments }: Props) {
   const [exploreOpen, setExploreOpen] = useState(false);
   const [archiveConfirm, setArchiveConfirm] = useState(false);
   const [archiveAnywayConfirm, setArchiveAnywayConfirm] = useState(false);
@@ -197,7 +202,19 @@ export function SessionOpenSpecActions({ session, changes, onAttach, onDetach, o
             onClose={() => setExploreOpen(false)}
           /></DialogPortal>
         )}
-        {attachPickerOpen && (
+        {attachPickerOpen && (groups && groups.length > 0 ? (
+          <GroupedAttachDialog
+            changes={changes}
+            groups={groups}
+            assignments={assignments ?? {}}
+            onSelect={(value) => {
+              setAttachingName(value);
+              onAttach(value);
+              setAttachPickerOpen(false);
+            }}
+            onCancel={() => setAttachPickerOpen(false)}
+          />
+        ) : (
           <SearchableSelectDialog
             title="Attach OpenSpec Change"
             options={changeOptions}
@@ -210,7 +227,7 @@ export function SessionOpenSpecActions({ session, changes, onAttach, onDetach, o
             }}
             onCancel={() => setAttachPickerOpen(false)}
           />
-        )}
+        ))}
       </div>
     );
   }

@@ -72,11 +72,12 @@ describe("resolveJitiImport", () => {
 });
 
 describe("JITI_PACKAGES contract", () => {
-  // The lookup-order contract: forks first, upstream last. Pinned so
-  // a future contributor doesn't accidentally re-order and silently
-  // change resolution priority for users mid-migration.
-  it("contains the three supported provider names in lookup order", () => {
-    expect(JITI_PACKAGES).toEqual(["@mariozechner/jiti", "@oh-my-pi/jiti", "jiti"]);
+  // The lookup-order contract: upstream first, legacy fork as fallback.
+  // Pinned so a future contributor doesn't accidentally re-order and
+  // silently change resolution priority for users mid-migration.
+  // See change: pi-fork migration to @earendil-works (drops @oh-my-pi).
+  it("contains the supported provider names in lookup order", () => {
+    expect(JITI_PACKAGES).toEqual(["jiti", "@mariozechner/jiti"]);
   });
 });
 
@@ -113,7 +114,7 @@ describe("pickJitiRegisterUrl (test seam)", () => {
     expect(url!).not.toContain("@oh-my-pi");
   });
 
-  it("prefers @mariozechner/jiti when BOTH fork and upstream are present", () => {
+  it("prefers upstream jiti when BOTH upstream and legacy fork are present", () => {
     const calls: string[] = [];
     const resolver = (spec: string): string => {
       calls.push(spec);
@@ -126,19 +127,12 @@ describe("pickJitiRegisterUrl (test seam)", () => {
       throw new Error("nope");
     };
     const url = pickJitiRegisterUrl(resolver);
-    expect(url).toContain("@mariozechner/jiti");
-    // Crucially: the resolver was NOT asked for `jiti/package.json` because
-    // the @mariozechner fork won first.
-    expect(calls).toEqual(["@mariozechner/jiti/package.json"]);
-  });
-
-  it("prefers @oh-my-pi/jiti over upstream when fork-name #2 wins", () => {
-    const resolver = makeResolver({
-      "@oh-my-pi/jiti/package.json": "/r/node_modules/@oh-my-pi/jiti/package.json",
-      "jiti/package.json": "/r/node_modules/jiti/package.json",
-    });
-    const url = pickJitiRegisterUrl(resolver);
-    expect(url).toContain("@oh-my-pi/jiti");
+    // Match `/jiti/lib/...` but NOT `/@mariozechner/jiti/lib/...`
+    expect(url!).toMatch(/\/jiti\/lib\/jiti-register\.mjs$/);
+    expect(url!).not.toContain("@mariozechner");
+    // Crucially: the resolver was NOT asked for the legacy fork because
+    // upstream won first.
+    expect(calls).toEqual(["jiti/package.json"]);
   });
 
   it("returns null when no provider resolves", () => {

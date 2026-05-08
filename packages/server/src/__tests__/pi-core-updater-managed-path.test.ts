@@ -94,7 +94,7 @@ describe("defaultRunNpmUpdate — registry resolution + managed PATH", () => {
 		]);
 		// Anchor the @latest suffix — the regression guard for
 		// fix-pi-core-update-cross-minor.
-		expect(capturedArgs).toContain("@mariozechner/pi-coding-agent@latest");
+		expect(capturedArgs).toContain("@earendil-works/pi-coding-agent@latest");
 	});
 
 	it("rejects with a clear 'npm' error when registry can't resolve", async () => {

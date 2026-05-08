@@ -51,6 +51,7 @@ import { registerProviderAuthRoutes } from "./routes/provider-auth-routes.js";
 import { registerPackageRoutes } from "./routes/package-routes.js";
 import { registerRecommendedRoutes, invalidateRecommendedCache } from "./routes/recommended-routes.js";
 import { registerPiCoreRoutes } from "./routes/pi-core-routes.js";
+import { registerPiChangelogRoutes } from "./routes/pi-changelog-routes.js";
 import { PiCoreChecker } from "./pi-core-checker.js";
 import { PiCoreUpdater } from "./pi-core-updater.js";
 import { registerToolRoutes } from "./routes/tool-routes.js";
@@ -907,6 +908,8 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
       message: event.message,
     });
   });
+  registerPiChangelogRoutes(fastify, { bootstrapState });
+
   registerPiCoreRoutes(fastify, {
     piCoreChecker,
     piCoreUpdater,

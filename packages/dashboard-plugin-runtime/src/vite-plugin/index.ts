@@ -51,8 +51,74 @@ function loadPluginEntries(repoRoot: string, isProd: boolean): PluginEntry[] {
 }
 
 /**
+ * Read named exports from a plugin's resolved client entry source file.
+ *
+ * Used at generation time to validate that every `component` and `predicate`
+ * name referenced in a manifest's claims actually exists as a named export
+ * in the plugin's client entry. Without this validation, a manifest typo
+ * would silently emit an `undefined` Component/predicate and surface only
+ * at render time as a confusing "renders for every session" or
+ * "undefined is not a function" error.
+ *
+ * The implementation parses the source file textually (regex-based) rather
+ * than dynamically importing it: dynamic import would require a TS loader
+ * and run plugin code at build time, both of which are heavier than the
+ * problem warrants. The regex covers the patterns plugins actually use:
+ * `export function X`, `export const X`, `export class X`,
+ * `export { X, Y as Z }`, and `export { X } from "..."`.
+ *
+ * Falsey return value (empty Set) means the file could not be read; callers
+ * SHOULD treat that as a soft failure (skip validation) rather than a hard
+ * error, because non-readable files are surfaced through other build paths.
+ */
+function readNamedExports(clientEntryPath: string): Set<string> {
+  const exports = new Set<string>();
+  let src: string;
+  try {
+    src = fs.readFileSync(clientEntryPath, "utf-8");
+  } catch {
+    return exports;
+  }
+
+  // export function|class Name
+  // export const|let|var Name (only first identifier in destructuring/multi-decl is captured;
+  // plugins rarely use those forms for slot-claimable exports)
+  const namedDeclRe = /^\s*export\s+(?:async\s+)?(?:function\*?|class|const|let|var)\s+([A-Za-z_$][\w$]*)/gm;
+  for (const m of src.matchAll(namedDeclRe)) {
+    exports.add(m[1]);
+  }
+
+  // export { A, B as C, D } [from "..."]
+  // capture each name (or alias on the right of `as`)
+  const namedListRe = /export\s*\{([^}]+)\}/g;
+  for (const m of src.matchAll(namedListRe)) {
+    const inner = m[1];
+    for (const part of inner.split(",")) {
+      const trimmed = part.trim();
+      if (!trimmed) continue;
+      // "A as B" → exported name is B; "A" → exported name is A
+      const asMatch = trimmed.match(/^[A-Za-z_$][\w$]*\s+as\s+([A-Za-z_$][\w$]*)$/);
+      if (asMatch) {
+        exports.add(asMatch[1]);
+        continue;
+      }
+      const ident = trimmed.match(/^([A-Za-z_$][\w$]*)$/);
+      if (ident) exports.add(ident[1]);
+    }
+  }
+
+  return exports;
+}
+
+/**
  * Generate the plugin-registry.tsx content using named imports per claim.
  * This form allows Vite to tree-shake unused exports.
+ *
+ * Validates at generation time that every named reference (`component`
+ * AND `predicate`) declared in any manifest claim corresponds to an
+ * actual named export in the plugin's client entry. A missing reference
+ * fails the build with an error naming the plugin id, slot, missing
+ * name, entry path, and the list of names actually exported.
  */
 function generateRegistryContent(entries: PluginEntry[]): string {
   const lines: string[] = [
@@ -60,23 +126,46 @@ function generateRegistryContent(entries: PluginEntry[]): string {
     "",
   ];
 
-  // Named imports per claim component / predicate / shouldRender
+  // Named imports per claim component / predicate / shouldRender (deduped).
   for (const entry of entries) {
     // Strip .ts/.tsx extension so tsc (without allowImportingTsExtensions) accepts the generated file.
     // Vite resolves the path either way via configured extensions.
     const importPath = entry.clientEntryPath!.replace(/\.(tsx?|jsx?)$/, "");
-    const importNames = [
+    const namedRefs = [
       ...new Set(
         entry.manifest.claims
           .flatMap(c => [c.component, c.predicate, c.shouldRender])
           .filter((c): c is string => Boolean(c)),
       ),
     ];
-    if (importNames.length > 0) {
-      lines.push(
-        `import { ${importNames.join(", ")} } from ${JSON.stringify(importPath)};`,
-      );
+
+    if (namedRefs.length === 0) continue;
+
+    // Validate every named ref exists as an export in the plugin's client entry.
+    const exportedNames = readNamedExports(entry.clientEntryPath!);
+    if (exportedNames.size > 0) {
+      // Only validate when we successfully read exports; an unreadable file
+      // surfaces through other build errors and we don't want to compound them.
+      for (const claim of entry.manifest.claims) {
+        for (const refKind of ["component", "predicate", "shouldRender"] as const) {
+          const ref = claim[refKind];
+          if (!ref) continue;
+          if (!exportedNames.has(ref)) {
+            const exported = [...exportedNames].sort().join(", ") || "<none>";
+            throw new Error(
+              `[vite-dashboard-plugins] Plugin "${entry.manifest.id}" claim ` +
+                `for slot "${claim.slot}" references ${refKind} "${ref}" but ` +
+                `${entry.clientEntryPath} does not export it. ` +
+                `Exported names: ${exported}`,
+            );
+          }
+        }
+      }
     }
+
+    lines.push(
+      `import { ${namedRefs.join(", ")} } from ${JSON.stringify(importPath)};`,
+    );
   }
 
   lines.push("");

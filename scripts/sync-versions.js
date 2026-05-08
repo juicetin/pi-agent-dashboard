@@ -21,6 +21,15 @@
  *   2. No cross-package specifier may be `workspace:*` or similar — it must
  *      be a plain semver range that will be rewritten to `^<current-version>`.
  *
+ * Specifier preservation:
+ *   Any cross-package specifier that is NOT a parseable semver range (e.g.
+ *   `"*"`, `"latest"`, `"github:owner/repo#sha"`, `"file:../foo"`, a
+ *   `git+ssh://` URL, an `http(s)://` tarball URL) represents a deliberate
+ *   human override (e.g. a hotfix pin while a dependent is mid-release).
+ *   The script SHALL leave such specifiers unchanged AND emit a warning to
+ *   stderr naming the dependent package.json, the dependency, and the
+ *   preserved value, so a release reviewer can confirm intent.
+ *
  * Ported from pi-mono (`scripts/sync-versions.js`, MIT, Mario Zechner).
  * Simplified to match this repo's layout (single `packages/` directory,
  * root package.json included in the lockstep set).
@@ -29,6 +38,7 @@
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+import { isRewritableSemverSpec } from "./sync-versions-spec.js";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const packagesDir = join(repoRoot, "packages");
@@ -84,9 +94,10 @@ if (distinctVersions.size > 1) {
 }
 console.log(`\n✅ Lockstep invariant OK (${[...distinctVersions][0]})`);
 
-// 4. Rewrite inter-package dep specifiers.
+// 4. Rewrite inter-package dep specifiers (preserving non-semver overrides).
 const depFields = ["dependencies", "devDependencies"];
 let totalRewrites = 0;
+let totalPreserved = 0;
 
 for (const { path, data } of manifests) {
 	let changed = false;
@@ -100,6 +111,15 @@ for (const { path, data } of manifests) {
 
 			const desired = `^${versionMap[depName]}`;
 			if (currentSpec === desired) continue;
+
+			if (!isRewritableSemverSpec(currentSpec)) {
+				console.warn(
+					`  ⚠️  preserving ${data.name} · ${field}.${depName}: ${currentSpec} ` +
+						`(non-semver specifier; assumed deliberate override)`,
+				);
+				totalPreserved += 1;
+				continue;
+			}
 
 			console.log(
 				`  ${data.name} · ${field}.${depName}: ${currentSpec} → ${desired}`,
@@ -117,11 +137,20 @@ for (const { path, data } of manifests) {
 	}
 }
 
-if (totalRewrites === 0) {
+if (totalRewrites === 0 && totalPreserved === 0) {
 	console.log("\nAll inter-package dependencies already in sync — no changes.");
 } else {
-	console.log(`\n✅ Rewrote ${totalRewrites} inter-package dep specifier(s).`);
-	console.log("   Note: package-lock.json regeneration runs automatically");
-	console.log("   in CI (publish.yml > prepare > 'Regenerate package-lock.json').");
-	console.log("   For LOCAL bumps, run: npm install --package-lock-only");
+	if (totalRewrites > 0) {
+		console.log(`\n✅ Rewrote ${totalRewrites} inter-package dep specifier(s).`);
+		console.log("   Note: package-lock.json regeneration runs automatically");
+		console.log("   in CI (publish.yml > prepare > 'Regenerate package-lock.json').");
+		console.log("   For LOCAL bumps, run: npm install --package-lock-only");
+	}
+	if (totalPreserved > 0) {
+		console.log(
+			`\n⚠️  Preserved ${totalPreserved} non-semver specifier(s); review the warnings above to confirm intent.`,
+		);
+	}
 }
+
+

@@ -9,9 +9,10 @@ import React, { type ReactNode } from "react";
  * wrapper auto-hides when those guards short-circuit.
  *
  * Visual contract:
- *   - Inset panel: bg-[var(--bg-surface)], border, rounded-lg, px-2 py-1.5, mt-3
+ *   - Inset panel: translucent via color-mix(--bg-surface 50% / transparent),
+ *     border-[--border-subtle], rounded-lg, px-2 py-1.5, mt-1.5
  *   - Title: capsule (pill) overhanging the top border, fieldset-legend style
- *     (absolute -top-1.5, centered, uppercase, muted, 10px, tracking-wider)
+ *     (absolute -top-1.5, centered, uppercase, muted, 9px, tracking-wider)
  */
 export function SessionSubcard({
   title,

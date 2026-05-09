@@ -19,6 +19,7 @@ export default defineConfig({
       "packages/flows-plugin",
       "packages/flows-anthropic-bridge-plugin",
       "packages/jj-plugin",
+      "packages/honcho-plugin",
       // NOTE: packages/electron is intentionally NOT included here — it has
       // pre-existing orphaned tests that depend on ambient PATH/mocks never
       // wired up. Offline-packages tests are runnable via

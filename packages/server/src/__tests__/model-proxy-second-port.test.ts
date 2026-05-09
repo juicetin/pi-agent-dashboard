@@ -76,7 +76,7 @@ describe("model proxy second port (task 9.3)", () => {
       proxyKey = created.data?.key ?? null;
     }
 
-    const authHeader = proxyKey
+    const authHeader: Record<string, string> = proxyKey
       ? { "Authorization": `Bearer ${proxyKey}` }
       : {};
 

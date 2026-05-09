@@ -36,9 +36,9 @@ describe("streamCompletion", () => {
 
     expect(registry.getApiKeyAndHeaders).toHaveBeenCalledWith(model);
     expect(streamSimple).toHaveBeenCalledOnce();
-    const callArg = streamSimple.mock.calls[0][0];
-    expect(callArg.apiKey).toBe("sk-abc");
-    expect(callArg.headers).toEqual({ "x-foo": "bar" });
+    const [, , optionsArg] = streamSimple.mock.calls[0];
+    expect(optionsArg.apiKey).toBe("sk-abc");
+    expect(optionsArg.headers).toEqual({ "x-foo": "bar" });
   });
 
   it("passes model, messages, and optional fields through to streamSimple", async () => {
@@ -52,25 +52,25 @@ describe("streamCompletion", () => {
 
     await streamCompletion({ model, messages, system: "Be helpful", tools, maxTokens: 100, temperature: 0.7, signal }, streamSimple as any, registry);
 
-    const callArg = streamSimple.mock.calls[0][0];
-    expect(callArg.model).toEqual(model);
-    expect(callArg.messages).toEqual(messages);
-    expect(callArg.system).toBe("Be helpful");
-    expect(callArg.tools).toEqual(tools);
-    expect(callArg.maxTokens).toBe(100);
-    expect(callArg.temperature).toBe(0.7);
-    expect(callArg.signal).toBe(signal);
+    const [modelArg, contextArg, optionsArg] = streamSimple.mock.calls[0];
+    expect(modelArg).toEqual(model);
+    expect(contextArg.messages).toEqual(messages);
+    expect(contextArg.systemPrompt).toBe("Be helpful");
+    expect(contextArg.tools).toEqual(tools);
+    expect(optionsArg.maxTokens).toBe(100);
+    expect(optionsArg.temperature).toBe(0.7);
+    expect(optionsArg.signal).toBe(signal);
   });
 
-  it("omits system when not provided", async () => {
+  it("omits systemPrompt when not provided", async () => {
     const model = makeModel();
     const registry = makeRegistry();
     const streamSimple = vi.fn().mockReturnValue(fakeStream([]));
 
     await streamCompletion({ model, messages: [] }, streamSimple as any, registry);
 
-    const callArg = streamSimple.mock.calls[0][0];
-    expect("system" in callArg).toBe(false);
+    const [, contextArg] = streamSimple.mock.calls[0];
+    expect("systemPrompt" in contextArg).toBe(false);
   });
 
   it("yields events from the underlying stream", async () => {

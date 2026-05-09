@@ -41,17 +41,19 @@ export async function streamCompletion(
   const registry = registryOverride ?? await getModelRegistry();
   const { apiKey, headers } = await registry.getApiKeyAndHeaders(opts.model);
 
-  const callOpts: any = {
-    model: opts.model,
+  const context: any = {
     messages: opts.messages,
-    ...(opts.system !== undefined ? { system: opts.system } : {}),
+    ...(opts.system !== undefined ? { systemPrompt: opts.system } : {}),
     ...(opts.tools ? { tools: opts.tools } : {}),
+  };
+
+  const options: any = {
+    apiKey,
+    headers,
     ...(opts.maxTokens != null ? { maxTokens: opts.maxTokens } : {}),
     ...(opts.temperature != null ? { temperature: opts.temperature } : {}),
     ...(opts.signal ? { signal: opts.signal } : {}),
-    apiKey,
-    headers,
   };
 
-  return piAiStreamSimple(callOpts);
+  return piAiStreamSimple(opts.model, context, options);
 }

@@ -87,6 +87,8 @@ interface Config {
     changeDetection?: "mtime" | "always";
     jitterSeconds?: number;
   };
+  /** Dashboard model proxy config. See change: add-dashboard-model-proxy. */
+  modelProxy?: Record<string, any>;
 }
 
 const DEFAULT_OPENSPEC_UI = {

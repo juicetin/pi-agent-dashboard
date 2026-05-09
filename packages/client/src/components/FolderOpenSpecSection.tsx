@@ -410,7 +410,7 @@ export function FolderOpenSpecSection({ data, cwd, onRefresh, onReadArtifact, se
 
   const renderFlatView = () => (
     <div className="space-y-0.5" data-testid="folder-openspec-changes">
-      {filteredChanges.map(renderChangeRow)}
+      {filteredChanges.map((c) => renderChangeRow(c))}
     </div>
   );
 

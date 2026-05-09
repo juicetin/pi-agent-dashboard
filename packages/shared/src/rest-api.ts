@@ -5,6 +5,8 @@ import type {
   DashboardSession,
   DashboardEvent,
   ApiResponse,
+  OpenSpecGroup,
+  OpenSpecGroupsFile,
 } from "./types.js";
 
 export type { ApiResponse } from "./types.js";
@@ -621,3 +623,31 @@ export type ModelProxyApiKeysCreateResponse = ApiResponse<{
   expiresAt?: number;
   key: string; // cleartext, revealed ONCE
 }>;
+
+// ── OpenSpec Change Grouping ────────────────────────────────────────
+// See change: add-openspec-change-grouping (tasks 1.6, 5.x).
+// Endpoints under `/api/openspec/groups[?cwd=…]`.
+
+export type GetOpenSpecGroupsResponse = ApiResponse<OpenSpecGroupsFile>;
+
+export interface CreateOpenSpecGroupRequest {
+  name: string;
+  color?: string;
+}
+export type CreateOpenSpecGroupResponse = ApiResponse<OpenSpecGroup>;
+
+export interface UpdateOpenSpecGroupRequest {
+  name?: string;
+  color?: string;
+  order?: number;
+}
+export type UpdateOpenSpecGroupResponse = ApiResponse<OpenSpecGroup>;
+
+export type DeleteOpenSpecGroupResponse = ApiResponse<void>;
+
+export interface SetOpenSpecGroupAssignmentRequest {
+  changeName: string;
+  /** `null` removes the assignment (change becomes Ungrouped). */
+  groupId: string | null;
+}
+export type SetOpenSpecGroupAssignmentResponse = ApiResponse<void>;

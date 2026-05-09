@@ -125,11 +125,17 @@ grep -n "^## " CHANGELOG.md | head
 ```bash
 npm version <version> --workspaces --include-workspace-root --no-git-tag-version
 node scripts/sync-versions.js
+npm install --package-lock-only --no-audit --no-fund
 ```
 
 The first command bumps the `version` field on the root + every workspace.
 The second rewrites every inter-package `dependencies` specifier (e.g.
 `"@blackbelt-technology/pi-dashboard-shared": "^<old>"`) to the new version.
+The third regenerates `package-lock.json` so its recorded cross-ref
+specifiers match the bumped versions — without it, strict prerelease
+semver causes `npm ci` on consumers to fall back to stale registry
+tarballs. The CI `prepare` job runs the same three commands; doing it
+locally keeps the commit honest. See change: fix-release-lockfile-drift.
 
 > **Why the second step?** The npm CLI does not implement the `workspace:`
 > protocol (it's a pnpm/yarn feature). We use plain semver ranges and

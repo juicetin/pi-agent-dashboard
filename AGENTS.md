@@ -498,7 +498,8 @@ This section lists only the **architectural backbone** — the files agents touc
 | `packages/electron/scripts/test-electron-install.sh` | Full e2e Docker test: install, wizard, server launch, health check |
 | `packages/electron/scripts/test-electron-install-inner.sh` | Inner test script run inside Docker container |
 | `packages/electron/resources/icon.png` | Master 1024×1024 app icon |
-| `.github/workflows/publish.yml` | CI: build matrix × 6 (platform,arch); idempotent ordered npm publish; no-bash-on-Windows |
+| `.github/workflows/publish.yml` | CI: build matrix × 6 (platform,arch); idempotent ordered npm publish; lockfile regen + verify in prepare; no-bash-on-Windows |
+| `scripts/verify-lockfile-versions.mjs` | Sanity gate: asserts every cross-ref in `package-lock.json` is `^<root.version>`; runs after `npm install --package-lock-only` in `prepare` |
 | `packages/shared/src/__tests__/publish-workflow-contract.test.ts` | Repo-lint: pin electron job's `needs:` array and `fail-fast: false` |
 | `packages/shared/src/__tests__/no-bash-on-windows.test.ts` | Repo-lint: forbid `shell: bash` on steps reachable on Windows runners |
 

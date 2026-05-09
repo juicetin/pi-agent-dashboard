@@ -121,5 +121,7 @@ if (totalRewrites === 0) {
 	console.log("\nAll inter-package dependencies already in sync — no changes.");
 } else {
 	console.log(`\n✅ Rewrote ${totalRewrites} inter-package dep specifier(s).`);
-	console.log("   Remember to `rm -rf node_modules package-lock.json && npm install` to refresh the lockfile.");
+	console.log("   Note: package-lock.json regeneration runs automatically");
+	console.log("   in CI (publish.yml > prepare > 'Regenerate package-lock.json').");
+	console.log("   For LOCAL bumps, run: npm install --package-lock-only");
 }

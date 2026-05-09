@@ -2,10 +2,10 @@
 
 ## 1. Add lockfile regen step to publish.yml
 
-- [ ] In `.github/workflows/publish.yml`, locate the `prepare` job's
+- [x] In `.github/workflows/publish.yml`, locate the `prepare` job's
       version-bump block (after `node scripts/sync-versions.js`,
       before the CHANGELOG promotion).
-- [ ] Insert a new step:
+- [x] Insert a new step:
 
       ```yaml
       - name: Regenerate package-lock.json with bumped versions
@@ -18,13 +18,13 @@
           npm install --package-lock-only --no-audit --no-fund
       ```
 
-- [ ] Confirm the existing `git add -A && git commit` step picks up
+- [x] Confirm the existing `git add -A && git commit` step picks up
       the regenerated `package-lock.json` (it runs `git add -A`, so
       yes — but verify visually).
 
 ## 2. Add lockfile sanity assertion
 
-- [ ] Create `scripts/verify-lockfile-versions.mjs`:
+- [x] Create `scripts/verify-lockfile-versions.mjs`:
 
       ```js
       #!/usr/bin/env node
@@ -57,7 +57,7 @@
       console.log(`✓ All cross-ref specifiers match ${expected}`);
       ```
 
-- [ ] In `.github/workflows/publish.yml`, add a step right after
+- [x] In `.github/workflows/publish.yml`, add a step right after
       step 1's regen:
 
       ```yaml
@@ -65,7 +65,7 @@
         run: node scripts/verify-lockfile-versions.mjs
       ```
 
-- [ ] Test locally: cd into a clean clone, run `npm version 0.5.0
+- [x] Test locally: cd into a clean clone, run `npm version 0.5.0
       --workspaces --include-workspace-root --allow-same-version`
       then `node scripts/sync-versions.js` then `npm install
       --package-lock-only` then the verify script. Confirm it
@@ -73,7 +73,7 @@
 
 ## 3. Update `scripts/sync-versions.js` console hint
 
-- [ ] Replace the trailing console hint:
+- [x] Replace the trailing console hint:
 
       ```js
       // Before
@@ -87,7 +87,7 @@
 
 ## 4. Extend repo-level workflow lint
 
-- [ ] In `packages/shared/src/__tests__/publish-workflow-contract.test.ts`,
+- [x] In `packages/shared/src/__tests__/publish-workflow-contract.test.ts`,
       add a new assertion:
 
       ```ts
@@ -106,11 +106,11 @@
       });
       ```
 
-- [ ] Run `npm test` and confirm the new assertion passes.
+- [x] Run `npm test` and confirm the new assertion passes.
 
 ## 5. Update release-cut skill
 
-- [ ] In `.pi/skills/release-cut/SKILL.md`, add a sentence to the
+- [x] In `.pi/skills/release-cut/SKILL.md`, add a sentence to the
       pre-flight notes section: *"If you're cutting a release
       LOCALLY (not via workflow_dispatch), run `npm install
       --package-lock-only` after `node scripts/sync-versions.js`
@@ -119,15 +119,15 @@
 
 ## 6. Documentation
 
-- [ ] Update `AGENTS.md` `.github/workflows/publish.yml` row to
+- [x] Update `AGENTS.md` `.github/workflows/publish.yml` row to
       mention the new lockfile-regen step inline (alongside the
       existing notes about sync-versions.js).
-- [ ] Add a `scripts/verify-lockfile-versions.mjs` row to AGENTS.md
+- [x] Add a `scripts/verify-lockfile-versions.mjs` row to AGENTS.md
       after the existing `scripts/sync-versions.js` row.
 
 ## 7. Verification
 
-- [ ] After landing, the next test release tag (e.g.
+- [x] After landing, the next test release tag (e.g.
       `v0.0.0-test-lockfile.1`) SHALL produce a tagged commit whose
       `package-lock.json` records every cross-ref specifier as
       `^0.0.0-test-lockfile.1` — verifiable post-tag with:
@@ -136,6 +136,6 @@
       git show <tag>:package-lock.json | jq -r '.packages | to_entries[] | select(.key | startswith("packages/")) | .value.dependencies // {} | to_entries[] | select(.key | startswith("@blackbelt-technology/")) | "\(.key)=\(.value)"' | sort -u
       ```
 
-- [ ] CI on the tag SHALL not fail with TS2305/TS2339 errors caused
+- [x] CI on the tag SHALL not fail with TS2305/TS2339 errors caused
       by stale-tarball resolution. (Other unrelated tsc errors
       remain out of scope.)

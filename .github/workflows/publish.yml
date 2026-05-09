@@ -82,21 +82,53 @@ jobs:
           node-version: '22'
           cache: npm
 
-      - name: Bump versions, promote CHANGELOG, commit, tag, push
+      - name: Install dependencies
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        shell: bash
+        run: npm ci
+
+      - name: Bump workspace versions
         if: ${{ github.event_name == 'workflow_dispatch' }}
         shell: bash
         env:
           VERSION: ${{ steps.resolve.outputs.version }}
         run: |
           set -euo pipefail
-          npm ci
           npm version "$VERSION" \
             --no-git-tag-version \
             --allow-same-version \
             --workspaces \
             --include-workspace-root
-          node scripts/sync-versions.js
 
+      - name: Sync inter-package dep specifiers
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        shell: bash
+        run: node scripts/sync-versions.js
+
+      - name: Regenerate package-lock.json with bumped versions
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        shell: bash
+        run: |
+          # The workspace symlink graph changed (every package.json's
+          # version + cross-ref specifiers were bumped). The lockfile
+          # must be regenerated so its recorded specifiers match,
+          # otherwise strict prerelease semver causes npm ci on consumers
+          # to fall back to the registry on every install. See change:
+          # fix-release-lockfile-drift.
+          npm install --package-lock-only --no-audit --no-fund
+
+      - name: Verify lockfile matches workspace versions
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        shell: bash
+        run: node scripts/verify-lockfile-versions.mjs
+
+      - name: Promote CHANGELOG, commit, tag, push
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        shell: bash
+        env:
+          VERSION: ${{ steps.resolve.outputs.version }}
+        run: |
+          set -euo pipefail
           today=$(date -u +%Y-%m-%d)
           if grep -qE "^## \[${VERSION}\]" CHANGELOG.md; then
             echo "::error::CHANGELOG.md already contains a section for ${VERSION}"

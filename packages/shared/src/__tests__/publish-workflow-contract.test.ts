@@ -128,6 +128,102 @@ describe("publish.yml — electron job dependency-graph contract", () => {
 // single source of truth is the `prepare` job's computed `is_prerelease`
 // output. See change: eliminate-bash-on-windows-runners (D6).
 
+// ── Lockfile-regen contract ──────────────────────────────────────────────
+// The `prepare` job MUST regenerate package-lock.json with the bumped
+// versions (between sync-versions.js and the git commit) so consumers'
+// `npm ci` doesn't fall back to stale registry tarballs via strict
+// prerelease semver. See change: fix-release-lockfile-drift.
+
+/**
+ * Parse the `steps:` block of a single job into an array of `{ run }`
+ * entries. We only care about the `run:` field for this contract; the
+ * step delimiter is any `      - ` line (6-space indent + dash + space).
+ * Multi-line `run: |` blocks fold into a single `run` string.
+ */
+function parseJobSteps(jobBlock: string): Array<{ run: string }> {
+  const lines = jobBlock.split("\n");
+  const steps: Array<{ run: string }> = [];
+  let i = 0;
+  // Find the `    steps:` line.
+  while (i < lines.length && !/^    steps:\s*$/.test(lines[i])) i++;
+  i++;
+  let current: { run: string } | null = null;
+  let inRunBlock = false;
+  let runBlockIndent = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    // New step delimiter: `      - ` at 6-space indent.
+    if (/^      - /.test(line)) {
+      if (current) steps.push(current);
+      current = { run: "" };
+      inRunBlock = false;
+      // Inline `- run: foo` form.
+      const inlineRun = line.match(/^      -\s+run:\s+(.*)$/);
+      if (inlineRun) current.run = inlineRun[1];
+      i++;
+      continue;
+    }
+    if (current) {
+      // Block scalar `        run: |`.
+      const blockStart = line.match(/^        run:\s*\|?\s*$/);
+      const inlineKey = line.match(/^        run:\s+(.+)$/);
+      if (blockStart) {
+        inRunBlock = true;
+        runBlockIndent = 10; // body lines start at ≥ 10-space indent
+        i++;
+        continue;
+      }
+      if (inlineKey) {
+        current.run += (current.run ? "\n" : "") + inlineKey[1];
+        i++;
+        continue;
+      }
+      if (inRunBlock) {
+        // Body line of a `run: |` block. Stop when we hit a less-indented
+        // line (next key at 8-space indent, or the next step at 6-space).
+        if (line.length === 0) {
+          current.run += "\n";
+          i++;
+          continue;
+        }
+        const indent = line.length - line.trimStart().length;
+        if (indent < runBlockIndent) {
+          inRunBlock = false;
+          continue; // re-process this line as a key
+        }
+        current.run += (current.run ? "\n" : "") + line.slice(runBlockIndent);
+        i++;
+        continue;
+      }
+    }
+    i++;
+  }
+  if (current) steps.push(current);
+  return steps;
+}
+
+describe("publish.yml — prepare job lockfile-regen contract", () => {
+  const yaml = fs.readFileSync(WORKFLOW_PATH, "utf8");
+  const prepareBlock = extractJobBlock(yaml, "prepare");
+  const prepareSteps = parseJobSteps(prepareBlock);
+
+  it("prepare job regenerates lockfile after version bump (fix-release-lockfile-drift)", () => {
+    const syncIdx = prepareSteps.findIndex((s) => /sync-versions\.js/.test(s.run || ""));
+    const regenIdx = prepareSteps.findIndex((s) =>
+      /npm install --package-lock-only/.test(s.run || ""),
+    );
+    const commitIdx = prepareSteps.findIndex((s) =>
+      /git commit -m "chore\(release\)/.test(s.run || ""),
+    );
+    expect(syncIdx, "sync-versions.js step missing").toBeGreaterThanOrEqual(0);
+    expect(
+      regenIdx,
+      "lockfile regen step missing — see change fix-release-lockfile-drift",
+    ).toBeGreaterThan(syncIdx);
+    expect(commitIdx, "git commit step missing").toBeGreaterThan(regenIdx);
+  });
+});
+
 describe("publish.yml — prerelease safety contract", () => {
   const yaml = fs.readFileSync(WORKFLOW_PATH, "utf8");
   const prepareBlock = extractJobBlock(yaml, "prepare");

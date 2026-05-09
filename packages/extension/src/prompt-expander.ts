@@ -6,7 +6,7 @@
  * by reading template/skill files directly and expanding them.
  */
 import { readFileSync, existsSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join } from "node:path";
 import { readdirSync, statSync } from "node:fs";
 import { buildSkillBlock } from "@blackbelt-technology/pi-dashboard-shared/skill-block-parser.js";
 
@@ -55,6 +55,69 @@ function readTemplate(filePath: string): string {
 }
 
 /**
+ * Build the deduped, ordered list of candidate names for `:` ↔ `-` alias resolution.
+ * Original form always comes first, preserving the user's typed punctuation as
+ * authoritative intent (see design Decision 4: original-form-first precedence).
+ */
+function candidateNames(name: string): string[] {
+  const variants = new Set<string>();
+  variants.add(name);
+  if (name.includes(":")) variants.add(name.replace(/:/g, "-"));
+  if (name.includes("-")) variants.add(name.replace(/-/g, ":"));
+  return [...variants];
+}
+
+type Resolution = {
+  filePath: string;
+  source: "prompt" | "skill";
+  resolvedName: string;
+};
+
+/**
+ * Resolve `templateName` against (a) local prompt/skill scan and (b) pi.getCommands().
+ *
+ * Probe order is OUTER-loop over candidate-name variants, INNER probe over the
+ * three stores. This guarantees original-form-first precedence: every store is
+ * consulted on the typed form before any remapped variant is consulted on any
+ * store. See design Decision 4.
+ */
+function resolveTemplate(
+  templateName: string,
+  templates: Map<string, string>,
+  pi: any | undefined,
+): Resolution | null {
+  for (const cand of candidateNames(templateName)) {
+    // Step 1: local-scan prompt/skill key (may be `skill:<dir>` for SKILL.md dirs).
+    const local = templates.get(cand);
+    if (local) {
+      return {
+        filePath: local,
+        source: cand.startsWith("skill:") ? "skill" : "prompt",
+        resolvedName: cand,
+      };
+    }
+    // Step 2: local SKILL.md directory keyed as `skill:<cand>`.
+    const localSkill = templates.get(`skill:${cand}`);
+    if (localSkill) {
+      return { filePath: localSkill, source: "skill", resolvedName: cand };
+    }
+    // Step 3: pi.getCommands() registry skill.
+    if (pi?.getCommands) {
+      try {
+        const commands = pi.getCommands();
+        const skill = commands.find(
+          (c: any) => c.name === cand && c.source === "skill" && c.path,
+        );
+        if (skill?.path && existsSync(skill.path)) {
+          return { filePath: skill.path, source: "skill", resolvedName: cand };
+        }
+      } catch { /* ignore */ }
+    }
+  }
+  return null;
+}
+
+/**
  * Expand a slash command by finding and reading the prompt template from disk.
  * Returns the expanded text, or the original text if no template found.
  *
@@ -73,45 +136,21 @@ export function expandPromptTemplateFromDisk(text: string, cwd: string, pi?: any
   const argsString = m?.[2] ?? "";
 
   const templates = findPromptTemplates(cwd);
-  let filePath = templates.get(templateName);
-
-  // Support colon as alias for hyphen (e.g. /opsx:continue → opsx-continue)
-  if (!filePath && templateName.includes(":")) {
-    filePath = templates.get(templateName.replace(/:/g, "-"));
-  }
-
-  // Fallback: check pi.getCommands() for globally installed skills and package skills
-  // that aren't in the local .pi/skills/ directory.
-  if (!filePath && pi?.getCommands) {
-    try {
-      const commands = pi.getCommands();
-      const skill = commands.find(
-        (c: any) => c.name === templateName && c.source === "skill" && c.path,
-      );
-      if (skill?.path && existsSync(skill.path)) {
-        filePath = skill.path;
-      }
-    } catch { /* ignore */ }
-  }
-
-  if (!filePath) return text;
+  const resolution = resolveTemplate(templateName, templates, pi);
+  if (!resolution) return text;
 
   try {
-    const content = readTemplate(filePath);
+    const content = readTemplate(resolution.filePath);
 
-    // Skill detection: either the local-scan key starts with `skill:` or the
-    // pi.getCommands() fallback resolved a command whose `source === "skill"`
-    // (we re-check below). Skill expansions wrap in pi's `<skill>` envelope so
-    // the dashboard ingress path is byte-identical to pi's own _expandSkillCommand,
-    // which lets the client and server recover the slash-command form.
-    // See change: render-skill-invocations-collapsibly.
-    const isSkill = isSkillResolution(templateName, filePath, pi);
-    if (isSkill) {
-      const bareName = templateName.replace(/^skill:/, "");
+    if (resolution.source === "skill") {
+      // Strip leading `skill:` prefix (only present for local-scan step-1 hits
+      // whose key was `skill:<dir>`); registry hits and step-2 hits already
+      // hold the bare name.
+      const bareName = resolution.resolvedName.replace(/^skill:/, "");
       return buildSkillBlock({
         name: bareName,
-        filePath,
-        baseDir: dirname(filePath),
+        filePath: resolution.filePath,
+        baseDir: dirname(resolution.filePath),
         body: content,
         userArgs: argsString || undefined,
       });
@@ -124,33 +163,5 @@ export function expandPromptTemplateFromDisk(text: string, cwd: string, pi?: any
     return content;
   } catch {
     return text;
-  }
-}
-
-/**
- * Detect whether the resolved `filePath` came from a skill source.
- *
- * The local-scan key tells us directly when it starts with `skill:`. For the
- * pi.getCommands() fallback we re-query and check `source === "skill"` against
- * the same templateName.
- */
-function isSkillResolution(
-  templateName: string,
-  filePath: string,
-  pi: any | undefined,
-): boolean {
-  if (templateName.startsWith("skill:")) return true;
-  // The colon-alias path (e.g. /opsx:continue) maps to a hyphen filename and is
-  // a prompt template, not a skill. Skills always use the `skill:` prefix in
-  // both the local scan and pi.getCommands().
-  if (!pi?.getCommands) return false;
-  try {
-    const commands = pi.getCommands();
-    const match = commands.find(
-      (c: any) => c.name === templateName && c.source === "skill" && c.path === filePath,
-    );
-    return !!match;
-  } catch {
-    return false;
   }
 }

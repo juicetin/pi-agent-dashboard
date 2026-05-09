@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdirSync, writeFileSync, rmSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { expandPromptTemplateFromDisk } from "../prompt-expander.js";
 import { parseSkillBlock } from "@blackbelt-technology/pi-dashboard-shared/skill-block-parser.js";
 
@@ -95,5 +95,114 @@ describe("expandPromptTemplateFromDisk", () => {
   it("colon-alias prompt template /opsx:continue stays unwrapped", () => {
     const result = expandPromptTemplateFromDisk("/opsx:continue x", tmpDir);
     expect(result).not.toContain("<skill name=");
+  });
+
+  // Change: unify-opsx-colon-hyphen-aliases — symmetric : ↔ - resolution.
+
+  function makeSkillFile(relPath: string, body = "skill body"): string {
+    const abs = join(tmpDir, relPath);
+    mkdirSync(dirname(abs), { recursive: true });
+    writeFileSync(abs, `---\nname: ignored\n---\n${body}`);
+    return abs;
+  }
+
+  it("expands hyphen-typed slash command resolving a colon-registered pi.getCommands skill", () => {
+    const skillPath = makeSkillFile("registry/colon/SKILL.md");
+    const pi = {
+      getCommands: () => [{ name: "opsx:archive", source: "skill", path: skillPath }],
+    };
+    const result = expandPromptTemplateFromDisk("/opsx-archive my-change", tmpDir, pi);
+    expect(result.startsWith('<skill name="opsx:archive" location="')).toBe(true);
+    expect(result.endsWith("\n\nmy-change")).toBe(true);
+    const parsed = parseSkillBlock(result);
+    expect(parsed!.name).toBe("opsx:archive");
+    expect(parsed!.args).toBe("my-change");
+  });
+
+  it("expands colon-typed slash command resolving a hyphen-registered pi.getCommands skill", () => {
+    const skillPath = makeSkillFile("registry/hyphen/SKILL.md");
+    const pi = {
+      getCommands: () => [{ name: "opsx-archive", source: "skill", path: skillPath }],
+    };
+    const result = expandPromptTemplateFromDisk("/opsx:archive my-change", tmpDir, pi);
+    expect(result.startsWith('<skill name="opsx-archive" location="')).toBe(true);
+    expect(result.endsWith("\n\nmy-change")).toBe(true);
+    const parsed = parseSkillBlock(result);
+    expect(parsed!.name).toBe("opsx-archive");
+  });
+
+  it("expands colon-typed slash command resolving a hyphen-named local SKILL.md directory", () => {
+    mkdirSync(join(skillsDir, "opsx-archive"), { recursive: true });
+    writeFileSync(join(skillsDir, "opsx-archive", "SKILL.md"), "---\nname: x\n---\nbody");
+    const result = expandPromptTemplateFromDisk("/opsx:archive arg", tmpDir);
+    expect(result.startsWith('<skill name="opsx-archive" location="')).toBe(true);
+    const parsed = parseSkillBlock(result);
+    expect(parsed!.name).toBe("opsx-archive");
+    expect(parsed!.args).toBe("arg");
+  });
+
+  it("expands hyphen-typed slash command resolving a colon-named local SKILL.md directory", () => {
+    mkdirSync(join(skillsDir, "opsx:archive"), { recursive: true });
+    writeFileSync(join(skillsDir, "opsx:archive", "SKILL.md"), "---\nname: x\n---\nbody");
+    const result = expandPromptTemplateFromDisk("/opsx-archive arg", tmpDir);
+    expect(result.startsWith('<skill name="opsx:archive" location="')).toBe(true);
+    const parsed = parseSkillBlock(result);
+    expect(parsed!.name).toBe("opsx:archive");
+  });
+
+  it("original-form precedence: colon-typed prefers colon-registered skill over hyphen-form prompt template", () => {
+    // Local prompt opsx-foo.md exists; registry has skill opsx:foo.
+    writeFileSync(join(promptsDir, "opsx-foo.md"), "prompt body");
+    const skillPath = makeSkillFile("registry/precedence/SKILL.md", "skill body");
+    const pi = {
+      getCommands: () => [{ name: "opsx:foo", source: "skill", path: skillPath }],
+    };
+    // /opsx:foo → must wrap as skill (registry hit on original form).
+    const colon = expandPromptTemplateFromDisk("/opsx:foo", tmpDir, pi);
+    expect(colon.startsWith('<skill name="opsx:foo" location="')).toBe(true);
+    // /opsx-foo → must NOT wrap (local prompt hit on original form).
+    const hyphen = expandPromptTemplateFromDisk("/opsx-foo", tmpDir, pi);
+    expect(hyphen).not.toContain("<skill name=");
+    expect(hyphen).toContain("prompt body");
+  });
+
+  it("original-form-first across distinct pi.getCommands entries", () => {
+    const aPath = makeSkillFile("registry/A/SKILL.md", "A body");
+    const bPath = makeSkillFile("registry/B/SKILL.md", "B body");
+    const pi = {
+      getCommands: () => [
+        { name: "opsx:foo", source: "skill", path: aPath },
+        { name: "opsx-foo", source: "skill", path: bPath },
+      ],
+    };
+    const colon = expandPromptTemplateFromDisk("/opsx:foo arg", tmpDir, pi);
+    expect(colon).toContain(`location="${aPath}"`);
+    expect(colon).toContain('name="opsx:foo"');
+    expect(colon).not.toContain(`location="${bPath}"`);
+    const hyphen = expandPromptTemplateFromDisk("/opsx-foo arg", tmpDir, pi);
+    expect(hyphen).toContain(`location="${bPath}"`);
+    expect(hyphen).toContain('name="opsx-foo"');
+    expect(hyphen).not.toContain(`location="${aPath}"`);
+  });
+
+  it("original form in pi-registry beats remapped form in local-scan", () => {
+    // Local prompt opsx-foo.md exists; registry has skill opsx:foo.
+    writeFileSync(join(promptsDir, "opsx-foo.md"), "prompt body");
+    const skillPath = makeSkillFile("registry/outer/SKILL.md", "skill body");
+    const pi = {
+      getCommands: () => [{ name: "opsx:foo", source: "skill", path: skillPath }],
+    };
+    // /opsx:foo: outer-loop probes original form across ALL stores first.
+    // Step 3 hit on registry — must NOT fall through to remapped opsx-foo local prompt.
+    const result = expandPromptTemplateFromDisk("/opsx:foo", tmpDir, pi);
+    expect(result.startsWith('<skill name="opsx:foo" location="')).toBe(true);
+    expect(result).not.toContain("prompt body");
+  });
+
+  it("misspelled name with wrong separator returns input unchanged", () => {
+    rmSync(tmpDir, { recursive: true, force: true });
+    mkdirSync(tmpDir, { recursive: true });
+    const result = expandPromptTemplateFromDisk("/opsx:nonexistent foo", tmpDir);
+    expect(result).toBe("/opsx:nonexistent foo");
   });
 });

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, type ReactNode } from "react";
 import { getApiBase } from "../lib/api-context.js";
 import { Icon } from "@mdi/react";
-import { mdiFlash, mdiOpenInNew, mdiPencil, mdiPencilOutline, mdiSourceBranch, mdiClose, mdiEyeOffOutline, mdiEyeOutline, mdiCommentQuestion, mdiPlayCircleOutline, mdiSourceFork, mdiPaperclip } from "@mdi/js";
+import { mdiFlash, mdiOpenInNew, mdiPencil, mdiPencilOutline, mdiSourceBranch, mdiClose, mdiEyeOffOutline, mdiEyeOutline, mdiCommentQuestion, mdiPlayCircleOutline, mdiSourceFork, mdiPaperclip, mdiConsoleLine } from "@mdi/js";
 import {
   statusColors as statusColorsExt,
   sourceBadgeColors as sourceBadgeColorsExt,

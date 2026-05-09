@@ -1400,6 +1400,14 @@ export default function App() {
 
   const allSessionsList = useMemo(() => Array.from(sessions.values()), [sessions]);
 
+  // Outer chrome ErrorBoundary — defense-in-depth for first-party shell
+  // components (sidebar, session list, content header, MobileShell). The
+  // inner ChatView ErrorBoundary still wins for chat-tree errors via React's
+  // nearest-boundary semantics; this only fires when chrome itself throws
+  // (e.g. a missing import / undefined symbol in SessionCard / SessionList).
+  // Without it, a render-time ReferenceError in any chrome component blanks
+  // the entire window. See change:
+  // fix-session-card-icon-import-and-shell-boundary.
   const apiProvider = (children: React.ReactNode) => (
     <ApiContext.Provider value={apiBase}>
       <PluginContextProvider
@@ -1407,7 +1415,16 @@ export default function App() {
         sessions={allSessionsList}
         send={(msg) => send(msg as Parameters<typeof send>[0])}
       >
-        {children}
+        <ErrorBoundary fallback={
+          <div className="min-h-screen flex items-center justify-center p-8 bg-[var(--bg-primary)] text-[var(--text-primary)]" data-testid="shell-error-fallback">
+            <div className="text-center space-y-2">
+              <div className="text-red-400 text-sm">Shell encountered an error</div>
+              <button onClick={() => window.location.reload()} className="text-xs text-blue-400 hover:underline">Reload page</button>
+            </div>
+          </div>
+        }>
+          {children}
+        </ErrorBoundary>
       </PluginContextProvider>
     </ApiContext.Provider>
   );

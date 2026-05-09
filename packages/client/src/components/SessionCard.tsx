@@ -1,7 +1,20 @@
 import React, { useState, useEffect, type ReactNode } from "react";
 import { getApiBase } from "../lib/api-context.js";
 import { Icon } from "@mdi/react";
-import { mdiFlash, mdiOpenInNew, mdiPencil, mdiPencilOutline, mdiSourceBranch, mdiClose, mdiEyeOffOutline, mdiEyeOutline, mdiConsoleLine, mdiRobotOutline, mdiCodeTags, mdiApplicationOutline, mdiCommentQuestion, mdiPlayCircleOutline, mdiSourceFork, mdiPaperclip } from "@mdi/js";
+import { mdiFlash, mdiOpenInNew, mdiPencil, mdiPencilOutline, mdiSourceBranch, mdiClose, mdiEyeOffOutline, mdiEyeOutline, mdiCommentQuestion, mdiPlayCircleOutline, mdiSourceFork, mdiPaperclip } from "@mdi/js";
+import {
+  statusColors as statusColorsExt,
+  sourceBadgeColors as sourceBadgeColorsExt,
+  sourceIcons,
+  sourceLabels,
+  deriveDotColorWithFlags,
+  deriveIconStatusColor,
+} from "../lib/session-status-visuals.js";
+
+// Re-export for any downstream consumers that historically imported these
+// from SessionCard. See change: add-session-status-to-folder-proposal-rows.
+export const statusColors = statusColorsExt;
+export const sourceBadgeColors = sourceBadgeColorsExt;
 import type { DashboardSession, ImageContent } from "@blackbelt-technology/pi-dashboard-shared/types.js";
 import { getSessionDisplayName } from "../lib/session-display-name.js";
 import { formatRelativeTime, formatTokens } from "../lib/format.js";
@@ -27,38 +40,6 @@ import { useMobile } from "../hooks/useMobile.js";
 import { SessionCardBadgeSlot, SessionCardActionBarSlot, SessionCardMemorySlot, WorkspaceActionBarSlot, useSlotHasClaimsForSession } from "@blackbelt-technology/dashboard-plugin-runtime";
 import { SessionSubcard } from "./SessionSubcard.js";
 import { useSessionCardDragHandle } from "./SortableSessionCard.js";
-
-export const statusColors: Record<string, string> = {
-  active: "bg-green-500",
-  streaming: "bg-yellow-500 animate-pulse",
-  idle: "bg-green-500",
-  ended: "bg-[var(--bg-surface)]",
-};
-
-export const sourceBadgeColors: Record<string, string> = {
-  tui: "text-blue-400",
-  zed: "text-purple-400",
-  tmux: "text-orange-400",
-  dashboard: "text-blue-400",
-  terminal: "text-cyan-400",
-  unknown: "text-[var(--text-tertiary)]",
-};
-
-const sourceIcons: Record<string, string> = {
-  tui: mdiConsoleLine,
-  dashboard: mdiRobotOutline,
-  tmux: mdiApplicationOutline,
-  zed: mdiCodeTags,
-  terminal: mdiConsoleLine,
-};
-
-const sourceLabels: Record<string, string> = {
-  tui: "TUI",
-  dashboard: "Headless",
-  tmux: "tmux",
-  zed: "Zed",
-  terminal: "Terminal",
-};
 
 export function getCardPulseClass(session: DashboardSession): string {
   if (session.currentTool === "ask_user") return "card-input-pulse";
@@ -350,21 +331,12 @@ export function SessionCard({
   const canRename = session.status !== "ended" && !!onRename;
   const isAlive = session.status !== "ended";
   const isMobile = useMobile();
-  const dotColor = session.resuming
-    ? "bg-yellow-500 animate-pulse"
-    : hasError
-      ? "bg-red-500"
-      : isRetrying
-        ? "bg-amber-500 animate-pulse"
-        : (statusColors[session.status] ?? "bg-[var(--bg-surface)]");
+  const dotColor = deriveDotColorWithFlags(session, { hasError, isRetrying });
   // Source-icon text color mirrors the dot's status color so the icon
-  // doubles as a status indicator (replaces the round dot in the gutter).
-  // Map only leading `bg-<palette>` tokens (not arbitrary `bg-[var(...)]`,
-  // which would alias text color to a bg variable). Ended sessions get a
-  // muted token instead.
-  const iconStatusColor = session.status === "ended"
-    ? "text-[var(--text-muted)]"
-    : dotColor.replace(/\bbg-(?!\[)/g, "text-");
+  // doubles as a status indicator. See `deriveIconStatusColor` for ended /
+  // arbitrary-bg-token defenses.
+  // See change: add-session-status-to-folder-proposal-rows.
+  const iconStatusColor = deriveIconStatusColor(dotColor, session.status);
 
   function handleConfirmRename(name: string) {
     setIsRenaming(false);

@@ -1,6 +1,12 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Icon } from "@mdi/react";
-import { mdiRefresh, mdiChevronDown, mdiChevronRight, mdiArchiveOutline, mdiFileDocumentOutline, mdiPlay, mdiPlus, mdiEyeOffOutline, mdiEyeOutline, mdiPlayCircleOutline, mdiSourceFork } from "@mdi/js";
+import { mdiRefresh, mdiChevronDown, mdiChevronRight, mdiArchiveOutline, mdiFileDocumentOutline, mdiPlay, mdiPlus, mdiEyeOffOutline, mdiEyeOutline, mdiPlayCircleOutline, mdiSourceFork, mdiRobotOutline } from "@mdi/js";
+import {
+  sourceIcons,
+  deriveDotColor,
+  deriveIconStatusColor,
+  pulseClassForStatus,
+} from "../lib/session-status-visuals.js";
 import { DndContext, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import type { OpenSpecData, OpenSpecChange, OpenSpecGroup, DashboardSession } from "@blackbelt-technology/pi-dashboard-shared/types.js";
 import { ArtifactLettersButton } from "./openspec-helpers.js";
@@ -34,9 +40,15 @@ interface Props {
   groups?: OpenSpecGroup[];
   /** Externally-pushed assignments (from WS broadcast). */
   assignments?: Record<string, string>;
+  /**
+   * Currently selected session id. Linked-session rows whose `s.id` matches
+   * this value render with `border-blue-500/60`; others with
+   * `border-transparent`. See change: add-session-status-to-folder-proposal-rows.
+   */
+  selectedId?: string;
 }
 
-export function FolderOpenSpecSection({ data, cwd, onRefresh, onReadArtifact, sessions, onNavigateToSession, onOpenSpecs, onOpenArchive, onSpawnAttached, onHideSession, onUnhideSession, onResumeSession, groups: externalGroups, assignments: externalAssignments }: Props) {
+export function FolderOpenSpecSection({ data, cwd, onRefresh, onReadArtifact, sessions, onNavigateToSession, onOpenSpecs, onOpenArchive, onSpawnAttached, onHideSession, onUnhideSession, onResumeSession, groups: externalGroups, assignments: externalAssignments, selectedId }: Props) {
   const [expanded, setExpanded] = useState(false);
   const [tasksOpenForChange, setTasksOpenForChange] = useState<string | null>(null);
   const [activePill, setActivePill] = useState<string | null>(null);
@@ -261,11 +273,25 @@ export function FolderOpenSpecSection({ data, cwd, onRefresh, onReadArtifact, se
               const hasSessionFile = !!s.sessionFile;
               const showResume = !!onResumeSession && hasSessionFile && (!isAlive || isHidden);
               const showFork = !!onResumeSession && hasSessionFile;
+              // Source-icon-as-status indicator (mirrors SessionCard's
+              // left-gutter idiom; status-only — no chat-panel error/retry).
+              // See change: add-session-status-to-folder-proposal-rows.
+              const iconColor = deriveIconStatusColor(deriveDotColor(s), s.status);
+              const pulse = pulseClassForStatus(s);
+              const isSelected = selectedId === s.id;
               return (
                 <div
                   key={s.id}
-                  className="flex items-center gap-1 rounded bg-[var(--bg-tertiary)] pr-0.5"
+                  className={`flex items-center gap-1 rounded bg-[var(--bg-tertiary)] pr-0.5 border ${isSelected ? "border-blue-500/60" : "border-transparent"}`}
+                  data-testid="linked-session-row"
+                  data-selected={isSelected ? "true" : undefined}
                 >
+                  <span
+                    className={`flex-shrink-0 ml-1 ${iconColor} ${pulse}`.trimEnd()}
+                    data-testid="linked-session-status-icon"
+                  >
+                    <Icon path={sourceIcons[s.source] ?? mdiRobotOutline} size={0.5} />
+                  </span>
                   <button
                     data-testid="session-link"
                     onClick={(e) => { e.stopPropagation(); onNavigateToSession?.(s.id); }}

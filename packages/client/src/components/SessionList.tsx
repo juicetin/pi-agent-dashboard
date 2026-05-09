@@ -507,6 +507,7 @@ export function SessionList({ sessions, selectedId, onSelect, contextUsageMap, o
               onResumeSession={onResume}
               groups={openspecGroupsMap?.get(group.cwd)?.groups}
               assignments={openspecGroupsMap?.get(group.cwd)?.assignments}
+              selectedId={selectedId}
             />
           )}
 

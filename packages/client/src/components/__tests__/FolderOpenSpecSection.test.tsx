@@ -544,3 +544,188 @@ describe("FolderOpenSpecSection — groups", () => {
     expect(screen.queryAllByTestId("group-picker").length).toBeGreaterThan(0);
   });
 });
+
+// ── Linked-session status icon (change: add-session-status-to-folder-proposal-rows) ──
+
+const baseAttached: DashboardSession = {
+  id: "s-attached",
+  cwd: "/project/foo",
+  source: "tui",
+  status: "idle",
+  startedAt: Date.now(),
+  attachedProposal: "feat-in-progress",
+  sessionFile: "/sf/x.jsonl",
+};
+
+const baseProps = {
+  data: mockData,
+  cwd: "/project/foo",
+  onRefresh: vi.fn(),
+};
+
+describe("linked-session status icon", () => {
+  it("idle session → text-green-500, no animate-pulse", () => {
+    render(
+      <FolderOpenSpecSection
+        {...baseProps}
+        sessions={[{ ...baseAttached, status: "idle" }]}
+        onNavigateToSession={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("folder-openspec-header"));
+    const icon = screen.getByTestId("linked-session-status-icon");
+    expect(icon.className).toContain("text-green-500");
+    expect(icon.className).not.toContain("animate-pulse");
+  });
+
+  it("streaming session → text-yellow-500 + animate-pulse", () => {
+    render(
+      <FolderOpenSpecSection
+        {...baseProps}
+        sessions={[{ ...baseAttached, status: "streaming" }]}
+        onNavigateToSession={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("folder-openspec-header"));
+    const icon = screen.getByTestId("linked-session-status-icon");
+    expect(icon.className).toContain("text-yellow-500");
+    expect(icon.className).toContain("animate-pulse");
+  });
+
+  it("ended session → text-[var(--text-muted)], no animate-pulse", () => {
+    render(
+      <FolderOpenSpecSection
+        {...baseProps}
+        sessions={[{ ...baseAttached, status: "ended" }]}
+        onNavigateToSession={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("folder-openspec-header"));
+    const icon = screen.getByTestId("linked-session-status-icon");
+    expect(icon.className).toContain("text-[var(--text-muted)]");
+    expect(icon.className).not.toContain("animate-pulse");
+  });
+
+  it("resuming session → text-yellow-500 + animate-pulse (overrides status)", () => {
+    render(
+      <FolderOpenSpecSection
+        {...baseProps}
+        sessions={[{ ...baseAttached, status: "ended", resuming: true }]}
+        onNavigateToSession={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("folder-openspec-header"));
+    const icon = screen.getByTestId("linked-session-status-icon");
+    expect(icon.className).toContain("text-yellow-500");
+    expect(icon.className).toContain("animate-pulse");
+  });
+
+  it("ask_user (currentTool) does NOT add pulse — icon stays green (status-only)", () => {
+    render(
+      <FolderOpenSpecSection
+        {...baseProps}
+        sessions={[{ ...baseAttached, status: "idle", currentTool: "ask_user" }]}
+        onNavigateToSession={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("folder-openspec-header"));
+    const icon = screen.getByTestId("linked-session-status-icon");
+    expect(icon.className).toContain("text-green-500");
+    expect(icon.className).not.toContain("animate-pulse");
+  });
+});
+
+describe("selected linked-session row", () => {
+  const sessionA: DashboardSession = { ...baseAttached, id: "sA" };
+  const sessionB: DashboardSession = { ...baseAttached, id: "sB" };
+
+  it("selected row carries data-selected=true and border-blue-500/60", () => {
+    render(
+      <FolderOpenSpecSection
+        {...baseProps}
+        sessions={[sessionA, sessionB]}
+        selectedId="sA"
+        onNavigateToSession={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("folder-openspec-header"));
+    const rows = screen.getAllByTestId("linked-session-row");
+    expect(rows).toHaveLength(2);
+    const selected = rows.find((r) => r.getAttribute("data-selected") === "true")!;
+    expect(selected).toBeTruthy();
+    expect(selected.className).toContain("border-blue-500/60");
+    // Selection style is border-only — no ring, no blue tint
+    expect(selected.className).not.toContain("ring-1");
+    expect(selected.className).not.toContain("bg-blue-500/5");
+  });
+
+  it("unselected row has no data-selected and border-transparent", () => {
+    render(
+      <FolderOpenSpecSection
+        {...baseProps}
+        sessions={[sessionA, sessionB]}
+        selectedId="sA"
+        onNavigateToSession={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("folder-openspec-header"));
+    const rows = screen.getAllByTestId("linked-session-row");
+    const unselected = rows.find((r) => r.getAttribute("data-selected") !== "true")!;
+    expect(unselected).toBeTruthy();
+    expect(unselected.className).toContain("border-transparent");
+  });
+
+  it("selectedId undefined → all rows render border-transparent and none carry data-selected", () => {
+    render(
+      <FolderOpenSpecSection
+        {...baseProps}
+        sessions={[sessionA, sessionB]}
+        onNavigateToSession={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("folder-openspec-header"));
+    const rows = screen.getAllByTestId("linked-session-row");
+    for (const r of rows) {
+      expect(r.getAttribute("data-selected")).toBeNull();
+      expect(r.className).toContain("border-transparent");
+    }
+  });
+
+  it("row height invariant: selected and unselected rows both carry the `border` token", () => {
+    render(
+      <FolderOpenSpecSection
+        {...baseProps}
+        sessions={[sessionA, sessionB]}
+        selectedId="sA"
+        onNavigateToSession={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("folder-openspec-header"));
+    const rows = screen.getAllByTestId("linked-session-row");
+    for (const r of rows) {
+      // Class list contains the `border` utility token (not just `border-foo`).
+      expect(r.className.split(/\s+/)).toContain("border");
+    }
+  });
+
+  it("regression: lifecycle icons still render and stop propagation after row className refactor", () => {
+    const onNavigate = vi.fn();
+    const onHide = vi.fn();
+    render(
+      <FolderOpenSpecSection
+        {...baseProps}
+        sessions={[sessionA]}
+        selectedId="sA"
+        onNavigateToSession={onNavigate}
+        onHideSession={onHide}
+        onResumeSession={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("folder-openspec-header"));
+    expect(screen.queryByTestId("linked-session-hide")).toBeTruthy();
+    expect(screen.queryByTestId("linked-session-fork")).toBeTruthy();
+    fireEvent.click(screen.getByTestId("linked-session-hide"));
+    expect(onHide).toHaveBeenCalledWith("sA");
+    expect(onNavigate).not.toHaveBeenCalled();
+  });
+});

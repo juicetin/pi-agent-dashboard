@@ -19,6 +19,7 @@ import type { SlotId } from "@blackbelt-technology/pi-dashboard-shared/dashboard
 import type { PluginConfigUpdateMessage } from "@blackbelt-technology/pi-dashboard-shared/browser-protocol.js";
 import { createSlotRegistry, type SlotRegistry, type ClaimEntry } from "./slot-registry.js";
 import { getSessionEvents, subscribeSessionEvents } from "./session-events-store.js";
+import { getSessionData, subscribeSessionData } from "./session-data-store.js";
 
 // ── Logger ───────────────────────────────────────────────────────────────────
 
@@ -136,6 +137,25 @@ function useSessionEventsHookImpl(sessionId: string): readonly DashboardEvent[] 
     (cb) => subscribeSessionEvents(sessionId, cb),
     () => getSessionEvents(sessionId),
     () => getSessionEvents(sessionId),
+  );
+}
+
+/**
+ * Public hook — read a session-scoped key/value entry the shell has
+ * published into `session-data-store`. Plugins MAY use this to read
+ * data the shell already receives but doesn't expose via
+ * `DashboardSession` (e.g. `flows_list`, `commands_list`).
+ *
+ * The value reference is stable until `publishSessionData` for the
+ * same (sessionId, key) replaces it.
+ *
+ * @public
+ */
+export function useSessionData<T>(sessionId: string, key: string): T | undefined {
+  return useSyncExternalStore(
+    (cb) => subscribeSessionData(sessionId, key, cb),
+    () => getSessionData<T>(sessionId, key),
+    () => getSessionData<T>(sessionId, key),
   );
 }
 

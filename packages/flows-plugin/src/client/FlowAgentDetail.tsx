@@ -1,19 +1,14 @@
 import React from "react";
 import { Icon } from "@mdi/react";
 import { mdiArrowLeft, mdiCheckCircle, mdiCloseCircle, mdiAlertCircle, mdiCircle, mdiCircleOutline } from "@mdi/js";
-import type { FlowAgentState, FlowDetailEntry } from "@blackbelt-technology/pi-dashboard-shared/types.js";
+import type { DashboardSession, FlowAgentState, FlowDetailEntry } from "@blackbelt-technology/pi-dashboard-shared/types.js";
 import { UI_PRIMITIVE_KEYS } from "@blackbelt-technology/pi-dashboard-shared/dashboard-plugin/ui-primitives.js";
 import { useUiPrimitive } from "@blackbelt-technology/dashboard-plugin-runtime";
+import { useFlowsSessionState } from "./FlowsSessionStateContext.js";
 
-function formatTokens(n: number): string {
-  if (n < 1000) return String(n);
-  return Math.round(n / 1000) + "k";
-}
-
-function formatDuration(ms: number): string {
-  const sec = ms / 1000;
-  return sec < 60 ? `${sec.toFixed(1)}s` : `${Math.floor(sec / 60)}m ${Math.floor(sec % 60)}s`;
-}
+// Local formatTokens / formatDuration replaced by registry lookups
+// inside each component body — see TextEntry / ToolCallEntry below.
+// (PH-2 fix from validation report; was hardcoded local function.)
 
 function extractInputPreview(toolName: string, input: unknown): string {
   if (!input || typeof input !== "object") return "";
@@ -99,6 +94,8 @@ export function FlowAgentDetail({
   onBack: () => void;
 }) {
   const MarkdownContent = useUiPrimitive(UI_PRIMITIVE_KEYS.markdownContent);
+  const formatTokens = useUiPrimitive(UI_PRIMITIVE_KEYS.formatTokens);
+  const formatDuration = useUiPrimitive(UI_PRIMITIVE_KEYS.formatDuration);
   const displayName = agent.label || agent.agentName;
   const isComplete = agent.status === "complete" || agent.status === "error" || agent.status === "blocked";
 
@@ -173,4 +170,28 @@ export function FlowAgentDetail({
       </div>
     </div>
   );
+}
+
+/**
+ * Slot-consumer wrapper for the `content-view` claim with route
+ * `flow-agent-detail`. Reads the active flow + selected agent from
+ * the plugin-internal contexts. The selected agent name comes from
+ * `routeParams.agentName` (set by the shell when navigating into the
+ * detail view via the new `route` field). See change:
+ * pluginize-flows-via-registry.
+ */
+export function FlowAgentDetailClaim({
+  session,
+  routeParams,
+  onClose,
+}: {
+  session: DashboardSession;
+  routeParams: Record<string, string>;
+  onClose: () => void;
+}) {
+  const { flowState } = useFlowsSessionState(session.id);
+  if (!flowState) return null;
+  const agent = flowState.agents.get(routeParams.agentName ?? "");
+  if (!agent) return null;
+  return <FlowAgentDetail agent={agent} onBack={onClose} />;
 }

@@ -1,14 +1,16 @@
 import React, { useState, type ReactNode } from "react";
 import { Icon } from "@mdi/react";
 import { mdiCloseCircleOutline, mdiCheckCircle, mdiAlertCircle, mdiStopCircle, mdiCloseCircle, mdiCircleOutline, mdiChevronRight, mdiChevronDown, mdiFileDocumentOutline } from "@mdi/js";
-import type { FlowState } from "@blackbelt-technology/pi-dashboard-shared/types.js";
+import type { DashboardSession, FlowState } from "@blackbelt-technology/pi-dashboard-shared/types.js";
+import { UI_PRIMITIVE_KEYS } from "@blackbelt-technology/pi-dashboard-shared/dashboard-plugin/ui-primitives.js";
+import { useUiPrimitive, usePluginSend } from "@blackbelt-technology/dashboard-plugin-runtime";
 import { FlowGraph, flowStateToGraphSteps } from "./FlowGraph.js";
+import { useFlowsSessionState } from "./FlowsSessionStateContext.js";
+import { useFlowsUiActions } from "./FlowsUiStateContext.js";
 
-function formatDuration(ms: number): string {
-  const sec = Math.floor(ms / 1000);
-  const min = Math.floor(sec / 60);
-  return min > 0 ? `${min}m ${sec % 60}s` : `${sec}s`;
-}
+// formatDuration moved to registry primitive lookup inside FlowSummary
+// (PH-2 fix from validation report).
+
 
 const statusConfig: Record<string, { icon: ReactNode; label: string; color: string }> = {
   success: { icon: <Icon path={mdiCheckCircle} size={0.55} />, label: "complete", color: "text-green-400" },
@@ -29,6 +31,7 @@ export function FlowSummary({
   onSendPrompt?: (text: string) => void;
   onViewYaml?: () => void;
 }) {
+  const formatDuration = useUiPrimitive(UI_PRIMITIVE_KEYS.formatDuration);
   const [collapsed, setCollapsed] = useState(false);
   const agents = Array.from(flowState.agents.values());
   const { icon, label, color } = statusConfig[flowState.status] ?? statusConfig.success;
@@ -133,5 +136,35 @@ export function FlowSummary({
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * Slot-consumer wrapper for the `content-inline-footer` claim. Self-
+ * derives flow state, dispatches dismissal via pluginContext.send,
+ * navigates agent detail via the plugin-internal UI state context.
+ * Returns null when no flow is active. See change:
+ * pluginize-flows-via-registry.
+ */
+export function FlowSummaryClaim({ session }: { session: DashboardSession }) {
+  const { flowState } = useFlowsSessionState(session.id);
+  const actions = useFlowsUiActions();
+  const send = usePluginSend();
+
+  if (!flowState) return null;
+
+  return (
+    <FlowSummary
+      flowState={flowState}
+      onAgentClick={actions.setFlowDetailAgent}
+      onDismiss={() =>
+        send({ type: "flow_control", sessionId: session.id, action: "dismiss_summary" })
+      }
+      onSendPrompt={(text) =>
+        send({ type: "send_prompt", sessionId: session.id, text })
+      }
+      // YAML viewing routes through FlowYamlPreview content-view claim.
+      onViewYaml={undefined}
+    />
   );
 }

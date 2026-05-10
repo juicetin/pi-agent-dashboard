@@ -1,11 +1,19 @@
 import React, { useState } from "react";
 import { Icon } from "@mdi/react";
 import { mdiPlay, mdiPlus } from "@mdi/js";
-import type { FlowInfo } from "@blackbelt-technology/pi-dashboard-shared/types.js";
+import type {
+  CommandInfo,
+  DashboardSession,
+  FlowInfo,
+} from "@blackbelt-technology/pi-dashboard-shared/types.js";
 import { FlowLaunchDialog } from "./FlowLaunchDialog.js";
 import { UI_PRIMITIVE_KEYS } from "@blackbelt-technology/pi-dashboard-shared/dashboard-plugin/ui-primitives.js";
 import type { UiSelectOption as SelectOption } from "@blackbelt-technology/pi-dashboard-shared/dashboard-plugin/ui-primitives.js";
-import { useUiPrimitive } from "@blackbelt-technology/dashboard-plugin-runtime";
+import {
+  useUiPrimitive,
+  usePluginSend,
+  useSessionData,
+} from "@blackbelt-technology/dashboard-plugin-runtime";
 
 export function SessionFlowActions({
   flows,
@@ -176,5 +184,47 @@ export function SessionFlowActions({
         />
       )}
     </>
+  );
+}
+
+/**
+ * Slot-consumer wrapper for the `session-card-action-bar` claim.
+ * Reads per-session `flows_list` and `commands_list` from the plugin-
+ * runtime per-session-data store (mirrored by the shell on every
+ * `flows_list` / `commands_list` browser-protocol message). Dispatches
+ * via pluginContext.send. See change: pluginize-flows-via-registry.
+ *
+ * Returns null when the session has no flows AND no `flows:new`
+ * command — this matches the shell's previous gate at
+ * SessionCard.tsx:651 (`flows && onFlowAction && ...`).
+ */
+export function SessionFlowActionsClaim({ session }: { session: DashboardSession }) {
+  const flows = useSessionData<FlowInfo[]>(session.id, "flowsList") ?? [];
+  const commands = useSessionData<CommandInfo[]>(session.id, "commandsList") ?? [];
+  const send = usePluginSend();
+
+  const hasFlowsNew = commands.some((c) => c.name === "flows:new");
+  const hasFlowsEdit = commands.some((c) => c.name === "flows:edit");
+  const hasFlowsDelete = commands.some((c) => c.name === "flows:delete");
+
+  if (flows.length === 0 && !hasFlowsNew) return null;
+
+  return (
+    <SessionFlowActions
+      flows={flows}
+      hasFlowsNew={hasFlowsNew}
+      hasFlowsEdit={hasFlowsEdit}
+      hasFlowsDelete={hasFlowsDelete}
+      onFlowAction={(action, opts) =>
+        send({
+          type: "flow_management",
+          sessionId: session.id,
+          action,
+          flowName: opts?.flowName,
+          task: opts?.task,
+          description: opts?.description,
+        })
+      }
+    />
   );
 }

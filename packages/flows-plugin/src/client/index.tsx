@@ -9,6 +9,8 @@
  */
 import type { DashboardSession } from "@blackbelt-technology/pi-dashboard-shared/types.js";
 
+// Existing presentation components — still used directly by App.tsx
+// during the cutover (Part H removes those call sites).
 export { FlowDashboard } from "./FlowDashboard.js";
 export { FlowAgentCard } from "./FlowAgentCard.js";
 export { FlowAgentDetail } from "./FlowAgentDetail.js";
@@ -19,6 +21,23 @@ export { FlowActivityBadge } from "./FlowActivityBadge.js";
 export { FlowLaunchDialog } from "./FlowLaunchDialog.js";
 export { FlowTabBar } from "./FlowTabBar.js";
 export { SessionFlowActions } from "./SessionFlowActions.js";
+
+// Slot-claim wrappers — the plugin's manifest references these.
+// Each derives state from the plugin-internal contexts and dispatches
+// via pluginContext.send. See change: pluginize-flows-via-registry.
+export { FlowActivityBadgeClaim } from "./FlowActivityBadge.js";
+export { FlowDashboardClaim } from "./FlowDashboard.js";
+export { FlowArchitectClaim, FlowArchitectDetailClaim } from "./FlowArchitect.js";
+export { FlowAgentDetailClaim } from "./FlowAgentDetail.js";
+export { FlowSummaryClaim } from "./FlowSummary.js";
+export { FlowYamlPreviewClaim } from "./FlowYamlPreview.js";
+export { SessionFlowActionsClaim } from "./SessionFlowActions.js";
+export {
+  FlowsListRoute,
+  FlowsNewRoute,
+  FlowsEditRoute,
+  FlowsDeleteRoute,
+} from "./FlowsCommandRoutes.js";
 
 // Plugin-internal state hooks. Components consume these in place of
 // props that previously came from App.tsx. See change:

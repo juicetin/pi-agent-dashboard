@@ -1,13 +1,16 @@
 import React, { useState, useMemo, useEffect, useRef } from "react";
 import { Icon } from "@mdi/react";
 import { mdiRobotOutline, mdiStop, mdiChevronUp, mdiChevronRight, mdiChevronDown, mdiFileDocumentOutline, mdiLoading } from "@mdi/js";
-import type { DashboardSession, FlowState } from "@blackbelt-technology/pi-dashboard-shared/types.js";
+import type { DashboardSession, FlowState, ImageContent } from "@blackbelt-technology/pi-dashboard-shared/types.js";
+import { usePluginSend } from "@blackbelt-technology/dashboard-plugin-runtime";
 import { FlowAgentCard } from "./FlowAgentCard.js";
 import { FlowGraph, flowStateToGraphSteps } from "./FlowGraph.js";
 import { FlowSummary } from "./FlowSummary.js";
 import { FlowTabBar, type FlowTab } from "./FlowTabBar.js";
 import { useMobile } from "@blackbelt-technology/pi-dashboard-client-utils/useMobile";
 import { BreadcrumbSlot } from "@blackbelt-technology/pi-dashboard-client-utils/extension-ui/BreadcrumbSlot";
+import { useFlowsSessionState } from "./FlowsSessionStateContext.js";
+import { useFlowsUiState, useFlowsUiActions } from "./FlowsUiStateContext.js";
 
 export function FlowDashboard({
   flowState,
@@ -226,5 +229,49 @@ export function FlowDashboard({
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * Slot-consumer wrapper for the `content-header-sticky` claim.
+ * Self-derives flow state from useFlowsSessionState; selection state
+ * and callbacks come from useFlowsUiState / pluginContext.send.
+ * Returns null when no flow is active. See change:
+ * pluginize-flows-via-registry.
+ */
+export function FlowDashboardClaim({ session }: { session: DashboardSession }) {
+  const { flowState, flowStates } = useFlowsSessionState(session.id);
+  const ui = useFlowsUiState();
+  const actions = useFlowsUiActions();
+  const send = usePluginSend();
+
+  if (!flowState) return null;
+
+  const flowControl = (action: string) =>
+    send({ type: "flow_control", sessionId: session.id, action });
+
+  return (
+    <FlowDashboard
+      flowState={flowState}
+      flowStates={flowStates as Map<string, FlowState>}
+      session={session}
+      selectedAgent={ui.flowDetailAgent}
+      onAgentClick={actions.setFlowDetailAgent}
+      onAbort={() => flowControl("abort")}
+      onToggleAutonomous={() => flowControl("toggle_autonomous")}
+      onDismiss={() => {
+        actions.setFlowDetailAgent(null);
+        flowControl("dismiss_summary");
+      }}
+      onSendPrompt={(text: string, images?: ImageContent[]) =>
+        send({ type: "send_prompt", sessionId: session.id, text, images })
+      }
+      // YAML viewing is handled by the FlowYamlPreview content-view
+      // claim (Part F.7); these callbacks navigate via pluginRouter once
+      // routes are wired in Part G. Until then they are no-ops.
+      onViewYaml={undefined}
+      onViewAgentSource={undefined}
+      sourceOpenAgent={ui.sourceOpenAgent}
+    />
   );
 }

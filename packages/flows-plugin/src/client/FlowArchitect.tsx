@@ -13,11 +13,14 @@ import type {
   ArchitectState,
   ArchitectPrompt,
   ArchitectAgentEntry,
+  DashboardSession,
   FlowDetailEntry,
 } from "@blackbelt-technology/pi-dashboard-shared/types.js";
 import { UI_PRIMITIVE_KEYS } from "@blackbelt-technology/pi-dashboard-shared/dashboard-plugin/ui-primitives.js";
-import { useUiPrimitive } from "@blackbelt-technology/dashboard-plugin-runtime";
+import { useUiPrimitive, usePluginSend } from "@blackbelt-technology/dashboard-plugin-runtime";
 import { FlowGraph, architectStepsToGraphSteps } from "./FlowGraph.js";
+import { useFlowsSessionState } from "./FlowsSessionStateContext.js";
+import { useFlowsUiState, useFlowsUiActions } from "./FlowsUiStateContext.js";
 
 // ── Detail view (reuses same patterns as FlowAgentDetail) ─────────
 
@@ -621,4 +624,56 @@ export function FlowArchitect({
       )}
     </div>
   );
+}
+
+/**
+ * Slot-consumer wrapper for the `content-header-sticky` claim.
+ * Self-derives architect state and dispatches via pluginContext.send.
+ * Returns null when no architect is active. See change:
+ * pluginize-flows-via-registry.
+ */
+export function FlowArchitectClaim({ session }: { session: DashboardSession }) {
+  const { architectState } = useFlowsSessionState(session.id);
+  const ui = useFlowsUiState();
+  const actions = useFlowsUiActions();
+  const send = usePluginSend();
+
+  if (!architectState) return null;
+
+  return (
+    <FlowArchitect
+      state={architectState}
+      onAbort={() =>
+        send({ type: "flow_control", sessionId: session.id, action: "abort" })
+      }
+      onClick={() => actions.setArchitectDetailOpen((prev) => !prev)}
+      isDetailOpen={ui.architectDetailOpen}
+      onPromptRespond={(promptId, answer) =>
+        send({ type: "architect_prompt_response", sessionId: session.id, promptId, answer })
+      }
+      // YAML and agent-source viewing routes through the FlowYamlPreview
+      // content-view claim once Part G wires the manifest. Until then,
+      // these are no-ops.
+      onViewYaml={undefined}
+      onViewAgentSource={undefined}
+    />
+  );
+}
+
+/**
+ * Slot-consumer wrapper for the `content-view` claim with route
+ * `flow-architect-detail`. Self-derives architect state. Calls
+ * `onClose` (the slot prop, supplied by the shell's content-view
+ * router) on the back button. See change: pluginize-flows-via-registry.
+ */
+export function FlowArchitectDetailClaim({
+  session,
+  onClose,
+}: {
+  session: DashboardSession;
+  onClose: () => void;
+}) {
+  const { architectState } = useFlowsSessionState(session.id);
+  if (!architectState) return null;
+  return <FlowArchitectDetail state={architectState} onBack={onClose} />;
 }

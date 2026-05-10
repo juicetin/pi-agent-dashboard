@@ -33,7 +33,11 @@ export interface SpawnErrorDetail {
   timeoutMs?: number;
 }
 import { applyPluginConfigUpdate } from "@blackbelt-technology/dashboard-plugin-runtime/context";
-import { publishSessionEvent, clearSessionEvents } from "@blackbelt-technology/dashboard-plugin-runtime";
+import {
+  publishSessionEvent,
+  clearSessionEvents,
+  publishSessionData,
+} from "@blackbelt-technology/dashboard-plugin-runtime";
 
 export interface MessageHandlerSetters {
   setSessions: React.Dispatch<React.SetStateAction<Map<string, DashboardSession>>>;
@@ -226,6 +230,11 @@ export function useMessageHandler(
           next.set(msg.sessionId, msg.commands);
           return next;
         });
+        // Mirror into the plugin-runtime per-session-data store so
+        // plugins (e.g. flows-plugin's SessionFlowActions claim) can
+        // read the commands list without coupling to shell state.
+        // See change: pluginize-flows-via-registry.
+        publishSessionData(msg.sessionId, "commandsList", msg.commands);
         break;
 
       case "flows_list":
@@ -234,6 +243,9 @@ export function useMessageHandler(
           next.set(msg.sessionId, msg.flows);
           return next;
         });
+        // Same mirroring as above. flows-plugin's SessionFlowActionsClaim
+        // reads `flowsList` from the per-session-data store.
+        publishSessionData(msg.sessionId, "flowsList", msg.flows);
         break;
 
       case "files_list":

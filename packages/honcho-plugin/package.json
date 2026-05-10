@@ -43,11 +43,11 @@
         "tab": "general"
       },
       {
-        "slot": "session-card-badge",
+        "slot": "session-card-memory",
         "component": "HonchoBadge"
       },
       {
-        "slot": "session-card-action-bar",
+        "slot": "session-card-memory",
         "component": "HonchoCardActions"
       },
       {
@@ -68,8 +68,11 @@
     "@mdi/react": "^1.6.1"
   },
   "devDependencies": {
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.1.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "fastify": "^5.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   }

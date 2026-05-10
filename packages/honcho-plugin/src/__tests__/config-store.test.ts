@@ -6,6 +6,7 @@ import {
   readConfigFile,
   writeConfigFile,
   writeConfigPreservingSecrets,
+  replaceConfigFile,
 } from "../server/config-store.js";
 
 describe("config-store", () => {
@@ -77,5 +78,22 @@ describe("config-store", () => {
     writeConfigFile({ apiKey: "hch-old" }, cfgPath);
     writeConfigPreservingSecrets({ apiKey: "hch-new" }, cfgPath);
     expect(readConfigFile(cfgPath).apiKey).toBe("hch-new");
+  });
+
+  it("replaceConfigFile bypasses merge so key deletion sticks", () => {
+    // mergeConfig has no delete semantic — writing a partial that omits a
+    // nested key cannot remove it from the on-disk file. Callers that need
+    // deletion (e.g. DELETE /api/plugins/honcho/sessions) must use
+    // `replaceConfigFile` with the full mutated config.
+    writeConfigFile(
+      { hosts: { pi: { sessions: { "/foo": "a", "/bar": "b" } } } },
+      cfgPath,
+    );
+    const existing = readConfigFile(cfgPath);
+    delete existing.hosts!.pi!.sessions!["/foo"];
+    replaceConfigFile(existing, cfgPath);
+    const after = readConfigFile(cfgPath);
+    expect(after.hosts?.pi?.sessions?.["/foo"]).toBeUndefined();
+    expect(after.hosts?.pi?.sessions?.["/bar"]).toBe("b");
   });
 });

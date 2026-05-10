@@ -14,6 +14,7 @@ import {
   readConfigFile,
   writeConfigFile,
   writeConfigPreservingSecrets,
+  replaceConfigFile,
 } from "./config-store.js";
 import { getStatus, setStatus } from "./plugin-state.js";
 import type { HonchoPluginConfig } from "../shared/types.js";
@@ -109,10 +110,19 @@ export function mountConfigRoutes(
     if (!body.cwd) {
       return reply.code(400).send({ error: "cwd is required" });
     }
+    // Deletion cannot go through `writeConfigFile` — its merge has no
+    // delete semantic. Use `replaceConfigFile` with the mutated full
+    // config so the key actually disappears.
     const existing = readConfigFile(path);
-    const sessions = { ...(existing.hosts?.pi?.sessions ?? {}) };
-    delete sessions[body.cwd];
-    writeConfigFile({ hosts: { pi: { sessions } } }, path);
+    if (existing.hosts?.pi?.sessions) {
+      const sessions = { ...existing.hosts.pi.sessions };
+      delete sessions[body.cwd];
+      const next = {
+        ...existing,
+        hosts: { ...existing.hosts, pi: { ...existing.hosts.pi, sessions } },
+      };
+      replaceConfigFile(next, path);
+    }
     return { ok: true };
   });
 }

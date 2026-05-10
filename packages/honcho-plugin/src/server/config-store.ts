@@ -45,6 +45,28 @@ export function writeConfigFile(
 }
 
 /**
+ * Atomic full-replace write. Bypasses `mergeConfig` so callers that need
+ * key-deletion semantics (e.g. removing an entry from
+ * `hosts.pi.sessions`) work correctly. The deep-merge path cannot
+ * express deletion — it only adds / overwrites scalar leaves.
+ *
+ * The caller is responsible for preserving any unknown top-level keys
+ * (read full config, mutate, pass back). Used by the DELETE
+ * `/api/plugins/honcho/sessions` route.
+ */
+export function replaceConfigFile(
+  full: HonchoPluginConfig,
+  filePath: string = CONFIG_PATH,
+): HonchoPluginConfig {
+  const dir = path.dirname(filePath);
+  fs.mkdirSync(dir, { recursive: true });
+  const tmpPath = filePath + ".tmp";
+  fs.writeFileSync(tmpPath, JSON.stringify(full, null, 2) + "\n");
+  fs.renameSync(tmpPath, filePath);
+  return full;
+}
+
+/**
  * Variant for the `apiKey` empty-string secret-preservation contract used
  * by `POST /config`. If `partial.apiKey === ""` the on-disk apiKey is
  * preserved. Same for `selfHost.llm.apiKey`.

@@ -3,8 +3,8 @@
  *
  * Exports four slot contributions:
  *   HonchoSettings       → settings-section (tab=general)
- *   HonchoBadge          → session-card-badge
- *   HonchoCardActions    → session-card-action-bar
+ *   HonchoBadge          → session-card-memory
+ *   HonchoCardActions    → session-card-memory
  *   HonchoMapPopover     → anchored-popover
  */
 export { HonchoSettings } from "./HonchoSettings.js";

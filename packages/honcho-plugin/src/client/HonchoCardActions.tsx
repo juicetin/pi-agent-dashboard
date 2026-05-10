@@ -1,5 +1,5 @@
 /**
- * HonchoCardActions — session-card-action-bar slot.
+ * HonchoCardActions — session-card-memory slot.
  * Returns null when extension uninstalled.
  * Renders [Brain Interview] [Sync] [Tag Map name] icon-buttons.
  * Uses MDI icons for size consistency.

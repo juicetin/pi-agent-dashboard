@@ -468,6 +468,32 @@ Alternatives considered:
 - **Model id collision across routes** → `claude-haiku-4-5` exists both via pi-model-proxy (as `anthropic/claude-haiku-4-5`) and via Anthropic direct (as `claude-haiku-4-5`). The plugin treats these as distinct (different `(source, model)` pairs) but the dropdown UI must handle the rendering. Mitigation: the dropdown key is `<source>:<model>` internally; `selfHost.llm.model` stores the upstream id (without `<source>:` prefix) so Honcho's compose env is correct.
 - **Tool-capability false negative** → The bundled `TOOL_CAPABILITY_MAP` may say a tool-capable model doesn't support tools (e.g. plugin pre-dates a new family). Mitigation: unknown models default to `supportsTools=true` when the provider's own response says so. Plugin maintainers update the map on each release.
 
+## E2E Test Fixture Approach
+
+Tasks 6.8f, 6.8g, 9.8, 9.9, 9.10 require browser-level assertions on plugin UI behaviour against a real dashboard server (install gate / full panel rendering, install button POST body, per-card map popover round-trip, model picker → `~/.honcho/config.json` write). The repo currently has three test tiers: vitest unit (`packages/*/src/__tests__/*.test.ts`, jsdom env), `qa/tests/*.sh` (VM-level, real server, no DOM), and the proposed `qa/smoke/server-launch/` (real server, bash-only assertions). None of those mount the React client against a real server. Adding a Playwright-grade tier just for these five asserts is disproportionate to what the asserts actually demand.
+
+**Decision: vitest jsdom + in-process Fastify fixture, no Playwright, no subprocess.** Every assert in the five tasks is DOM-presence, network-call shape, or post-action server state — none requires CSS layout, focus management, hover positioning, or pixel fidelity. The honcho plugin's route modules each accept a `configPath` test-seam already, so a plain `Fastify({})` instance with the four `mount*Routes(...)` calls reproduces the production routing surface 1:1. Tests reach the server via `fastify.inject()`, wired through a fetch wrapper installed on `globalThis`. Zero ports, zero PID tracking, zero process spawning. If a future plugin task requires genuine browser-only behaviour or genuine subprocess isolation, that task gets its own targeted fixture; we do not pre-build for it.
+
+Fixture layering (all under `packages/<plugin>/src/__tests__/e2e/fixtures/`):
+
+- **L1 `tmpHomeFixture`** — per-test mkdtemp under the existing test HOME (vitest globalSetup already isolates HOME from real user home). Used to host `<tmp>/.honcho/config.json` so concurrent tests don't share state. Cleaned up in `afterEach`.
+- **L2 `serverFixture`** — in-process `Fastify({})` instance. Mounts every honcho route module with `configPath` pointing at the tmpHome's config file. Mounts a tiny `/api/packages/installed` + `/api/packages/install` stub whose installed-list is mutable per test (so 9.8 / 9.9 can flip between absent/present). Yields `{ inject(method, url, body) }`.
+- **L3 `stubBridgeFixture`** *(optional, deferred)* — not needed by tasks 6.8f/g, 9.8–9.10. Documented here so future event-driven plugin tests have a known extension point.
+- **L4 `clientMountFixture`** — wraps a single honcho component in `<PluginContextProvider>` and renders via `@testing-library/react`. Installs a `globalThis.fetch` shim that delegates to `serverFixture.inject()` (URL prepend stripped, body forwarded). Returns the RTL handle plus `serverFixture` for direct state assertions.
+
+For honcho specifically:
+
+- **9.8** (install gate vs full panel) — tmpHome with no `node_modules/pi-memory-honcho` ⇒ assert install gate; then write a stub extension dir into the tmp HOME's pi-extension cache and re-render ⇒ assert full panel. No bridge required.
+- **9.9** (per-card badge gating) — same pattern, scoped to a session card.
+- **9.10** (map popover round-trip) — open popover, type into input, submit, re-open ⇒ assert text. All in jsdom.
+- **6.8f / 6.8g** (model picker → config.json) — pick a model in the rendered dropdown ⇒ assert `~/.honcho/config.json` (under tmpHome) contains the expected `selfHost.llm.{source,model}` pair. Route-override sub-case toggles the dropdown selection and re-asserts.
+
+Naming convention: `*.e2e.test.tsx` always means "L1 + L2 + L4" minimum. Lives in the package's existing vitest project (no new project config needed) since `fastify.inject` is sub-millisecond per call and the suite stays under jsdom anyway. Tests run in parallel across files via the existing `pool: "forks"` config.
+
+This is leaner than the `server-launch-smoke-suite` approach because the asserts target plugin route behaviour, not starter-process invariants. Real subprocess coverage of the honcho routes is implicitly provided by the smoke suite (which spawns `pi-dashboard` and would catch any route-mounting regression) plus the existing per-route unit tests. The e2e tier proves the React-to-route contract; the smoke tier proves the route-to-disk contract.
+
+Auth is a non-issue: the dashboard's auth plugin only registers when providers are configured (`registerAuthPlugin` returns early on empty provider registry). The in-process Fastify fixture skips auth entirely — it never registers `auth-plugin`, just the four honcho route modules + the package-stub routes.
+
 ## Migration Plan
 
 This is a new external package — no in-repo migration. Rollout:

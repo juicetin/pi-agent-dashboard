@@ -36,11 +36,11 @@ export const PLUGIN_REGISTRY: RegistryEntry[] = [
                 "tab": "general"
             },
             {
-                "slot": "session-card-badge",
+                "slot": "session-card-memory",
                 "component": "HonchoBadge"
             },
             {
-                "slot": "session-card-action-bar",
+                "slot": "session-card-memory",
                 "component": "HonchoCardActions"
             },
             {
@@ -54,8 +54,8 @@ export const PLUGIN_REGISTRY: RegistryEntry[] = [
     },
     claims: [
       { pluginId: "honcho", priority: 100, slot: "settings-section", tab: "general", Component: HonchoSettings },
-      { pluginId: "honcho", priority: 100, slot: "session-card-badge", Component: HonchoBadge },
-      { pluginId: "honcho", priority: 100, slot: "session-card-action-bar", Component: HonchoCardActions },
+      { pluginId: "honcho", priority: 100, slot: "session-card-memory", Component: HonchoBadge },
+      { pluginId: "honcho", priority: 100, slot: "session-card-memory", Component: HonchoCardActions },
       { pluginId: "honcho", priority: 100, slot: "anchored-popover", Component: HonchoMapPopover },
     ],
   },

@@ -51,6 +51,25 @@ describe("honcho-plugin manifest discoverability", () => {
     expect(slots.has("anchored-popover")).toBe(true);
   });
 
+  it("routes badge + card actions through `session-card-memory`", () => {
+    // Post `redesign-session-card-subcards`: HonchoBadge and HonchoCardActions
+    // both land inside the MEMORY subcard via the `session-card-memory` slot.
+    const validated = validateManifest(manifest, pkg.name);
+    const memoryClaims = validated.claims.filter(
+      (c) => c.slot === "session-card-memory",
+    );
+    const components = new Set(memoryClaims.map((c) => c.component));
+    expect(components.has("HonchoBadge")).toBe(true);
+    expect(components.has("HonchoCardActions")).toBe(true);
+  });
+
+  it("no longer claims the deprecated session-card-badge / -action-bar slots", () => {
+    const validated = validateManifest(manifest, pkg.name);
+    const slots = new Set(validated.claims.map((c) => c.slot));
+    expect(slots.has("session-card-badge")).toBe(false);
+    expect(slots.has("session-card-action-bar")).toBe(false);
+  });
+
   it("every claim is for a known slot id", () => {
     const validated = validateManifest(manifest, pkg.name);
     expect(validated.claims.length).toBeGreaterThan(0);

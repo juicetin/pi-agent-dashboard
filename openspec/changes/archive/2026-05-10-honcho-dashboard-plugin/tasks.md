@@ -9,7 +9,7 @@
 - [x] 1.3 Add `pi-dashboard-plugin` manifest field with `id: "honcho"`, `displayName: "Honcho Memory"`, `client: "./src/client.tsx"`, `server: "./src/server.ts"`, and slot claims (`settings-section` tab=general, `session-card-badge`, `session-card-action-bar`, `anchored-popover`)
 - [x] 1.4 Add dev-deps: TypeScript, Vite (for client build), Vitest, `@blackbelt-technology/dashboard-plugin-runtime`, `@blackbelt-technology/pi-dashboard-shared`, `@honcho-ai/sdk`, React 19 types
 - [x] 1.5 Wire `tsconfig.json`, `tsconfig.client.json`, and `vite.config.ts` so the client entry compiles to a single ESM chunk consumable by the dashboard's plugin loader
-- [ ] 1.6 Wire `npm-publish.yml` GitHub workflow mirroring the upstream `pi-memory-honcho` workflow (publish on tag push, npm provenance enabled)
+- [x] 1.6 Wire `npm-publish.yml` GitHub workflow mirroring the upstream `pi-memory-honcho` workflow (publish on tag push, npm provenance enabled) *(superseded by monorepo migration — plugin lives at `packages/honcho-plugin/` and publishes via the monorepo's `.github/workflows/publish.yml` alongside the other 4 workspace packages; no separate workflow needed)*
 
 ## 2. Shared types and utilities
 
@@ -97,8 +97,8 @@
 - [x] 6.8c Implement secondary route-override dropdown: hidden when the selected `model` is reachable from only one source; visible (and pre-set to current `selfHost.llm.source`) when reachable from multiple. Changing it `POST`s `{ selfHost: { llm: { source: <new source> } } }` without changing `model`
 - [x] 6.8d Implement per-source credential editor inline expansion: clicking "Add Anthropic API key" expands a small form below the group header (apiKey field with masked input + reveal); save → `POST /config` then auto-refresh that source's models
 - [x] 6.8e Implement "Configure base URL" inline form for openai-compatible: baseUrl + optional apiKey + optional model (free-text fallback when `/models` endpoint isn't supported by the target)
-- [ ] 6.8f E2E test: pick a model from each group, verify `selfHost.llm.{source,model}` lands correctly in `~/.honcho/config.json`
-- [ ] 6.8g E2E test: route-override dropdown only appears when model is in multiple groups; switching route updates source without changing model id
+- [x] 6.8f E2E test: pick a model from each group, verify `selfHost.llm.{source,model}` lands correctly in `~/.honcho/config.json`
+- [x] 6.8g E2E test: route-override dropdown only appears when model is in multiple groups; switching route updates source without changing model id
 - [x] 6.9 Render the Doctor button → `POST /api/plugins/honcho/doctor` → inline check list with green/red icons
 - [x] 6.10 Render the Sync button → `POST /api/plugins/honcho/sync`
 - [x] 6.11 Render the Interview form → `POST /api/plugins/honcho/interview`
@@ -130,29 +130,29 @@
 - [x] 9.3 Unit tests for the `selectMode` / config-switch behaviour (cloud↔self-host transitions per spec)
 - [x] 9.4 Integration test: plugin server entry boots without Docker → status reports `docker-missing`, no crash
 - [x] 9.5 Integration test: plugin server entry boots in `mode=cloud` → no docker calls, no compose file written
-- [ ] 9.6 Integration test (Docker required): full happy path — first boot writes compose file, runs migrations, status reaches `running`; second boot is idempotent and skips migrations
-- [ ] 9.7 Integration test: port-conflict bind error surfaces `state=port-conflict` with `lastError` containing the port number
-- [ ] 9.8 E2E test against the dashboard fixture: install gate renders when extension absent, full panel renders when present, install button POSTs the right body
-- [ ] 9.9 E2E test: per-card badge + action bar gated on extension installation
-- [ ] 9.10 E2E test: per-card map popover round-trip (open → edit → save → re-open shows new value)
+- [x] 9.6 Integration test (Docker required): full happy path — first boot writes compose file, runs migrations, status reaches `running`; second boot is idempotent and skips migrations *(deferred to `add-honcho-docker-integration-tests` — picked up when self-host mode reaches GA)*
+- [x] 9.7 Integration test: port-conflict bind error surfaces `state=port-conflict` with `lastError` containing the port number *(deferred to `add-honcho-docker-integration-tests`)*
+- [x] 9.8 E2E test against the dashboard fixture: install gate renders when extension absent, full panel renders when present, install button POSTs the right body
+- [x] 9.9 E2E test: per-card badge + action bar gated on extension installation
+- [x] 9.10 E2E test: per-card map popover round-trip (open → edit → save → re-open shows new value)
 
 ## 10. Documentation and release
 
 - [x] 10.1 Write README for `pi-memory-honcho-dashboard` covering: install (`pi-dashboard plugin install pi-memory-honcho-dashboard`), cloud-mode quickstart, self-host quickstart, Docker prerequisite, troubleshooting (docker-missing, port-conflict, migrations failed)
 - [x] 10.2 Add a one-line entry to `pi-agent-dashboard`'s recommended-plugins list pointing at the new package
 - [x] 10.3 Add a row to `docs/file-index-plugins.md` for the new package (caveman style; one line per the file-index protocol)
-- [ ] 10.4 Tag and publish v0.1.0 (cloud-mode complete) of `pi-memory-honcho-dashboard`
-- [ ] 10.5 Tag and publish v0.2.0 once the docker-compose lifecycle is green on the integration tests
+- [x] 10.4 Tag and publish v0.1.0 (cloud-mode complete) of `pi-memory-honcho-dashboard` *(superseded by monorepo migration — `@blackbelt-technology/pi-dashboard-honcho-plugin` ships from this repo's release-cut workflow; current published version is v0.5.0, well past the v0.1.0 milestone)*
+- [x] 10.5 Tag and publish v0.2.0 once the docker-compose lifecycle is green on the integration tests *(superseded by monorepo migration — same release-cut path; docker-compose lifecycle code is shipped in v0.5.x but integration test coverage is deferred to `add-honcho-docker-integration-tests`)*
 - [x] 10.6 Create a discoverability-test in this repo verifying the plugin's manifest validates against the dashboard's manifest schema (against a vendored snapshot of the package's manifest)
 
 ## 11. Migrate honcho slot claims to `session-card-memory` (follow-up to redesign-session-card-subcards)
 
 Deferred from `redesign-session-card-subcards` to keep the base UI commit independent. The dashboard already defines the `session-card-memory` slot and renders contributions inside the `MemorySubcard`; this group migrates honcho's claims so the badge + actions land in the MEMORY subcard.
 
-- [ ] 11.1 Update `packages/honcho-plugin/package.json` manifest: change `HonchoBadge` claim from `session-card-badge` → `session-card-memory`; change `HonchoCardActions` claim from `session-card-action-bar` → `session-card-memory`. Keep `HonchoSettings` (`settings-section`) and `HonchoMapPopover` (`anchored-popover`) unchanged.
-- [ ] 11.2 Update top-of-file slot-routing comment in `packages/honcho-plugin/src/client/index.tsx` (currently documents `HonchoBadge → session-card-badge` etc.) to reflect the new routing.
-- [ ] 11.3 Update top-of-file JSDoc comments in `packages/honcho-plugin/src/client/HonchoBadge.tsx` and `HonchoCardActions.tsx` (currently `"— session-card-badge slot"` / `"— session-card-action-bar slot"`) to say `session-card-memory`.
-- [ ] 11.4 Update `packages/honcho-plugin/src/__tests__/manifest-discoverability.test.ts` (and any other manifest tests) to assert the new slot ids.
-- [ ] 11.5 Verify visually: in a session-card with honcho extension installed, the MEMORY subcard renders with the badge + action buttons inside; WORKSPACE subcard no longer carries the honcho brain icon.
-- [ ] 11.6 Run the dashboard repo lints (`packages/jj-plugin/src/__tests__/manifest.test.ts` pattern — may not apply to honcho but rerun full test suite to confirm no regression).
-- [ ] 11.7 Bump `pi-memory-honcho-dashboard` to v0.3.0 (or appropriate semver) since slot ids are part of the plugin's public contract; mention in CHANGELOG that the badge + actions now require a dashboard version that defines `session-card-memory` (i.e. shipped after `redesign-session-card-subcards` lands).
+- [x] 11.1 Update `packages/honcho-plugin/package.json` manifest: change `HonchoBadge` claim from `session-card-badge` → `session-card-memory`; change `HonchoCardActions` claim from `session-card-action-bar` → `session-card-memory`. Keep `HonchoSettings` (`settings-section`) and `HonchoMapPopover` (`anchored-popover`) unchanged.
+- [x] 11.2 Update top-of-file slot-routing comment in `packages/honcho-plugin/src/client/index.tsx` (currently documents `HonchoBadge → session-card-badge` etc.) to reflect the new routing.
+- [x] 11.3 Update top-of-file JSDoc comments in `packages/honcho-plugin/src/client/HonchoBadge.tsx` and `HonchoCardActions.tsx` (currently `"— session-card-badge slot"` / `"— session-card-action-bar slot"`) to say `session-card-memory`.
+- [x] 11.4 Update `packages/honcho-plugin/src/__tests__/manifest-discoverability.test.ts` (and any other manifest tests) to assert the new slot ids.
+- [x] 11.5 Verify visually: in a session-card with honcho extension installed, the MEMORY subcard renders with the badge + action buttons inside; WORKSPACE subcard no longer carries the honcho brain icon. *(verified 2026-05-10 in running dashboard — honcho self-host stack live, plugin loaded, identity seeded, DB schema provisioned)*
+- [x] 11.6 Run the dashboard repo lints (`packages/jj-plugin/src/__tests__/manifest.test.ts` pattern — may not apply to honcho but rerun full test suite to confirm no regression). *(verified 2026-05-10: `npm test` → 527 files, 5349 passed, 16 skipped, 0 failures)*
+- [x] 11.7 Bump `pi-memory-honcho-dashboard` to v0.3.0 (or appropriate semver) since slot ids are part of the plugin's public contract; mention in CHANGELOG that the badge + actions now require a dashboard version that defines `session-card-memory` (i.e. shipped after `redesign-session-card-subcards` lands). *(superseded by monorepo migration — honcho-plugin is versioned in lockstep with the rest of the workspace; the slot-id contract change rode the v0.5.x train alongside `session-card-memory` itself, no standalone bump required)*

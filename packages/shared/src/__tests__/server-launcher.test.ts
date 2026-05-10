@@ -15,6 +15,13 @@ import {
   EarlyExitError,
 } from "../server-launcher.js";
 import type { ChildProcess } from "node:child_process";
+import type { spawnNodeScript } from "../platform/node-spawn.js";
+import type { isDashboardRunning } from "../server-identity.js";
+
+const spawnSpy = (impl: () => ChildProcess) =>
+  vi.fn<typeof spawnNodeScript>(impl as unknown as typeof spawnNodeScript);
+const probeSpy = <T>(impl: () => Promise<T>) =>
+  vi.fn<typeof isDashboardRunning>(impl as unknown as typeof isDashboardRunning);
 
 interface FakeChildOpts {
   pid?: number | null;
@@ -42,8 +49,8 @@ function baseOpts(overrides: Partial<Parameters<typeof launchDashboardServer>[0]
     healthTimeoutMs: 5000,
     port: 8000,
     _resolveJiti: () => "file:///loader/jiti-register.mjs",
-    _spawnNodeScript: vi.fn(() => makeFakeChild()),
-    _isDashboardRunning: vi.fn(async () => ({ running: true, pid: 99 })),
+    _spawnNodeScript: spawnSpy(() => makeFakeChild()),
+    _isDashboardRunning: probeSpy(async () => ({ running: true, pid: 99 })),
     _sleep: () => Promise.resolve(),
     _pollIntervalMs: 1,
     ...overrides,
@@ -59,7 +66,7 @@ describe("launchDashboardServer — happy path", () => {
   });
 
   it("delegates argv to spawnNodeScript with loader + entry + args", async () => {
-    const spy = vi.fn(() => makeFakeChild());
+    const spy = spawnSpy(() => makeFakeChild());
     await launchDashboardServer(baseOpts({
       _spawnNodeScript: spy,
       extraArgs: ["--port", "8000", "--pi-port", "9999"],
@@ -77,7 +84,7 @@ describe("launchDashboardServer — happy path", () => {
 
 describe("launchDashboardServer — jiti resolution", () => {
   it("throws JitiNotFoundError when resolveJiti returns null (no spawn)", async () => {
-    const spawn = vi.fn(() => makeFakeChild());
+    const spawn = spawnSpy(() => makeFakeChild());
     await expect(launchDashboardServer(baseOpts({
       _resolveJiti: () => null,
       _spawnNodeScript: spawn,
@@ -96,8 +103,8 @@ describe("launchDashboardServer — readiness termination", () => {
   it("throws EarlyExitError when child exits during poll", async () => {
     const child = makeFakeChild();
     let calls = 0;
-    const spawnFn = vi.fn(() => child);
-    const probe = vi.fn(async () => {
+    const spawnFn = spawnSpy(() => child);
+    const probe = probeSpy(async () => {
       calls++;
       if (calls === 1) {
         // Mid-poll, child crashes.
@@ -139,7 +146,7 @@ describe("launchDashboardServer — log-file stdio", () => {
       writeSync: vi.fn((fd: number, s: any) => { calls.push(`write:${fd}:${String(s).slice(0, 20)}…`); return s.length; }),
       closeSync: vi.fn((fd: number) => { calls.push(`close:${fd}`); }),
     };
-    const spawn = vi.fn(() => makeFakeChild());
+    const spawn = spawnSpy(() => makeFakeChild());
     await launchDashboardServer(baseOpts({
       stdio: { logFile: "/var/log/dashboard/server.log" },
       starter: "Standalone",
@@ -163,7 +170,7 @@ describe("launchDashboardServer — log-file stdio", () => {
 
 describe("launchDashboardServer — env merge", () => {
   it("caller env keys override buildSpawnEnv defaults", async () => {
-    const spawn = vi.fn(() => makeFakeChild());
+    const spawn = spawnSpy(() => makeFakeChild());
     await launchDashboardServer(baseOpts({
       _spawnNodeScript: spawn,
       env: { DASHBOARD_STARTER: "Bridge", CUSTOM_KEY: "x" },
@@ -174,7 +181,7 @@ describe("launchDashboardServer — env merge", () => {
   });
 
   it("starter option becomes DASHBOARD_STARTER when env does not supply it", async () => {
-    const spawn = vi.fn(() => makeFakeChild());
+    const spawn = spawnSpy(() => makeFakeChild());
     await launchDashboardServer(baseOpts({
       _spawnNodeScript: spawn,
       starter: "Electron",
@@ -184,7 +191,7 @@ describe("launchDashboardServer — env merge", () => {
   });
 
   it("explicit env.DASHBOARD_STARTER wins over starter option", async () => {
-    const spawn = vi.fn(() => makeFakeChild());
+    const spawn = spawnSpy(() => makeFakeChild());
     await launchDashboardServer(baseOpts({
       _spawnNodeScript: spawn,
       starter: "Electron",
@@ -201,7 +208,7 @@ describe("launchDashboardServer — entry URL-wrapping", () => {
   // simply forwards the raw entry; the URL-wrap behaviour itself is
   // pinned by node-spawn-jiti-contract.test.ts.
   it("forwards `cliPath` verbatim to spawnNodeScript (URL-wrapping owned downstream)", async () => {
-    const spawn = vi.fn(() => makeFakeChild());
+    const spawn = spawnSpy(() => makeFakeChild());
     await launchDashboardServer(baseOpts({
       _spawnNodeScript: spawn,
       cliPath: "/posix/cli.ts",
@@ -210,7 +217,7 @@ describe("launchDashboardServer — entry URL-wrapping", () => {
   });
 
   it("forwards Windows-style `cliPath` verbatim too", async () => {
-    const spawn = vi.fn(() => makeFakeChild());
+    const spawn = spawnSpy(() => makeFakeChild());
     await launchDashboardServer(baseOpts({
       _spawnNodeScript: spawn,
       cliPath: "C:\\srv\\cli.ts",

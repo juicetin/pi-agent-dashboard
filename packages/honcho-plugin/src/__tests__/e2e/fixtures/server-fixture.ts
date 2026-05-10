@@ -17,6 +17,7 @@ import { mkdtempSync, rmSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import Fastify, { type FastifyInstance } from "fastify";
+import type { Response as LightMyRequestResponse, InjectPayload } from "light-my-request";
 
 import { mountConfigRoutes } from "../../../server/routes-config.js";
 import { mountHonchoClientRoutes } from "../../../server/routes-honcho-client.js";
@@ -123,11 +124,11 @@ export async function createE2eServerFixture(): Promise<E2eServerFixture> {
     installedPackages,
     setHonchoExtensionInstalled,
     async inject(opts) {
-      const res = await fastify.inject({
+      const res = (await fastify.inject({
         method: opts.method as never,
         url: opts.url,
-        payload: opts.payload,
-      });
+        payload: opts.payload as InjectPayload,
+      })) as LightMyRequestResponse;
       return {
         statusCode: res.statusCode,
         body: res.body,

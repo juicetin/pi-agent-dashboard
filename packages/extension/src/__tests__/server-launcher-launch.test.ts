@@ -7,9 +7,10 @@
  * See change: unify-server-launch-ts-loader (§3.1.2).
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import type { launchDashboardServer } from "@blackbelt-technology/pi-dashboard-shared/server-launcher.js";
 
 const { launchSpy } = vi.hoisted(() => ({
-  launchSpy: vi.fn(async () => ({ childPid: 1, reportedPid: 1, healthOk: true as const })),
+  launchSpy: vi.fn<typeof launchDashboardServer>(async () => ({ childPid: 1, reportedPid: 1, healthOk: true as const })),
 }));
 
 vi.mock("@blackbelt-technology/pi-dashboard-shared/server-launcher.js", () => ({
@@ -67,7 +68,7 @@ describe("Bridge launchServer → launchDashboardServer forwarding", () => {
 
   it("maps EarlyExitError to a failed LaunchResult mentioning the exit code", async () => {
     const { EarlyExitError } = await import("@blackbelt-technology/pi-dashboard-shared/server-launcher.js");
-    const err = new EarlyExitError("exited") as Error & { code: number };
+    const err = new (EarlyExitError as unknown as new (...args: unknown[]) => Error & { code: number })();
     err.code = 17;
     launchSpy.mockRejectedValueOnce(err);
     const r = await launchServer(cfg);

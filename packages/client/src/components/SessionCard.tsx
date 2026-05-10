@@ -27,16 +27,13 @@ import type { OpenSpecData, OpenSpecChange, OpenSpecGroup } from "@blackbelt-tec
 import { SessionOpenSpecActions } from "./SessionOpenSpecActions.js";
 import { OpenSpecActivityBadge } from "./OpenSpecActivityBadge.js";
 import { InlineRenameInput } from "./InlineRenameInput.js";
-import {
-  FlowActivityBadge,
-  SessionFlowActions,
-} from "@blackbelt-technology/pi-dashboard-flows-plugin/client";
-// jj-plugin components (JjWorkspaceBadge, JjActionBar, JjInitAffordance) are
-// rendered exclusively via plugin slots (SessionCardBadgeSlot /
-// SessionCardActionBarSlot) once the registry is populated. Direct imports
-// removed to avoid double-rendering. See change: wire-plugin-registry-into-shell.
+// flows-plugin components (FlowActivityBadge, SessionFlowActions) are
+// rendered exclusively via plugin slot consumers (SessionCardBadgeSlot /
+// SessionCardActionBarSlot) per change pluginize-flows-via-registry.
+// jj-plugin components (JjWorkspaceBadge, JjActionBar, JjInitAffordance)
+// are rendered the same way per change wire-plugin-registry-into-shell.
 import { ProcessList, type ProcessEntry } from "./ProcessList.js";
-import type { CommandInfo, FlowInfo } from "@blackbelt-technology/pi-dashboard-shared/types.js";
+import type { CommandInfo } from "@blackbelt-technology/pi-dashboard-shared/types.js";
 import { useMobile } from "../hooks/useMobile.js";
 import { SessionCardBadgeSlot, SessionCardActionBarSlot, SessionCardMemorySlot, WorkspaceActionBarSlot, useSlotHasClaimsForSession } from "@blackbelt-technology/dashboard-plugin-runtime";
 import { SessionSubcard } from "./SessionSubcard.js";
@@ -282,7 +279,6 @@ export function SessionCard({
   openspecGroups,
   openspecAssignments,
   onSendPrompt,
-  onFlowAction,
   onAttachProposal,
   onDetachProposal,
   onReadArtifact,
@@ -291,7 +287,6 @@ export function SessionCard({
   onShutdown,
   onResume,
   commands,
-  flows,
   processes,
   onKillProcess,
   hasError,
@@ -337,7 +332,6 @@ export function SessionCard({
   openspecGroups?: OpenSpecGroup[];
   openspecAssignments?: Record<string, string>;
   onSendPrompt?: (text: string, images?: ImageContent[]) => void;
-  onFlowAction?: (action: string, opts?: { flowName?: string; task?: string; description?: string }) => void;
   onAttachProposal?: (changeName: string) => void;
   onDetachProposal?: () => void;
   onReadArtifact?: (changeName: string, artifactId: string) => void;
@@ -346,7 +340,6 @@ export function SessionCard({
   onShutdown?: (id: string) => void;
   onResume?: (mode: "continue" | "fork") => void;
   commands?: CommandInfo[];
-  flows?: FlowInfo[];
   processes?: ProcessEntry[];
   onKillProcess?: (pgid: number) => void;
   hasError?: boolean;
@@ -457,15 +450,6 @@ export function SessionCard({
                 ? openspecChanges?.find((c) => c.name === session.openspecChange)?.totalTasks
                 : undefined
             }
-          />
-        ) : null}
-        {/* Flow activity badge */}
-        {session.activeFlowName ? (
-          <FlowActivityBadge
-            flowName={session.activeFlowName}
-            agentsDone={session.flowAgentsDone}
-            agentsTotal={session.flowAgentsTotal}
-            status={session.flowStatus}
           />
         ) : null}
         {/* Active child processes (mobile compact) */}
@@ -656,17 +640,11 @@ export function SessionCard({
         />
       ) : null}
 
-      {/* Flow activity badge */}
-      {session.activeFlowName ? (
-        <FlowActivityBadge
-          flowName={session.activeFlowName}
-          agentsDone={session.flowAgentsDone}
-          agentsTotal={session.flowAgentsTotal}
-          status={session.flowStatus}
-        />
-      ) : null}
-
-      {/* Subcard stack — see change: redesign-session-card-subcards */}
+      {/* Subcard stack — see change: redesign-session-card-subcards.
+          Flow activity badge has been removed from the shell — it is now
+          rendered via SessionCardBadgeSlot (inside WorkspaceSubcard below)
+          which receives the FlowActivityBadgeClaim contribution from
+          flows-plugin. See change: pluginize-flows-via-registry. */}
 
       {/* OPENSPEC subcard
           Hides when the cwd is not OpenSpec-applicable. Primary signal:
@@ -699,7 +677,10 @@ export function SessionCard({
         </SessionSubcard>
       )}
 
-      {/* WORKSPACE subcard — git info + plugin badge contributions */}
+      {/* WORKSPACE subcard — git info + plugin badge contributions.
+          flows-plugin's FlowActivityBadgeClaim and jj-plugin's badge
+          render here via the session-card-badge slot consumer that
+          WorkspaceSubcard hosts internally. */}
       <WorkspaceSubcard session={session} showGitInfo={showGitInfo} />
 
       {/* PROCESS subcard */}
@@ -712,18 +693,9 @@ export function SessionCard({
       {/* MEMORY subcard — plugin slot only */}
       <MemorySubcard session={session} />
 
-      {/* FLOWS subcard — hidden when no flows and no flows:new command (mirrors WorkspaceSubcard pattern). */}
-      {flows && onFlowAction && (flows.length > 0 || (commands?.some(c => c.name === "flows:new") ?? false)) && (
-        <SessionSubcard title="FLOWS">
-          <SessionFlowActions
-            flows={flows}
-            hasFlowsNew={commands?.some(c => c.name === "flows:new") ?? false}
-            hasFlowsEdit={commands?.some(c => c.name === "flows:edit") ?? false}
-            hasFlowsDelete={commands?.some(c => c.name === "flows:delete") ?? false}
-            onFlowAction={onFlowAction}
-          />
-        </SessionSubcard>
-      )}
+      {/* FLOWS subcard removed — flows-plugin contributes its own card
+          actions via SessionFlowActionsClaim through the session-card-
+          action-bar slot below. See change: pluginize-flows-via-registry. */}
 
       {/* Plugin slot: session-card-action-bar — generic card footer.
           Currently no claimers after jj/honcho rerouted to workspace-action-bar /

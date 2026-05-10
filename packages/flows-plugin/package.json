@@ -29,13 +29,25 @@
   "files": [
     "src/"
   ],
-  "//pi-dashboard-plugin-deferred-claims": "session-card-badge (FlowActivityBadge) and session-card-action-bar (SessionFlowActions) are deferred until migrate-flows-jsx-to-slots adapts those components to accept {session} and pull app state from context. Until then they remain wired via direct JSX in SessionCard.tsx.",
   "pi-dashboard-plugin": {
     "id": "flows",
     "displayName": "Flows",
     "priority": 100,
     "client": "./src/client/index.tsx",
-    "claims": []
+    "claims": [
+      { "slot": "session-card-badge", "component": "FlowActivityBadgeClaim" },
+      { "slot": "session-card-action-bar", "component": "SessionFlowActionsClaim" },
+      { "slot": "content-header-sticky", "component": "FlowDashboardClaim" },
+      { "slot": "content-header-sticky", "component": "FlowArchitectClaim" },
+      { "slot": "content-view", "component": "FlowAgentDetailClaim", "route": "flow-agent-detail" },
+      { "slot": "content-view", "component": "FlowArchitectDetailClaim", "route": "flow-architect-detail" },
+      { "slot": "content-view", "component": "FlowYamlPreviewClaim", "route": "flow-yaml-preview" },
+      { "slot": "content-inline-footer", "component": "FlowSummaryClaim" },
+      { "slot": "command-route", "component": "FlowsListRoute", "command": "/flows" },
+      { "slot": "command-route", "component": "FlowsNewRoute", "command": "/flows:new" },
+      { "slot": "command-route", "component": "FlowsEditRoute", "command": "/flows:edit" },
+      { "slot": "command-route", "component": "FlowsDeleteRoute", "command": "/flows:delete" }
+    ]
   },
   "peerDependencies": {
     "react": ">=18.0.0",

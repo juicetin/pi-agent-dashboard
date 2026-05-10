@@ -4,7 +4,7 @@
  */
 import { useCallback } from "react";
 import { createInitialState, reduceEvent, addInteractiveRequest, resolveInteractiveRequest, dismissInteractiveRequest, type SessionState } from "../lib/event-reducer.js";
-import type { DashboardSession, CommandInfo, FlowInfo, FileEntry, OpenSpecData, OpenSpecGroup, ModelInfo, RoleInfo } from "@blackbelt-technology/pi-dashboard-shared/types.js";
+import type { DashboardSession, CommandInfo, FileEntry, OpenSpecData, OpenSpecGroup, ModelInfo, RoleInfo } from "@blackbelt-technology/pi-dashboard-shared/types.js";
 import { encodeFolderPath } from "../lib/folder-encoding.js";
 import type { TerminalSession } from "@blackbelt-technology/pi-dashboard-shared/terminal-types.js";
 import type { EditorInstanceStatus } from "@blackbelt-technology/pi-dashboard-shared/editor-types.js";
@@ -43,7 +43,9 @@ export interface MessageHandlerSetters {
   setSessions: React.Dispatch<React.SetStateAction<Map<string, DashboardSession>>>;
   setSessionStates: React.Dispatch<React.SetStateAction<Map<string, SessionState>>>;
   setSessionCommands: React.Dispatch<React.SetStateAction<Map<string, CommandInfo[]>>>;
-  setSessionFlows: React.Dispatch<React.SetStateAction<Map<string, FlowInfo[]>>>;
+  // Note: setSessionFlows removed. flows-plugin reads `flowsList` from
+  // the per-session-data store directly. See change:
+  // pluginize-flows-via-registry.
   setFileResults: React.Dispatch<React.SetStateAction<{ query: string; files: FileEntry[] } | null>>;
   setOpenspecMap: React.Dispatch<React.SetStateAction<Map<string, OpenSpecData>>>;
   setOpenspecGroupsMap: React.Dispatch<React.SetStateAction<Map<string, { groups: OpenSpecGroup[]; assignments: Record<string, string> }>>>;
@@ -83,7 +85,7 @@ export function useMessageHandler(
   deps: MessageHandlerDeps,
 ): (msg: ServerToBrowserMessage) => void {
   const {
-    setSessions, setSessionStates, setSessionCommands, setSessionFlows,
+    setSessions, setSessionStates, setSessionCommands,
     setFileResults, setOpenspecMap, setOpenspecGroupsMap, setModelsMap, setRolesMap, setSpawnResult,
     setSessionOrderMap, setPinnedDirectories, setTerminals, setEditorStatuses,
     setDiscoveredServers, setSpawnErrors, setResumeErrors,
@@ -238,13 +240,9 @@ export function useMessageHandler(
         break;
 
       case "flows_list":
-        setSessionFlows((prev) => {
-          const next = new Map(prev);
-          next.set(msg.sessionId, msg.flows);
-          return next;
-        });
-        // Same mirroring as above. flows-plugin's SessionFlowActionsClaim
-        // reads `flowsList` from the per-session-data store.
+        // Mirrored to the plugin-runtime per-session-data store so
+        // flows-plugin's SessionFlowActionsClaim and FlowsCommandRoutes
+        // can read the flows list. The shell does not retain it.
         publishSessionData(msg.sessionId, "flowsList", msg.flows);
         break;
 
@@ -698,5 +696,5 @@ export function useMessageHandler(
         break;
       }
     }
-  }, [send, clearSpawningCwd, navigate, setSessions, setSessionStates, setSessionCommands, setSessionFlows, setFileResults, setOpenspecMap, setModelsMap, setRolesMap, setSpawnResult, setSessionOrderMap, setPinnedDirectories, setTerminals, setEditorStatuses, setDiscoveredServers, spawningCwdsRef, subscribedRef, pendingTerminalCwdRef, maxSeqMapRef, selectedSessionIdRef]);
+  }, [send, clearSpawningCwd, navigate, setSessions, setSessionStates, setSessionCommands, setFileResults, setOpenspecMap, setModelsMap, setRolesMap, setSpawnResult, setSessionOrderMap, setPinnedDirectories, setTerminals, setEditorStatuses, setDiscoveredServers, spawningCwdsRef, subscribedRef, pendingTerminalCwdRef, maxSeqMapRef, selectedSessionIdRef]);
 }

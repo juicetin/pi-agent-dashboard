@@ -1,14 +1,16 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Icon } from "@mdi/react";
 import { mdiPencilOutline, mdiArrowLeft, mdiPaperclip, mdiRefresh, mdiLinkOff, mdiPlay, mdiFileCompare, mdiHeadLightbulb, mdiViewGridOutline, mdiPlayCircleOutline, mdiSourceFork } from "@mdi/js";
-import type { DashboardSession, OpenSpecChange, CommandInfo, FlowInfo, ImageContent } from "@blackbelt-technology/pi-dashboard-shared/types.js";
+import type { DashboardSession, OpenSpecChange, CommandInfo, ImageContent } from "@blackbelt-technology/pi-dashboard-shared/types.js";
 import type { SessionState } from "../lib/event-reducer.js";
 import type { DetectedEditor } from "../lib/editor-api.js";
 import { getSessionDisplayName } from "../lib/session-display-name.js";
 import { InlineRenameInput } from "./InlineRenameInput.js";
 import { MobileActionMenu } from "./MobileActionMenu.js";
 import { useMobile } from "../hooks/useMobile.js";
-import { FlowLaunchDialog } from "@blackbelt-technology/pi-dashboard-flows-plugin/client";
+// FlowLaunchDialog removed: flow launching is owned entirely by
+// flows-plugin's command-route claims (/flows, /flows:new, etc.) and
+// SessionFlowActionsClaim. See change: pluginize-flows-via-registry.
 import { SearchableSelectDialog, type SelectOption } from "./SearchableSelectDialog.js";
 import { FooterSegmentSlot } from "./extension-ui/FooterSegmentSlot.js";
 import { ArtifactLettersButton } from "./openspec-helpers.js";
@@ -20,7 +22,7 @@ interface Props {
   showBack?: boolean;
   onBack?: () => void;
   commands?: CommandInfo[];
-  flows?: FlowInfo[];
+
   onSendPrompt?: (text: string, images?: ImageContent[]) => void;
   openspecChanges?: OpenSpecChange[];
   onAttachProposal?: (changeName: string) => void;
@@ -274,15 +276,14 @@ function formatDuration(ms: number): string {
   return `${seconds}s`;
 }
 
-export function SessionHeader({ session, state, onRename, showBack, onBack, mobileActions, commands, flows, onSendPrompt, openspecChanges, onAttachProposal, onDetachProposal, hasFileChanges, onOpenDiffView, onRefresh, onReadArtifact, onOpenExtensionModulePicker, onResume }: Props) {
+export function SessionHeader({ session, state, onRename, showBack, onBack, mobileActions, commands, onSendPrompt, openspecChanges, onAttachProposal, onDetachProposal, hasFileChanges, onOpenDiffView, onRefresh, onReadArtifact, onOpenExtensionModulePicker, onResume }: Props) {
   const [now, setNow] = useState(Date.now());
   const [isRenaming, setIsRenaming] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [flowPickerOpen, setFlowPickerOpen] = useState(false);
-  const [flowLaunchTarget, setFlowLaunchTarget] = useState<FlowInfo | null>(null);
   const [openspecPickerOpen, setOpenspecPickerOpen] = useState(false);
-  const flowCmds = flows ?? [];
-  const flowOptions: SelectOption[] = flowCmds.map(f => ({ value: f.name, label: f.name, description: f.description }));
+  // Flow launcher button + dialogs removed: flow management is owned by
+  // flows-plugin's command-route claims and SessionFlowActionsClaim.
+  // See change: pluginize-flows-via-registry.
 
   const attached = session?.attachedProposal;
   const openspecOptions: SelectOption[] = (openspecChanges || []).map(c => {
@@ -441,15 +442,10 @@ export function SessionHeader({ session, state, onRename, showBack, onBack, mobi
           </button>
         )
       )}
-      {flowCmds.length > 0 && onSendPrompt && (
-        <button
-          onClick={() => setFlowPickerOpen(true)}
-          className="text-[10px] px-1.5 py-0.5 rounded border border-blue-500/30 text-blue-400 hover:bg-blue-500/10 mr-1"
-          title="Run a flow"
-        >
-          <Icon path={mdiPlay} size={0.4} className="inline mr-0.5" />Flow
-        </button>
-      )}
+      {/* Flow launcher button removed: flows-plugin's SessionFlowActionsClaim
+          contributes its own "Run flow" button via the
+          session-card-action-bar slot. See change:
+          pluginize-flows-via-registry. */}
       {/* Extension UI System (Phase 1): Modules entry point. Shown only when */}
       {/* the bridge has reported at least one module for this session. */}
       {/* See change: add-extension-ui-modal. */}
@@ -518,32 +514,10 @@ export function SessionHeader({ session, state, onRename, showBack, onBack, mobi
           onCancel={() => setOpenspecPickerOpen(false)}
         />
       )}
-      {flowPickerOpen && onSendPrompt && (
-        <SearchableSelectDialog
-          title="Run Flow"
-          options={flowOptions}
-          placeholder="Search flows..."
-          emptyMessage="No flows available"
-          onSelect={(value) => {
-            const flow = flowCmds.find(f => f.name === value);
-            if (flow) setFlowLaunchTarget(flow);
-            setFlowPickerOpen(false);
-          }}
-          onCancel={() => setFlowPickerOpen(false)}
-        />
-      )}
-      {flowLaunchTarget && onSendPrompt && (
-        <FlowLaunchDialog
-          flowName={flowLaunchTarget.name}
-          description={flowLaunchTarget.description}
-          onSubmit={(task) => {
-            const prompt = task ? `/${flowLaunchTarget.name} ${task}` : `/${flowLaunchTarget.name}`;
-            onSendPrompt(prompt);
-            setFlowLaunchTarget(null);
-          }}
-          onCancel={() => setFlowLaunchTarget(null)}
-        />
-      )}
+      {/* Flow picker + launch dialog removed; owned by flows-plugin
+          command-route claims (/flows, /flows:new, /flows:edit,
+          /flows:delete) and SessionFlowActionsClaim. See change:
+          pluginize-flows-via-registry. */}
     </div>
   );
 }

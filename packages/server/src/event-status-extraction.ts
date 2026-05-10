@@ -2,16 +2,12 @@
  * Extract session status/tool updates from forwarded events.
  * Returns partial DashboardSession updates, or null if the event is not relevant.
  */
-import type { DashboardEvent, DashboardSession, FlowStatus, SessionStatus } from "@blackbelt-technology/pi-dashboard-shared/types.js";
+import type { DashboardEvent, DashboardSession, SessionStatus } from "@blackbelt-technology/pi-dashboard-shared/types.js";
 
 // Use null (not undefined) for fields that must be cleared — undefined is
 // dropped during JSON serialisation so the browser would keep the stale value.
 type SessionUpdates = Partial<Pick<DashboardSession, "status" | "model" | "thinkingLevel">> & {
   currentTool?: string | null;
-  activeFlowName?: string | null;
-  flowAgentsDone?: number;
-  flowAgentsTotal?: number;
-  flowStatus?: FlowStatus | null;
 };
 
 /**
@@ -83,54 +79,10 @@ export function extractSessionUpdates(event: DashboardEvent): SessionUpdates | n
       return null;
     }
 
-    // ── Flow events ──
-    case "flow_started": {
-      const d = event.data;
-      const steps = d.steps as Array<{ stepType: string }> | undefined;
-      const agentCount = steps?.filter(s => s.stepType === "agent").length ?? 0;
-      return {
-        activeFlowName: (d.flowName as string) ?? null,
-        flowAgentsTotal: agentCount,
-        flowAgentsDone: 0,
-        flowStatus: "running" as FlowStatus,
-      };
-    }
-
-    case "flow_agent_complete":
-      // Increment is handled by the caller — we return a marker
-      return { flowAgentsDone: -1 }; // sentinel: caller must increment
-
-    case "flow_complete": {
-      const result = event.data;
-      const status = (result.status as string) ?? "success";
-      return {
-        flowStatus: status as FlowStatus,
-      };
-    }
-
-    // ── Architect events ──
-    case "architect_started": {
-      const mode = (event.data.mode as string) || "new";
-      return {
-        activeFlowName: mode === "edit" ? "Editing flow..." : "Designing flow...",
-        flowStatus: "running" as FlowStatus,
-      };
-    }
-
-    case "flow_summary_dismissed": {
-      return {
-        activeFlowName: null,
-        flowStatus: null,
-      };
-    }
-
-    case "architect_complete":
-    case "architect_cancelled": {
-      return {
-        activeFlowName: null,
-        flowStatus: null,
-      };
-    }
+    // Flow / architect events are NOT extracted here. Per change
+    // pluginize-flows-via-registry, flows-plugin owns its own state
+    // derivation in the browser via useSessionEvents + plugin-internal
+    // contexts. The dashboard server has zero flow knowledge.
 
     default:
       return null;
@@ -164,16 +116,16 @@ const ACTIVITY_EVENT_TYPES: ReadonlySet<string> = new Set([
   "agent_end",
   // Bash command output
   "bash_output",
-  // Flow lifecycle / agent steps
-  "flow_started",
-  "flow_complete",
-  "flow_agent_started",
-  "flow_agent_complete",
-  // Architect (flow design) lifecycle
-  "architect_started",
-  "architect_complete",
-  "architect_cancelled",
 ]);
+// Note: flow / architect events used to live in this allowlist but the
+// classification of "is this user-visible activity?" is plugin business.
+// The plugin marks activity via its own session-state-derived signal
+// (e.g. lastActivityAt stamping based on flowState changes). For now,
+// the simpler tool/agent/message events are sufficient to keep
+// `lastActivityAt` accurate; if a flow that does no other tool calls
+// fails to bump activity, the user can re-add the events here behind a
+// generic predicate like `isPluginActivityEvent` exposed by plugin-runtime.
+// See change: pluginize-flows-via-registry.
 
 export function isActivityEvent(eventType: string): boolean {
   return ACTIVITY_EVENT_TYPES.has(eventType);

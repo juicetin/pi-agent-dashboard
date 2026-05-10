@@ -17,13 +17,17 @@
  *
  *   1. archiveBrowserCwd
  *   2. specsBrowserCwd
- *   3. flowYamlPreview
- *   4. diffViewSessionId
- *   5. piResourceFilePreview
- *   6. readmePreview
- *   7. piResourcesState
- *   8. previewState
- *   9. (fallthrough) → navigate to "/"
+ *   3. diffViewSessionId
+ *   4. piResourceFilePreview
+ *   5. readmePreview
+ *   6. piResourcesState
+ *   7. previewState
+ *   8. (fallthrough) → navigate to "/"
+ *
+ * Note: `flowYamlPreview` was removed from the chain in change
+ * `pluginize-flows-via-registry`. Flow YAML preview is now owned by
+ * flows-plugin's FlowYamlPreview content-view claim, which renders
+ * inside the content-view slot and has its own internal back button.
  *
  * The helper returns a discriminated union so the calling hook can dispatch
  * to either an overlay setter (`{kind:"clear", target}`) or `navigate("/")`
@@ -36,11 +40,10 @@
  * See change: fix-desktop-back-navigation.
  */
 
-/** Identifiers for each of the eight overlay states (priority-ordered). */
+/** Identifiers for each of the seven overlay states (priority-ordered). */
 export type BackTargetKey =
   | "archive"
   | "specs"
-  | "flowYaml"
   | "diff"
   | "piResourceFile"
   | "readme"
@@ -56,7 +59,6 @@ export type BackTargetKey =
 export interface BackInputState {
   archiveBrowserCwd: boolean;
   specsBrowserCwd: boolean;
-  flowYamlPreview: boolean;
   diffViewSessionId: boolean;
   piResourceFilePreview: boolean;
   readmePreview: boolean;
@@ -73,7 +75,6 @@ export type BackTarget =
 const PRIORITY_CHAIN: ReadonlyArray<{ key: keyof BackInputState; target: BackTargetKey }> = [
   { key: "archiveBrowserCwd", target: "archive" },
   { key: "specsBrowserCwd", target: "specs" },
-  { key: "flowYamlPreview", target: "flowYaml" },
   { key: "diffViewSessionId", target: "diff" },
   { key: "piResourceFilePreview", target: "piResourceFile" },
   { key: "readmePreview", target: "readme" },

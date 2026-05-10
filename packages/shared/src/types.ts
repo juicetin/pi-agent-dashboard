@@ -89,14 +89,6 @@ export interface DashboardSession {
   firstMessage?: string;
   dataUnavailable?: boolean;
   resuming?: boolean;
-  /** Active flow name (set during flow execution) */
-  activeFlowName?: string;
-  /** Number of completed agents in the active flow */
-  flowAgentsDone?: number;
-  /** Total number of agents in the active flow */
-  flowAgentsTotal?: number;
-  /** Flow execution status */
-  flowStatus?: FlowStatus;
   /** Last known bridge entry count (for skip-wipe comparison on reconnect) */
   lastEntryCount?: number;
   /** OS process ID of the pi agent — used for force-kill escalation */

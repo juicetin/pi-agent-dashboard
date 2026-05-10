@@ -10,12 +10,10 @@ import { useMobile } from "./hooks/useMobile.js";
 import { getMobileDepth } from "./lib/mobile-depth.js";
 import { ChatView, type ChatViewHandle } from "./components/ChatView.js";
 import { ConfirmDialog } from "./components/ConfirmDialog.js";
-import {
-  FlowDashboard,
-  FlowAgentDetail,
-  FlowArchitect,
-  FlowArchitectDetail,
-} from "@blackbelt-technology/pi-dashboard-flows-plugin/client";
+// Flow components are no longer imported by the shell. They render
+// exclusively via plugin slot claims (content-header-sticky,
+// content-view, content-inline-footer, command-route). See change:
+// pluginize-flows-via-registry.
 import { MarkdownPreviewView } from "./components/MarkdownPreviewView.js";
 import { PiResourcesView } from "./components/PiResourcesView.js";
 import { SpecsBrowserView } from "./components/SpecsBrowserView.js";
@@ -57,9 +55,8 @@ import { selectViewedSessionId } from "./lib/selectViewedSessionId.js";
 import { useSessionActions } from "./hooks/useSessionActions.js";
 import { usePendingPromptTimeout } from "./hooks/usePendingPromptTimeout.js";
 import { useOpenSpecActions } from "./hooks/useOpenSpecActions.js";
-import type { DashboardSession, CommandInfo, FlowInfo, FileEntry, OpenSpecData, OpenSpecGroup, ModelInfo, RoleInfo, ImageContent } from "@blackbelt-technology/pi-dashboard-shared/types.js";
+import type { DashboardSession, CommandInfo, FileEntry, OpenSpecData, OpenSpecGroup, ModelInfo, RoleInfo, ImageContent } from "@blackbelt-technology/pi-dashboard-shared/types.js";
 import { SearchableSelectDialog, type SelectOption } from "./components/SearchableSelectDialog.js";
-import { FlowLaunchDialog } from "@blackbelt-technology/pi-dashboard-flows-plugin/client";
 import { GenericExtensionDialog } from "./components/extension-ui/GenericExtensionDialog.js";
 import { ToastSlot } from "./components/extension-ui/ToastSlot.js";
 import { PinDirectoryDialog } from "./components/PinDirectoryDialog.js";
@@ -200,7 +197,10 @@ export default function App() {
   // acceptable (see openspec/specs/chat-input-state).
   const [pendingImagesMap, setPendingImagesMap] = useState<Map<string, ImageContent[]>>(new Map());
   const [sessionCommands, setSessionCommands] = useState<Map<string, CommandInfo[]>>(new Map());
-  const [sessionFlows, setSessionFlows] = useState<Map<string, FlowInfo[]>>(new Map());
+  // sessionFlows state was removed; flows-plugin reads the per-session
+  // flows list directly from the plugin-runtime per-session-data store
+  // (mirrored by useMessageHandler on `flows_list` messages). See
+  // change: pluginize-flows-via-registry.
   const [fileResults, setFileResults] = useState<{ query: string; files: FileEntry[] } | null>(null);
   const [openspecMap, setOpenspecMap] = useState<Map<string, OpenSpecData>>(new Map());
   const [openspecGroupsMap, setOpenspecGroupsMap] = useState<Map<string, { groups: OpenSpecGroup[]; assignments: Record<string, string> }>>(new Map());
@@ -230,8 +230,8 @@ export default function App() {
   const [discoveredServers, setDiscoveredServers] = useState<import("./components/ServerSelector.js").DiscoveredServerInfo[]>([]);
   const subscribedRef = useRef(new Set<string>());
   const maxSeqMapRef = useRef(new Map<string, number>());
-  const [flowDetailAgent, setFlowDetailAgent] = useState<string | null>(null);
-  const [architectDetailOpen, setArchitectDetailOpen] = useState(false);
+  // flowDetailAgent / architectDetailOpen state moved into flows-plugin's
+  // FlowsUiStateContext. See change: pluginize-flows-via-registry.
   const [previewState, setPreviewState] = useState<{
     cwd: string;
     changeName: string;
@@ -241,8 +241,8 @@ export default function App() {
   const [specsBrowserCwd, setSpecsBrowserCwd] = useState<string | null>(null);
   const [archiveBrowserCwd, setArchiveBrowserCwd] = useState<string | null>(null);
   const [diffViewSessionId, setDiffViewSessionId] = useState<string | null>(null);
-  const [flowYamlPreview, setFlowYamlPreview] = useState<{ content: string; title: string } | null>(null);
-  const [sourceOpenAgent, setSourceOpenAgent] = useState<string | null>(null);
+  // flowYamlPreview / sourceOpenAgent moved into flows-plugin's
+  // FlowsUiStateContext. See change: pluginize-flows-via-registry.
 
   // Clear all App-level content view states (everything except useContentViews-owned states)
   const clearAppContentViews = useCallback(() => {
@@ -250,10 +250,6 @@ export default function App() {
     setSpecsBrowserCwd(null);
     setArchiveBrowserCwd(null);
     setDiffViewSessionId(null);
-    setFlowYamlPreview(null);
-    setSourceOpenAgent(null);
-    setFlowDetailAgent(null);
-    setArchitectDetailOpen(false);
   }, []);
 
   const {
@@ -296,7 +292,6 @@ export default function App() {
           setSessions(new Map());
           setSessionStates(new Map());
           setSessionCommands(new Map());
-          setSessionFlows(new Map());
           setOpenspecMap(new Map());
           setOpenspecGroupsMap(new Map());
           setTerminals(new Map());
@@ -343,7 +338,7 @@ export default function App() {
   }, []);
 
   const handleMessage = useMessageHandler(
-    { setSessions, setSessionStates, setSessionCommands, setSessionFlows, setFileResults, setOpenspecMap, setOpenspecGroupsMap, setModelsMap, setRolesMap, setSpawnResult, setSessionOrderMap, setPinnedDirectories, setTerminals, setEditorStatuses, setDiscoveredServers, setSpawnErrors, setResumeErrors },
+    { setSessions, setSessionStates, setSessionCommands, setFileResults, setOpenspecMap, setOpenspecGroupsMap, setModelsMap, setRolesMap, setSpawnResult, setSessionOrderMap, setPinnedDirectories, setTerminals, setEditorStatuses, setDiscoveredServers, setSpawnErrors, setResumeErrors },
     { send, navigate, clearSpawningCwd, spawningCwdsRef, subscribedRef, pendingTerminalCwdRef, lastCreatedTerminalIdRef, maxSeqMapRef, selectedSessionIdRef, pendingSpawnsRef },
   );
 
@@ -535,9 +530,9 @@ export default function App() {
     ? sessionCommands.get(selectedId) ?? []
     : [];
 
-  const selectedFlows = selectedId
-    ? sessionFlows.get(selectedId) ?? []
-    : [];
+  // selectedFlows derivation removed — flows-plugin's SessionFlowActions
+  // claim reads flows from the per-session-data store directly. See
+  // change: pluginize-flows-via-registry.
 
   const selectedSession = selectedId ? sessions.get(selectedId) : undefined;
   const selectedCwd = selectedSession?.cwd;
@@ -572,7 +567,7 @@ export default function App() {
     pendingSpawnsRef,
   });
   const {
-    handleAbort, handleForceKill, handleCancelPending, handleRespondToUi, handleFlowAction, handleSend,
+    handleAbort, handleForceKill, handleCancelPending, handleRespondToUi, handleSend,
     handleSelect, handleRenameSession, handleShutdownSession, handleKillProcess,
     handleSendPromptToSession, handleResumeSession, handleResumeSessionKeepPosition, handleSpawnSession,
     handleHideSession, handleUnhideSession,
@@ -580,14 +575,11 @@ export default function App() {
     handleListFiles,
   } = sessionActions;
 
-  // Flow picker state (for /flows command intercept)
-  const [flowPickerOpen, setFlowPickerOpen] = useState(false);
-  const [flowNewOpen, setFlowNewOpen] = useState(false);
-  const [flowEditPickerOpen, setFlowEditPickerOpen] = useState(false);
-  const [flowEditFlowName, setFlowEditFlowName] = useState<string | null>(null);
-  const [flowDeletePickerOpen, setFlowDeletePickerOpen] = useState(false);
-  const [flowDeleteFlowName, setFlowDeleteFlowName] = useState<string | null>(null);
-  const [flowLaunchTarget, setFlowLaunchTarget] = useState<FlowInfo | null>(null);
+  // Flow command interception is gone. /flows, /flows:new, /flows:edit,
+  // /flows:delete are now handled by flows-plugin's command-route claims
+  // (see manifest claims in packages/flows-plugin/package.json). The
+  // shell's command-route slot consumer dispatches the matching plugin
+  // contribution. See change: pluginize-flows-via-registry.
 
   // Extension UI System (Phase 1): currently-open module modal, and the
   // searchable picker shown via the Modules entry point.
@@ -597,24 +589,17 @@ export default function App() {
 
   // Built-in slash commands the dashboard handles natively. If an extension
   // pushes a module whose `command` matches one of these, we drop the module
-  // (the built-in wins) and warn the developer.
+  // (the built-in wins) and warn the developer. (/flows commands are NOT
+  // built-in; they're owned by flows-plugin via command-route claims.)
   const BUILTIN_SLASH_COMMANDS = useMemo(() => new Set([
-    "/flows", "/flows:new", "/flows:edit", "/flows:delete",
     "/compact", "/reload", "/new", "/model", "/roles",
   ]), []);
 
-  // Wrap handleSend to intercept /flows commands, extension UI module commands,
-  // and clear the per-session draft.
+  // Wrap handleSend to intercept extension UI module commands and clear
+  // the per-session draft. Plugin command-route claims (e.g. /flows*)
+  // are handled separately by the shell's command-route slot consumer.
   const wrappedHandleSend = useCallback((text: string, images?: ImageContent[]) => {
     const trimmed = text.trim();
-    if (trimmed === "/flows") {
-      setFlowPickerOpen(true);
-      return;
-    }
-    if (trimmed === "/flows:new") {
-      setFlowNewOpen(true);
-      return;
-    }
     // Extension UI System (Phase 1): exact-match slash command opens the
     // matching module modal and suppresses the prompt send.
     // See change: add-extension-ui-modal.
@@ -657,7 +642,6 @@ export default function App() {
   const goBackDesktop = useDesktopBack({
     setArchiveBrowserCwd,
     setSpecsBrowserCwd,
-    setFlowYamlPreview,
     setDiffViewSessionId,
     setPiResourceFilePreview,
     setReadmePreview,
@@ -666,7 +650,6 @@ export default function App() {
     navigate,
     archiveBrowserCwd,
     specsBrowserCwd,
-    flowYamlPreview,
     diffViewSessionId,
     piResourceFilePreview,
     readmePreview,
@@ -679,57 +662,11 @@ export default function App() {
     handleAttachProposal, handleDetachProposal,
   } = openspecActions;
 
-  // Flow YAML viewer helpers
-  const openFlowYaml = useCallback(async (sessionId: string) => {
-    const state = sessionStates.get(sessionId);
-    if (!state) return;
-    // Architect: use stored YAML content
-    if (state.architectState?.flowYamlContent) {
-      clearAllContentViews();
-      setFlowYamlPreview({
-        content: "```yaml\n" + state.architectState.flowYamlContent + "\n```",
-        title: state.architectState.flowName || "Flow YAML",
-      });
-      return;
-    }
-    // Execution: fetch via /api/file
-    const flowSource = state.flowState?.flowSource;
-    const session = sessions.get(sessionId);
-    if (flowSource && session?.cwd) {
-      try {
-        const res = await fetch(`${apiBase}/api/file?cwd=${encodeURIComponent(session.cwd)}&path=${encodeURIComponent(flowSource)}`);
-        const body = await res.json();
-        if (body.success && body.data?.content) {
-          clearAllContentViews();
-          setFlowYamlPreview({
-            content: "```yaml\n" + body.data.content + "\n```",
-            title: state.flowState?.flowName || "Flow YAML",
-          });
-        }
-      } catch { /* ignore fetch errors */ }
-    }
-  }, [sessionStates, sessions, clearAllContentViews]);
-
-  // Flow agent source viewer — toggle: fetch on open, clear on close
-  const toggleFlowAgentSource = useCallback(async (sourcePath: string, agentName: string) => {
-    // Toggle off if same agent's source is already open
-    if (sourceOpenAgent === agentName) {
-      setSourceOpenAgent(null);
-      setFlowYamlPreview(null);
-      return;
-    }
-    const session = selectedId ? sessions.get(selectedId) : undefined;
-    if (!session?.cwd) return;
-    try {
-      const res = await fetch(`${apiBase}/api/file?cwd=${encodeURIComponent(session.cwd)}&path=${encodeURIComponent(sourcePath)}`);
-      const body = await res.json();
-      if (body.success && body.data?.content) {
-        clearAllContentViews();
-        setSourceOpenAgent(agentName);
-        setFlowYamlPreview({ content: body.data.content, title: agentName });
-      }
-    } catch { /* ignore fetch errors */ }
-  }, [selectedId, sessions, sourceOpenAgent, clearAllContentViews]);
+  // Flow YAML viewer + agent source viewer moved into flows-plugin's
+  // FlowYamlPreview (content-view route flow-yaml-preview) + the
+  // FlowsUiStateContext setters. The shell no longer fetches yaml or
+  // tracks per-agent source state. See change:
+  // pluginize-flows-via-registry.
 
   // Compute set of session IDs that have active errors
   const errorSessionIds = useMemo(() => {
@@ -769,7 +706,6 @@ export default function App() {
         send({ type: "reorder_sessions", cwd, sessionIds });
       }}
       onSendPrompt={handleSendPromptToSession}
-      onFlowAction={handleFlowAction}
       onOpenSpecRefresh={handleOpenSpecRefresh}
       onBulkArchive={handleBulkArchive}
       onReadArtifact={handleReadArtifact}
@@ -807,7 +743,6 @@ export default function App() {
       onRenameTerminal={handleRenameTerminal}
       onCollapseSidebar={sidebar.toggleCollapse}
       commandsMap={sessionCommands}
-      flowsMap={sessionFlows}
       onKillProcess={handleKillProcess}
       onOpenTerminals={(cwd) => navigate(`/folder/${encodeFolderPath(cwd)}/terminals`)}
       onOpenEditor={(cwd) => navigate(`/folder/${encodeFolderPath(cwd)}/editor`)}
@@ -895,7 +830,6 @@ export default function App() {
           },
         } : undefined}
         commands={selectedCommands}
-        flows={selectedFlows}
         onSendPrompt={wrappedHandleSend}
         openspecChanges={selectedCwd ? openspecMap.get(selectedCwd)?.changes : undefined}
         onAttachProposal={(changeName) => handleAttachProposal(selectedId, changeName)}
@@ -1005,115 +939,20 @@ export default function App() {
           artifacts={previewState.artifacts}
           onBack={() => setPreviewState(null)}
         />
-      ) : flowYamlPreview ? (
-        <MarkdownPreviewView
-          title={flowYamlPreview.title}
-          content={flowYamlPreview.content}
-          onBack={() => { setFlowYamlPreview(null); setSourceOpenAgent(null); }}
-        />
       ) : diffViewSessionId ? (
         <FileDiffView
           sessionId={diffViewSessionId}
           onBack={() => setDiffViewSessionId(null)}
         />
-      ) : architectDetailOpen && selectedState.architectState ? (
-        <>
-          {selectedState.architectState && (
-            <div className="sticky top-0 z-10">
-              <FlowArchitect
-                state={selectedState.architectState}
-                onAbort={() => selectedId && send({ type: "flow_control" as any, sessionId: selectedId, action: "abort" })}
-                onClick={() => setArchitectDetailOpen(prev => !prev)}
-                isDetailOpen={architectDetailOpen}
-                onPromptRespond={(promptId, answer) => selectedId && send({ type: "architect_prompt_response" as any, sessionId: selectedId, promptId, answer })}
-                onViewYaml={() => selectedId && openFlowYaml(selectedId)}
-                onViewAgentSource={(name, source) => { clearAllContentViews(); setFlowYamlPreview({ content: "```yaml\n" + source + "\n```", title: name }); }}
-              />
-            </div>
-          )}
-          <FlowArchitectDetail
-            state={selectedState.architectState}
-            onBack={() => setArchitectDetailOpen(false)}
-          />
-        </>
-      ) : flowDetailAgent && selectedState.flowState?.agents.has(flowDetailAgent) ? (
-        <>
-          {selectedState.architectState && (
-            <div className="sticky top-0 z-10">
-              <FlowArchitect
-                state={selectedState.architectState}
-                onAbort={() => selectedId && send({ type: "flow_control" as any, sessionId: selectedId, action: "abort" })}
-                onClick={() => setArchitectDetailOpen(prev => !prev)}
-                isDetailOpen={architectDetailOpen}
-                onPromptRespond={(promptId, answer) => selectedId && send({ type: "architect_prompt_response" as any, sessionId: selectedId, promptId, answer })}
-                onViewYaml={() => selectedId && openFlowYaml(selectedId)}
-                onViewAgentSource={(name, source) => { clearAllContentViews(); setFlowYamlPreview({ content: "```yaml\n" + source + "\n```", title: name }); }}
-              />
-            </div>
-          )}
-          {selectedState.flowState && (
-            <div className={`sticky ${selectedState.architectState ? 'top-auto' : 'top-0'} z-10`}>
-              <FlowDashboard
-                flowState={selectedState.flowState}
-                flowStates={selectedState.flowStates}
-                session={selectedSession}
-                onAgentClick={setFlowDetailAgent}
-                selectedAgent={flowDetailAgent}
-                onAbort={() => selectedId && send({ type: "flow_control" as any, sessionId: selectedId, action: "abort" })}
-                onToggleAutonomous={() => selectedId && send({ type: "flow_control" as any, sessionId: selectedId, action: "toggle_autonomous" })}
-                onDismiss={() => {
-                  setFlowDetailAgent(null);
-                  selectedId && send({ type: "flow_control" as any, sessionId: selectedId, action: "dismiss_summary" });
-                }}
-                onSendPrompt={(text) => handleSend(text)}
-                onViewYaml={() => selectedId && openFlowYaml(selectedId)}
-                onViewAgentSource={toggleFlowAgentSource}
-                sourceOpenAgent={sourceOpenAgent}
-              />
-            </div>
-          )}
-          <FlowAgentDetail
-            agent={selectedState.flowState!.agents.get(flowDetailAgent)!}
-            onBack={() => setFlowDetailAgent(null)}
-          />
-        </>
       ) : (
         <>
-          {selectedState.architectState && (
-            <div className="sticky top-0 z-10">
-              <FlowArchitect
-                state={selectedState.architectState}
-                onAbort={() => selectedId && send({ type: "flow_control" as any, sessionId: selectedId, action: "abort" })}
-                onClick={() => setArchitectDetailOpen(prev => !prev)}
-                isDetailOpen={architectDetailOpen}
-                onPromptRespond={(promptId, answer) => selectedId && send({ type: "architect_prompt_response" as any, sessionId: selectedId, promptId, answer })}
-                onViewYaml={() => selectedId && openFlowYaml(selectedId)}
-                onViewAgentSource={(name, source) => { clearAllContentViews(); setFlowYamlPreview({ content: "```yaml\n" + source + "\n```", title: name }); }}
-              />
-            </div>
-          )}
-          {selectedState.flowState && (
-            <div className={`sticky ${selectedState.architectState ? 'top-auto' : 'top-0'} z-10`}>
-              <FlowDashboard
-                flowState={selectedState.flowState}
-                flowStates={selectedState.flowStates}
-                session={selectedSession}
-                onAgentClick={setFlowDetailAgent}
-                selectedAgent={flowDetailAgent}
-                onAbort={() => selectedId && send({ type: "flow_control" as any, sessionId: selectedId, action: "abort" })}
-                onToggleAutonomous={() => selectedId && send({ type: "flow_control" as any, sessionId: selectedId, action: "toggle_autonomous" })}
-                onDismiss={() => {
-                  selectedId && send({ type: "flow_control" as any, sessionId: selectedId, action: "dismiss_summary" });
-                }}
-                onSendPrompt={(text) => handleSend(text)}
-                onViewYaml={() => selectedId && openFlowYaml(selectedId)}
-                onViewAgentSource={toggleFlowAgentSource}
-                sourceOpenAgent={sourceOpenAgent}
-              />
-            </div>
-          )}
-          {/* Plugin slot: content-header-sticky (additive, coexists with FlowDashboard until extract-flows-as-plugin) */}
-          <ContentHeaderStickySlot session={sessions.get(selectedId)!} />
+          {/* Plugin slot: content-header-sticky — contributions from
+              flows-plugin (FlowArchitectClaim, FlowDashboardClaim) and
+              future plugins. The shell renders zero flow-specific
+              content. See change: pluginize-flows-via-registry. */}
+          <div className="sticky top-0 z-10">
+            <ContentHeaderStickySlot session={sessions.get(selectedId)!} />
+          </div>
           <ErrorBoundary fallback={
             <div className="flex-1 flex items-center justify-center p-8">
               <div className="text-center space-y-2">
@@ -1194,122 +1033,8 @@ export default function App() {
             images={selectedImages}
             onImagesChange={setImagesForSelected}
           />
-          {/* Plugin slot: content-inline-footer (additive, coexists with FlowSummary until extract-flows-as-plugin) */}
+          {/* Plugin slot: content-inline-footer — contributions from flows-plugin (per-session inline footer) and other plugins. */}
           <ContentInlineFooterSlot session={sessions.get(selectedId)!} />
-          {flowPickerOpen && (() => {
-            const hasFlowsNew = selectedCommands.some(c => c.name === "flows:new");
-            const hasFlowsEdit = selectedCommands.some(c => c.name === "flows:edit");
-            const hasFlowsDelete = selectedCommands.some(c => c.name === "flows:delete");
-            const flowOptions: SelectOption[] = [
-              ...(hasFlowsNew ? [{ value: "__new__", label: "+ New Flow", description: "Design a new flow with the Flow Architect" }] : []),
-              ...(hasFlowsEdit && selectedFlows.length > 0 ? [{ value: "__edit__", label: "\u270E\uFE0E Edit Flow...", description: "Edit an existing flow" }] : []),
-              ...(hasFlowsDelete && selectedFlows.length > 0 ? [{ value: "__delete__", label: "\u00D7 Delete Flow...", description: "Delete a saved flow" }] : []),
-              ...selectedFlows.map((f) => ({
-                value: f.name,
-                label: f.name,
-                description: f.description,
-              })),
-            ];
-            return (
-              <SearchableSelectDialog
-                title="Flows"
-                options={flowOptions}
-                placeholder="Search flows..."
-                emptyMessage="No flows available"
-                onSelect={(value) => {
-                  setFlowPickerOpen(false);
-                  if (value === "__new__") {
-                    setFlowNewOpen(true);
-                  } else if (value === "__edit__") {
-                    setFlowEditPickerOpen(true);
-                  } else if (value === "__delete__") {
-                    setFlowDeletePickerOpen(true);
-                  } else {
-                    const flow = selectedFlows.find(f => f.name === value);
-                    if (flow) {
-                      if (flow.taskRequired) {
-                        setFlowLaunchTarget(flow);
-                      } else {
-                        if (selectedId) handleFlowAction(selectedId, "run", { flowName: flow.name });
-                      }
-                    }
-                  }
-                }}
-                onCancel={() => setFlowPickerOpen(false)}
-              />
-            );
-          })()}
-          {flowNewOpen && (
-            <FlowLaunchDialog
-              flowName="flows:new"
-              description="Design a new flow with the Flow Architect"
-              onSubmit={(task) => {
-                if (selectedId && task.trim()) handleFlowAction(selectedId, "new", { description: task.trim() });
-                setFlowNewOpen(false);
-              }}
-              onCancel={() => setFlowNewOpen(false)}
-            />
-          )}
-          {flowEditPickerOpen && (
-            <SearchableSelectDialog
-              title="Edit Flow"
-              options={selectedFlows.map((f) => ({ value: f.name, label: f.name, description: f.description }))}
-              placeholder="Search flows..."
-              emptyMessage="No flows available"
-              onSelect={(value) => {
-                setFlowEditFlowName(value);
-                setFlowEditPickerOpen(false);
-              }}
-              onCancel={() => setFlowEditPickerOpen(false)}
-            />
-          )}
-          {flowEditFlowName && (
-            <FlowLaunchDialog
-              flowName={flowEditFlowName}
-              description="Describe how this flow should be updated"
-              onSubmit={(desc) => {
-                if (selectedId && desc.trim()) handleFlowAction(selectedId, "edit", { flowName: flowEditFlowName, description: desc.trim() });
-                setFlowEditFlowName(null);
-              }}
-              onCancel={() => setFlowEditFlowName(null)}
-            />
-          )}
-          {flowDeletePickerOpen && (
-            <SearchableSelectDialog
-              title="Delete Flow"
-              options={selectedFlows.map((f) => ({ value: f.name, label: f.name, description: f.description }))}
-              placeholder="Search flows..."
-              emptyMessage="No flows available"
-              onSelect={(value) => {
-                setFlowDeleteFlowName(value);
-                setFlowDeletePickerOpen(false);
-              }}
-              onCancel={() => setFlowDeletePickerOpen(false)}
-            />
-          )}
-          {flowDeleteFlowName && (
-            <ConfirmDialog
-              message={`Delete flow "${flowDeleteFlowName}"? This will remove the flow file and any associated agents.`}
-              confirmLabel="Delete"
-              onConfirm={() => {
-                if (selectedId) handleFlowAction(selectedId, "delete", { flowName: flowDeleteFlowName });
-                setFlowDeleteFlowName(null);
-              }}
-              onCancel={() => setFlowDeleteFlowName(null)}
-            />
-          )}
-          {flowLaunchTarget && (
-            <FlowLaunchDialog
-              flowName={flowLaunchTarget.name}
-              description={flowLaunchTarget.description}
-              session={selectedSession}
-              onSubmit={(task) => {
-                if (selectedId) handleFlowAction(selectedId, "run", { flowName: flowLaunchTarget.name, task: task || undefined });
-                setFlowLaunchTarget(null);
-              }}
-              onCancel={() => setFlowLaunchTarget(null)}
-            />
-          )}
           {/* Extension UI System (Phase 1): module picker + generic modal. */}
           {/* See change: add-extension-ui-modal. */}
           {extensionModulePickerOpen && selectedId && (() => {
@@ -1437,7 +1162,7 @@ export default function App() {
       folderEditorCwd,
       settingsMatch: !!settingsMatch,
       tunnelSetupMatch: !!tunnelSetupMatch,
-      hasPreview: !!previewState || !!piResourcesState || !!piResourceFilePreview || !!readmePreview || !!specsBrowserCwd || !!archiveBrowserCwd || !!diffViewSessionId || !!flowYamlPreview,
+      hasPreview: !!previewState || !!piResourcesState || !!piResourceFilePreview || !!readmePreview || !!specsBrowserCwd || !!archiveBrowserCwd || !!diffViewSessionId,
     });
     return apiProvider(
       <div className="bg-[var(--bg-primary)] text-[var(--text-primary)]">
@@ -1459,8 +1184,6 @@ export default function App() {
               setArchiveBrowserCwd(null);
             } else if (specsBrowserCwd) {
               setSpecsBrowserCwd(null);
-            } else if (flowYamlPreview) {
-              setFlowYamlPreview(null);
             } else if (diffViewSessionId) {
               setDiffViewSessionId(null);
             } else if (piResourceFilePreview) {
@@ -1497,12 +1220,6 @@ export default function App() {
               <SpecsBrowserView
                 cwd={specsBrowserCwd}
                 onBack={() => setSpecsBrowserCwd(null)}
-              />
-            ) : flowYamlPreview ? (
-              <MarkdownPreviewView
-                title={flowYamlPreview.title}
-                content={flowYamlPreview.content}
-                onBack={() => { setFlowYamlPreview(null); setSourceOpenAgent(null); }}
               />
             ) : diffViewSessionId ? (
               <FileDiffView

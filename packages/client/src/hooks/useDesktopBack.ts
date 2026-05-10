@@ -17,7 +17,6 @@ export interface UseDesktopBackDeps {
   // Overlay setters (each accepts `null` to clear)
   setArchiveBrowserCwd: (v: null) => void;
   setSpecsBrowserCwd: (v: null) => void;
-  setFlowYamlPreview: (v: null) => void;
   setDiffViewSessionId: (v: null) => void;
   setPiResourceFilePreview: (v: null) => void;
   setReadmePreview: (v: null) => void;
@@ -28,7 +27,6 @@ export interface UseDesktopBackDeps {
   // Live overlay flags — boolean snapshot of the corresponding state
   archiveBrowserCwd: unknown;
   specsBrowserCwd: unknown;
-  flowYamlPreview: unknown;
   diffViewSessionId: unknown;
   piResourceFilePreview: unknown;
   readmePreview: unknown;
@@ -48,7 +46,6 @@ export function useDesktopBack(deps: UseDesktopBackDeps): () => void {
       const target = selectDesktopBackTarget({
         archiveBrowserCwd: !!deps.archiveBrowserCwd,
         specsBrowserCwd: !!deps.specsBrowserCwd,
-        flowYamlPreview: !!deps.flowYamlPreview,
         diffViewSessionId: !!deps.diffViewSessionId,
         piResourceFilePreview: !!deps.piResourceFilePreview,
         readmePreview: !!deps.readmePreview,
@@ -66,7 +63,6 @@ export function useDesktopBack(deps: UseDesktopBackDeps): () => void {
       const setterByTarget: Record<BackTargetKey, (v: null) => void> = {
         archive: deps.setArchiveBrowserCwd,
         specs: deps.setSpecsBrowserCwd,
-        flowYaml: deps.setFlowYamlPreview,
         diff: deps.setDiffViewSessionId,
         piResourceFile: deps.setPiResourceFilePreview,
         readme: deps.setReadmePreview,
@@ -82,7 +78,6 @@ export function useDesktopBack(deps: UseDesktopBackDeps): () => void {
     [
       !!deps.archiveBrowserCwd,
       !!deps.specsBrowserCwd,
-      !!deps.flowYamlPreview,
       !!deps.diffViewSessionId,
       !!deps.piResourceFilePreview,
       !!deps.readmePreview,
@@ -92,7 +87,6 @@ export function useDesktopBack(deps: UseDesktopBackDeps): () => void {
       deps.navigate,
       deps.setArchiveBrowserCwd,
       deps.setSpecsBrowserCwd,
-      deps.setFlowYamlPreview,
       deps.setDiffViewSessionId,
       deps.setPiResourceFilePreview,
       deps.setReadmePreview,

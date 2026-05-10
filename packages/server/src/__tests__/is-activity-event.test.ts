@@ -17,13 +17,10 @@ describe("isActivityEvent", () => {
       "agent_start",
       "agent_end",
       "bash_output",
-      "flow_started",
-      "flow_complete",
-      "flow_agent_started",
-      "flow_agent_complete",
-      "architect_started",
-      "architect_complete",
-      "architect_cancelled",
+      // Flow / architect events removed: per change
+      // pluginize-flows-via-registry the shell carries no flow
+      // knowledge. lastActivityAt for flow-only sessions is bumped
+      // by the constituent tool/agent events the flow generates.
     ];
 
     for (const t of included) {

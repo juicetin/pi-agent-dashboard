@@ -144,10 +144,6 @@ export function wireEvents(deps: EventWiringDeps): void {
         // Still process status updates so session state stays accurate
         const updates = extractSessionUpdates(msg.event);
         if (updates) {
-          if (updates.flowAgentsDone === -1) {
-            const session = sessionManager.get(sessionId);
-            updates.flowAgentsDone = (session?.flowAgentsDone ?? 0) + 1;
-          }
           sessionManager.update(sessionId, updates as Partial<DashboardSession>);
         }
         // Skip insert + broadcast — events are already in store
@@ -173,10 +169,6 @@ export function wireEvents(deps: EventWiringDeps): void {
 
       const updates = extractSessionUpdates(msg.event);
       if (updates) {
-        if (updates.flowAgentsDone === -1) {
-          const session = sessionManager.get(sessionId);
-          updates.flowAgentsDone = (session?.flowAgentsDone ?? 0) + 1;
-        }
         sessionManager.update(sessionId, updates as Partial<DashboardSession>);
         // During replay, accumulate in sessionManager but don't broadcast
         // to avoid rapid status flickers on the session card

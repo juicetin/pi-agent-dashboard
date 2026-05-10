@@ -7,7 +7,7 @@
  * Also exports the `hasActiveFlow` predicate consumed by the
  * `pi-dashboard-plugin` manifest's `session-card-badge` claim.
  */
-import type { DashboardSession } from "@blackbelt-technology/pi-dashboard-shared/types.js";
+
 
 // Existing presentation components — still used directly by App.tsx
 // during the cutover (Part H removes those call sites).
@@ -53,10 +53,7 @@ export {
 } from "./FlowsUiStateContext.js";
 export type { FlowsUiState, FlowsUiActions } from "./FlowsUiStateContext.js";
 
-/**
- * Predicate for the `session-card-badge` slot claim.
- * The slot consumer skips claims whose predicate returns false.
- */
-export function hasActiveFlow(session: DashboardSession): boolean {
-  return Boolean(session.activeFlowName);
-}
+// hasActiveFlow predicate removed: the manifest no longer references
+// it because FlowActivityBadgeClaim self-gates inside the component
+// body via useFlowsSessionState. See change:
+// pluginize-flows-via-registry.

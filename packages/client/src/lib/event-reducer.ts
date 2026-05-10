@@ -2,9 +2,13 @@
  * Event reducer: builds session UI state from a stream of events.
  * (state, event) → new state
  */
-import type { DashboardEvent, FlowState, ArchitectState } from "@blackbelt-technology/pi-dashboard-shared/types.js";
-import { isFlowEvent, reduceFlowEvent } from "@blackbelt-technology/pi-dashboard-flows-plugin/reducer";
-import { isArchitectEvent, reduceArchitectEvent } from "@blackbelt-technology/pi-dashboard-flows-plugin/reducer";
+import type { DashboardEvent } from "@blackbelt-technology/pi-dashboard-shared/types.js";
+// Flow + architect state derivation moved into flows-plugin per change
+// pluginize-flows-via-registry. The shell carries no flow knowledge.
+// Plugins consume `useSessionEvents(sessionId)` from
+// @blackbelt-technology/dashboard-plugin-runtime to derive their own
+// state; useMessageHandler.ts mirrors every msg.event into the
+// per-session-events store the plugin runtime owns.
 import { parseSkillBlock, type SkillBlock } from "@blackbelt-technology/pi-dashboard-shared/skill-block-parser.js";
 
 export interface ChatImage {
@@ -117,10 +121,6 @@ export interface SessionState {
   contextUsage?: { tokens: number | null; contextWindow: number };
   pendingPrompt?: PendingPrompt;
   interactiveRequests: InteractiveUiRequest[];
-  flowState: FlowState | null;
-  /** All flow states seen during execution (main + subflows), keyed by flowName */
-  flowStates: Map<string, FlowState>;
-  architectState: ArchitectState | null;
   /** Whether any Write/Edit tool calls have been seen (for Changed Files button) */
   hasFileChanges: boolean;
   /** Active subagents from @tintinweb/pi-subagents */
@@ -169,9 +169,6 @@ export function createInitialState(): SessionState {
     status: "idle",
     turnStats: [],
     interactiveRequests: [],
-    flowState: null,
-    flowStates: new Map(),
-    architectState: null,
     hasFileChanges: false,
     subagents: new Map(),
     turnCount: 0,
@@ -1317,18 +1314,18 @@ export function reduceEvent(state: SessionState, event: DashboardEvent): Session
     }
 
     default: {
-      // Delegate flow events to flow reducer
-      if (isFlowEvent(event.eventType)) {
-        next.flowState = reduceFlowEvent(next.flowState, event);
-        // Keep flowStates map in sync — store each flow by name
-        if (next.flowState) {
-          next.flowStates = new Map(next.flowStates);
-          next.flowStates.set(next.flowState.flowName, next.flowState);
-        } else if (event.eventType === "flow_summary_dismissed") {
-          next.flowStates = new Map();
-        }
-      } else {
-        // Unknown event type — render as expandable raw JSON
+      // Flow / architect events flow through the plugin's own reducer
+      // via useSessionEvents in flows-plugin. The shell ignores them
+      // here; the plugin runtime mirrors msg.event into the per-session
+      // events store from useMessageHandler.ts so plugin contributions
+      // re-render in response. Anything not recognised by any plugin's
+      // reducer falls through to the rawEvent message rendering, which
+      // shows up as an expandable JSON block in the chat. See change:
+      // pluginize-flows-via-registry.
+      const isFlowOrArchitect =
+        event.eventType.startsWith("flow_") ||
+        event.eventType.startsWith("architect_");
+      if (!isFlowOrArchitect) {
         next.messages = [...next.messages, {
           id: `raw-${event.eventType}-${event.timestamp}-${next.messages.length}`,
           role: "rawEvent" as const,
@@ -1336,10 +1333,6 @@ export function reduceEvent(state: SessionState, event: DashboardEvent): Session
           timestamp: event.timestamp,
           toolName: event.eventType,
         }];
-      }
-      // Delegate architect events to architect reducer
-      if (isArchitectEvent(event.eventType)) {
-        next.architectState = reduceArchitectEvent(next.architectState, event);
       }
       break;
     }

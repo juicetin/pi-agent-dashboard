@@ -19,7 +19,6 @@ import {
 const ALL_FALSE: BackInputState = {
   archiveBrowserCwd: false,
   specsBrowserCwd: false,
-  flowYamlPreview: false,
   diffViewSessionId: false,
   piResourceFilePreview: false,
   readmePreview: false,
@@ -33,7 +32,6 @@ describe("selectDesktopBackTarget", () => {
     const cases: Array<[keyof BackInputState, BackTargetKey]> = [
       ["archiveBrowserCwd", "archive"],
       ["specsBrowserCwd", "specs"],
-      ["flowYamlPreview", "flowYaml"],
       ["diffViewSessionId", "diff"],
       ["piResourceFilePreview", "piResourceFile"],
       ["readmePreview", "readme"],
@@ -58,11 +56,11 @@ describe("selectDesktopBackTarget", () => {
       expect(r).toEqual({ kind: "clear", target: "archive" });
     });
 
-    it("specs wins over flowYaml", () => {
+    it("specs wins over diff", () => {
       const r = selectDesktopBackTarget({
         ...ALL_FALSE,
         specsBrowserCwd: true,
-        flowYamlPreview: true,
+        diffViewSessionId: true,
       });
       expect(r).toEqual({ kind: "clear", target: "specs" });
     });
@@ -82,7 +80,6 @@ describe("selectDesktopBackTarget", () => {
         ...ALL_FALSE,
         archiveBrowserCwd: true,
         specsBrowserCwd: true,
-        flowYamlPreview: true,
         diffViewSessionId: true,
         piResourceFilePreview: true,
         readmePreview: true,
@@ -116,7 +113,6 @@ describe("selectDesktopBackTarget", () => {
     function mobileInlineSelect(state: BackInputState): BackTarget {
       if (state.archiveBrowserCwd) return { kind: "clear", target: "archive" };
       if (state.specsBrowserCwd) return { kind: "clear", target: "specs" };
-      if (state.flowYamlPreview) return { kind: "clear", target: "flowYaml" };
       if (state.diffViewSessionId) return { kind: "clear", target: "diff" };
       if (state.piResourceFilePreview) return { kind: "clear", target: "piResourceFile" };
       if (state.readmePreview) return { kind: "clear", target: "readme" };
@@ -125,11 +121,10 @@ describe("selectDesktopBackTarget", () => {
       return { kind: "navigate", to: "/" };
     }
 
-    it("agrees with mobile inline switch across all 256 boolean combinations", () => {
+    it("agrees with mobile inline switch across all 128 boolean combinations", () => {
       const flags: Array<keyof BackInputState> = [
         "archiveBrowserCwd",
         "specsBrowserCwd",
-        "flowYamlPreview",
         "diffViewSessionId",
         "piResourceFilePreview",
         "readmePreview",

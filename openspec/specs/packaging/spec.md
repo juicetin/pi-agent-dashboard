@@ -1,5 +1,9 @@
-## ADDED Requirements
+# packaging Specification
 
+## Purpose
+Distribution surface of the dashboard: npm package shape, bin entry wrapper, peer/runtime dependencies, bundled web client, configuration file location, and architecture documentation. Defines what shipped artifacts contain and how they are installed.
+
+## Requirements
 ### Requirement: Pi package format
 The project SHALL be distributed as a pi package installable via `pi install` under the `@blackbelt-technology/pi-dashboard` npm scope. The `package.json` SHALL declare the bridge extension under the `pi.extensions` key so it auto-loads in all pi sessions after installation.
 
@@ -34,12 +38,19 @@ The package SHALL provide a `pi-dashboard` CLI command (via `bin` in package.jso
 - **WHEN** a user runs `pi-dashboard --no-tunnel`
 - **THEN** the server SHALL not create a zrok tunnel even if `tunnel.enabled` is `true` in config
 
-### Requirement: Runtime dependency on tsx
-The package SHALL declare `tsx` as a production dependency so the TypeScript server CLI and extension code can execute without a build step when installed via npm.
+### Requirement: Bin entry is plain JavaScript wrapper (jiti-only)
+The package's `bin.pi-dashboard` field SHALL point to `bin/pi-dashboard.mjs`, a plain ESM JavaScript file that resolves jiti at runtime via `resolveJitiImport()` and re-execs Node with `--import <jiti-url> packages/server/src/cli.ts <args>`. The wrapper SHALL NOT carry a tsx fallback; on jiti-resolution failure it SHALL exit 1 with an install-hint stderr message.
 
-#### Scenario: Server CLI works after npm install
-- **WHEN** the package is installed via `npm install @blackbelt-technology/pi-dashboard`
-- **THEN** the `pi-dashboard` binary SHALL execute successfully using the tsx loader
+#### Scenario: Package bin entry after npm install
+- **WHEN** the package is installed via `npm install`
+- **THEN** the `pi-dashboard` symlink SHALL point to `bin/pi-dashboard.mjs`, an executable plain JS file that requires no TypeScript loader to parse itself
+
+### Requirement: tsx removed from dependencies
+The `tsx` package SHALL NOT appear in `dependencies` or `devDependencies` of any workspace `package.json`. `npm ls tsx` SHALL report no resolved entry under any workspace package (transitive shadow-installs by unrelated optional deps are exempt).
+
+#### Scenario: Lockfile audit
+- **WHEN** running `npm ls tsx` at the repo root after `npm install`
+- **THEN** no workspace package SHALL list `tsx` as a direct dependency
 
 ### Requirement: Bundled web client
 The web client SHALL be built with Vite and the production output SHALL be bundled into the npm package as static files. The dashboard server SHALL serve these files without requiring a separate build step.

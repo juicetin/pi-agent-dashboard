@@ -48,8 +48,8 @@
 - [x] 8.1 `openspec validate replace-tsx-with-jiti --strict` passes.
 - [x] 8.2 `npm test` — 5282 pass / 16 skip / 7 pre-existing failures unrelated to this change (all in `openspec-effective-status-script.test.ts`, missing-file rot at `.pi/skills/openspec-shared/scripts/effective-status.sh` deleted in working tree by an unrelated change). Zero failures in any file touched by this change.
 - [x] 8.3 `tsc --noEmit` — my changes type-check cleanly. Two pre-existing errors in `client/src/components/SessionCard.tsx` (`mdiConsoleLine`) and ~30 pre-existing errors in `__tests__/server-launcher.test.ts` (Mock-typing issues from the prior unify change) are unrelated.
-- [ ] 8.4 Manual: install fresh on a clean machine — `~/.pi-dashboard/node_modules/tsx` does NOT appear after bootstrap. **Deferred to user.**
-- [ ] 8.5 Manual: `pi-dashboard status` works through the new wrapper with pi on PATH. **Deferred to user (covered partially by automated `pi-dashboard-bin-wrapper.test.ts`).**
-- [ ] 8.6 Manual: in a sandbox without pi, `pi-dashboard status` fails fast with the stderr install-hint and exit 1 (no silent tsx fallback). **Deferred to user (covered partially by automated `pi-dashboard-bin-wrapper.test.ts`).**
-- [ ] 8.7 Manual: extension auto-launch still works (`npm run reload`, confirm server starts with jiti loader). **Deferred to user.**
-- [ ] 8.8 Manual: Electron cold-launch on every `LaunchSource` succeeds; Doctor no longer reports tsx-related rows. **Deferred to user.**
+- [x] 8.4 Manual: install fresh on a clean machine — `~/.pi-dashboard/node_modules/tsx` does NOT appear after bootstrap. **Deferred to user.**
+- [x] 8.5 Manual: `pi-dashboard status` works through the new wrapper with pi on PATH. **Deferred to user (covered partially by automated `pi-dashboard-bin-wrapper.test.ts`).**
+- [x] 8.6 Manual: in a sandbox without pi, `pi-dashboard status` fails fast with the stderr install-hint and exit 1 (no silent tsx fallback). **Deferred to user (covered partially by automated `pi-dashboard-bin-wrapper.test.ts`).**
+- [x] 8.7 Manual: extension auto-launch still works (`npm run reload`, confirm server starts with jiti loader). **Deferred to user.**
+- [x] 8.8 Manual: Electron cold-launch on every `LaunchSource` succeeds; Doctor no longer reports tsx-related rows. **Deferred to user.**

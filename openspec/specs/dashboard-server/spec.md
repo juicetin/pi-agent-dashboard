@@ -398,3 +398,63 @@ The jiti resolver SHALL support upstream `jiti` (bare package name, no scope) in
 - **THEN** the function SHALL return the `file://` URL of the upstream register hook
 - **AND** SHALL NOT return `null`
 
+### Requirement: CLI bin entry resolves jiti at runtime (no tsx fallback)
+The `pi-dashboard` CLI entry point SHALL be a plain JavaScript file (`packages/server/bin/pi-dashboard.mjs`) that resolves jiti at runtime via `resolveJitiImport()` and re-execs Node with `--import <jiti-url> packages/server/src/cli.ts <args>`. There SHALL be no tsx fallback path. When jiti cannot be resolved, the wrapper SHALL exit 1 with a stderr message instructing the user to install pi.
+
+#### Scenario: Direct CLI invocation with pi available
+- **WHEN** a user runs `pi-dashboard status` from a shell with pi reachable on the module graph
+- **THEN** the wrapper SHALL resolve jiti and exec `node --import <jiti-url> packages/server/src/cli.ts status`, forwarding stdio and the child's exit code
+
+#### Scenario: Direct CLI invocation without pi
+- **WHEN** a user runs `pi-dashboard status` and `resolveJitiImport()` cannot resolve a jiti package
+- **THEN** the wrapper SHALL print `pi-dashboard: cannot find jiti. Install pi: 'npm install -g @earendil-works/pi-coding-agent'` to stderr and exit 1
+- **AND** SHALL NOT attempt to resolve `tsx` or any other TypeScript loader
+
+### Requirement: CLI shebang is loader-agnostic
+The `packages/server/src/cli.ts` shebang SHALL be `#!/usr/bin/env node` (no `--import` flag). The file SHALL no longer be invoked directly as the bin entry — the loader is supplied by the `bin/pi-dashboard.mjs` wrapper.
+
+#### Scenario: Shebang inspection
+- **WHEN** inspecting line 1 of `packages/server/src/cli.ts`
+- **THEN** it SHALL read `#!/usr/bin/env node` with no loader flag
+
+### Requirement: Bootstrap install lists exclude tsx
+Every install list that seeds packages into `~/.pi-dashboard/node_modules/` SHALL NOT include `"tsx"`. The five known lists (`packages/server/src/cli.ts:255`, `packages/server/src/server.ts:802`, `packages/electron/src/lib/dependency-installer.ts:260`, `packages/electron/src/lib/power-user-install.ts:42`, `packages/shared/src/bootstrap-install.ts:216`) SHALL each contain only `@earendil-works/pi-coding-agent` and `@fission-ai/openspec` (plus any future non-loader packages).
+
+#### Scenario: Fresh install does not write tsx to managed dir
+- **WHEN** any install path completes for a clean `~/.pi-dashboard/`
+- **THEN** `~/.pi-dashboard/node_modules/tsx` SHALL NOT exist
+- **AND** `~/.pi-dashboard/node_modules/@earendil-works/pi-coding-agent` SHALL exist (or the legacy `@mariozechner/pi-coding-agent` for older configs)
+
+### Requirement: Doctor does not probe for tsx
+Electron Doctor (`packages/electron/src/lib/doctor.ts`) SHALL NOT execute `where tsx` / `which tsx` and SHALL NOT report a "No tsx binary" detail string. Doctor's "Server launch test" reduces to checking `node` + pi.
+
+#### Scenario: Doctor output omits tsx
+- **WHEN** Doctor runs against a clean install
+- **THEN** no diagnostic row mentions tsx
+- **AND** the server-launch-test row passes when `node` + pi are present
+
+### Requirement: Process-level crash safety net SHALL prevent plugin faults from killing the host
+
+The dashboard server process MUST install handlers for both `unhandledRejection` and `uncaughtException` events at startup, before any plugin or route is loaded. The handlers MUST log the offending error (stack preferred, message fallback) with a stable `[crash-safety]` prefix and MUST NOT call `process.exit()`.
+
+The handler is the host's last line of defence against single-point-of-failure plugin code. It does not silence well-handled errors — every well-formed `try/catch` and route handler still surfaces errors normally; only otherwise-fatal async faults are suppressed.
+
+#### Scenario: Plugin throws an unhandled promise rejection
+
+- **WHEN** a loaded plugin (e.g. `honcho`) makes an async call whose rejection is not awaited / `.catch()`-ed
+- **THEN** the dashboard server process logs `[crash-safety] unhandledRejection (suppressed): <stack>` to `~/.pi/dashboard/server.log`
+- **AND** the process keeps running; `/api/health` continues to return 200
+- **AND** open WebSocket connections remain open
+
+#### Scenario: Plugin throws a synchronous uncaught exception
+
+- **WHEN** a plugin's listener / timer callback throws synchronously outside any `try/catch`
+- **THEN** the dashboard server process logs `[crash-safety] uncaughtException (suppressed): <stack>`
+- **AND** the process keeps running
+
+#### Scenario: Suppressed errors are diagnosable
+
+- **WHEN** an operator inspects `~/.pi/dashboard/server.log` after a "stuck" or unexpected behaviour report
+- **THEN** they can `grep crash-safety` to see every suppressed fault with full stack
+- **AND** the prefix is stable across releases so log filters keep working
+

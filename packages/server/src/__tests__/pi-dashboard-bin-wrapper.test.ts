@@ -67,17 +67,18 @@ describe("bin/pi-dashboard.mjs wrapper", () => {
       return;
     }
 
-    // Use `status` — it's the only cli.ts subcommand that completes
-    // cleanly without binding ports or starting the server. Successful
-    // resolution + re-exec is observable as: (a) no jiti-miss error on
-    // stderr, (b) exit 0, (c) status output mentions "Dashboard server".
+    // Use `status` — it doesn't bind ports and exits quickly regardless
+    // of whether a server is running. We don't care about exit code (0 if
+    // a dashboard is up, 1 if not — both are valid outcomes that prove
+    // the wrapper successfully resolved jiti and re-execed cli.ts). What
+    // we DO care about: (a) no jiti-miss error on stderr, (b) cli.ts
+    // produced its own "Dashboard server" output (running OR not running).
     const result = spawnSync(process.execPath, [wrapperPath, "status"], {
       encoding: "utf-8",
       timeout: 30_000,
     });
 
     expect(result.stderr).not.toContain("pi-dashboard: cannot find jiti");
-    expect(result.status).toBe(0);
     expect(result.stdout).toMatch(/Dashboard server/i);
   });
 });

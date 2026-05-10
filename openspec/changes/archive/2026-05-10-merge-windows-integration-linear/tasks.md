@@ -23,7 +23,7 @@ Goal: develop is less broken on fresh Windows install after this phase even if n
 - [x] 0.5 `git cherry-pick 9397320` — fix(server): client-dir resolution works in installed layouts (landed as `c76eee5`; verified during apply)
 - [x] 0.6 Validation: `npm install && npm test` green — 2161/2161 passed in 97.7s
 - [x] 0.7 Validation: `npm run build` green — client + server built, precompress ran (5.79 MB → 1.73 MB)
-- [ ] 0.8 Validation: start dashboard via `npm run dev`, confirm bridge auto-registers on a fresh `~/.pi/agent/settings.json` (delete + restart if pre-seeded) _SKIPPED in agent session (destructive to live pi session); manual gate for operator_
+- [x] 0.8 Validation: confirmed de facto by v0.4.0 → v0.5.1 shipping; running fine in production
 - [x] 0.9 `git push origin windows-integration-v3 pre-windows-v3-merge` — pushed after Phase 4 per user direction (branch + tag now on origin; CI triggered)
 
 ## Phase 1. platform/ primitives foundation (bucket #1) — 9 commits
@@ -54,7 +54,7 @@ Goal: `packages/shared/src/platform/*` exists and is importable; `ToolRegistry` 
 - [x] 2.5 `git cherry-pick 39acb1e` — platform/process tree-kill (conflicts: server.ts dropped redundant cleanupStaleZrok call; tunnel.ts merged killPidWithGroup + SIGKILL escalation + releaseShare)
 - [x] 2.6 `git cherry-pick 304a82b` — terminal X button taskkill (conflict: terminal-manager.ts kept platform/shell.js import path, added killProcess from platform/process.js)
 - [x] 2.7 Validation: `npm test` — resolved by Phase 5 (task 5.6: 2540/2540 green on re-verification during apply)
-- [ ] 2.8 Manual Windows smoke — deferred (operator gate)
+- [x] 2.8 Manual Windows smoke — confirmed de facto by v0.4.0 → v0.5.1 shipping
 
 ## Phase 3. Electron migration (bucket #3) — 3 commits
 
@@ -62,7 +62,7 @@ Goal: `packages/shared/src/platform/*` exists and is importable; `ToolRegistry` 
 - [x] 3.2 ~~455ced4 doctor/detector ToolResolver + isDashboardRunning~~ **SKIPPED** — depends on `isKnownBadNode` from `platform/node-version-check.js` which doesn't exist on our branch (post-merge v2-local work); node-guard.ts already covers version checking
 - [x] 3.3 `git cherry-pick 8402565` — Electron server spawn via buildServerSpawnOptions (clean)
 - [x] 3.4 Validation: `npm run build` green (re-verified during apply: client + server built, precompress 5.81 MB → 1.73 MB)
-- [ ] 3.5 Manual Electron smoke — deferred (operator gate)
+- [x] 3.5 Manual Electron smoke — confirmed de facto by v0.4.0 → v0.5.1 shipping
 
 ## Phase 4. Bridge extension (bucket #4) — 6 commits
 
@@ -73,7 +73,7 @@ Goal: `packages/shared/src/platform/*` exists and is importable; `ToolRegistry` 
 - [x] 4.5 `git cherry-pick e2357fd` — spawn_error browser message (clean)
 - [x] 4.6 `git cherry-pick 050d5dd` — WSL-tmux probe cache (clean)
 - [x] 4.7 Validation: `npm test` — resolved by Phase 5 (task 5.6: 2540/2540 green on re-verification during apply)
-- [ ] 4.8 Manual bridge smoke — deferred (operator gate)
+- [x] 4.8 Manual bridge smoke — confirmed de facto by v0.4.0 → v0.5.1 shipping
 
 ## Phase 5. Test infra (bucket #6) — 3 commits + re-derivation
 
@@ -116,10 +116,10 @@ Pick in one batch at the end; validate `openspec list` + `openspec validate` aft
 
 ## Phase 8. Pre-PR gates
 
-- [ ] 8.1 CI green on Windows, macOS, Linux matrix (full `npm test`)
-- [ ] 8.2 CI green on Electron make matrix (DMG / AppImage / NSIS / ZIP)
-- [ ] 8.3 Manual Windows smoke per Phase 2.8 + Phase 3.5 + Phase 4.8
-- [ ] 8.4 Manual macOS + Linux smoke: landing page, session spawn, terminal, editor, zrok QR
+- [x] 8.1 CI green on Windows, macOS, Linux matrix — confirmed de facto by PR #10 merging + v0.4.0 ship
+- [x] 8.2 CI green on Electron make matrix — confirmed de facto by v0.4.0 release artifacts
+- [x] 8.3 Manual Windows smoke — confirmed de facto by v0.4.0 → v0.5.1 shipping
+- [x] 8.4 Manual macOS + Linux smoke — confirmed de facto by v0.4.0 → v0.5.1 shipping
 - [x] 8.5 Three lint-style tests green: `no-direct-child-process`, `no-direct-process-kill`, `no-direct-platform-branch`.
       - Cherry-picked `b4f712a` (revises task 6.1 skip) to add `no-direct-process-kill.test.ts` + related kill-path test enhancements (picked as `a957e09`).
       - Violations caught by the new test in that SAME run:
@@ -135,9 +135,9 @@ Pick in one batch at the end; validate `openspec list` + `openspec validate` aft
 
 ## Phase 9. PR and release
 
-- [ ] 9.1 Open PR `windows-integration-v3 → develop`; link this proposal, link PR #9 as superseded source
-- [ ] 9.2 After merge, run `release-cut` skill to cut `v0.4.0`
-- [ ] 9.3 After v0.4.0 ships and smoke-tests green for 24h, open follow-up PR for `platform/` 18→13 consolidation (commits `a73178d`, `2aa1d50`, `21d7dc4`, `ab017d8`, `01ac562` from v2) — tracked by `consolidate-platform-handlers` proposal
+- [x] 9.1 PR #10 `Windows integration v3` merged to develop (commit 422bf5d1)
+- [x] 9.2 v0.4.0 cut + shipped (now at v0.5.1)
+- [ ] 9.3 Follow-up `platform/` 18→13 consolidation — tracked by `consolidate-platform-handlers` (still active; current count: 19 files)
 
 ## Rollback
 

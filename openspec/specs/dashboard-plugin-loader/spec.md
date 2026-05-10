@@ -5,9 +5,7 @@
 This capability covers the **plugin loader runtime**: monorepo manifest discovery, server-side dynamic-import bootstrap, client-side static-registry generation (Vite plugin), bridge entry auto-register/deregister into pi's `~/.pi/agent/settings.json`, plugin context API (`PluginContext` / `ServerPluginContext`), the `plugins.<id>.*` config namespace with JSON-Schema validation and reactive broadcast, and `/api/health.plugins[]` status reporting.
 
 The requirements below are layered: the design-level (contract) requirements come from change `dashboard-plugin-architecture`, and the implementation-level (runtime) requirements come from change `add-dashboard-shell-slots-runtime`. The motivating design notes live in `openspec/changes/dashboard-plugin-architecture/design.md`.
-
 ## Requirements
-
 ### Requirement: Plugin runtime is a separate workspace package
 
 The plugin runtime SHALL live in its own monorepo workspace package `packages/dashboard-plugin-runtime/`. The package SHALL export at minimum the following entry points:
@@ -35,6 +33,8 @@ The `vite-plugin-dashboard-plugins` SHALL generate `packages/client/src/generate
 
 The generated file SHALL be committed to source control under a `.gitignore` rule for the `generated/` directory and produced fresh on every build.
 
+`packages/client/vite.config.ts` SHALL invoke `viteDashboardPluginsPlugin()` and include its result in the `plugins[]` array. Failure to do so means the generated file is never produced, regardless of the plugin's correctness. The invocation SHALL use a deferred / dynamic import so a fresh checkout (where `dashboard-plugin-runtime` is not yet built) does not break vite startup; in that fallback state the plugin is skipped and the registry stays at its committed-stub initial value.
+
 #### Scenario: Generated file uses named imports
 
 - **WHEN** a plugin claims `{ "slot": "session-card-badge", "component": "OpenSpecBadge" }`
@@ -54,6 +54,18 @@ The generated file SHALL be committed to source control under a `.gitignore` rul
 
 - **WHEN** a file inside a plugin package's `src/` is edited (no manifest change)
 - **THEN** the Vite plugin SHALL NOT regenerate `plugin-registry.tsx`; HMR SHALL flow through Vite's normal module graph.
+
+#### Scenario: vite.config.ts must invoke the plugin
+
+- **WHEN** a workspace plugin manifest exists under `packages/<pkg>/package.json#pi-dashboard-plugin` AND `vite.config.ts` does not register `viteDashboardPluginsPlugin` in `plugins[]`
+- **THEN** the generated `plugin-registry.tsx` SHALL remain at its committed-stub state with `PLUGIN_REGISTRY = []` after `vite build`
+- **AND** the regression test `packages/client/src/__tests__/plugin-registry-populated.test.ts` SHALL fail (post-build) with a clear message identifying the missing wiring.
+
+#### Scenario: Fresh checkout without runtime built
+
+- **WHEN** `vite dev` is invoked on a clone where `packages/dashboard-plugin-runtime/dist/` does not exist yet
+- **THEN** the dynamic import of `viteDashboardPluginsPlugin` SHALL fail silently and vite SHALL start with the committed-stub registry
+- **AND** no error SHALL be logged to stderr beyond a single `[plugin-registry] runtime not built — registry empty` info message.
 
 ### Requirement: `plugins` is a reserved top-level key in dashboard config
 
@@ -462,6 +474,37 @@ A plugin failing to load (server throw, client import error, missing entry) SHAL
 
 - **WHEN** a plugin's React component throws on first render
 - **THEN** an error boundary in the slot consumer SHALL catch it, render nothing for that contribution, and log to console — the shell SHALL not white-screen.
+
+### Requirement: Shell consumes the generated plugin registry
+
+The dashboard shell (`packages/client/src/App.tsx` or its successor entry component) SHALL import `PLUGIN_REGISTRY` from `./generated/plugin-registry` and populate the `SlotRegistry` instance passed to `<PluginContextProvider>` with every claim from every entry. Failure to do so means slot consumers in the shell render zero contributions even when the generated registry is populated.
+
+#### Scenario: Empty registry produces empty slot consumers
+
+- **WHEN** `PLUGIN_REGISTRY` is `[]` (committed stub state, fresh checkout, or runtime not built)
+- **THEN** `<PluginContextProvider registry={_pluginRegistry}>` SHALL receive an empty registry
+- **AND** every slot consumer (`<SettingsSectionSlot>`, `<SessionCardBadgeSlot>`, etc.) SHALL render zero contributions
+- **AND** the shell SHALL render normally with all legacy direct imports intact (no error, no fallback UI required).
+
+#### Scenario: Populated registry threads claims to slot consumers
+
+- **WHEN** `PLUGIN_REGISTRY` contains `[{ manifest: { id: "demo", … }, claims: [{ slot: "settings-section", component: DemoSettings, tab: "general" }] }]`
+- **THEN** `<SettingsSectionSlot tab="general">` SHALL render `<DemoSettings>` wrapped in the runtime's `SlotErrorBoundary`
+- **AND** `<SettingsSectionSlot tab="servers">` SHALL render zero contributions (no claim for `tab: "servers"`).
+
+#### Scenario: Co-tenancy with legacy direct imports
+
+- **WHEN** the shell renders `<SessionCardBadgeSlot session={s}/>` AND a plugin claims `session-card-badge` for a component that the shell **also** imports directly via legacy JSX
+- **THEN** the result is duplicate rendering of that component
+- **AND** the migration plan SHALL remove the legacy direct import in the same change that populates the registry, OR keep the slot empty until the legacy import is removed in a follow-up
+- **AND** a regression test SHALL verify no double-render exists for the four migrated cases (`FlowActivityBadge`, `SessionFlowActions`, `JjWorkspaceBadge`, `JjActionBar`).
+
+#### Scenario: Registry populated only at module load
+
+- **WHEN** the shell module first loads
+- **THEN** the `_pluginRegistry` SHALL be populated synchronously from `PLUGIN_REGISTRY`
+- **AND** subsequent edits to plugin source code during `vite dev` SHALL trigger HMR through vite's normal module graph (not via registry mutation)
+- **AND** subsequent edits to plugin manifests SHALL trigger registry regeneration via the vite plugin, which produces a new `generated/plugin-registry.tsx` and HMR-replaces the App module.
 
 ## Related Capabilities
 

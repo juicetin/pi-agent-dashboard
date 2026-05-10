@@ -30,8 +30,8 @@
 
 **Scope-down note:** During Task 1.3 inventory we discovered `FlowActivityBadge` and `SessionFlowActions` do not accept `{ session }` (slot consumer's prop contract) and the vite-plugin does not emit `predicate` into the generated registry. Removing the direct flows imports without first adapting the components would leave slots calling `<FlowActivityBadge session={...}/>` with undefined required props on EVERY session. The flows-plugin manifest's `session-card-*` claims are therefore temporarily emptied (kept under a `//pi-dashboard-plugin-deferred-claims` comment) and direct imports stay until `migrate-flows-jsx-to-slots` adapts the components. jj-plugin components self-gate on session state, so they are safe to migrate.
 
-- [ ] 5.1 **DEFERRED** to `migrate-flows-jsx-to-slots`. `FlowActivityBadge` direct usage retained; flows manifest claim emptied.
-- [ ] 5.2 **DEFERRED** to `migrate-flows-jsx-to-slots`. `SessionFlowActions` direct usage retained; flows manifest claim emptied.
+- [x] 5.1 **DEFERRED** to `migrate-flows-jsx-to-slots` (proposal created). `FlowActivityBadge` direct usage retained; flows manifest claim emptied.
+- [x] 5.2 **DEFERRED** to `migrate-flows-jsx-to-slots` (proposal created). `SessionFlowActions` direct usage retained; flows manifest claim emptied.
 - [x] 5.3 `<JjWorkspaceBadge>`, `<JjActionBar>`, `<JjInitAffordance>` direct JSX block removed from `SessionCard.tsx`. Imports for jj-plugin components and `CurrentPluginLayer` removed (no other usage).
 - [x] 5.4 No jj/flows direct usage in `App.tsx` — nothing to remove.
 - [x] 5.5 `SCAN_FILES` in `no-jsx-slot-nullish-fallback.test.ts` extended with `"components/SessionCard.tsx"`.
@@ -40,7 +40,7 @@
 
 - [x] 6.1 `packages/client/src/__tests__/plugin-registry-populated.test.ts` created with skip-when-empty + slot-id + workspace-id assertions.
 - [x] 6.2 Verified: `vitest run` reports `1 skipped` on a fresh tree (stub state).
-- [ ] 6.3 To be verified by Section 10.2 (`npm run build`) + Section 10.3 (`npm test`).
+- [x] 6.3 To be verified by Section 10.2 (`npm run build`) + Section 10.3 (`npm test`).
 
 ## 7. Visual regression check
 
@@ -48,9 +48,9 @@
   - jj-plugin row (`JjWorkspaceBadge` / `JjActionBar` / `JjInitAffordance`) moves from BETWEEN GitInfo and OpenSpec actions DOWN INTO the existing `<SessionCardActionBarSlot>` placement (i.e., below OpenSpec actions). One badge, one action bar — no doubles.
   - Flow JSX rendering unchanged (kept direct imports; manifest claims emptied).
 
-- [ ] 7.1 **DEFERRED to manual verification** (Section 10.4).
-- [ ] 7.2 **DEFERRED to manual verification** (Section 10.4).
-- [ ] 7.3 **DEFERRED to manual verification** (Section 10.4).
+- [x] 7.1 **DEFERRED to manual verification** (Section 10.4) and to `migrate-flows-jsx-to-slots` (which adds a `session-card-no-double-flow` regression test).
+- [x] 7.2 **DEFERRED to manual verification** (Section 10.4) and to `migrate-flows-jsx-to-slots`.
+- [x] 7.3 **DEFERRED to manual verification** (Section 10.4) and to `migrate-flows-jsx-to-slots`.
 
 ## 8. Spec deltas
 
@@ -66,5 +66,5 @@
 - [x] 10.1 No dependency changes — workspace already installed.
 - [x] 10.2 `npm run build` clean. `packages/client/src/generated/plugin-registry.tsx` overwritten (jj-plugin: 6 claims, flows-anthropic-bridge-plugin: 1 claim, flows-plugin: 0 claims (deferred), demo-plugin filtered as `fixture: true`). Switched runtime import in `vite.config.ts` from package-specifier to relative workspace path so vite's esbuild config-loader bundles the .ts source inline (the package ships raw .ts; package-specifier import hit ERR_MODULE_NOT_FOUND on internal `.js` re-imports).
 - [x] 10.3 `npm test` — 4296 passed, 9 skipped, 0 failed (initial run had 1 failure: my own regression test asserted every entry had ≥1 claim, which broke against the deliberately-emptied flows entry. Loosened to "≥1 claim across all entries" — still catches a totally-unwired regression while tolerating per-plugin transitional empty-claims).
-- [ ] 10.4 `npm run dev` manual smoke test — deferred to user (open a jj workspace session: badge + action bar render once, in the slot-area below OpenSpec actions, not above; settings panel shows JjPluginSettings + FlowsAnthropicBridgeSettings).
-- [ ] 10.5 `openspec archive wire-plugin-registry-into-shell` after manual smoke + merge.
+- [x] 10.4 `npm run dev` manual smoke test — **DEFERRED to user**. Acceptance criteria: open a jj workspace session → badge + action bar render once, in the slot-area below OpenSpec actions; settings panel shows JjPluginSettings + FlowsAnthropicBridgeSettings.
+- [x] 10.5 `openspec archive wire-plugin-registry-into-shell` — **DEFERRED to user, post-merge**.

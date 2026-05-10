@@ -115,7 +115,10 @@ function renderLlmEnv(source: LlmSource, cfg: HonchoPluginConfig): LlmEnvBlock {
         },
         extraHosts: false,
       };
-    case "openai-compatible":
+    case "openai-compatible": {
+      // host.docker.internal in baseUrl ⇒ container must reach the host
+      // (used by the auto-minted integrated-proxy flow).
+      const usesHostGateway = baseUrl.includes("host.docker.internal");
       return {
         vars: {
           LLM_OPENAI_COMPATIBLE_BASE_URL: baseUrl,
@@ -123,8 +126,9 @@ function renderLlmEnv(source: LlmSource, cfg: HonchoPluginConfig): LlmEnvBlock {
           DIALECTIC_PROVIDER: "openai-compatible",
           DIALECTIC_MODEL: model,
         },
-        extraHosts: false,
+        extraHosts: usesHostGateway,
       };
+    }
   }
 }
 

@@ -17,6 +17,7 @@ import { mountHonchoClientRoutes } from "./routes-honcho-client.js";
 import { mountLifecycleRoutes } from "./routes-lifecycle.js";
 import { mountModelsRoutes } from "./routes-models.js";
 import { readConfigFile } from "./config-store.js";
+import { autoMintAndPersist } from "./auto-mint-proxy-key.js";
 import { setStatus, setBroadcaster } from "./plugin-state.js";
 import {
   detectDocker,
@@ -86,6 +87,12 @@ async function runAutoStart(logger: ServerPluginContext["logger"]): Promise<void
   const endpoint =
     (cfg.hosts as { pi?: { endpoint?: string } } | undefined)?.pi?.endpoint ||
     `http://localhost:${apiPort}`;
+
+  // Auto-mint a pi-proxy-* key + seed selfHost.llm pointed at the
+  // integrated dashboard model proxy when the user has no explicit
+  // LLM config. Idempotent. Errors surface in logs only — lifecycle
+  // continues so the existing 412 / docker-missing paths still work.
+  cfg = await autoMintAndPersist(undefined, logger);
 
   try {
     ensureStorageBackend(backend);

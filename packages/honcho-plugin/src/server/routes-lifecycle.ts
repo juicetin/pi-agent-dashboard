@@ -6,7 +6,8 @@
  * but the proxy is not reachable.
  */
 import type { FastifyInstance } from "fastify";
-import { readConfigFile, writeConfigFile } from "./config-store.js";
+import { writeConfigFile } from "./config-store.js";
+import { autoMintAndPersist } from "./auto-mint-proxy-key.js";
 import {
   COMPOSE_PATH,
   composeDown,
@@ -32,7 +33,9 @@ async function startStack(
   cfgPath: string | undefined,
   composePath: string,
 ): Promise<void> {
-  const cfg = readConfigFile(cfgPath);
+  // Auto-mint integrated-proxy key on first install. Idempotent;
+  // returns the (possibly mutated) cfg.
+  const cfg = await autoMintAndPersist(cfgPath, console);
   const apiPort = cfg.selfHost?.apiPort ?? 8765;
   const endpoint = cfg.hosts?.pi?.endpoint ?? `http://localhost:${apiPort}`;
 

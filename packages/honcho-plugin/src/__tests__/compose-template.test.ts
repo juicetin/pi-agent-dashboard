@@ -150,4 +150,30 @@ describe("renderComposeYaml — extra_hosts gating", () => {
     });
     expect(out).not.toContain("host-gateway");
   });
+  it("included when openai-compatible baseUrl uses host.docker.internal (integrated proxy)", () => {
+    const out = renderComposeYaml({
+      selfHost: {
+        llm: {
+          source: "openai-compatible",
+          baseUrl: "http://host.docker.internal:8000/v1",
+          apiKey: "pi-proxy-x",
+          model: "anthropic/claude-haiku-4-5",
+        },
+      },
+    });
+    expect(out).toContain("host.docker.internal:host-gateway");
+  });
+  it("excluded when openai-compatible baseUrl is remote", () => {
+    const out = renderComposeYaml({
+      selfHost: {
+        llm: {
+          source: "openai-compatible",
+          baseUrl: "https://api.example.com/v1",
+          apiKey: "k",
+          model: "m",
+        },
+      },
+    });
+    expect(out).not.toContain("host-gateway");
+  });
 });

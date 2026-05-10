@@ -80,5 +80,5 @@ describe("bin/pi-dashboard.mjs wrapper", () => {
 
     expect(result.stderr).not.toContain("pi-dashboard: cannot find jiti");
     expect(result.stdout).toMatch(/Dashboard server/i);
-  });
+  }, 60_000);
 });

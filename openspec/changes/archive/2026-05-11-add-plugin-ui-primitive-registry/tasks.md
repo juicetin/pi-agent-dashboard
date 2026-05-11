@@ -97,4 +97,4 @@
 ## 11. Mark superseded change as obsolete
 
 - [x] 11.1 SUPERSEDED note in place at the top of complete-flows-plugin-migration's proposal.md.
-- [ ] 11.2 (Deferred to user) Archive `complete-flows-plugin-migration` after this change lands and is reviewed. Recommended date-prefix: `2026-05-08-complete-flows-plugin-migration-superseded`.
+- [x] 11.2 ~~Archive~~ DELETED `complete-flows-plugin-migration/` on 2026-05-11. No archive kept — the proposal was superseded mid-implementation and all its 104 tasks were verified as either DEPRECATED (design pivot) or DONE_ELSEWHERE (under this change + pluginize-flows-via-registry + 8a271b60). Spec deltas described an abandoned approach, so no canonical-spec sync was performed.

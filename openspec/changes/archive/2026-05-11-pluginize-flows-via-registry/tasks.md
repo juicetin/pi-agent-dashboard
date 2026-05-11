@@ -4,25 +4,25 @@ Sequenced per Decision 7. Each part is independently revertible.
 
 ## Part B — Plugin runtime: useSessionEvents (foundations, no behavior change)
 
-- [ ] B.1 In `packages/client/src/hooks/useMessageHandler.ts`, add a
+- [x] B.1 In `packages/client/src/hooks/useMessageHandler.ts`, add a
       new `Map<string, DashboardEvent[]>` accumulator alongside the
       existing `setSessionStates`. Initialize empty on
       `case "session_register"`. Append on `case "event"`. Clear on
       session unregister.
-- [ ] B.2 Expose the accumulator via a new ref + setter pair so the
+- [x] B.2 Expose the accumulator via a new ref + setter pair so the
       `PluginContextProvider` can read it.
-- [ ] B.3 In `packages/dashboard-plugin-runtime/src/plugin-context.tsx`,
+- [x] B.3 In `packages/dashboard-plugin-runtime/src/plugin-context.tsx`,
       add `useSessionEvents(sessionId)` to `PluginContextValue`.
       Implementation: `useSyncExternalStore` over the accumulator with
       a per-session subscription. Returns the array reference;
       stable across no-op renders.
-- [ ] B.4 Re-export `useSessionEvents` from
+- [x] B.4 Re-export `useSessionEvents` from
       `packages/dashboard-plugin-runtime/src/index.ts`.
-- [ ] B.5 Unit test
+- [x] B.5 Unit test
       `packages/dashboard-plugin-runtime/src/__tests__/use-session-events.test.tsx`:
       assert per-session scoping, arrival-order, re-render on new
       event, reference stability across no-op renders.
-- [ ] B.6 Build clean: `npm run build`. No regressions.
+- [x] B.6 Build clean: `npm run build`. No regressions.
 
 ## Part C — ~~Plugin runtime: route filtering~~  → REVERSED
 
@@ -66,7 +66,7 @@ cleanly. See design.md Decision 3 RECONSIDERED.
 
 ## Part E — flows-plugin: internal contexts and reducers
 
-- [ ] E.1 Create
+- [x] E.1 Create
       `packages/flows-plugin/src/client/FlowsSessionStateContext.tsx`.
       Provider takes `sessionId` from React context (passed from the
       `PluginRoot` mount point — see E.4); inside the provider,
@@ -74,7 +74,7 @@ cleanly. See design.md Decision 3 RECONSIDERED.
       `reduceFlowEvent` and `reduceArchitectEvent` over the events.
       Exposes `{ flowState, flowStates, architectState }` via context.
       Hook `useFlowsSessionState(sessionId)` returns the value.
-- [ ] E.2 Create
+- [x] E.2 Create
       `packages/flows-plugin/src/client/FlowsUiStateContext.tsx`.
       Owns `flowDetailAgent`, `architectDetailOpen`, `sourceOpenAgent`,
       `flowYamlPreview`, plus setters. Hook `useFlowsUiState()`.
@@ -82,7 +82,7 @@ cleanly. See design.md Decision 3 RECONSIDERED.
       `packages/flows-plugin/src/client/FlowsRootProvider.tsx`.
       Composes both contexts; accepts `{ children }`; this is the
       `PluginRoot` export.
-- [ ] E.4 Per-session-state caching: since `FlowsSessionStateProvider`
+- [x] E.4 Per-session-state caching: since `FlowsSessionStateProvider`
       runs reducers per session, multiple concurrent sessions need
       separate state. Implement as a single root-level provider that
       maintains an internal `Map<sessionId, FlowsSessionState>` keyed
@@ -91,67 +91,67 @@ cleanly. See design.md Decision 3 RECONSIDERED.
       to serve all sessions on the dashboard.
 - [ ] E.5 Export `FlowsRootProvider as PluginRoot` from
       `packages/flows-plugin/src/client/index.tsx`.
-- [ ] E.6 Unit test
+- [x] E.6 Unit test
       `packages/flows-plugin/src/__tests__/FlowsSessionStateContext.test.tsx`:
       mock `pluginContext.useSessionEvents`, assert reducer composition,
       per-session scoping, re-memoization on new events.
 
 ## Part F — flows-plugin: refactor components to slot-consumer signatures
 
-- [ ] F.1 `FlowActivityBadge` → `({ session, pluginContext })`. Reads
+- [x] F.1 `FlowActivityBadge` → `({ session, pluginContext })`. Reads
       `useFlowsSessionState(session.id).flowState`. Returns null when
       `flowState === null` (self-gate). Otherwise renders the same
       DOM as today using event-derived counts.
-- [ ] F.2 `SessionFlowActions` → `({ session, pluginContext })`. Reads
+- [x] F.2 `SessionFlowActions` → `({ session, pluginContext })`. Reads
       flow list from a new pluginContext-derived source (server REST
       `/api/flows` or session-scoped commands list). Owns its launcher
       dialog state via local `useState`. Renders `FlowLaunchDialog`
       via `dialogPortal` primitive.
-- [ ] F.3 `FlowDashboard` → `({ session, pluginContext })`. Reads
+- [x] F.3 `FlowDashboard` → `({ session, pluginContext })`. Reads
       `flowState` / `flowStates` from `useFlowsSessionState`. Reads
       selection from `useFlowsUiState`. Self-gates on null flowState.
-- [ ] F.4 `FlowArchitect` → `({ session, pluginContext })`. Reads
+- [x] F.4 `FlowArchitect` → `({ session, pluginContext })`. Reads
       `architectState` from `useFlowsSessionState`. Self-gates.
       Unified dismiss callback (clears flowDetailAgent +
       architectDetailOpen + dispatches `dismiss_summary` via
       `pluginContext.send()`).
-- [ ] F.5 `FlowAgentDetail` →
+- [x] F.5 `FlowAgentDetail` →
       `({ session, routeParams, onClose, pluginContext })`. Reads
       `flowState.agents.get(routeParams.agentName)`. The `onClose`
       slot prop replaces the previous `onBack`.
-- [ ] F.6 `FlowArchitectDetail` →
+- [x] F.6 `FlowArchitectDetail` →
       `({ session, routeParams, onClose, pluginContext })`. Reads
       `architectState`.
-- [ ] F.7 New component
+- [x] F.7 New component
       `packages/flows-plugin/src/client/FlowYamlPreview.tsx`. Accepts
       content-view slot props. Reads `flowYamlPreview` from
       `useFlowsUiState` (or from `routeParams` if the YAML content is
       route-encoded). Renders the yaml preview that today lives in
       App.tsx as `flowYamlPreview` state.
-- [ ] F.8 `FlowSummary` → `({ session, pluginContext })`. Reads
+- [x] F.8 `FlowSummary` → `({ session, pluginContext })`. Reads
       `flowState`. Self-gates.
-- [ ] F.9 New components: `FlowsListRoute`, `FlowsNewRoute`,
+- [x] F.9 New components: `FlowsListRoute`, `FlowsNewRoute`,
       `FlowsEditRoute`, `FlowsDeleteRoute`. Each accepts content-view
       props (`{ session, routeParams, onClose, pluginContext }`),
       renders the corresponding launcher/picker/dialog, calls
       `onClose` on dismiss. Wired to flow-management WS messages via
       `pluginContext.send()`.
-- [ ] F.10 Replace local `formatTokens` / `formatDuration` in
+- [x] F.10 Replace local `formatTokens` / `formatDuration` in
       `FlowSummary.tsx` and `FlowAgentDetail.tsx` with
       `useUiPrimitive(UI_PRIMITIVE_KEYS.formatTokens)` and
       `useUiPrimitive(UI_PRIMITIVE_KEYS.formatDuration)` lookups.
-- [ ] F.11 Update flows-plugin tests: wrap rendered components in
+- [x] F.11 Update flows-plugin tests: wrap rendered components in
       `withUiPrimitiveProvider({...})` plus `<FlowsRootProvider>` (or
       a test-helper that does both). Confirm 41+ tests pass.
 
 ## Part G — flows-plugin: manifest claims
 
-- [ ] G.1 Populate
+- [x] G.1 Populate
       `packages/flows-plugin/package.json#pi-dashboard-plugin.claims`
       with all 12 entries (8 component claims + 4 command-route
       claims) per the proposal table. Remove the
       `//pi-dashboard-plugin-deferred-claims` field.
-- [ ] G.2 Build clean: vite-plugin validates every component and
+- [x] G.2 Build clean: vite-plugin validates every component and
       route reference exists as a named export of the client entry.
 
 ## Part H — Shell deletions
@@ -159,44 +159,44 @@ cleanly. See design.md Decision 3 RECONSIDERED.
 After E + F + G land and slot consumers are rendering flows in
 parallel with the still-present shell JSX, delete the shell wiring.
 
-- [ ] H.1 Delete from `packages/shared/src/types.ts` four scalar
+- [x] H.1 Delete from `packages/shared/src/types.ts` four scalar
       fields on `DashboardSession`: `activeFlowName`,
       `flowAgentsDone`, `flowAgentsTotal`, `flowStatus`. Keep
       `FlowStatus` type definition (referenced by `FlowState`).
-- [ ] H.2 Delete from
+- [x] H.2 Delete from
       `packages/server/src/event-status-extraction.ts` every flow-
       specific branch and field (lines 11-14, 92-107).
-- [ ] H.3 Delete from `packages/client/src/lib/event-reducer.ts`:
+- [x] H.3 Delete from `packages/client/src/lib/event-reducer.ts`:
       imports of `isFlowEvent` / `reduceFlowEvent` /
       `isArchitectEvent` / `reduceArchitectEvent`; `flowState` /
       `flowStates` / `architectState` fields on `SessionState`;
       dispatch branches.
-- [ ] H.4 Delete from `packages/client/src/App.tsx` every flow JSX
+- [x] H.4 Delete from `packages/client/src/App.tsx` every flow JSX
       call site (3× FlowArchitect, 2× FlowDashboard, FlowAgentDetail,
       FlowArchitectDetail, 3× FlowLaunchDialog), every flow state
       variable, every flow-related callback (`openFlowYaml`,
       `toggleFlowAgentSource`), and every flow branch in
       `wrappedHandleSend`. Remove imports of `Flow*` from
       `flows-plugin/client`. ~270 LOC removed.
-- [ ] H.5 Delete from `packages/client/src/components/SessionCard.tsx`
+- [x] H.5 Delete from `packages/client/src/components/SessionCard.tsx`
       imports of `FlowActivityBadge` and `SessionFlowActions`, and the
       three JSX call sites. ~20 LOC removed.
-- [ ] H.6 Delete from
+- [x] H.6 Delete from
       `packages/client/src/components/SessionHeader.tsx` import of
       `FlowLaunchDialog` and the JSX. ~15 LOC removed.
 
 ## Part I — Lint and verification
 
-- [ ] I.1 Add repo-lint
+- [x] I.1 Add repo-lint
       `packages/shared/src/__tests__/no-flow-references-in-shell.test.ts`
       per the spec. Allow-list documented inline in test source.
-- [ ] I.2 Self-test the lint: planted bad fixture flagged; allow-list
+- [x] I.2 Self-test the lint: planted bad fixture flagged; allow-list
       cases not flagged.
-- [ ] I.3 Run the lint: zero violations after H.1–H.6.
-- [ ] I.4 Add `MobileShell.tsx` to `SCAN_FILES` in
+- [x] I.3 Run the lint: zero violations after H.1–H.6.
+- [x] I.4 Add `MobileShell.tsx` to `SCAN_FILES` in
       `packages/client/src/__tests__/no-jsx-slot-nullish-fallback.test.ts`.
-- [ ] I.5 Full build: `npm run build`. Clean.
-- [ ] I.6 Full test suite: `npm test`. All passing. Pass count
+- [x] I.5 Full build: `npm run build`. Clean.
+- [x] I.6 Full test suite: `npm test`. All passing. Pass count
       ≥ pre-change (4883).
 - [ ] I.7 Manual smoke in `npm run dev`:
       - Spawn a session and run a flow. Badge appears on session card.

@@ -13,6 +13,10 @@ import type { FastifyInstance } from "fastify";
 import { randomUUID } from "node:crypto";
 import type { BootstrapStateStore } from "../bootstrap-state.js";
 import type { NetworkGuard } from "./route-deps.js";
+import {
+  detectLegacyPiInstalls,
+  uninstallLegacyPi,
+} from "../legacy-pi-cleanup.js";
 
 export interface BootstrapRouteDeps {
   bootstrapState: BootstrapStateStore;
@@ -83,6 +87,39 @@ export function registerBootstrapRoutes(
         console.error("[bootstrap-routes] retry trigger failed:", err);
       });
       return reply.code(202).send({ ticketId, status: "accepted" });
+    },
+  );
+
+  // ── Legacy pi cleanup ──────────────────────────────────────────
+
+  // Refresh detection on demand (also runs at server startup).
+  fastify.get(
+    "/api/bootstrap/legacy-pi",
+    { preHandler: networkGuard },
+    async () => {
+      const installs = detectLegacyPiInstalls();
+      bootstrapState.set({ legacyPiInstalls: installs });
+      return { installs };
+    },
+  );
+
+  // Remove all currently-detected legacy installs. Returns per-install
+  // result; partial failures are reported but do not abort the others.
+  fastify.post(
+    "/api/bootstrap/legacy-pi/cleanup",
+    { preHandler: networkGuard },
+    async () => {
+      const before = detectLegacyPiInstalls();
+      if (before.length === 0) {
+        bootstrapState.set({ legacyPiInstalls: [] });
+        return { results: [], remaining: [] };
+      }
+      const results = uninstallLegacyPi(before);
+      // Re-scan so the UI shows any installs that survived (e.g. permission
+      // error). The store mirrors the post-cleanup state.
+      const remaining = detectLegacyPiInstalls();
+      bootstrapState.set({ legacyPiInstalls: remaining });
+      return { results, remaining };
     },
   );
 }

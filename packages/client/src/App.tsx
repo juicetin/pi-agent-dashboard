@@ -1441,7 +1441,11 @@ export default function App() {
     });
     return apiProvider(
       <div className="bg-[var(--bg-primary)] text-[var(--text-primary)]">
-        <BootstrapBanner state={bootstrapStatus.state} onRetry={bootstrapStatus.retry} />
+        <BootstrapBanner
+          state={bootstrapStatus.state}
+          onRetry={bootstrapStatus.retry}
+          onCleanupLegacyPi={bootstrapStatus.cleanupLegacyPi}
+        />
         <ConnectionStatusBanner
           status={status}
           currentServerHost={currentServerHost}

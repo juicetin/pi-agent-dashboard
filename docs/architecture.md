@@ -483,6 +483,24 @@ See changes: `unified-bootstrap-install`, `pi-zero-seventy-compat`, `warn-pi-ver
 
 Electron resources ship bundled Node under `resources/node/` (Windows: `node.exe` + `npm.cmd` + `npx.cmd` at root; Unix: `bin/node` + `bin/npm` + `bin/npx`). `installManagedNode` (`packages/shared/src/bootstrap-install.ts`) `fs.cp`-copies bundle into `<managedDir>/node/` (default `~/.pi-dashboard/node/`), writes `.version` marker for idempotency. `installStandalone` calls it BEFORE first `bootstrapInstall` so npm shims exist when registry install runs; Doctor calls it unconditionally on every launch as a self-repair step. ToolRegistry `node` + `npm` strategy chains prefer `<managedDir>/node/` ahead of system PATH; `prependManagedNodeToPath(env, managedDir)` (`packages/shared/src/platform/managed-node-path.ts`) injects same dir at HEAD of every spawned child's `PATH` (pi-session, pi-core-updater, headless RPC, server-launcher) so `npm.cmd`/`npx.cmd` resolve without `where npm` returning empty on Windows. Standalone CLI / dev / builds without `resources/node/`: bundled source absent, both helpers no-op, resolver falls through to system PATH. See change: embed-managed-node-runtime.
 
+#### Legacy pi detection & cleanup
+
+Pi renamed `@mariozechner/pi-coding-agent` → `@earendil-works/pi-coding-agent` at v0.74. Old scope ships only up to v0.73.x; new scope's `bin/pi` symlink collides with legacy install on `npm install -g` (EEXIST), producing silent "no spawning" failures when both exist.
+
+`packages/server/src/legacy-pi-cleanup.ts` scans 3 locations: npm-global (`npm root -g` → `<root>/@mariozechner/pi-coding-agent`), npx-cache (`~/.npm/_npx/*/node_modules/@mariozechner/pi-coding-agent`, all hashed entries), managed (`~/.pi-dashboard/node_modules/@mariozechner/pi-coding-agent`). Detection cost: one `npm root -g` (~50ms) + `fs.statSync` per candidate. Read-only.
+
+Startup scan: `server.ts` calls `detectLegacyPiInstalls()` once at boot, writes result to `bootstrapState.legacyPiInstalls`. Broadcast via `bootstrap_status_update` WS.
+
+REST: `GET /api/bootstrap/legacy-pi` force-refreshes detection. `POST /api/bootstrap/legacy-pi/cleanup` removes all detected installs, re-scans, returns `{results, remaining}`. Both auth-gated.
+
+UI: `BootstrapBanner` renders amber "Remove legacy pi (N)" sub-banner when `legacyPiInstalls.length > 0` AND `status === "ready"`. Takes precedence over upgrade-recommended hint (legacy install blocks `upgrade-pi`). Wired via `useBootstrapStatus().cleanupLegacyPi()`.
+
+Cleanup actions: npm-global removed via `npm uninstall -g @mariozechner/pi-coding-agent --no-fund --no-audit` so bin symlinks unwound; npx-cache + managed via `fs.rmSync({recursive, force})`. Per-install try/catch — one failure does not abort siblings.
+
+Idempotent: empty pre-scan short-circuits the POST without invoking npm; missing path under `fs.rmSync({force:true})` returns `removed: true`. Tests in `packages/server/src/__tests__/legacy-pi-cleanup.test.ts` (12 cases) cover pure helpers, fs-backed detection under HOME-tempdir isolation, and removal idempotency.
+
+See change: legacy-pi-cleanup.
+
 ### Force Kill Escalation
 The Stop button supports two-click escalation for stuck sessions:
 1. **Click 1 (Abort)**: Sends `abort` → bridge → `ctx.abort()`. Button transitions to orange pulsing "Force Stop".

@@ -1709,3 +1709,35 @@ Cross-refs:
 ## How do I see why a session spawn failed?
 
 Check banner in folder card (shows code, hint, preflight reasons, stderr tail). Open Settings → General → Recent Spawn Failures for history. Raw log at `~/.pi/dashboard/sessions/spawn-failures.log`. Fetch last N via `GET /api/spawn-failures?limit=N`.
+
+## Why do I see 'Legacy @mariozechner/pi-coding-agent detected' and what should I do?
+
+Pi renamed `@mariozechner/pi-coding-agent` → `@earendil-works/pi-coding-agent` at v0.74. Old scope publishes only up to v0.73.x. Both installed = new scope's `bin/pi` symlink collides with legacy on `npm install -g` (EEXIST). Silent symptom: sessions stop spawning.
+
+Fix: click "Remove legacy pi (N)" button in the amber banner above the main shell. Calls `POST /api/bootstrap/legacy-pi/cleanup`. Removal actions:
+- npm-global: `npm uninstall -g @mariozechner/pi-coding-agent --no-fund --no-audit` (unwinds bin symlinks).
+- npx-cache: `fs.rmSync({recursive,force})` on `~/.npm/_npx/*/node_modules/@mariozechner/pi-coding-agent`.
+- managed: `fs.rmSync({recursive,force})` on `~/.pi-dashboard/node_modules/@mariozechner/pi-coding-agent`.
+
+Idempotent. Re-clicking after success is a no-op. Per-install failures isolated — one permission error does not abort siblings; remaining installs surface in next banner refresh.
+
+Detection runs at server startup + on `GET /api/bootstrap/legacy-pi`. Banner takes precedence over upgrade-recommended hint since legacy install blocks `pi-dashboard upgrade-pi`.
+
+See change: legacy-pi-cleanup.
+
+Cross-refs:
+- docs/architecture.md — Bootstrap & First Run → Legacy pi detection & cleanup
+- packages/server/src/legacy-pi-cleanup.ts
+- packages/server/src/routes/bootstrap-routes.ts (`/api/bootstrap/legacy-pi*`)
+
+## Why does `pi-dashboard start` fail with ERR_MODULE_NOT_FOUND in a dev checkout?
+
+Root `package.json` `.bin` previously pointed `pi-dashboard` at `packages/server/src/cli.ts` directly. Node has no built-in TypeScript loader — launching a `.ts` file from a shebang requires jiti (or tsx) to be registered via `--import`, which a `#!/usr/bin/env node` line cannot interpolate dynamically. Symptom: `node:internal/modules/run_main:... ERR_MODULE_NOT_FOUND` on `cli.ts` import resolution.
+
+Fix: `.bin` now points at `packages/server/bin/pi-dashboard.mjs`, a tiny `.mjs` wrapper that resolves jiti from pi's tree at runtime, then re-execs Node with `--import <jiti-url> cli.ts <args>`. Wrapper exits 1 with install-hint when jiti unresolvable.
+
+Cross-refs:
+- package.json (root) `.bin`
+- packages/server/bin/pi-dashboard.mjs
+- packages/shared/src/resolve-jiti.ts
+- See change: replace-tsx-with-jiti

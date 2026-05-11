@@ -19,7 +19,7 @@
   ],
   "main": "packages/server/src/cli.ts",
   "bin": {
-    "pi-dashboard": "packages/server/src/cli.ts"
+    "pi-dashboard": "packages/server/bin/pi-dashboard.mjs"
   },
   "pi": {
     "extensions": [

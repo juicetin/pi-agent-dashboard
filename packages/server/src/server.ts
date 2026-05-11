@@ -61,6 +61,7 @@ import { registerToolRoutes } from "./routes/tool-routes.js";
 import { registerJjRoutes } from "./routes/jj-routes.js";
 import { registerBootstrapRoutes } from "./routes/bootstrap-routes.js";
 import { createBootstrapState, type BootstrapStateStore } from "./bootstrap-state.js";
+import { detectLegacyPiInstalls } from "./legacy-pi-cleanup.js";
 import { createBootstrapQueue } from "./bootstrap-queue.js";
 import { bootstrapInstall } from "@blackbelt-technology/pi-dashboard-shared/bootstrap-install.js";
 import { getDefaultRegistry } from "@blackbelt-technology/pi-dashboard-shared/tool-registry/index.js";
@@ -693,6 +694,14 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
   // routes can gate spawn operations on bootstrap status.
   // See change: unified-bootstrap-install.
   const bootstrapState = createBootstrapState();
+  // Scan for legacy `@mariozechner/pi-coding-agent` installs so the UI can
+  // offer a one-click cleanup. See: legacy-pi-cleanup.ts. Best-effort —
+  // detection failure is non-fatal (returns []).
+  try {
+    bootstrapState.set({ legacyPiInstalls: detectLegacyPiInstalls() });
+  } catch (err: any) {
+    console.warn("[legacy-pi] detection failed:", err?.message ?? err);
+  }
   const bootstrapQueue = createBootstrapQueue();
   // Centralized post-install repair: full ToolRegistry rescan +
   // OpenSpec / pi-resources force-refresh on every `installing → ready`

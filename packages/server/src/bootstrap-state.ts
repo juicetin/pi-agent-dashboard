@@ -69,6 +69,16 @@ export interface BootstrapState {
     /** Package names that failed to install. */
     failed: string[];
   };
+  /**
+   * Legacy `@mariozechner/pi-coding-agent` installs detected on disk.
+   * Populated at server start and after every cleanup POST. See
+   * `legacy-pi-cleanup.ts`.
+   */
+  legacyPiInstalls?: Array<{
+    scope: "npm-global" | "npx-cache" | "managed";
+    path: string;
+    version: string | null;
+  }>;
 }
 
 export type BootstrapListener = (state: BootstrapState) => void;

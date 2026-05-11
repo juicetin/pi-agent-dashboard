@@ -19,6 +19,11 @@ export interface UseBootstrapStatusResult {
   retry: () => Promise<void>;
   /** POST /api/bootstrap/upgrade-pi \u2014 used by the Upgrade button. */
   upgradePi: () => Promise<{ ok: true; ticketId: string } | { ok: false; error: string }>;
+  /** POST /api/bootstrap/legacy-pi/cleanup — remove all detected legacy installs. */
+  cleanupLegacyPi: () => Promise<
+    | { ok: true; results: Array<{ scope: string; path: string; removed: boolean; error?: string }>; remaining: unknown[] }
+    | { ok: false; error: string }
+  >;
 }
 
 export function useBootstrapStatus(): UseBootstrapStatusResult {
@@ -46,6 +51,25 @@ export function useBootstrapStatus(): UseBootstrapStatusResult {
     await fetch(`${getApiBase()}/api/bootstrap/retry`, { method: "POST" });
     // Status will update via the WS broadcast; no need to re-fetch here.
   }, []);
+
+  const cleanupLegacyPi = useCallback(
+    async (): Promise<
+      | { ok: true; results: Array<{ scope: string; path: string; removed: boolean; error?: string }>; remaining: unknown[] }
+      | { ok: false; error: string }
+    > => {
+      try {
+        const res = await fetch(`${getApiBase()}/api/bootstrap/legacy-pi/cleanup`, { method: "POST" });
+        const body = await res.json();
+        if (!res.ok) return { ok: false, error: body?.error ?? `HTTP ${res.status}` };
+        // Bootstrap state pushes the updated `legacyPiInstalls` via WS; no
+        // manual refresh required.
+        return { ok: true, results: body.results ?? [], remaining: body.remaining ?? [] };
+      } catch (err: any) {
+        return { ok: false, error: err?.message ?? "network error" };
+      }
+    },
+    [],
+  );
 
   const upgradePi = useCallback(
     async (): Promise<{ ok: true; ticketId: string } | { ok: false; error: string }> => {
@@ -81,5 +105,5 @@ export function useBootstrapStatus(): UseBootstrapStatusResult {
     };
   }, [refresh]);
 
-  return { state, isLoading, error, refresh, retry, upgradePi };
+  return { state, isLoading, error, refresh, retry, upgradePi, cleanupLegacyPi };
 }

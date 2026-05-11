@@ -229,7 +229,10 @@ This section lists only the **architectural backbone** — the files agents touc
 | `src/shared/semaphore.ts` | Tiny FIFO semaphore (`createSemaphore(max)`) |
 | `src/extension/bridge.ts` | Main bridge extension entry; PromptBus patch site, sync/tracker/flow composition; sessionPrompt routes through slash-dispatch (extension-cmd dispatch + stopgap) before template fallback. See change: fix-extension-slash-commands-in-dashboard. |
 | `src/extension/bridge-context.ts` | Shared mutable state type + helpers for bridge modules; hosts `isExtensionSlashCommand`, `hasDispatchCommand`, `DASHBOARD_NATIVE_COMMANDS` (= {"roles"}). See change: fix-extension-slash-commands-in-dashboard. |
-| `src/extension/slash-dispatch.ts` | Shared `tryDispatchExtensionCommand` helper: routing-step 9 (extension-command dispatch via `pi.dispatchCommand` 0.71+ or `command_feedback{error}` stopgap on 0.70). See change: fix-extension-slash-commands-in-dashboard. |
+| `src/extension/slash-dispatch.ts` | Shared `tryDispatchExtensionCommand` helper: routing-step 9 (three-way decision: pi.dispatchCommand 0.71+ → server-routed via RPC keeper UDS when headless → stopgap). See change: fix-extension-slash-commands-in-dashboard, add-rpc-stdin-dispatch-with-keeper-sidecar. |
+| `packages/server/src/rpc-keeper/dispatch-router.ts` | Handles `dispatch_extension_command` extension→server message. Forwards pi RPC line via `headlessPidRegistry.writeRpc`; emits optimistic `command_feedback {completed}` or {error}. See change: add-rpc-stdin-dispatch-with-keeper-sidecar. |
+| `packages/server/src/rpc-keeper/keeper-manager.ts` | Server-side helper: `spawnKeeperFor`, `writeRpc(sessionId)`, `writeRpcToSockPath`, `killKeeper`, `discoverExistingKeepers`. Singleton via `getKeeperManager()` in process-manager.ts. See change: add-rpc-stdin-dispatch-with-keeper-sidecar. |
+| `packages/server/src/rpc-keeper/keeper.cjs` | CJS-pure RPC keeper sidecar; spawns pi as child, owns stdin pipe, listens on per-session UDS / named pipe; outlives dashboard server. See change: add-rpc-stdin-dispatch-with-keeper-sidecar. |
 | `src/extension/session-sync.ts` | Session register, replay, and switch/fork handling |
 | `src/extension/model-tracker.ts` | Model/thinking-level/git/name change detection |
 | `src/extension/flow-event-wiring.ts` | Flow event listener registration (flow:* → event_forward) |

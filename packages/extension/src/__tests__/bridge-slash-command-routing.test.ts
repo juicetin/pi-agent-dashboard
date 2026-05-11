@@ -6,9 +6,10 @@
  *
  * regression: see openspec/changes/fix-extension-slash-commands-in-dashboard/
  */
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createCommandHandler } from "../command-handler.js";
 import { hasDispatchCommand } from "../bridge-context.js";
+import { tryDispatchExtensionCommand, type DispatchConnection } from "../slash-dispatch.js";
 import type { ExtensionToServerMessage } from "@blackbelt-technology/pi-dashboard-shared/protocol.js";
 
 interface StubOpts {
@@ -182,6 +183,164 @@ describe("bridge slash command routing (regression contract)", () => {
       const stub = makeStubPi({ withDispatch });
       await drive("/ctx-stats", stub);
       expect(stub.sendUserMessage, `withDispatch=${withDispatch}`).not.toHaveBeenCalled();
+    }
+  });
+});
+
+// See change: add-rpc-stdin-dispatch-with-keeper-sidecar (task 7.7 + 9.1).
+// Direct-driver tests for tryDispatchExtensionCommand covering the
+// three-way decision (Paths B / C / D) and asserting mutual exclusion:
+// for any single dispatch, EXACTLY ONE of (pi.dispatchCommand call,
+// connection.send dispatch_extension_command, sink error feedback) fires.
+describe("tryDispatchExtensionCommand: Path B/C/D mutual exclusion", () => {
+  const ORIGINAL_ENV_FLAG = process.env.PI_DASHBOARD_SPAWNED;
+  const ORIGINAL_ARGV = process.argv;
+
+  function setHeadless(headless: boolean) {
+    if (headless) {
+      process.env.PI_DASHBOARD_SPAWNED = "1";
+      process.argv = ["node", "pi", "--mode", "rpc"];
+    } else {
+      delete process.env.PI_DASHBOARD_SPAWNED;
+      process.argv = ["node", "pi"];
+    }
+  }
+
+  beforeEach(() => { setHeadless(false); });
+  afterEach(() => {
+    if (ORIGINAL_ENV_FLAG === undefined) delete process.env.PI_DASHBOARD_SPAWNED;
+    else process.env.PI_DASHBOARD_SPAWNED = ORIGINAL_ENV_FLAG;
+    process.argv = ORIGINAL_ARGV;
+  });
+
+  function makePi(opts: { withDispatch?: boolean } = {}) {
+    const dispatchCommand = opts.withDispatch ? vi.fn(async () => undefined) : undefined;
+    const getCommands = vi.fn(() => [{ name: "ctx-stats", source: "extension" }]);
+    const pi: any = { getCommands };
+    if (dispatchCommand) pi.dispatchCommand = dispatchCommand;
+    return { pi, dispatchCommand };
+  }
+
+  function makeConn(): { conn: DispatchConnection; sent: ExtensionToServerMessage[] } {
+    const sent: ExtensionToServerMessage[] = [];
+    return { conn: { send: (m) => sent.push(m) }, sent };
+  }
+
+  it("Path B: pi.dispatchCommand present → dispatch called; no connection.send; sink gets started+completed", async () => {
+    const { pi, dispatchCommand } = makePi({ withDispatch: true });
+    const sink = vi.fn();
+    const { conn, sent } = makeConn();
+    setHeadless(true); // headless detection irrelevant when dispatchCommand exists
+
+    const handled = await tryDispatchExtensionCommand(pi, "/ctx-stats", "sid", sink, conn);
+    expect(handled).toBe(true);
+    expect(dispatchCommand).toHaveBeenCalledTimes(1);
+    expect(sent.filter((m) => m.type === "dispatch_extension_command")).toEqual([]);
+    const evs = sink.mock.calls
+      .map((c: any[]) => c[0])
+      .filter((m: any) => m?.event?.eventType === "command_feedback")
+      .map((m: any) => m.event.data.status);
+    expect(evs).toEqual(["started", "completed"]);
+  });
+
+  it("Path C: no dispatchCommand + headless + connection → dispatch_extension_command emitted; no terminal feedback from bridge", async () => {
+    const { pi, dispatchCommand } = makePi({ withDispatch: false });
+    expect(dispatchCommand).toBeUndefined();
+    const sink = vi.fn();
+    const { conn, sent } = makeConn();
+    setHeadless(true);
+
+    const handled = await tryDispatchExtensionCommand(pi, "/ctx-stats", "sid-abc", sink, conn);
+    expect(handled).toBe(true);
+
+    // Exactly one dispatch_extension_command emission with the right shape.
+    const dispatches = sent.filter((m): m is Extract<ExtensionToServerMessage, { type: "dispatch_extension_command" }> =>
+      m.type === "dispatch_extension_command");
+    expect(dispatches).toHaveLength(1);
+    expect(dispatches[0].sessionId).toBe("sid-abc");
+    expect(dispatches[0].command).toBe("/ctx-stats");
+    expect(typeof dispatches[0].requestId).toBe("string");
+    expect(dispatches[0].requestId.length).toBeGreaterThan(0);
+
+    // Bridge emitted started ONLY — server is responsible for the terminal event.
+    const evs = sink.mock.calls
+      .map((c: any[]) => c[0])
+      .filter((m: any) => m?.event?.eventType === "command_feedback")
+      .map((m: any) => m.event.data.status);
+    expect(evs).toEqual(["started"]);
+  });
+
+  it("Path D: no dispatchCommand + non-headless + connection → stopgap error; no connection.send", async () => {
+    const { pi } = makePi({ withDispatch: false });
+    const sink = vi.fn();
+    const { conn, sent } = makeConn();
+    setHeadless(false);
+
+    const handled = await tryDispatchExtensionCommand(pi, "/ctx-stats", "sid", sink, conn);
+    expect(handled).toBe(true);
+    expect(sent.filter((m) => m.type === "dispatch_extension_command")).toEqual([]);
+    const evs = sink.mock.calls
+      .map((c: any[]) => c[0])
+      .filter((m: any) => m?.event?.eventType === "command_feedback");
+    expect(evs).toHaveLength(2);
+    expect(evs[0].event.data.status).toBe("started");
+    expect(evs[1].event.data.status).toBe("error");
+    expect(evs[1].event.data.message).toMatch(/pi 0\.71\+/);
+  });
+
+  it("Path C degrades to Path D when connection arg is undefined", async () => {
+    const { pi } = makePi({ withDispatch: false });
+    const sink = vi.fn();
+    setHeadless(true);
+
+    const handled = await tryDispatchExtensionCommand(pi, "/ctx-stats", "sid", sink, undefined);
+    expect(handled).toBe(true);
+    const evs = sink.mock.calls
+      .map((c: any[]) => c[0])
+      .filter((m: any) => m?.event?.eventType === "command_feedback");
+    // started + error (Path D fallback) — NOT just started.
+    expect(evs.map((e: any) => e.event.data.status)).toEqual(["started", "error"]);
+  });
+
+  it("non-extension /skill:foo → returns false; no path fires; no events", async () => {
+    const pi: any = {
+      getCommands: () => [{ name: "skill:foo", source: "skill" }],
+      dispatchCommand: vi.fn(),
+    };
+    const sink = vi.fn();
+    const { conn, sent } = makeConn();
+    setHeadless(true);
+
+    const handled = await tryDispatchExtensionCommand(pi, "/skill:foo", "sid", sink, conn);
+    expect(handled).toBe(false);
+    expect(pi.dispatchCommand).not.toHaveBeenCalled();
+    expect(sent).toEqual([]);
+    expect(sink).not.toHaveBeenCalled();
+  });
+
+  it("mutual exclusion: across all single-dispatch invocations, exactly one of (B, C, D) fires", async () => {
+    type Scenario = { withDispatch: boolean; headless: boolean; expect: "B" | "C" | "D" };
+    const scenarios: Scenario[] = [
+      { withDispatch: true,  headless: true,  expect: "B" },
+      { withDispatch: true,  headless: false, expect: "B" },
+      { withDispatch: false, headless: true,  expect: "C" },
+      { withDispatch: false, headless: false, expect: "D" },
+    ];
+    for (const s of scenarios) {
+      const { pi, dispatchCommand } = makePi({ withDispatch: s.withDispatch });
+      const sink = vi.fn();
+      const { conn, sent } = makeConn();
+      setHeadless(s.headless);
+
+      await tryDispatchExtensionCommand(pi, "/ctx-stats", "sid", sink, conn);
+
+      const dispatchedB = !!dispatchCommand && dispatchCommand.mock.calls.length > 0;
+      const dispatchedC = sent.some((m) => m.type === "dispatch_extension_command");
+      const errorD = sink.mock.calls.some((c: any[]) =>
+        (c[0] as any)?.event?.data?.status === "error");
+
+      const fired = [dispatchedB && "B", dispatchedC && "C", errorD && "D"].filter(Boolean);
+      expect(fired, JSON.stringify(s)).toEqual([s.expect]);
     }
   });
 });

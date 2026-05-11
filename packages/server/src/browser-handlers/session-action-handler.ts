@@ -19,6 +19,7 @@ import {
   findPidByMarker,
 } from "@blackbelt-technology/pi-dashboard-shared/platform/process-identify.js";
 import { shouldInterceptReload } from "./session-action-helpers.js";
+import { keeperOptsFromSpawnResult } from "../headless-pid-registry.js";
 
 /**
  * Status message + code emitted when fork is attempted on a session whose
@@ -176,7 +177,13 @@ export async function handleHeadlessReload(
   }
 
   if (spawnResult.pid && spawnResult.process) {
-    headlessPidRegistry.register(spawnResult.pid, session.cwd, spawnResult.process);
+    headlessPidRegistry.register(
+      spawnResult.pid,
+      session.cwd,
+      spawnResult.process,
+      spawnResult.spawnToken,
+      keeperOptsFromSpawnResult(spawnResult),
+    );
   }
 
   emitCommandFeedback(ctx, msg.sessionId, "completed");
@@ -235,7 +242,13 @@ export async function handleSendPrompt(
       pendingDashboardSpawns?.set(promptSession.cwd, (pendingDashboardSpawns?.get(promptSession.cwd) ?? 0) + 1);
     }
     if (spawnResult.process && spawnResult.pid) {
-      headlessPidRegistry.register(spawnResult.pid, promptSession.cwd, spawnResult.process);
+      headlessPidRegistry.register(
+        spawnResult.pid,
+        promptSession.cwd,
+        spawnResult.process,
+        spawnResult.spawnToken,
+        keeperOptsFromSpawnResult(spawnResult),
+      );
     }
   } else {
     const sent = piGateway.sendToSession(msg.sessionId, {
@@ -303,6 +316,7 @@ export async function handleResumeSession(
         session.cwd,
         degradeResult.process,
         degradeResult.spawnToken,
+        keeperOptsFromSpawnResult(degradeResult),
       );
     }
     if (msg.requestId && degradeResult.spawnToken && pendingClientCorrelations) {
@@ -364,7 +378,13 @@ export async function handleResumeSession(
     pendingDashboardSpawns?.set(session.cwd, (pendingDashboardSpawns?.get(session.cwd) ?? 0) + 1);
   }
   if (result.process && result.pid) {
-    headlessPidRegistry.register(result.pid, session.cwd, result.process, result.spawnToken);
+    headlessPidRegistry.register(
+      result.pid,
+      session.cwd,
+      result.process,
+      result.spawnToken,
+      keeperOptsFromSpawnResult(result),
+    );
   }
   sendTo(ws, { type: "resume_result", sessionId: msg.sessionId, success: result.success, message: result.message, requestId: msg.requestId });
 }
@@ -412,7 +432,13 @@ export async function handleSpawnSession(
   try {
     const spawnResult = await spawnPiSession(msg.cwd, { strategy });
     if (spawnResult.process && spawnResult.pid) {
-      headlessPidRegistry.register(spawnResult.pid, msg.cwd, spawnResult.process, spawnResult.spawnToken);
+      headlessPidRegistry.register(
+        spawnResult.pid,
+        msg.cwd,
+        spawnResult.process,
+        spawnResult.spawnToken,
+        keeperOptsFromSpawnResult(spawnResult),
+      );
     }
     // Record client-correlation so the eventual session_added carries
     // spawnRequestId. See change: spawn-correlation-token.

@@ -17,6 +17,7 @@ import type { BootstrapStateStore } from "./bootstrap-state.js";
 import type { BootstrapQueue } from "./bootstrap-queue.js";
 import { attachRenameTarget, detachShouldClearName } from "./proposal-attach-naming.js";
 import { FORK_DEGRADED_TO_NEW_MESSAGE, FORK_DEGRADED_TO_NEW_CODE } from "./browser-handlers/session-action-handler.js";
+import { keeperOptsFromSpawnResult } from "./headless-pid-registry.js";
 
 export interface SessionApiDeps {
   sessionManager: SessionManager;
@@ -239,7 +240,13 @@ export function registerSessionApi(fastify: FastifyInstance, deps: SessionApiDep
         const config = loadConfig();
         const spawnResult = await spawnPiSession(cwd, { strategy: config.spawnStrategy });
         if (spawnResult.process && spawnResult.pid) {
-          browserGateway.headlessPidRegistry.register(spawnResult.pid, cwd, spawnResult.process);
+          browserGateway.headlessPidRegistry.register(
+            spawnResult.pid,
+            cwd,
+            spawnResult.process,
+            spawnResult.spawnToken,
+            keeperOptsFromSpawnResult(spawnResult),
+          );
         }
         if (spawnResult.dashboardSpawned && spawnResult.success) {
           pendingDashboardSpawns?.set(cwd, (pendingDashboardSpawns?.get(cwd) ?? 0) + 1);
@@ -309,6 +316,7 @@ export function registerSessionApi(fastify: FastifyInstance, deps: SessionApiDep
             session.cwd,
             degradeResult.process,
             degradeResult.spawnToken,
+            keeperOptsFromSpawnResult(degradeResult),
           );
         }
         if (degradeResult.dashboardSpawned && degradeResult.success) {

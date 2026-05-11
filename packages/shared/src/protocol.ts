@@ -289,6 +289,23 @@ export interface UiDataListMessage {
   items: unknown[];
 }
 
+// ── RPC keeper: bridge → server slash dispatch ──
+// See change: add-rpc-stdin-dispatch-with-keeper-sidecar.
+//
+// Emitted by `slash-dispatch.ts::tryDispatchExtensionCommand` when the
+// active pi build does NOT expose `pi.dispatchCommand` AND the bridge
+// detects a headless RPC pi (per `isHeadlessRpcSession()`). The server's
+// dispatch-router writes `{type:"prompt", message: command, id: requestId}`
+// to the session's keeper UDS / named pipe and emits the optimistic
+// `command_feedback {status:"completed"}` (or error) to browser subscribers.
+export interface DispatchExtensionCommandMessage {
+  type: "dispatch_extension_command";
+  sessionId: string;
+  command: string;
+  /** UUID minted by the bridge so pi's RPC response can be correlated. */
+  requestId: string;
+}
+
 // ── Extension UI System (Phase 2: live in-page decorations) ──
 // See change: add-extension-ui-decorations.
 
@@ -354,7 +371,8 @@ export type ExtensionToServerMessage =
   | UiModulesListMessage
   | UiDataListMessage
   | ExtUiDecoratorMessage
-  | AssetRegisterMessage;
+  | AssetRegisterMessage
+  | DispatchExtensionCommandMessage;
 
 // ── Server → Extension ──────────────────────────────────────────────
 

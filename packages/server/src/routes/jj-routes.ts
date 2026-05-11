@@ -22,6 +22,7 @@ import type { ApiResponse } from "@blackbelt-technology/pi-dashboard-shared/type
 import type { BrowserGateway } from "../browser-gateway.js";
 import type { PendingAttachRegistry } from "../pending-attach-registry.js";
 import { spawnPiSession } from "../process-manager.js";
+import { keeperOptsFromSpawnResult } from "../headless-pid-registry.js";
 import type { NetworkGuard } from "./route-deps.js";
 import { safeRealpathSync } from "../resolve-path.js";
 
@@ -218,6 +219,8 @@ export function registerJjRoutes(fastify: FastifyInstance, deps: JjRoutesDeps) {
             spawnResult.pid,
             realDestPath,
             spawnResult.process,
+            spawnResult.spawnToken,
+            keeperOptsFromSpawnResult(spawnResult),
           );
         }
         if (!spawnResult.success) {

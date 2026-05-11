@@ -714,11 +714,15 @@ function initBridge(pi: ExtensionAPI) {
 
       // Extension-command dispatch (routing step 9). When matched, the helper
       // emits its own command_feedback events and we MUST NOT fall through.
+      // The `connection` arg enables Path C (headless RPC → server-routed
+      // dispatch via the keeper UDS); see change:
+      // add-rpc-stdin-dispatch-with-keeper-sidecar.
       const handled = await tryDispatchExtensionCommand(
         pi,
         text,
         sessionId,
         (msg) => connection.send(msg),
+        connection,
       );
       if (handled) return;
 

@@ -1,0 +1,298 @@
+/**
+ * KeeperManager unit tests (task 4.6).
+ *
+ * Mocks `spawnDetached` and `net.createConnection` to assert:
+ *   - spawnKeeperFor argv / spawn options shape
+ *   - writeRpc retry-then-succeed and retry-then-fail behavior
+ *   - killKeeper sends SIGTERM to the tracked PID via killPidWithGroup
+ *   - discoverExistingKeepers correctly classifies live / stale / orphan
+ *
+ * Integration of the real keeper.cjs binary is exercised in
+ * `rpc-keeper/__tests__/keeper.test.ts`; this file stays at unit-level.
+ */
+import { EventEmitter } from "node:events";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import net from "node:net";
+import path from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type {
+  SpawnDetachedOptions,
+  SpawnDetachedResult,
+} from "@blackbelt-technology/pi-dashboard-shared/platform/detached-spawn.js";
+import type { ChildProcess } from "@blackbelt-technology/pi-dashboard-shared/platform/exec.js";
+import {
+  createKeeperManager,
+  pidPathFor,
+  sockPathFor,
+  type KeeperManagerOptions,
+} from "../rpc-keeper/keeper-manager.js";
+
+// ── Fake spawnDetached ───────────────────────────────────────────────────────
+
+class FakeChildProcess extends EventEmitter {
+  pid: number | undefined;
+  unref = vi.fn();
+  kill = vi.fn();
+  stdio = [null, null, null] as const;
+  constructor(pid: number | undefined) {
+    super();
+    this.pid = pid;
+  }
+}
+
+function makeFakeSpawnDetached(opts: { pid?: number; ok?: boolean; error?: string } = {}): {
+  spawn: (opts: SpawnDetachedOptions) => Promise<SpawnDetachedResult>;
+  calls: SpawnDetachedOptions[];
+  lastChild: { current: FakeChildProcess | null };
+} {
+  const calls: SpawnDetachedOptions[] = [];
+  const lastChild = { current: null as FakeChildProcess | null };
+  const spawn = async (spawnOpts: SpawnDetachedOptions): Promise<SpawnDetachedResult> => {
+    calls.push(spawnOpts);
+    if (opts.ok === false) return { ok: false, error: opts.error ?? "forced fail" };
+    const c = new FakeChildProcess(opts.pid);
+    lastChild.current = c;
+    return { ok: true, pid: opts.pid, process: c as unknown as ChildProcess };
+  };
+  return { spawn, calls, lastChild };
+}
+
+// ── Fake net.createConnection ────────────────────────────────────────────────
+
+interface FakeConnectionConfig {
+  attempts: Array<"connect-ok" | "error" | "timeout">;
+}
+
+class FakeSocket extends EventEmitter {
+  destroyed = false;
+  end = vi.fn((_data: unknown, _enc: unknown, cb?: () => void) => {
+    if (cb) setImmediate(cb);
+  });
+  destroy = vi.fn(() => { this.destroyed = true; });
+}
+
+function makeFakeCreateConnection(cfg: FakeConnectionConfig): {
+  createConnection: typeof net.createConnection;
+  connectCount: () => number;
+  pathsCalled: string[];
+} {
+  let i = 0;
+  const pathsCalled: string[] = [];
+  const fn = ((arg: string | net.NetConnectOpts) => {
+    const p = typeof arg === "string" ? arg : (arg as net.IpcNetConnectOpts).path;
+    if (typeof p === "string") pathsCalled.push(p);
+    const sock = new FakeSocket();
+    const behavior = cfg.attempts[i++] ?? "error";
+    setImmediate(() => {
+      if (behavior === "connect-ok") sock.emit("connect");
+      else if (behavior === "error") sock.emit("error", new Error("ECONNREFUSED"));
+      // "timeout" → do nothing; KeeperManager's per-attempt timer fires.
+    });
+    return sock as unknown as net.Socket;
+  }) as typeof net.createConnection;
+  return { createConnection: fn, connectCount: () => i, pathsCalled };
+}
+
+// ── Common setup ─────────────────────────────────────────────────────────────
+
+const KNOWN_DEAD_PID = 99999999; // far above max_pid; process.kill returns ESRCH
+
+let tmpRoot: string;
+let sessionsDir: string;
+
+beforeEach(() => {
+  tmpRoot = mkdtempSync(path.join("/tmp", "km-"));
+  sessionsDir = path.join(tmpRoot, ".pi", "dashboard", "sessions");
+});
+afterEach(() => {
+  rmSync(tmpRoot, { recursive: true, force: true });
+});
+
+function baseOpts(extra: Partial<KeeperManagerOptions> = {}): KeeperManagerOptions {
+  return {
+    sessionsDir,
+    keeperPath: path.resolve(__dirname, "..", "rpc-keeper", "keeper.cjs"),
+    nodeBinary: "/usr/bin/node",
+    platform: process.platform,
+    ...extra,
+  };
+}
+
+// ── Tests ────────────────────────────────────────────────────────────────────
+
+describe("KeeperManager.spawnKeeperFor", () => {
+  it("delegates to spawnDetached with `node <keeper.cjs> <sessionId>`", async () => {
+    const { spawn, calls } = makeFakeSpawnDetached({ pid: 12345 });
+    const km = createKeeperManager(baseOpts({ spawnDetached: spawn }));
+
+    const result = await km.spawnKeeperFor("sess-1", "/some/cwd", { FOO: "bar" });
+
+    expect(result.success).toBe(true);
+    expect(result.pid).toBe(12345);
+    expect(result.sockPath).toBe(sockPathFor(sessionsDir, "sess-1"));
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].cmd).toBe("/usr/bin/node");
+    expect(calls[0].args).toEqual([baseOpts().keeperPath!, "sess-1"]);
+    expect(calls[0].cwd).toBe("/some/cwd");
+    expect(calls[0].stdinMode).toBe("ignore");
+    expect(calls[0].detach).toBe(true);
+    expect((calls[0].env as { FOO?: string } | undefined)?.FOO).toBe("bar");
+  });
+
+  it("returns success: false when spawnDetached reports !ok", async () => {
+    const { spawn } = makeFakeSpawnDetached({ ok: false, error: "no pid available" });
+    const km = createKeeperManager(baseOpts({ spawnDetached: spawn }));
+    const result = await km.spawnKeeperFor("sess-x", "/cwd", {});
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/no pid/);
+  });
+
+  it("returns success: false when keeper.cjs path does not exist", async () => {
+    const { spawn } = makeFakeSpawnDetached({ pid: 1 });
+    const km = createKeeperManager(
+      baseOpts({ spawnDetached: spawn, keeperPath: "/does/not/exist/keeper.cjs" }),
+    );
+    const result = await km.spawnKeeperFor("sess-x", "/cwd", {});
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/keeper\.cjs not found/);
+  });
+});
+
+describe("KeeperManager.writeRpc", () => {
+  it("writes line on first successful attempt and returns true", async () => {
+    const cfg: FakeConnectionConfig = { attempts: ["connect-ok"] };
+    const { createConnection, connectCount, pathsCalled } = makeFakeCreateConnection(cfg);
+    const km = createKeeperManager(baseOpts({ createConnection }));
+
+    const ok = await km.writeRpc("sess-1", '{"x":1}');
+    expect(ok).toBe(true);
+    expect(connectCount()).toBe(1);
+    expect(pathsCalled[0]).toBe(sockPathFor(sessionsDir, "sess-1"));
+  });
+
+  it("retries after error and succeeds on attempt 2", async () => {
+    const cfg: FakeConnectionConfig = { attempts: ["error", "connect-ok"] };
+    const { createConnection, connectCount } = makeFakeCreateConnection(cfg);
+    const km = createKeeperManager(baseOpts({ createConnection }));
+
+    const ok = await km.writeRpc("sess-1", '{"x":1}');
+    expect(ok).toBe(true);
+    expect(connectCount()).toBe(2);
+  });
+
+  it("returns false after 3 failed attempts", async () => {
+    const cfg: FakeConnectionConfig = { attempts: ["error", "error", "error"] };
+    const { createConnection, connectCount } = makeFakeCreateConnection(cfg);
+    const km = createKeeperManager(baseOpts({ createConnection }));
+
+    const ok = await km.writeRpc("sess-1", '{"x":1}');
+    expect(ok).toBe(false);
+    expect(connectCount()).toBe(3);
+  });
+
+  it("appends trailing newline if missing", async () => {
+    let captured = "";
+    const fn = ((arg: unknown) => {
+      const sock = new FakeSocket();
+      sock.end = vi.fn((data: unknown, _enc: unknown, cb?: () => void) => {
+        captured = String(data);
+        if (cb) setImmediate(cb);
+      }) as unknown as FakeSocket["end"];
+      setImmediate(() => sock.emit("connect"));
+      return sock as unknown as net.Socket;
+    }) as typeof net.createConnection;
+
+    const km = createKeeperManager(baseOpts({ createConnection: fn }));
+    await km.writeRpc("sess-1", '{"x":1}');
+    expect(captured).toBe('{"x":1}\n');
+  });
+
+  it("does NOT append a second newline if line already ends with \\n", async () => {
+    let captured = "";
+    const fn = ((arg: unknown) => {
+      const sock = new FakeSocket();
+      sock.end = vi.fn((data: unknown, _enc: unknown, cb?: () => void) => {
+        captured = String(data);
+        if (cb) setImmediate(cb);
+      }) as unknown as FakeSocket["end"];
+      setImmediate(() => sock.emit("connect"));
+      return sock as unknown as net.Socket;
+    }) as typeof net.createConnection;
+
+    const km = createKeeperManager(baseOpts({ createConnection: fn }));
+    await km.writeRpc("sess-1", '{"x":1}\n');
+    expect(captured).toBe('{"x":1}\n');
+  });
+});
+
+describe("KeeperManager.killKeeper", () => {
+  it("returns false when no spawn has been tracked for sessionId", () => {
+    const km = createKeeperManager(baseOpts());
+    expect(km.killKeeper("never-spawned")).toBe(false);
+  });
+
+  it("sends SIGTERM to the tracked PID after a successful spawn", async () => {
+    const { spawn } = makeFakeSpawnDetached({ pid: 77777 });
+    const km = createKeeperManager(baseOpts({ spawnDetached: spawn }));
+    await km.spawnKeeperFor("sess-k", "/cwd", {});
+
+    const killSpy = vi.spyOn(process, "kill").mockImplementation(() => true);
+    const ok = km.killKeeper("sess-k");
+    expect(ok).toBe(true);
+    const target = process.platform === "win32" ? 77777 : -77777; // platform-branch-ok
+    expect(killSpy).toHaveBeenCalledWith(target, "SIGTERM");
+    killSpy.mockRestore();
+  });
+});
+
+describe("KeeperManager.discoverExistingKeepers", () => {
+  it("returns empty list when sessions dir is missing", async () => {
+    const km = createKeeperManager(baseOpts({ sessionsDir: path.join(tmpRoot, "nope") }));
+    const r = await km.discoverExistingKeepers();
+    expect(r).toEqual([]);
+  });
+
+  it("returns live entry when keeper PID and pi PID are both alive", async () => {
+    mkdirSync(sessionsDir, { recursive: true });
+    const sid = "sess-live";
+    const pidFile = pidPathFor(sessionsDir, sid);
+    writeFileSync(pidFile, String(process.pid));
+
+    const km = createKeeperManager(baseOpts({ isPiAliveForSession: () => true }));
+    const r = await km.discoverExistingKeepers();
+    expect(r).toHaveLength(1);
+    expect(r[0].sessionId).toBe(sid);
+    expect(r[0].keeperPid).toBe(process.pid);
+    expect(existsSync(pidFile)).toBe(true);
+  });
+
+  it("unlinks sidecar when keeper PID is dead", async () => {
+    mkdirSync(sessionsDir, { recursive: true });
+    const sid = "sess-dead-keeper";
+    const pidFile = pidPathFor(sessionsDir, sid);
+    writeFileSync(pidFile, String(KNOWN_DEAD_PID));
+
+    const km = createKeeperManager(baseOpts({ isPiAliveForSession: () => true }));
+    const r = await km.discoverExistingKeepers();
+    expect(r).toEqual([]);
+    expect(existsSync(pidFile)).toBe(false);
+  });
+
+  it("kills keeper and unlinks sidecar when pi is dead but keeper is alive", async () => {
+    mkdirSync(sessionsDir, { recursive: true });
+    const sid = "sess-orphan-keeper";
+    const pidFile = pidPathFor(sessionsDir, sid);
+    writeFileSync(pidFile, String(process.pid));
+
+    const killSpy = vi.spyOn(process, "kill").mockImplementation(() => true);
+    const km = createKeeperManager(baseOpts({ isPiAliveForSession: () => false }));
+    const r = await km.discoverExistingKeepers();
+    expect(r).toEqual([]);
+    const target = process.platform === "win32" ? process.pid : -process.pid; // platform-branch-ok
+    const sigtermCalls = killSpy.mock.calls.filter((c) => c[1] === "SIGTERM");
+    expect(sigtermCalls).toContainEqual([target, "SIGTERM"]);
+    expect(existsSync(pidFile)).toBe(false);
+    killSpy.mockRestore();
+  });
+});

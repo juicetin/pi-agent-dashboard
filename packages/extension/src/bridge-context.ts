@@ -89,6 +89,33 @@ export function hasDispatchCommand(pi: unknown): boolean {
   return typeof (pi as any)?.dispatchCommand === "function";
 }
 
+/**
+ * Pure predicate: is this bridge running inside a dashboard-spawned
+ * headless `pi --mode rpc` session?
+ *
+ * Both probes MUST be true:
+ *  1. `process.env.PI_DASHBOARD_SPAWNED === "1"` (set by
+ *     `process-manager.ts::buildSpawnEnv` for every dashboard-spawned session).
+ *  2. `process.argv` contains `--mode` adjacent to `rpc`.
+ *
+ * Either alone is insufficient: env-only matches dashboard-spawned tmux
+ * sessions; argv-only matches non-dashboard RPC invocations.
+ *
+ * Optional `env` / `argv` parameters exist purely for unit testing
+ * (defaulting to the live process state). See change:
+ * add-rpc-stdin-dispatch-with-keeper-sidecar (task 7.1).
+ */
+export function isHeadlessRpcSession(
+  env: NodeJS.ProcessEnv = process.env,
+  argv: ReadonlyArray<string> = process.argv,
+): boolean {
+  if (env.PI_DASHBOARD_SPAWNED !== "1") return false;
+  for (let i = 0; i < argv.length - 1; i++) {
+    if (argv[i] === "--mode" && argv[i + 1] === "rpc") return true;
+  }
+  return false;
+}
+
 /** Extract first user message text from session entries */
 export function extractFirstMessage(ctx: any): string | undefined {
   try {

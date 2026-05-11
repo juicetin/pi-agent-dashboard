@@ -2,24 +2,41 @@
  * Shared extension-slash-command dispatch branch used by both bridge.ts
  * (sessionPrompt callback) and command-handler.ts (slash else-arm fallback).
  *
- * Routing-step 9 from `command-routing` spec:
- *   - if text matches a registered extension command (per pi.getCommands(),
- *     filtered through `isExtensionSlashCommand`), dispatch via
- *     `pi.dispatchCommand` when available (pi 0.71+), else emit a
- *     `command_feedback { status: "error" }` stopgap.
- *   - if text is NOT an extension command, return `false` so the caller can
- *     fall through to its existing template-expansion / sendUserMessage path.
+ * Routing-step 9 from `command-routing` spec — three-way decision:
+ *   - Path B: when `pi.dispatchCommand` is a function → call it directly.
+ *   - Path C: when `pi.dispatchCommand` is absent AND the bridge runs inside a
+ *     dashboard-spawned headless `pi --mode rpc` AND a `connection` is wired
+ *     → emit `dispatch_extension_command` to the server (server forwards to
+ *     the per-session RPC keeper UDS and emits the terminal command_feedback).
+ *   - Path D (stopgap, last resort): `pi.dispatchCommand` absent AND the bridge
+ *     is NOT headless (tmux / wt / unrecognized spawn shape) OR no `connection`
+ *     was supplied → emit `command_feedback {status:"error"}` with a pi-version
+ *     reminder.
  *
- * Guarantees: EXACTLY ONE `started` event and EXACTLY ONE terminal event
- * (`completed` xor `error`) per dispatch. No `sendUserMessage` is invoked
- * by this helper — that is the caller's responsibility on the false return.
+ * If `text` is NOT an extension command, return `false` so the caller can
+ * fall through to its existing template-expansion / sendUserMessage path.
  *
- * See change: fix-extension-slash-commands-in-dashboard.
+ * Guarantees: EXACTLY ONE `started` event AND EXACTLY ONE terminal event
+ * (`completed` xor `error`) per dispatch, across all three paths combined.
+ * Path C does NOT emit a terminal event — the server emits it.
+ *
+ * See change: fix-extension-slash-commands-in-dashboard,
+ *             add-rpc-stdin-dispatch-with-keeper-sidecar.
  */
+import crypto from "node:crypto";
 import type { ExtensionToServerMessage } from "@blackbelt-technology/pi-dashboard-shared/protocol.js";
-import { hasDispatchCommand, isExtensionSlashCommand } from "./bridge-context.js";
+import { hasDispatchCommand, isExtensionSlashCommand, isHeadlessRpcSession } from "./bridge-context.js";
 
 export type FeedbackSink = (msg: ExtensionToServerMessage) => void;
+
+/**
+ * Minimal connection surface used by Path C. Concrete implementation is
+ * `ConnectionManager` (`connection.ts`) but a structural type keeps this
+ * helper unit-testable without a real WebSocket.
+ */
+export interface DispatchConnection {
+  send(msg: ExtensionToServerMessage): void;
+}
 
 const PI_071_REQUIRED =
   "Extension slash commands cannot be dispatched from the dashboard yet — requires pi 0.71+ (`pi.dispatchCommand`). Invoke from the pi TUI, or use the extension's tools directly.";
@@ -57,6 +74,7 @@ export async function tryDispatchExtensionCommand(
   text: string,
   sessionId: string,
   sink: FeedbackSink | undefined,
+  connection?: DispatchConnection,
 ): Promise<boolean> {
   // Defensive: pi.getCommands() can throw on a stale ctx during dispose.
   let commands: Array<{ name: string; source?: string }> = [];
@@ -72,6 +90,7 @@ export async function tryDispatchExtensionCommand(
 
   emitFeedback(sink, sessionId, text, "started");
 
+  // Path B (preferred when available): pi 0.71+ exposes dispatchCommand.
   if (hasDispatchCommand(pi)) {
     try {
       await (pi as any).dispatchCommand(text, { streamingBehavior: "followUp" });
@@ -83,7 +102,22 @@ export async function tryDispatchExtensionCommand(
     return true;
   }
 
-  // Stopgap: pi 0.70 — surface the limitation instead of silently sending to LLM.
+  // Path C: headless RPC session, dispatchCommand absent. Hand off to the
+  // server, which writes the line to the session's RPC keeper UDS and
+  // emits the terminal command_feedback. The bridge does NOT emit a
+  // terminal event for this path — that would duplicate the reducer's
+  // started→terminal upsert. See change: add-rpc-stdin-dispatch-with-keeper-sidecar.
+  if (connection && isHeadlessRpcSession()) {
+    connection.send({
+      type: "dispatch_extension_command",
+      sessionId,
+      command: text,
+      requestId: crypto.randomUUID(),
+    });
+    return true;
+  }
+
+  // Path D (stopgap): no dispatchCommand and not headless (tmux / wt / unrecognized).
   emitFeedback(sink, sessionId, text, "error", PI_071_REQUIRED);
   return true;
 }

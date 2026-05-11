@@ -19,6 +19,8 @@ import type { DashboardSession } from "@blackbelt-technology/pi-dashboard-shared
 import { detectOpenSpecActivity, isValidOpenSpecChangeSlug } from "@blackbelt-technology/pi-dashboard-shared/openspec-activity-detector.js";
 import { extractTurnStats } from "@blackbelt-technology/pi-dashboard-shared/stats-extractor.js";
 import { attachRenameTarget, isNameAutoSetFromAttachment } from "./proposal-attach-naming.js";
+import { handleDispatchExtensionCommand } from "./rpc-keeper/dispatch-router.js";
+import { keeperOptsFromSpawnResult } from "./headless-pid-registry.js";
 
 export interface EventWiringDeps {
   sessionManager: SessionManager;
@@ -811,7 +813,13 @@ export function wireEvents(deps: EventWiringDeps): void {
     if (msg.type === "spawn_new_session") {
       spawnPiSession(msg.cwd, { strategy: loadConfig().spawnStrategy }).then((result) => {
         if (result.process && result.pid) {
-          browserGateway.headlessPidRegistry.register(result.pid, msg.cwd, result.process);
+          browserGateway.headlessPidRegistry.register(
+            result.pid,
+            msg.cwd,
+            result.process,
+            result.spawnToken,
+            keeperOptsFromSpawnResult(result),
+          );
         }
         browserGateway.broadcastToAll({
           type: "spawn_result",
@@ -859,6 +867,28 @@ export function wireEvents(deps: EventWiringDeps): void {
         type: "process_list_update",
         sessionId,
         processes: msg.processes,
+      });
+    }
+
+    // RPC keeper dispatch: bridge → server slash command forward.
+    // Fire-and-forget; the handler itself emits browser-bound
+    // `command_feedback` events on success and on every failure path.
+    // The terminal event is persisted via eventStore.insertEvent so it
+    // survives browser reattach (otherwise the chat pill stays "in progress").
+    // See change: add-rpc-stdin-dispatch-with-keeper-sidecar (Phase 8).
+    if (msg.type === "dispatch_extension_command") {
+      void handleDispatchExtensionCommand(msg, {
+        headlessPidRegistry: browserGateway.headlessPidRegistry,
+        emitCommandFeedback: (sid, command, status, message) => {
+          const event = {
+            eventType: "command_feedback",
+            timestamp: Date.now(),
+            data: message === undefined ? { command, status } : { command, status, message },
+          };
+          const seq = eventStore.insertEvent(sid, event);
+          const stored = eventStore.getEvent(sid, seq) ?? event;
+          browserGateway.broadcastEvent(sid, seq, stored);
+        },
       });
     }
 

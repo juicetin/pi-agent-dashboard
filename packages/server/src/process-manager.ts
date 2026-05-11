@@ -23,7 +23,13 @@ import type { SpawnStrategy } from "@blackbelt-technology/pi-dashboard-shared/co
 import { MANAGED_BIN } from "@blackbelt-technology/pi-dashboard-shared/managed-paths.js";
 import { ToolResolver } from "@blackbelt-technology/pi-dashboard-shared/platform/binary-lookup.js";
 import { prependManagedNodeToPath } from "@blackbelt-technology/pi-dashboard-shared/platform/managed-node-path.js";
+import { loadConfig } from "@blackbelt-technology/pi-dashboard-shared/config.js";
 import { mintSpawnToken } from "./spawn-token.js";
+import {
+  createKeeperManager,
+  type KeeperManager,
+} from "./rpc-keeper/keeper-manager.js";
+import { randomUUID } from "node:crypto";
 import { execSync, spawnSync, buildSafeArgv } from "@blackbelt-technology/pi-dashboard-shared/platform/exec.js";
 import {
   spawnDetached,
@@ -50,6 +56,41 @@ export function setResolver(r: ToolResolver): void {
 /** Reset to default — used by tests to clean up. */
 export function resetResolver(): void {
   resolver = new ToolResolver({ processExecPath: process.execPath });
+}
+
+// ── KeeperManager seam (injectable for tests) ──────────────────────────
+
+let keeperManager: KeeperManager | null = null;
+
+/** Inject a KeeperManager — used by tests. Production code lazy-inits below. */
+export function setKeeperManager(km: KeeperManager | null): void {
+  keeperManager = km;
+}
+
+/**
+ * Public lazy accessor for the singleton `KeeperManager`. Exposed so the
+ * server-side dispatch handler (`rpc-keeper/dispatch-router.ts`) and
+ * `headlessPidRegistry.setKeeperWriter` can share the same instance the
+ * spawn path uses. Tests still inject via `setKeeperManager`.
+ * See change: add-rpc-stdin-dispatch-with-keeper-sidecar (Phase 6 + 8).
+ */
+export function getKeeperManager(): KeeperManager {
+  if (!keeperManager) keeperManager = createKeeperManager();
+  return keeperManager;
+}
+
+/**
+ * Hook used by tests to override the `useRpcKeeper` flag read from config
+ * without mutating `~/.pi/dashboard/config.json`. Returns `null` to defer
+ * to the real config.
+ */
+let useRpcKeeperOverride: boolean | null = null;
+export function _setUseRpcKeeperOverrideForTests(v: boolean | null): void {
+  useRpcKeeperOverride = v;
+}
+function shouldUseRpcKeeper(): boolean {
+  if (useRpcKeeperOverride !== null) return useRpcKeeperOverride;
+  try { return loadConfig().useRpcKeeper === true; } catch { return false; }
 }
 
 // ── Public API ─────────────────────────────────────────────────────────────
@@ -89,6 +130,15 @@ export interface SpawnResult {
    * See change: spawn-correlation-token.
    */
   spawnToken?: string;
+  /**
+   * RPC keeper UDS / named-pipe path. Set ONLY when the keeper-mediated
+   * spawn path was taken (`useRpcKeeper: true`). Callers pass this to
+   * `headlessPidRegistry.register(..., { keeperPid, keeperSockPath })` so
+   * later `writeRpc` / `killBySessionId` calls can locate the keeper.
+   * In keeper mode `pid` IS the keeper PID, so `keeperPid` is implicit.
+   * See change: add-rpc-stdin-dispatch-with-keeper-sidecar.
+   */
+  keeperSockPath?: string;
 }
 
 /**
@@ -395,6 +445,15 @@ async function spawnWt(cwd: string, options?: SessionOptions): Promise<SpawnResu
 async function spawnHeadless(cwd: string, options?: SessionOptions): Promise<SpawnResult> {
   const args = buildHeadlessArgs(options);
   const env = buildSpawnEnv(process.env, { spawnToken: options?.spawnToken });
+
+  // RPC keeper sidecar path (feature-flagged). When enabled, both Unix and
+  // Windows go through the keeper (uniform durability across OSes). The
+  // keeper spawns pi internally via its own PATH lookup, so we do NOT need
+  // to resolve pi here. See change: add-rpc-stdin-dispatch-with-keeper-sidecar.
+  if (shouldUseRpcKeeper()) {
+    return spawnHeadlessViaKeeper(cwd, env, args);
+  }
+
   const piCmd = resolvePiCommand();
   if (!piCmd) {
     return { success: false, code: "PI_NOT_FOUND", message: `pi binary not found. Checked: ${MANAGED_BIN} and system PATH.` };
@@ -427,6 +486,75 @@ async function spawnHeadless(cwd: string, options?: SessionOptions): Promise<Spa
     message: `Pi session spawned headless (pid ${r.pid})`,
     pid: r.pid,
     process: r.process,
+  };
+}
+
+/**
+ * RPC keeper sidecar headless spawn. Uniform across Unix + Windows.
+ *
+ * The keeper itself is a CJS-pure Node script (`rpc-keeper/keeper.cjs`).
+ * It binds a per-session UDS / named pipe BEFORE spawning pi, then owns
+ * pi's stdin pipe so it survives dashboard server restarts.
+ *
+ * Returned `pid` is the KEEPER PID (not pi's). Pi's PID is linked later
+ * via the existing `session_register` token correlation path.
+ *
+ * Crash-detection window applies to KEEPER spawn only — the keeper itself
+ * runs a separate 300 ms window on its pi child internally (and surfaces
+ * the failure by exiting non-zero, which will be picked up by
+ * `headless-pid-registry`'s PID-death tracking).
+ *
+ * See change: add-rpc-stdin-dispatch-with-keeper-sidecar (Phase 5).
+ */
+async function spawnHeadlessViaKeeper(
+  cwd: string,
+  env: NodeJS.ProcessEnv,
+  piArgs: string[],
+): Promise<SpawnResult> {
+  // sessionId is what the keeper uses to derive its UDS / named-pipe path.
+  // This is a TRANSPORT-side identifier, distinct from pi's session UUID
+  // (which only exists once pi's RPC mode boots). We mint a fresh one per
+  // spawn so the keeper's socket path is unique.
+  const transportId = randomUUID();
+
+  // piArgs already includes `--mode rpc` plus any per-spawn flags from
+  // `buildHeadlessArgs(options)` (e.g. `--session-file <path>` for resume,
+  // `--fork` for fork). Forwarding them through the keeper preserves the
+  // existing resume / fork contract. See change: add-rpc-stdin-dispatch-with-keeper-sidecar.
+  const km = getKeeperManager();
+  const result = await km.spawnKeeperFor(transportId, cwd, env, piArgs);
+  if (!result.success || !result.pid || !result.process) {
+    return {
+      success: false,
+      code: "SPAWN_ERRNO",
+      message: `Failed to spawn RPC keeper: ${result.error ?? "unknown error"}`,
+    };
+  }
+
+  // Crash-detection window on the keeper process itself. Keeper applies
+  // its own 300 ms window to pi internally; this catches keeper-side
+  // failures (bind failure, pi-spawn-error, etc.) that exit the keeper
+  // within the window.
+  const gate = await waitForNoCrash({ child: result.process, windowMs: 300 });
+  if (!gate.ok) {
+    return {
+      success: false,
+      code: "PI_CRASHED",
+      message:
+        `RPC keeper exited within crash window (code ${gate.exitCode}). ` +
+        `Check ~/.pi/dashboard/sessions/keeper-${transportId}.log for details.`,
+    };
+  }
+
+  return {
+    success: true,
+    dashboardSpawned: true,
+    message: `Pi session spawned via RPC keeper (keeper pid ${result.pid}, transport ${transportId.slice(0, 8)})`,
+    pid: result.pid,
+    process: result.process,
+    keeperSockPath: result.sockPath,
+    // spawnToken propagated by the outer wrapper; keeper-spawn doesn't
+    // mint its own. The token already lives in `env.PI_DASHBOARD_SPAWN_TOKEN`.
   };
 }
 

@@ -16,7 +16,7 @@ Documents how dashboard bridge routes typed `/foo` text from chat input to pi ha
 6. `/new` → `spawnNew()` callback
 7. `/model <provider/id>` → `setModel(provider, id)` callback
 8. `/<name>` matching user-defined flow from `getFlowsList()` → `pi.events.emit("flow:run", {flowName, task})`
-9. `/<name>` matching extension command (`source: "extension"` in `pi.getCommands()`, not in `DASHBOARD_NATIVE_COMMANDS`) → `pi.dispatchCommand` when present, else `command_feedback {status:"error"}` stopgap
+9. `/<name>` matching extension command (`source: "extension"` in `pi.getCommands()`, not in `DASHBOARD_NATIVE_COMMANDS`) → three-way decision: (B) `pi.dispatchCommand` when present → (C) headless RPC session with keeper → emit `dispatch_extension_command` to server, server writes RPC line to keeper UDS → (D) `command_feedback {status:"error"}` stopgap. Path C added by change `add-rpc-stdin-dispatch-with-keeper-sidecar`.
 10. `/` prefix fall-through → `expandPromptTemplateFromDisk` then `pi.sendUserMessage` (skills, prompt templates, unknown slashes)
 11. No prefix → `pi.sendUserMessage(text)` passthrough
 
@@ -41,8 +41,9 @@ flowchart TD
   SP --> F{Flow fast-path:<br/>name in getFlowsList()?}
   F -->|yes| FR["pi.events.emit('flow:run',{flowName,task})"]
   F -->|no| X{Step 9 gate:<br/>isExtensionSlashCommand(text, getCommands())}
-  X -->|true, dispatchCommand present| DC["pi.dispatchCommand(text,{streamingBehavior:'followUp'})"]
-  X -->|true, dispatchCommand absent| ER["emit command_feedback {status:'error'}"]
+  X -->|true, dispatchCommand present| DC["Path B: pi.dispatchCommand(text,{streamingBehavior:'followUp'})"]
+  X -->|true, dispatchCommand absent, isHeadlessRpcSession| RPC["Path C: connection.send({type:'dispatch_extension_command', sessionId, command, requestId})<br/>server -> keeper UDS -> pi.stdin -> session.prompt"]
+  X -->|true, dispatchCommand absent, non-headless| ER["Path D: emit command_feedback {status:'error'}"]
   X -->|false| FB["expandPromptTemplateFromDisk -> pi.sendUserMessage(expanded,{deliverAs:'followUp'})"]
 ```
 
@@ -97,9 +98,17 @@ Empirical proof: `echo '{"type":"prompt","message":"/flows:new","id":"1"}' | pi 
 
 **Rejected:**
 - Path A (bridge looks up handler via `getCommands()`): handler reference is private to runner, not on api object.
-- Path C (server bypasses bridge, writes RPC `prompt` to pi stdin): too invasive, splits session ops across bridge + server, requires stdin capture in `process-manager.ts` and rewiring `pi-gateway.ts`.
+- Path C (server bypasses bridge, writes RPC `prompt` to pi stdin): too invasive, splits session ops across bridge + server, requires stdin capture in `process-manager.ts` and rewiring `pi-gateway.ts`. **REOPENED in change `add-rpc-stdin-dispatch-with-keeper-sidecar`** after Path B failed to ship through pi 0.71 → 0.72 → 0.73 → 0.74. Scope narrowed to slash dispatch only via per-session keeper sidecar; dual-channel boundary made explicit; bridge owns everything else.
 
-Cross-reference: design.md Decision 1.
+### Path C: server-routed via RPC keeper
+
+Applies to headless dashboard sessions only (tmux / Windows Terminal cannot use it — the user's terminal owns pi's stdin). Bridge probe: `process.env.PI_DASHBOARD_SPAWNED === "1"` AND argv contains `--mode rpc`.
+
+Flow: bridge emits `started`, sends `dispatch_extension_command {sessionId, command, requestId}` to server. Server's `dispatch-router.ts` writes `{"type":"prompt","message":"<command>","id":"<requestId>"}` to per-session keeper UDS via `headlessPidRegistry.writeRpc`. Keeper forwards to pi's stdin. Pi's `--mode rpc` calls `session.prompt(text, {expandPromptTemplates: true})` → `_tryExecuteExtensionCommand` runs handler. Server emits optimistic `command_feedback {completed}` on UDS write success, `{error}` on failure. Bridge MUST NOT emit a terminal event for Path C — server owns it.
+
+Gated by `useRpcKeeper: true` in `~/.pi/dashboard/config.json`. Default off (Phase 1). See `docs/architecture.md` § "RPC keeper sidecar" for the three-process topology + dual-channel boundary.
+
+Cross-reference: design.md Decision 1; change `add-rpc-stdin-dispatch-with-keeper-sidecar`.
 
 ### Decision 2: Extension-command detection rule
 
@@ -153,9 +162,12 @@ flowchart TD
   FS --> D{typeof pi.dispatchCommand === 'function'}
   D -->|true: Path B| DC["pi.dispatchCommand(text,{streamingBehavior:'followUp'})"]
   DC --> CP["emit command_feedback {status:'completed'}"]
-  D -->|false: Path D stopgap| EE["emit command_feedback {status:'error', message:<reason>}"]
+  D -->|false| H{isHeadlessRpcSession?<br/>(env+argv probe)}
+  H -->|true: Path C| RPC["connection.send dispatch_extension_command<br/>server writes RPC line to keeper UDS<br/>server emits started/completed/error"]
+  H -->|false: Path D stopgap| EE["emit command_feedback {status:'error', message:<reason>}"]
   EE --> X1["NO sendUserMessage call"]
   DC --> X2["NO sendUserMessage call"]
+  RPC --> X3["NO sendUserMessage call"]
 ```
 
 - Path D ships standalone in dashboard release. No upstream dependency.
@@ -230,10 +242,13 @@ Pi's `_tryExecuteExtensionCommand` swallows handler exceptions and emits `extens
 ## Cross-References
 
 - Spec: `openspec/specs/command-routing/spec.md`
-- Change folder: `openspec/changes/fix-extension-slash-commands-in-dashboard/`
+- Change folders: `openspec/changes/fix-extension-slash-commands-in-dashboard/`, `openspec/changes/add-rpc-stdin-dispatch-with-keeper-sidecar/`
 - Bridge: `packages/extension/src/bridge.ts` (sessionPrompt callback, line ~669)
 - Command handler: `packages/extension/src/command-handler.ts` (parseSendPrompt + slash routing branches, line ~256)
-- Helper module: `packages/extension/src/bridge-context.ts` (DASHBOARD_NATIVE_COMMANDS, filterHiddenCommands, target home of isExtensionSlashCommand)
+- Helper module: `packages/extension/src/bridge-context.ts` (DASHBOARD_NATIVE_COMMANDS, filterHiddenCommands, target home of isExtensionSlashCommand, isHeadlessRpcSession)
+- Slash dispatcher: `packages/extension/src/slash-dispatch.ts` (`tryDispatchExtensionCommand` — three-way Path B/C/D decision)
+- Keeper sidecar: `packages/server/src/rpc-keeper/keeper.cjs`, `packages/server/src/rpc-keeper/keeper-manager.ts`, `packages/server/src/rpc-keeper/dispatch-router.ts`
+- Architecture: `docs/architecture.md` § "RPC keeper sidecar"
 - Pi internals (read-only reference):
   - `~/.nvm/versions/node/v25.8.1/lib/node_modules/@mariozechner/pi-coding-agent/dist/core/extensions/types.d.ts:770` ExtensionAPI surface
   - `~/.nvm/versions/node/v25.8.1/lib/node_modules/@mariozechner/pi-coding-agent/dist/core/agent-session.js:798` _tryExecuteExtensionCommand

@@ -6,7 +6,7 @@
  * regression: see openspec/changes/fix-extension-slash-commands-in-dashboard/
  */
 import { describe, it, expect } from "vitest";
-import { isExtensionSlashCommand } from "../bridge-context.js";
+import { isExtensionSlashCommand, isHeadlessRpcSession } from "../bridge-context.js";
 
 describe("isExtensionSlashCommand", () => {
   it("detects a bare extension command", () => {
@@ -72,6 +72,36 @@ describe("isExtensionSlashCommand", () => {
   it("rejects empty slash `/`", () => {
     expect(
       isExtensionSlashCommand("/", [{ name: "ctx-stats", source: "extension" }]),
+    ).toBe(false);
+  });
+});
+
+// See change: add-rpc-stdin-dispatch-with-keeper-sidecar (task 7.2).
+describe("isHeadlessRpcSession", () => {
+  it("returns true when env=1 AND argv contains --mode rpc", () => {
+    expect(
+      isHeadlessRpcSession(
+        { PI_DASHBOARD_SPAWNED: "1" },
+        ["node", "pi", "--mode", "rpc"],
+      ),
+    ).toBe(true);
+  });
+
+  it("returns false when env unset (non-dashboard RPC)", () => {
+    expect(isHeadlessRpcSession({}, ["node", "pi", "--mode", "rpc"])).toBe(false);
+  });
+
+  it("returns false when argv has no --mode rpc (dashboard tmux)", () => {
+    expect(isHeadlessRpcSession({ PI_DASHBOARD_SPAWNED: "1" }, ["node", "pi"])).toBe(false);
+  });
+
+  it("returns false when neither env nor argv match", () => {
+    expect(isHeadlessRpcSession({}, ["node", "pi"])).toBe(false);
+  });
+
+  it("returns false when --mode is followed by non-rpc value", () => {
+    expect(
+      isHeadlessRpcSession({ PI_DASHBOARD_SPAWNED: "1" }, ["node", "pi", "--mode", "interactive"]),
     ).toBe(false);
   });
 });

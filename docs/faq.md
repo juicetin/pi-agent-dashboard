@@ -855,6 +855,22 @@ Cross-refs:
 - docs/installation-windows.md:172
 - docs/installation-windows.md:180
 
+## Why does /ctx-stats work in some sessions but not others?
+
+Pi 0.74 `ExtensionAPI` exposes no `dispatchCommand`. Bridge cannot reach `session.prompt` from inside pi.
+
+Dashboard spawns three session types:
+
+- **Headless RPC** with `useRpcKeeper: true` in `~/.pi/dashboard/config.json` (default `false`): work. Server writes JSON-line to per-session keeper UDS (`~/.pi/dashboard/sessions/<sid>.rpc.sock` Unix; `\\.\pipe\pi-rpc-<sid>` Windows); keeper forwards to pi's stdin; pi's `--mode rpc` runs `session.prompt()` → dispatch.
+- **Headless RPC** with `useRpcKeeper: false`: surface `command_feedback {status:"error"}` stopgap ("requires pi 0.71+"). Default state.
+- **Tmux / Windows Terminal**: cannot work via dashboard chat regardless of flag. User's terminal owns pi's stdin; no UDS route exists. Use the pi TUI directly for slash commands in those sessions.
+
+Three-way decision lives in `packages/extension/src/slash-dispatch.ts::tryDispatchExtensionCommand` (Path B → Path C → Path D).
+
+Activates the full Path B behavior automatically once upstream `pi.dispatchCommand` ships in pi 0.75+.
+
+See change: `add-rpc-stdin-dispatch-with-keeper-sidecar`. See also `docs/architecture.md` § "RPC keeper sidecar" and `docs/slash-command.md` § "Path C".
+
 ## Why does Windows session spawning fail with 'spawn npm ENOENT'?
 
 Electron wizard only — old build before commit `29af651`. Windows `npm` is actually `npm.cmd` (batch wrapper). `child_process.spawn("npm", ...)` without `.cmd` extension fails on Windows.

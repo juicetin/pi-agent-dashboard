@@ -1179,6 +1179,42 @@ Every mechanism branch forwards `sessionFile` + `mode` via the shared `sessionFl
 
 On Windows, `spawnDetached` uses `detached: true` which (via libuv's `src/win/process.c`) emits `DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP` and critically does NOT call `AssignProcessToJobObject` on the parent's global Job Object. This excludes the child from the parent's `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` job, so pi sessions survive when the dashboard server exits — matching Unix PGID behavior. The `headlessPidRegistry` reconciles these survivors on server restart.
 
+### RPC keeper sidecar
+
+Introduced by change `add-rpc-stdin-dispatch-with-keeper-sidecar`. Experimental, gated by `useRpcKeeper` config flag (default `false`). Resolves typed extension slash commands (`/ctx-stats`, `/curator`, `/agents`, `/flows:*`) in headless dashboard sessions despite pi 0.74 `ExtensionAPI` exposing no `dispatchCommand`.
+
+Per-session keeper process owns pi's stdin pipe. Server writes RPC lines to keeper via UDS (Unix) or named pipe (Windows). Keeper forwards verbatim to pi's stdin. Pi's `--mode rpc` reader runs `session.prompt(text, {expandPromptTemplates: true})` which dispatches slash commands.
+
+Keeper outlives dashboard server restarts. Replaces Unix `tail -f /dev/null | pi` wrapper. Brings Windows to durability parity (today Windows loses pi on server death).
+
+Three-process topology + dual-channel boundary:
+
+```mermaid
+flowchart LR
+  S["dashboard server"]
+  K["keeper.cjs<br/>(1 per session)"]
+  P["pi --mode rpc"]
+  B["bridge.ts<br/>(loaded inside pi)"]
+
+  S -->|"UDS /<sessionId>.rpc.sock<br/>(slash dispatch only)"| K
+  K -->|"pi.stdin pipe<br/>(forward JSON lines)"| P
+  P --- B
+  B -->|"bridge WS<br/>(events, send_prompt non-slash, abort, model, etc.)"| S
+```
+
+UDS path: `~/.pi/dashboard/sessions/<sessionId>.rpc.sock`. Windows pipe: `\\.\pipe\pi-rpc-<sessionId>`. Keeper PID sidecar: `<sockPath>.pid`. Server scans on startup for orphan-cleanup + reattach.
+
+Protocol: line-framed JSON, fire-and-forget. Server writes `{"type":"prompt","message":"/cmd","id":"<requestId>"}\n`. Keeper forwards raw line; no parsing, no response. Acknowledgement implicit (UDS write success).
+
+Dual-channel boundary explicit:
+- **Bridge WS** owns: send_prompt non-slash, abort, model switch, thinking-level, compaction, rename, events, flow control.
+- **Server → keeper UDS** owns: extension slash dispatch only.
+- **headlessPidRegistry kill** owns: kill-by-pid for shutdown / force-kill / reload.
+
+Bridge cannot reach `session.prompt` from inside pi 0.74. Server can (owns spawn + keeper). Routing slash dispatch through the channel that has the capability is correct given the constraint.
+
+Lifecycle: pi exits → keeper exits 0, unlinks socket + pid sidecar. Keeper crashes → pi reads EOF on stdin → exits. Force-kill → server kills pi PID first, schedules 200 ms keeper-fallback SIGTERM. Tmux / Windows-Terminal sessions retain the existing `command_feedback {error}` stopgap (terminal owns pi's stdin, no UDS route).
+
 ### Server Log Hygiene
 
 The daemon log at `~/.pi/dashboard/server.log` is opened in **append mode** (`"a"`) so crash output from prior start attempts survives subsequent retries — essential for diagnosing silent failures. Each attempt writes a timestamped header to distinguish runs:

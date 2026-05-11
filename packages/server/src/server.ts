@@ -1178,6 +1178,19 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
       // Clean up orphan headless processes from a previous server instance
       browserGateway.headlessPidRegistry.cleanupOrphans();
 
+      // Wire the singleton KeeperManager into the headless-pid registry so
+      // `writeRpc` can forward `dispatch_extension_command` lines to the
+      // session's keeper UDS, and so `cleanupKeeperOrphans` can reattach
+      // surviving keepers after a server restart. Same instance the spawn
+      // path uses. See change: add-rpc-stdin-dispatch-with-keeper-sidecar.
+      try {
+        const { getKeeperManager } = await import("./process-manager.js");
+        browserGateway.headlessPidRegistry.setKeeperWriter(getKeeperManager());
+        await browserGateway.headlessPidRegistry.cleanupKeeperOrphans();
+      } catch (err) {
+        console.warn("[dashboard] keeper-manager wire-up failed (RPC dispatch disabled):", err);
+      }
+
       // Clean up orphan code-server processes from a previous server instance.
       // Runs before fastify.listen, so no editor start request can race with the sweep.
       await editorPidRegistry.cleanupOrphans();

@@ -37,6 +37,7 @@ import {
   publishSessionEvent,
   clearSessionEvents,
   publishSessionData,
+  intentStore,
 } from "@blackbelt-technology/dashboard-plugin-runtime";
 
 export interface MessageHandlerSetters {
@@ -224,6 +225,21 @@ export function useMessageHandler(
           next.set(msg.sessionId, { ...existing, assets });
           return next;
         });
+        break;
+
+      // Plugin-emitted intent broadcast — update the IntentStore so slot
+      // consumers re-render via useSlotIntents. Server caches the latest
+      // intent per (pluginId, sessionId, slot) for replay on subscribe.
+      // See change: adopt-server-driven-intent-rendering.
+      case "plugin_intents":
+        intentStore.set(
+          {
+            pluginId: msg.pluginId,
+            sessionId: msg.sessionId,
+            slot: msg.slot,
+          },
+          msg.intent,
+        );
         break;
 
       case "commands_list":

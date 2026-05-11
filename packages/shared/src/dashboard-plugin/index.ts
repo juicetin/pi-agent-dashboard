@@ -10,3 +10,4 @@ export * from "./manifest-types.js";
 export * from "./slot-props.js";
 export * from "./plugin-status.js";
 export * from "./ui-primitives.js";
+export * from "./intent-types.js";

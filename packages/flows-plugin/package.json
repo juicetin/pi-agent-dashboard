@@ -34,6 +34,7 @@
     "displayName": "Flows",
     "priority": 100,
     "client": "./src/client/index.tsx",
+    "server": "./src/server/index.ts",
     "claims": [
       { "slot": "session-card-badge", "component": "FlowActivityBadgeClaim" },
       { "slot": "session-card-action-bar", "component": "SessionFlowActionsClaim" },

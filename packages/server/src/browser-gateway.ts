@@ -111,6 +111,17 @@ export interface BrowserGateway {
   onConnect?: (ws: WebSocket) => void;
   /** Broadcast a message to all connected clients */
   broadcast(msg: ServerToBrowserMessage): void;
+  /**
+   * Register a handler for a Browser→Server message type the gateway does
+   * not natively handle. Used by plugins to receive `plugin_action`
+   * messages without modifying the gateway's switch statement.
+   * See change: adopt-server-driven-intent-rendering.
+   */
+  registerHandler(
+    type: string,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    handler: (msg: any, ws: WebSocket) => void,
+  ): void;
 }
 
 export function createBrowserGateway(
@@ -130,6 +141,14 @@ export function createBrowserGateway(
   pendingClientCorrelations?: import("./pending-client-correlations.js").PendingClientCorrelations,
 ): BrowserGateway {
   const wss = new WebSocketServer({ noServer: true });
+
+  /**
+   * Plugin-registered handlers for custom Browser→Server message types.
+   * Lives outside subscriptions because handlers are global, not per-WS.
+   * See change: adopt-server-driven-intent-rendering.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const customHandlers = new Map<string, (msg: any, ws: WebSocket) => void>();
 
   // Track subscriptions: ws → Set<sessionId>
   const subscriptions = new Map<WebSocket, Set<string>>();
@@ -532,10 +551,17 @@ export function createBrowserGateway(
             viewedSessionTracker.unview(msg.sessionId, ws);
             break;
           }
-          default:
-            // Forward simple pi-gateway commands
-            handlePiGatewayForward(msg, ctx);
+          default: {
+            // Plugin-registered custom handler takes precedence over pi-gateway forward.
+            const type = (msg as { type?: string } | undefined)?.type;
+            if (type && customHandlers.has(type)) {
+              customHandlers.get(type)!(msg, ws);
+            } else {
+              // Forward simple pi-gateway commands
+              handlePiGatewayForward(msg, ctx);
+            }
             break;
+          }
         }
       } catch (err) {
         const type = (msg as { type?: string } | undefined)?.type ?? "unknown";
@@ -566,6 +592,10 @@ export function createBrowserGateway(
 
     broadcast(msg: ServerToBrowserMessage) {
       broadcast(msg);
+    },
+
+    registerHandler(type, handler) {
+      customHandlers.set(type, handler);
     },
 
     broadcastEvent(sessionId: string, seq: number, event: any) {

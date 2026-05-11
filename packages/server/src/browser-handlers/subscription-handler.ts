@@ -5,6 +5,7 @@ import type { WebSocket } from "ws";
 import type { ServerToBrowserMessage, BrowserToServerMessage } from "@blackbelt-technology/pi-dashboard-shared/browser-protocol.js";
 import type { BrowserHandlerContext } from "./handler-context.js";
 import { extractStatsFromEvents } from "../event-status-extraction.js";
+import { pluginIntentCache } from "../plugin-intent-cache.js";
 import type { StoredEvent } from "../memory-event-store.js";
 
 const REPLAY_BATCH_SIZE = 50;
@@ -93,6 +94,28 @@ export function replayUiState(
     for (const descriptor of Object.values(session.uiDecorators)) {
       sendTo(ws, { type: "ext_ui_decorator", sessionId, descriptor } as any);
     }
+  }
+
+  // Replay cached plugin intents for this session (per-session AND global).
+  // See change: adopt-server-driven-intent-rendering.
+  for (const entry of pluginIntentCache.getForSession(sessionId)) {
+    sendTo(ws, {
+      type: "plugin_intents",
+      pluginId: entry.pluginId,
+      sessionId: entry.sessionId,
+      slot: entry.slot,
+      intent: entry.intent,
+    } as any);
+  }
+  // Also replay global (sessionId === null) intents.
+  for (const entry of pluginIntentCache.getForSession(null)) {
+    sendTo(ws, {
+      type: "plugin_intents",
+      pluginId: entry.pluginId,
+      sessionId: null,
+      slot: entry.slot,
+      intent: entry.intent,
+    } as any);
   }
 }
 

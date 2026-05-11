@@ -98,6 +98,44 @@ describe("discoverPlugins", () => {
     const second = discoverPlugins(tmpDir);
     expect(first).toBe(second);
   });
+
+  it("explicit repoRoot bypasses auto-discovery (test/build call path)", () => {
+    // When repoRoot is passed, discoverPlugins uses ONLY <repoRoot>/packages
+    // and does NOT additionally consult monorepo/installed/bundled dirs.
+    writePlugin("explicit-plugin", {
+      id: "explicit-plugin",
+      displayName: "E",
+      claims: [],
+    });
+    const plugins = discoverPlugins(tmpDir);
+    expect(plugins).toHaveLength(1);
+    expect(plugins[0].manifest.id).toBe("explicit-plugin");
+  });
+
+  it("dedupes plugins by id when same id appears in multiple search dirs", () => {
+    // Create the SAME plugin id in two different packages/ subdirs to
+    // simulate monorepo + installed overlap. Both are under the same
+    // tmpDir/packages root for this test, so simulate by writing two
+    // packages with the SAME id.
+    writePlugin("first-copy", { id: "shared-id", displayName: "First", claims: [] });
+    writePlugin("second-copy", { id: "shared-id", displayName: "Second", claims: [] });
+    const plugins = discoverPlugins(tmpDir);
+    expect(plugins).toHaveLength(1);
+    expect(plugins[0].manifest.id).toBe("shared-id");
+  });
+
+  it("missing packages dir returns empty without crashing", () => {
+    const plugins = discoverPlugins(path.join(tmpDir, "does", "not", "exist"));
+    expect(plugins).toEqual([]);
+  });
+
+  it("unreadable packages dir returns empty gracefully", () => {
+    // Pass a path that's a FILE, not a directory.
+    const filePath = path.join(tmpDir, "file-not-dir");
+    fs.writeFileSync(filePath, "content");
+    const plugins = discoverPlugins(filePath);
+    expect(plugins).toEqual([]);
+  });
 });
 
 describe("loadServerEntries", () => {

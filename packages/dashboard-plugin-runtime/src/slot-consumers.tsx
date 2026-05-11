@@ -12,8 +12,12 @@ import React from "react";
 import { useSlotRegistryOrNull, CurrentPluginLayer } from "./plugin-context.js";
 import { forSession, forSessionRendered, forFolder, forTab, forToolName } from "./slot-registry.js";
 import { SlotErrorBoundary } from "./slot-error-boundary.js";
+import { IntentRenderer } from "./intent-renderer.js";
+import { useSlotIntents } from "./intent-store.js";
+import { sendPluginAction } from "./plugin-action-bridge.js";
 import type { DashboardSession } from "@blackbelt-technology/pi-dashboard-shared/types.js";
 import type { SlotId } from "@blackbelt-technology/pi-dashboard-shared/dashboard-plugin/slot-types.js";
+import type { IntentNode } from "@blackbelt-technology/pi-dashboard-shared/dashboard-plugin/intent-types.js";
 import type { FolderDescriptor } from "./slot-registry.js";
 
 /**
@@ -53,6 +57,31 @@ function renderClaim(
   );
 }
 
+/**
+ * Render an entry from the IntentStore. Wraps in a SlotErrorBoundary +
+ * CurrentPluginLayer so plugin-hook semantics match legacy refs claims.
+ *
+ * See change: adopt-server-driven-intent-rendering.
+ */
+function renderIntent(
+  pluginId: string,
+  slotId: SlotId,
+  intent: IntentNode,
+  sessionId: string | null,
+) {
+  return (
+    <SlotErrorBoundary key={`intent:${pluginId}:${slotId}`} pluginId={pluginId} slotId={slotId}>
+      <CurrentPluginLayer pluginId={pluginId}>
+        <IntentRenderer
+          intent={intent}
+          pluginId={pluginId}
+          send={(action, payload) => sendPluginAction(pluginId, sessionId, action, payload)}
+        />
+      </CurrentPluginLayer>
+    </SlotErrorBoundary>
+  );
+}
+
 // ── Slot consumers ────────────────────────────────────────────────────────────
 
 export function SidebarFolderSectionSlot({ folder }: { folder: FolderDescriptor }) {
@@ -71,13 +100,18 @@ export function SidebarFolderSectionSlot({ folder }: { folder: FolderDescriptor 
 
 export function SessionCardBadgeSlot({ session }: { session: DashboardSession }) {
   const registry = useSlotRegistryOrNull();
-  if (!registry) return null;
-  const claims = forSessionRendered(registry.getClaims("session-card-badge"), session);
-  if (!claims.length) return null;
+  const intents = useSlotIntents("session-card-badge", session.id);
+  const legacyClaims = registry
+    ? forSessionRendered(registry.getClaims("session-card-badge"), session)
+    : [];
+  if (!legacyClaims.length && intents.size === 0) return null;
   return (
     <>
-      {claims.map(c =>
+      {legacyClaims.map((c) =>
         renderClaim(c as Parameters<typeof renderClaim>[0], "session-card-badge", { session }),
+      )}
+      {Array.from(intents.entries()).map(([pluginId, intent]) =>
+        renderIntent(pluginId, "session-card-badge", intent, session.id),
       )}
     </>
   );
@@ -85,13 +119,18 @@ export function SessionCardBadgeSlot({ session }: { session: DashboardSession })
 
 export function SessionCardActionBarSlot({ session }: { session: DashboardSession }) {
   const registry = useSlotRegistryOrNull();
-  if (!registry) return null;
-  const claims = forSessionRendered(registry.getClaims("session-card-action-bar"), session);
-  if (!claims.length) return null;
+  const intents = useSlotIntents("session-card-action-bar", session.id);
+  const legacyClaims = registry
+    ? forSessionRendered(registry.getClaims("session-card-action-bar"), session)
+    : [];
+  if (!legacyClaims.length && intents.size === 0) return null;
   return (
     <>
-      {claims.map(c =>
+      {legacyClaims.map((c) =>
         renderClaim(c as Parameters<typeof renderClaim>[0], "session-card-action-bar", { session }),
+      )}
+      {Array.from(intents.entries()).map(([pluginId, intent]) =>
+        renderIntent(pluginId, "session-card-action-bar", intent, session.id),
       )}
     </>
   );
@@ -99,13 +138,18 @@ export function SessionCardActionBarSlot({ session }: { session: DashboardSessio
 
 export function SessionCardMemorySlot({ session }: { session: DashboardSession }) {
   const registry = useSlotRegistryOrNull();
-  if (!registry) return null;
-  const claims = forSessionRendered(registry.getClaims("session-card-memory"), session);
-  if (!claims.length) return null;
+  const intents = useSlotIntents("session-card-memory", session.id);
+  const legacyClaims = registry
+    ? forSessionRendered(registry.getClaims("session-card-memory"), session)
+    : [];
+  if (!legacyClaims.length && intents.size === 0) return null;
   return (
     <>
-      {claims.map(c =>
+      {legacyClaims.map((c) =>
         renderClaim(c as Parameters<typeof renderClaim>[0], "session-card-memory", { session }),
+      )}
+      {Array.from(intents.entries()).map(([pluginId, intent]) =>
+        renderIntent(pluginId, "session-card-memory", intent, session.id),
       )}
     </>
   );
@@ -113,13 +157,18 @@ export function SessionCardMemorySlot({ session }: { session: DashboardSession }
 
 export function WorkspaceActionBarSlot({ session }: { session: DashboardSession }) {
   const registry = useSlotRegistryOrNull();
-  if (!registry) return null;
-  const claims = forSessionRendered(registry.getClaims("workspace-action-bar"), session);
-  if (!claims.length) return null;
+  const intents = useSlotIntents("workspace-action-bar", session.id);
+  const legacyClaims = registry
+    ? forSessionRendered(registry.getClaims("workspace-action-bar"), session)
+    : [];
+  if (!legacyClaims.length && intents.size === 0) return null;
   return (
     <>
-      {claims.map(c =>
+      {legacyClaims.map((c) =>
         renderClaim(c as Parameters<typeof renderClaim>[0], "workspace-action-bar", { session }),
+      )}
+      {Array.from(intents.entries()).map(([pluginId, intent]) =>
+        renderIntent(pluginId, "workspace-action-bar", intent, session.id),
       )}
     </>
   );
@@ -144,9 +193,17 @@ export function ContentViewSlot({
   // renders null so the shell's `?? sessionDetail` fallback shows the
   // default chat view. See change: pluginize-flows-via-registry
   // (design.md Decision 3 RECONSIDERED).
-  const claims = forSession(registry.getClaims("content-view"), session);
-  if (!claims.length) return null;
-  const claim = claims[0];
+  const intents = useSlotIntents("content-view", session.id);
+  const legacyClaims = registry
+    ? forSession(registry.getClaims("content-view"), session)
+    : [];
+  // one-active: intents take precedence over legacy when both present.
+  if (intents.size > 0) {
+    const [pluginId, intent] = Array.from(intents.entries())[0];
+    return renderIntent(pluginId, "content-view", intent, session.id) as React.ReactElement;
+  }
+  if (!legacyClaims.length) return null;
+  const claim = legacyClaims[0];
   return renderClaim(claim as Parameters<typeof renderClaim>[0], "content-view", {
     session,
     routeParams,
@@ -156,13 +213,18 @@ export function ContentViewSlot({
 
 export function ContentHeaderStickySlot({ session }: { session: DashboardSession }) {
   const registry = useSlotRegistryOrNull();
-  if (!registry) return null;
-  const claims = forSessionRendered(registry.getClaims("content-header-sticky"), session);
-  if (!claims.length) return null;
+  const intents = useSlotIntents("content-header-sticky", session.id);
+  const legacyClaims = registry
+    ? forSessionRendered(registry.getClaims("content-header-sticky"), session)
+    : [];
+  if (!legacyClaims.length && intents.size === 0) return null;
   return (
     <>
-      {claims.map(c =>
+      {legacyClaims.map((c) =>
         renderClaim(c as Parameters<typeof renderClaim>[0], "content-header-sticky", { session }),
+      )}
+      {Array.from(intents.entries()).map(([pluginId, intent]) =>
+        renderIntent(pluginId, "content-header-sticky", intent, session.id),
       )}
     </>
   );
@@ -170,13 +232,18 @@ export function ContentHeaderStickySlot({ session }: { session: DashboardSession
 
 export function ContentInlineFooterSlot({ session }: { session: DashboardSession }) {
   const registry = useSlotRegistryOrNull();
-  if (!registry) return null;
-  const claims = forSessionRendered(registry.getClaims("content-inline-footer"), session);
-  if (!claims.length) return null;
+  const intents = useSlotIntents("content-inline-footer", session.id);
+  const legacyClaims = registry
+    ? forSessionRendered(registry.getClaims("content-inline-footer"), session)
+    : [];
+  if (!legacyClaims.length && intents.size === 0) return null;
   return (
     <>
-      {claims.map(c =>
+      {legacyClaims.map((c) =>
         renderClaim(c as Parameters<typeof renderClaim>[0], "content-inline-footer", { session }),
+      )}
+      {Array.from(intents.entries()).map(([pluginId, intent]) =>
+        renderIntent(pluginId, "content-inline-footer", intent, session.id),
       )}
     </>
   );
@@ -227,13 +294,21 @@ export function CommandRouteSlot({
 
 export function SettingsSectionSlot({ tab = "general" }: { tab?: string }) {
   const registry = useSlotRegistryOrNull();
-  if (!registry) return null;
-  const claims = forTab(registry.getClaims("settings-section"), tab);
-  if (!claims.length) return null;
+  // settings-section is global (sessionId=null). Per-tab filtering on
+  // intents is the plugin's responsibility (it can choose not to emit
+  // for a non-matching tab); for legacy refs claims we still use forTab.
+  const intents = useSlotIntents("settings-section", null);
+  const legacyClaims = registry
+    ? forTab(registry.getClaims("settings-section"), tab)
+    : [];
+  if (!legacyClaims.length && intents.size === 0) return null;
   return (
     <>
-      {claims.map(c =>
+      {legacyClaims.map((c) =>
         renderClaim(c as Parameters<typeof renderClaim>[0], "settings-section", {}),
+      )}
+      {Array.from(intents.entries()).map(([pluginId, intent]) =>
+        renderIntent(pluginId, "settings-section", intent, null),
       )}
     </>
   );

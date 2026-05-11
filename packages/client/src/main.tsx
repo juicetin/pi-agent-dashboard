@@ -24,6 +24,8 @@ import { ConfirmDialog } from "@blackbelt-technology/pi-dashboard-client-utils/C
 import { DialogPortal } from "@blackbelt-technology/pi-dashboard-client-utils/DialogPortal";
 import { SearchableSelectDialog } from "@blackbelt-technology/pi-dashboard-client-utils/SearchableSelectDialog";
 import { ZoomControls } from "@blackbelt-technology/pi-dashboard-client-utils/ZoomControls";
+import { ActionList } from "@blackbelt-technology/pi-dashboard-client-utils/ActionList";
+import { StatusPill } from "@blackbelt-technology/pi-dashboard-client-utils/StatusPill";
 import {
   formatDuration,
   formatTokens,
@@ -43,6 +45,8 @@ registerUiPrimitive(
 registerUiPrimitive(primitiveRegistry, UI_PRIMITIVE_KEYS.zoomControls, ZoomControls);
 registerUiPrimitive(primitiveRegistry, UI_PRIMITIVE_KEYS.formatTokens, formatTokens);
 registerUiPrimitive(primitiveRegistry, UI_PRIMITIVE_KEYS.formatDuration, formatDuration);
+registerUiPrimitive(primitiveRegistry, UI_PRIMITIVE_KEYS.actionList, ActionList);
+registerUiPrimitive(primitiveRegistry, UI_PRIMITIVE_KEYS.statusPill, StatusPill);
 
 // Register service worker for PWA installability
 if ("serviceWorker" in navigator) {

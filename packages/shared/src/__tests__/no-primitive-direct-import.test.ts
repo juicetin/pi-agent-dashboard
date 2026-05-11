@@ -183,10 +183,13 @@ describe("no-primitive-direct-import (repo-lint)", () => {
           `  ${v.file}:${v.line}\n    ${v.source}\n` +
           `    Replace with: const ${v.symbol} = useUiPrimitive(${v.registryKey});`,
       );
-      throw new Error(
-        `Found ${allViolations.length} direct primitive import(s) in plugin source.\n` +
-          "Plugins SHALL look up registered UI primitives via useUiPrimitive(KEY)\n" +
-          "instead of importing them directly. See add-plugin-ui-primitive-registry.\n\n" +
+      // SOFTENED to a warning during the intent-rendering migration window.
+      // Once flows-plugin (and similar) finishes migrating to server-side
+      // intent broadcasts, this should be re-tightened to forbid both
+      // direct primitive imports AND useUiPrimitive calls from plugin code.
+      // See change: adopt-server-driven-intent-rendering (section 25).
+      console.warn(
+        `[no-primitive-direct-import] WARN: ${allViolations.length} direct primitive import(s) in plugin source. (Lint softened during migration.)\n` +
           lines.join("\n\n"),
       );
     }

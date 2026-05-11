@@ -14,6 +14,7 @@ import { createMemoryEventStore, type EventStore } from "./memory-event-store.js
 import { createMemorySessionManager, type SessionManager } from "./memory-session-manager.js";
 import { createPiGateway, type PiGateway } from "./pi-gateway.js";
 import { createBrowserGateway, type BrowserGateway } from "./browser-gateway.js";
+import { pluginIntentCache } from "./plugin-intent-cache.js";
 import { createPreferencesStore, type PreferencesStore } from "./preferences-store.js";
 import { createMetaPersistence, type MetaPersistence } from "./meta-persistence.js";
 import { createSessionOrderManager, type SessionOrderManager } from "./session-order-manager.js";
@@ -1239,9 +1240,26 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
                   return events.length > 0 ? events[events.length - 1] : undefined;
                 },
               },
-              broadcastToSubscribers: (msg) => browserGateway.broadcast(msg as any),
+              broadcastToSubscribers: (msg) => {
+                // Intercept plugin_intents broadcasts and cache them so
+                // reconnecting clients can replay the current intent state.
+                // See change: adopt-server-driven-intent-rendering.
+                const m = msg as { type?: string; pluginId?: string; sessionId?: string | null; slot?: string; intent?: unknown } | undefined;
+                if (m && m.type === "plugin_intents" && typeof m.pluginId === "string" && typeof m.slot === "string") {
+                  pluginIntentCache.set(
+                    m.pluginId,
+                    m.sessionId ?? null,
+                    m.slot as Parameters<typeof pluginIntentCache.set>[2],
+                    (m.intent ?? null) as Parameters<typeof pluginIntentCache.set>[3],
+                  );
+                }
+                browserGateway.broadcast(msg as any);
+              },
               registerPiHandler: (_type, _handler) => {},
-              registerBrowserHandler: (_type, _handler) => {},
+              registerBrowserHandler: (type, handler) =>
+                browserGateway.registerHandler(type, (msg, ws) =>
+                  handler(msg, ws as unknown),
+                ),
               getPluginConfig: (id) => {
                 const cfg = loadConfig();
                 return getPluginConfigFromFile(cfg, id);

@@ -18,6 +18,11 @@ export {
 } from "./plugin-context.js";
 export type { PluginContextProviderProps, PluginLogger, PluginRouter } from "./plugin-context.js";
 export { publishSessionEvent, clearSessionEvents } from "./session-events-store.js";
+export { intentStore, useSlotIntents, IntentStore, keyToString } from "./intent-store.js";
+export type { IntentKey, IntentStoreEntry } from "./intent-store.js";
+export { IntentRenderer, UnknownPrimitive, isIntentNode } from "./intent-renderer.js";
+export type { IntentRendererProps, IntentActionSender } from "./intent-renderer.js";
+export { setSender, sendPluginAction } from "./plugin-action-bridge.js";
 export {
   publishSessionData,
   clearSessionData,

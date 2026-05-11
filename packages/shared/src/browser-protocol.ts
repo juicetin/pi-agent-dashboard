@@ -2,6 +2,10 @@
  * Server ↔ Browser WebSocket protocol messages.
  */
 import type {
+  PluginIntentsMessage,
+  PluginActionMessage,
+} from "./dashboard-plugin/intent-types.js";
+import type {
   DashboardSession,
   DashboardEvent,
   CommandInfo,
@@ -574,7 +578,8 @@ export type ServerToBrowserMessage =
   | BrowserUiModulesListMessage
   | BrowserUiDataListMessage
   | BrowserExtUiDecoratorMessage
-  | BrowserAssetRegisterMessage;
+  | BrowserAssetRegisterMessage
+  | PluginIntentsMessage;
 
 // ── Browser → Server ────────────────────────────────────────────────
 
@@ -981,4 +986,5 @@ export type BrowserToServerMessage =
   | UiManagementBrowserMessage
   | SessionViewBrowserMessage
   | SessionUnviewBrowserMessage
-  | KillProcessBrowserMessage;
+  | KillProcessBrowserMessage
+  | PluginActionMessage;

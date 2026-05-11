@@ -37,7 +37,60 @@ export function setStatus(patch: Partial<HonchoPluginStatus>): HonchoPluginStatu
   } catch {
     /* never throw from broadcast */
   }
+  // Also emit the intent-protocol broadcast for the session-card-memory
+  // slot. This is GLOBAL (sessionId=null) because honcho status is process-
+  // wide, not per-session. Connected clients render via the IntentStore
+  // path; legacy honcho_plugin_status broadcast remains for the existing
+  // useHonchoStatus polling helper. See change:
+  // adopt-server-driven-intent-rendering.
+  try {
+    broadcaster?.({
+      type: "plugin_intents",
+      pluginId: "honcho",
+      sessionId: null,
+      slot: "session-card-memory",
+      intent: {
+        primitive: "ui:status-pill",
+        props: {
+          state: deriveStatusPillState(current.state),
+          text: deriveStatusPillText(current.state),
+          icon: "mdiBrain",
+        },
+      },
+    });
+  } catch {
+    /* never throw from broadcast */
+  }
   return { ...current };
+}
+
+/** Map honcho's internal state to the status-pill primitive's state enum. */
+function deriveStatusPillState(
+  s: HonchoPluginStatus["state"],
+): "running" | "success" | "error" | "info" | "warn" | "muted" {
+  switch (s) {
+    case "running":
+    case "connected":
+      return "success";
+    case "syncing":
+    case "starting":
+      return "warn";
+    case "configured":
+      return "info";
+    case "offline":
+    case "docker-missing":
+    case "port-conflict":
+      return "error";
+    case "stopped":
+    case "uninstalled":
+    default:
+      return "muted";
+  }
+}
+
+function deriveStatusPillText(s: HonchoPluginStatus["state"]): string {
+  // Reuse the state token as the label — matches honcho-plugin's badge today.
+  return s;
 }
 
 export function resetState(): void {

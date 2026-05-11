@@ -64,6 +64,14 @@
     "./extension-ui/decorator-utils": {
       "types": "./src/extension-ui/decorator-utils.ts",
       "default": "./src/extension-ui/decorator-utils.ts"
+    },
+    "./ActionList": {
+      "types": "./src/ActionList.tsx",
+      "default": "./src/ActionList.tsx"
+    },
+    "./StatusPill": {
+      "types": "./src/StatusPill.tsx",
+      "default": "./src/StatusPill.tsx"
     }
   },
   "files": [

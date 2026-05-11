@@ -1,6 +1,7 @@
 import { useEffect, useRef, useCallback, useState } from "react";
 import type { ServerToBrowserMessage, BrowserToServerMessage } from "@blackbelt-technology/pi-dashboard-shared/browser-protocol.js";
 import { getApiBase } from "../lib/api-context.js";
+import { setSender as setPluginActionSender } from "@blackbelt-technology/dashboard-plugin-runtime";
 
 export type ConnectionStatus = "connected" | "connecting" | "offline" | "auth_required";
 
@@ -82,12 +83,22 @@ export function useWebSocket(url: string) {
       }
     };
   }, [connect]);
+  // (plugin-action-bridge registration is set up below in another useEffect
+  // after `send` is defined.)
 
   const send = useCallback((msg: BrowserToServerMessage) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify(msg));
     }
   }, []);
+
+  // Register `send` as the global plugin-action sender so the
+  // IntentRenderer's action wiring can route through this connection.
+  // See change: adopt-server-driven-intent-rendering.
+  useEffect(() => {
+    setPluginActionSender(send);
+    return () => setPluginActionSender(null);
+  }, [send]);
 
   const onMessage = useCallback((handler: (msg: ServerToBrowserMessage) => void) => {
     handlersRef.current.push(handler);

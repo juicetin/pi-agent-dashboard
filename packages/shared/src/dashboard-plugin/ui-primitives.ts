@@ -44,6 +44,10 @@ export const UI_PRIMITIVE_KEYS = {
   formatTokens: "ui:format-tokens",
   /** Format a duration in milliseconds as a human-readable string. */
   formatDuration: "ui:format-duration",
+  /** Horizontal row of action buttons; used by intent-driven plugin contributions. */
+  actionList: "ui:action-list",
+  /** Status pill (badge) with state-tinted background + optional icon. */
+  statusPill: "ui:status-pill",
 } as const;
 
 /** Union of all valid UI primitive keys (literal-string narrowed). */
@@ -117,6 +121,44 @@ export interface UiZoomControlsProps {
   scale: number;
 }
 
+/** A single entry in an action-list primitive. */
+export interface UiActionListItem {
+  /** Display label for the action button. */
+  label: string;
+  /** Optional MDI icon key from `@mdi/js` (e.g. `mdiPlay`). */
+  icon?: string;
+  /** Optional tooltip on hover. */
+  tooltip?: string;
+  /** Optional click handler (wired by IntentRenderer from action descriptor). */
+  onClick?: () => void;
+  /** Optional disabled flag. */
+  disabled?: boolean;
+}
+
+/** Public prop signature for the action-list primitive. */
+export interface UiActionListProps {
+  actions: UiActionListItem[];
+}
+
+/** Stable state tokens for the status-pill primitive. */
+export type UiStatusPillState =
+  | "running"
+  | "success"
+  | "error"
+  | "info"
+  | "warn"
+  | "muted";
+
+/** Public prop signature for the status-pill primitive. */
+export interface UiStatusPillProps {
+  state: UiStatusPillState;
+  text: string;
+  /** Optional MDI icon key from `@mdi/js`. */
+  icon?: string;
+  /** Optional tooltip on hover. */
+  tooltip?: string;
+}
+
 // ── The map ────────────────────────────────────────────────────────────────
 
 /**
@@ -140,4 +182,6 @@ export interface UiPrimitiveMap {
   "ui:zoom-controls": ComponentType<UiZoomControlsProps>;
   "ui:format-tokens": (n: number) => string;
   "ui:format-duration": (ms: number) => string;
+  "ui:action-list": ComponentType<UiActionListProps>;
+  "ui:status-pill": ComponentType<UiStatusPillProps>;
 }

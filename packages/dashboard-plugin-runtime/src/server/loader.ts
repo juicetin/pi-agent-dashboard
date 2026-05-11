@@ -6,7 +6,9 @@
  * via a module-level cache.
  */
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
+import url from "node:url";
 import { validateManifest, ManifestValidationError } from "../manifest-validator.js";
 import type { PluginManifest } from "@blackbelt-technology/pi-dashboard-shared/dashboard-plugin/manifest-types.js";
 import type { ServerPluginContext } from "./server-context.js";
@@ -28,81 +30,154 @@ export interface DiscoveredPlugin {
 let _discoveryCache: DiscoveredPlugin[] | null = null;
 
 /**
- * Glob packages/[star]/package.json for pi-dashboard-plugin manifests.
- * Results are cached for the process lifetime.
- * Pass `repoRoot` (default: cwd when the module loaded) for the scan.
+ * Find the monorepo root by walking up from `import.meta.url` looking for
+ * a `pnpm-workspace.yaml` or a `package.json` with a top-level `workspaces`
+ * field. Returns the absolute path to the root if found, null otherwise.
+ *
+ * This survives wherever the dashboard-plugin-runtime package is installed:
+ * inside the monorepo, in node_modules of an installed dashboard, or inside
+ * Electron's bundled resources.
+ */
+export function findMonorepoRoot(startDir?: string): string | null {
+  let dir = startDir ?? path.dirname(url.fileURLToPath(import.meta.url));
+  const stop = path.parse(dir).root;
+  while (dir !== stop) {
+    if (fs.existsSync(path.join(dir, "pnpm-workspace.yaml"))) return dir;
+    const pkgJson = path.join(dir, "package.json");
+    if (fs.existsSync(pkgJson)) {
+      try {
+        const raw = JSON.parse(fs.readFileSync(pkgJson, "utf-8")) as Record<string, unknown>;
+        if (raw.workspaces) return dir;
+      } catch {
+        // continue walking up
+      }
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return null;
+}
+
+/**
+ * Return `~/.pi/dashboard/plugins/` if it exists; null otherwise.
+ * This is where user-installed plugins live (per `add-plugin-activation-ui`).
+ */
+export function findInstalledPluginsDir(): string | null {
+  const dir = path.join(os.homedir(), ".pi", "dashboard", "plugins");
+  return fs.existsSync(dir) ? dir : null;
+}
+
+/**
+ * Return the bundled-plugins directory shipped alongside the dashboard
+ * server (Electron resources, npm-global install layout). Walks up from
+ * `import.meta.url` to find `resources/plugins/` or equivalent.
+ */
+export function findBundledPluginsDir(): string | null {
+  let dir = path.dirname(url.fileURLToPath(import.meta.url));
+  const stop = path.parse(dir).root;
+  while (dir !== stop) {
+    const candidate = path.join(dir, "resources", "plugins");
+    if (fs.existsSync(candidate)) return candidate;
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return null;
+}
+
+/**
+ * Discover plugin manifests from the monorepo, user-installed plugins, and
+ * bundled-resources plugins (in that priority order).
+ *
+ * Results are cached for the process lifetime. Pass an explicit `repoRoot`
+ * to force discovery from a specific directory (useful for tests).
  */
 export function discoverPlugins(repoRoot?: string): DiscoveredPlugin[] {
   if (_discoveryCache !== null) return _discoveryCache;
 
-  const root = repoRoot ?? process.cwd();
-  const packagesDir = path.join(root, "packages");
+  const searchDirs: string[] = [];
 
-  if (!fs.existsSync(packagesDir)) {
-    _discoveryCache = [];
-    return _discoveryCache;
+  if (repoRoot) {
+    // Explicit override (test or build-time call site): keep legacy behaviour.
+    searchDirs.push(path.join(repoRoot, "packages"));
+  } else {
+    const monorepo = findMonorepoRoot();
+    if (monorepo) searchDirs.push(path.join(monorepo, "packages"));
+    const installed = findInstalledPluginsDir();
+    if (installed) searchDirs.push(installed);
+    const bundled = findBundledPluginsDir();
+    if (bundled) searchDirs.push(bundled);
   }
 
   const results: DiscoveredPlugin[] = [];
+  const seenIds = new Set<string>();
 
-  let entries: string[];
-  try {
-    entries = fs.readdirSync(packagesDir);
-  } catch {
-    _discoveryCache = [];
-    return _discoveryCache;
-  }
+  for (const packagesDir of searchDirs) {
+    if (!fs.existsSync(packagesDir)) continue;
 
-  for (const entry of entries) {
-    const pkgDir = path.join(packagesDir, entry);
-    const pkgJson = path.join(pkgDir, "package.json");
-    if (!fs.existsSync(pkgJson)) continue;
-
-    let raw: Record<string, unknown>;
+    let entries: string[];
     try {
-      raw = JSON.parse(fs.readFileSync(pkgJson, "utf-8"));
+      entries = fs.readdirSync(packagesDir);
     } catch {
       continue;
     }
 
-    // Check for adjacent dashboard-plugin.json (takes precedence)
-    const adjacentJson = path.join(pkgDir, "dashboard-plugin.json");
-    let manifestRaw: unknown = raw["pi-dashboard-plugin"];
+    for (const entry of entries) {
+      const pkgDir = path.join(packagesDir, entry);
+      const pkgJson = path.join(pkgDir, "package.json");
+      if (!fs.existsSync(pkgJson)) continue;
 
-    if (fs.existsSync(adjacentJson)) {
-      if (manifestRaw !== undefined) {
-        console.warn(
-          `[plugin-loader] Both package.json#pi-dashboard-plugin and dashboard-plugin.json found in ${pkgDir}. Using dashboard-plugin.json.`,
-        );
-      }
+      let raw: Record<string, unknown>;
       try {
-        manifestRaw = JSON.parse(fs.readFileSync(adjacentJson, "utf-8"));
+        raw = JSON.parse(fs.readFileSync(pkgJson, "utf-8"));
       } catch {
         continue;
       }
+
+      // Check for adjacent dashboard-plugin.json (takes precedence)
+      const adjacentJson = path.join(pkgDir, "dashboard-plugin.json");
+      let manifestRaw: unknown = raw["pi-dashboard-plugin"];
+
+      if (fs.existsSync(adjacentJson)) {
+        if (manifestRaw !== undefined) {
+          console.warn(
+            `[plugin-loader] Both package.json#pi-dashboard-plugin and dashboard-plugin.json found in ${pkgDir}. Using dashboard-plugin.json.`,
+          );
+        }
+        try {
+          manifestRaw = JSON.parse(fs.readFileSync(adjacentJson, "utf-8"));
+        } catch {
+          continue;
+        }
+      }
+
+      if (manifestRaw === undefined || manifestRaw === null) continue;
+
+      let manifest: PluginManifest;
+      try {
+        manifest = validateManifest(manifestRaw);
+      } catch (e) {
+        console.error(`[plugin-loader] Validation failed for package at ${pkgDir}:`, e);
+        continue;
+      }
+
+      // Earlier search dirs win on ID collisions (monorepo > installed > bundled).
+      if (seenIds.has(manifest.id)) continue;
+      seenIds.add(manifest.id);
+
+      const resolve = (rel: string | undefined) =>
+        rel ? path.resolve(pkgDir, rel) : undefined;
+
+      results.push({
+        manifest,
+        packageDir: pkgDir,
+        serverEntryPath: resolve(manifest.server),
+        bridgeEntryPath: resolve(manifest.bridge),
+        clientEntryPath: resolve(manifest.client),
+      });
     }
-
-    if (manifestRaw === undefined || manifestRaw === null) continue;
-
-    let manifest: PluginManifest;
-    try {
-      manifest = validateManifest(manifestRaw);
-    } catch (e) {
-      console.error(`[plugin-loader] Validation failed for package at ${pkgDir}:`, e);
-      continue;
-    }
-
-    const resolve = (rel: string | undefined) =>
-      rel ? path.resolve(pkgDir, rel) : undefined;
-
-    results.push({
-      manifest,
-      packageDir: pkgDir,
-      serverEntryPath: resolve(manifest.server),
-      bridgeEntryPath: resolve(manifest.bridge),
-      clientEntryPath: resolve(manifest.client),
-    });
-  }
+  } // end for searchDirs
 
   // Sort by (priority asc, id asc)
   results.sort((a, b) => {
@@ -111,6 +186,12 @@ export function discoverPlugins(repoRoot?: string): DiscoveredPlugin[] {
     if (pa !== pb) return pa - pb;
     return a.manifest.id.localeCompare(b.manifest.id);
   });
+
+  console.log(
+    `[plugin-loader] discovered ${results.length} plugin(s): ${results
+      .map((p) => p.manifest.id)
+      .join(", ") || "(none)"}`,
+  );
 
   _discoveryCache = results;
   return results;

@@ -668,8 +668,8 @@ export function SessionCard({
       {/* MEMORY subcard — plugin slot only */}
       <MemorySubcard session={session} />
 
-      {/* FLOWS subcard */}
-      {flows && onFlowAction && (
+      {/* FLOWS subcard — hidden when no flows and no flows:new command (mirrors WorkspaceSubcard pattern). */}
+      {flows && onFlowAction && (flows.length > 0 || (commands?.some(c => c.name === "flows:new") ?? false)) && (
         <SessionSubcard title="FLOWS">
           <SessionFlowActions
             flows={flows}

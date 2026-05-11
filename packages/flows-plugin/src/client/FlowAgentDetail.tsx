@@ -5,6 +5,7 @@ import type { DashboardSession, FlowAgentState, FlowDetailEntry } from "@blackbe
 import { UI_PRIMITIVE_KEYS } from "@blackbelt-technology/pi-dashboard-shared/dashboard-plugin/ui-primitives.js";
 import { useUiPrimitive } from "@blackbelt-technology/dashboard-plugin-runtime";
 import { useFlowsSessionState } from "./FlowsSessionStateContext.js";
+import { useFlowsUiState, useFlowsUiActions } from "./FlowsUiStateContext.js";
 
 // Local formatTokens / formatDuration replaced by registry lookups
 // inside each component body — see TextEntry / ToolCallEntry below.
@@ -173,25 +174,38 @@ export function FlowAgentDetail({
 }
 
 /**
- * Slot-consumer wrapper for the `content-view` claim with route
- * `flow-agent-detail`. Reads the active flow + selected agent from
- * the plugin-internal contexts. The selected agent name comes from
- * `routeParams.agentName` (set by the shell when navigating into the
- * detail view via the new `route` field). See change:
- * pluginize-flows-via-registry.
+ * Slot-consumer wrapper for the `content-view` claim, gated by the
+ * `isFlowAgentDetailActive` predicate. The selected agent name comes
+ * from the plugin's UI-state store (set by
+ * `useFlowsUiActions().setFlowDetailAgent(name)` when the user clicks
+ * an agent in FlowDashboard). On back, we clear the agent selection
+ * in the same store and call the slot's `onClose`. See change:
+ * pluginize-flows-via-registry (design.md Decision 3 RECONSIDERED —
+ * predicates over routes).
  */
 export function FlowAgentDetailClaim({
   session,
-  routeParams,
   onClose,
 }: {
   session: DashboardSession;
-  routeParams: Record<string, string>;
+  // routeParams kept in the slot prop contract but unused here;
+  // selected agent name lives in the plugin's UI-state store.
+  routeParams?: Record<string, string>;
   onClose: () => void;
 }) {
   const { flowState } = useFlowsSessionState(session.id);
-  if (!flowState) return null;
-  const agent = flowState.agents.get(routeParams.agentName ?? "");
+  const { flowDetailAgent } = useFlowsUiState();
+  const actions = useFlowsUiActions();
+  if (!flowState || flowDetailAgent === null) return null;
+  const agent = flowState.agents.get(flowDetailAgent);
   if (!agent) return null;
-  return <FlowAgentDetail agent={agent} onBack={onClose} />;
+  return (
+    <FlowAgentDetail
+      agent={agent}
+      onBack={() => {
+        actions.setFlowDetailAgent(null);
+        onClose();
+      }}
+    />
+  );
 }

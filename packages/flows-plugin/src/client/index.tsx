@@ -47,13 +47,45 @@ export {
   reduceFlowsSessionState,
 } from "./FlowsSessionStateContext.js";
 export type { FlowsSessionState } from "./FlowsSessionStateContext.js";
+import { getFlowsUiStateSnapshot } from "./FlowsUiStateContext.js";
 export {
   useFlowsUiState,
   useFlowsUiActions,
 } from "./FlowsUiStateContext.js";
+export { getFlowsUiStateSnapshot } from "./FlowsUiStateContext.js";
 export type { FlowsUiState, FlowsUiActions } from "./FlowsUiStateContext.js";
 
 // hasActiveFlow predicate removed: the manifest no longer references
 // it because FlowActivityBadgeClaim self-gates inside the component
 // body via useFlowsSessionState. See change:
 // pluginize-flows-via-registry.
+
+// ── content-view claim predicates ─────────────────────────────────
+//
+// Each `content-view` claim in the manifest references one of these
+// predicates via the `predicate` field. The slot consumer calls the
+// predicate at render time; the first claim (priority order) whose
+// predicate returns `true` renders. If none return `true`, the slot
+// renders nothing and the shell's fallback shows the chat.
+//
+// Each predicate reads the plugin's UI-state store imperatively (via
+// `getFlowsUiStateSnapshot` — not a hook, safe outside React) so it
+// can run from the slot-registry filter. The `_session` argument is
+// passed by the slot system per the predicate contract
+// (`(props) => boolean`) but is unused here because activation lives
+// in plugin state, not session state.
+//
+// See change: pluginize-flows-via-registry (design.md Decision 3
+// RECONSIDERED — predicates over routes).
+
+export function isFlowAgentDetailActive(_session?: unknown): boolean {
+  return getFlowsUiStateSnapshot().flowDetailAgent !== null;
+}
+
+export function isFlowArchitectDetailActive(_session?: unknown): boolean {
+  return getFlowsUiStateSnapshot().architectDetailOpen;
+}
+
+export function isFlowYamlPreviewActive(_session?: unknown): boolean {
+  return getFlowsUiStateSnapshot().flowYamlPreview !== null;
+}

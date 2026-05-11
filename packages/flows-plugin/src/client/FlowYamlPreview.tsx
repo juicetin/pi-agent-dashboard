@@ -1,13 +1,14 @@
 /**
- * Content-view claim renderer for the `flow-yaml-preview` route.
+ * Content-view claim renderer for the flow YAML preview, gated by the
+ * `isFlowYamlPreviewActive` predicate.
  *
  * Replaces the shell's `flowYamlPreview` state + MarkdownPreviewView
- * call site at App.tsx:1008-1014. The shell will navigate into this
- * route when the user clicks "view yaml" or "view agent source"; the
- * content (yaml string + title) is set by the plugin's UI-state
- * context (see Part F.4 / F.5 callbacks).
+ * call site that App.tsx used to have. The content (yaml string +
+ * title) is set by the plugin's UI-state actions (see Part F.4 / F.5
+ * callbacks) when the user clicks "view yaml" or "view agent source".
  *
- * See change: pluginize-flows-via-registry.
+ * See change: pluginize-flows-via-registry (design.md Decision 3
+ * RECONSIDERED — predicates over routes).
  */
 import React from "react";
 import { Icon } from "@mdi/react";
@@ -18,12 +19,10 @@ import { useUiPrimitive } from "@blackbelt-technology/dashboard-plugin-runtime";
 import { useFlowsUiState, useFlowsUiActions } from "./FlowsUiStateContext.js";
 
 /**
- * Slot-consumer wrapper for the `content-view` claim with route
- * `flow-yaml-preview`. Reads the preview content from the plugin's
- * internal UI-state context. On dismiss, clears `flowYamlPreview` and
- * `sourceOpenAgent` (the same cleanup the shell does today at App.tsx:
- * 1012) and calls the slot's `onClose` to navigate back to the default
- * content view.
+ * Slot-consumer wrapper for the `content-view` claim. Reads the
+ * preview content from the plugin's internal UI-state context. On
+ * dismiss, clears `flowYamlPreview` and `sourceOpenAgent` and calls
+ * the slot's `onClose`.
  */
 export function FlowYamlPreviewClaim({
   onClose,

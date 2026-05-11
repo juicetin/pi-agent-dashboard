@@ -77,6 +77,21 @@ function getSnapshot(): FlowsUiState {
 }
 
 /**
+ * Imperative read of the current UI state from outside React. Used by
+ * the plugin's manifest predicates (see `index.tsx`'s
+ * `isFlow*Active` exports) so the shell's slot consumer can check
+ * "does this claim want to render right now?" without hooks. The
+ * returned value is the same frozen snapshot React would see; it's
+ * safe to read in any context.
+ *
+ * See change: pluginize-flows-via-registry (design.md Decision 3
+ * RECONSIDERED — predicates over routes).
+ */
+export function getFlowsUiStateSnapshot(): FlowsUiState {
+  return state;
+}
+
+/**
  * Apply a partial update to the UI state. The new snapshot reference
  * changes only when at least one field actually differs (`Object.is`),
  * so consumers that read a single field via `useFlowsUiStateSelector`

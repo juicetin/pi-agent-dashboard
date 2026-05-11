@@ -20,7 +20,10 @@ import { UI_PRIMITIVE_KEYS } from "@blackbelt-technology/pi-dashboard-shared/das
 import { useUiPrimitive, usePluginSend } from "@blackbelt-technology/dashboard-plugin-runtime";
 import { FlowGraph, architectStepsToGraphSteps } from "./FlowGraph.js";
 import { useFlowsSessionState } from "./FlowsSessionStateContext.js";
-import { useFlowsUiState, useFlowsUiActions } from "./FlowsUiStateContext.js";
+import {
+  useFlowsUiState,
+  useFlowsUiActions,
+} from "./FlowsUiStateContext.js";
 
 // ── Detail view (reuses same patterns as FlowAgentDetail) ─────────
 
@@ -661,10 +664,11 @@ export function FlowArchitectClaim({ session }: { session: DashboardSession }) {
 }
 
 /**
- * Slot-consumer wrapper for the `content-view` claim with route
- * `flow-architect-detail`. Self-derives architect state. Calls
- * `onClose` (the slot prop, supplied by the shell's content-view
- * router) on the back button. See change: pluginize-flows-via-registry.
+ * Slot-consumer wrapper for the `content-view` claim, gated by the
+ * `isFlowArchitectDetailActive` predicate. On back, clears
+ * `architectDetailOpen` in the plugin's UI store and calls the slot's
+ * `onClose`. See change: pluginize-flows-via-registry (design.md
+ * Decision 3 RECONSIDERED — predicates over routes).
  */
 export function FlowArchitectDetailClaim({
   session,
@@ -674,6 +678,15 @@ export function FlowArchitectDetailClaim({
   onClose: () => void;
 }) {
   const { architectState } = useFlowsSessionState(session.id);
+  const actions = useFlowsUiActions();
   if (!architectState) return null;
-  return <FlowArchitectDetail state={architectState} onBack={onClose} />;
+  return (
+    <FlowArchitectDetail
+      state={architectState}
+      onBack={() => {
+        actions.setArchitectDetailOpen(false);
+        onClose();
+      }}
+    />
+  );
 }

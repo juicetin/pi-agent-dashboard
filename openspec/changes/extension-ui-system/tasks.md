@@ -5,8 +5,8 @@ This change is **design-only**. It captures decisions and the slot taxonomy. Imp
 ## 1. Design review
 
 - [x] 1.1 Resolve open questions in `design.md` §"Open Questions" (footer placement, toast dedup, confirm polish, icon vocab, dispose semantics, pi-flows test kind, save/discard gate scope, ragger rich view types). **Done** — all 8 questions resolved with the annotated picks confirmed; design.md §"Resolved Open Questions" now records each decision with rationale.
-- [ ] 1.2 Confirm with pi-flows maintainer that Phase 3 adoption is acceptable in pi-flows scope and timeline. **Pending external coordination.**
-- [ ] 1.3 Confirm with pi-judo maintainer that the explicit two-line migration is acceptable for their use cases. **Pending external coordination.**
+- [x] 1.2 Confirm with pi-flows maintainer that Phase 3 adoption is acceptable in pi-flows scope and timeline. **Moved** — Phase 3 coordination split out to `openspec/changes/pi-flows-adopt-extension-ui/`. Out of scope for this design-only change.
+- [x] 1.3 Confirm with pi-judo maintainer that the explicit two-line migration is acceptable for their use cases. **Moved** — pi-judo is a Phase 3 consumer; tracked in `pi-flows-adopt-extension-ui` coordination checklist.
 - [x] 1.4 Validate that Phase 1's slot ergonomics cover ragger's workspace-CRUD use case (the original PR #15 motivator) without changes. **Verdict:** Phase 1 covers workspace-CRUD (table + form) ✅. Ragger's richer needs (`search`, `metrics`, `detail` view types) are beyond Phase 1's scope; tracked as Open Question §8 in `design.md` and a likely follow-up change after Phase 1 ships. Coverage matrix added to `design.md` §"Phase-1 Coverage Validation".
 
 ## 2. Scaffold follow-up change directories
@@ -14,7 +14,7 @@ This change is **design-only**. It captures decisions and the slot taxonomy. Imp
 - [x] 2.1 Create `openspec/changes/add-extension-ui-modal/` with proposal.md scoped to Phase 1 only. **Done** — `openspec new change add-extension-ui-modal` + proposal.md authored covering discovery probe, Phase 1 view types (`table | grid | form`), wire protocol, server cache on `Session` record, slash-command interception, MDI icons, Tailwind ConfirmDialog. Design/specs/tasks remain (continue with `/opsx:continue add-extension-ui-modal`).
 - [x] 2.2 Create `openspec/changes/add-extension-ui-decorations/` with proposal.md scoped to Phase 2 (footer-segment, agent-metric, breadcrumb, gate, toast). **Done** — covers single-union `ext_ui_decorator` message, `Session.uiDecorators` cache, namespace collision warning, removal semantics, five client slot components.
 - [x] 2.3 Create `openspec/changes/add-extension-ui-rjsf-form/` (or defer until Phase 1 + 2 ship) for Phase 4. **Done** — covers RJSF dependency choice, lazy bundle import, Tailwind theme, validation semantics, pure-pi fallback strategies (`ctx-ui` / `defaults` / `reject`). Marked OPTIONAL with explicit Phase 1 + Phase 2 dependency.
-- [ ] 2.4 Coordinate with pi-flows repo on naming for the Phase 3 adoption change there. **Pending external coordination** — needs PR/issue in pi-flows repo.
+- [x] 2.4 Coordinate with pi-flows repo on naming for the Phase 3 adoption change there. **Moved** — handoff target scaffolded at `openspec/changes/pi-flows-adopt-extension-ui/proposal.md`; PR/issue in pi-flows repo tracked there.
 
 ## 3. Cross-reference and documentation
 

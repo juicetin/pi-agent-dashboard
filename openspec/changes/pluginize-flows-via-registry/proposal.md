@@ -107,24 +107,37 @@ This is the **only** new public plugin-runtime API. Plugins now have
 read access to the raw event stream and can derive any state they
 want.
 
-### Part C — ADD `route?` field to `PluginClaim`
+### Part C — ~~ADD `route?` field~~ → REVERSED: use existing `predicate`
 
-**`packages/shared/src/dashboard-plugin/manifest-types.ts`** — add an
-optional `route?: string` field to `PluginClaim`. Used by
-`content-view` claims so multiple claims for the same slot can coexist
-and be selected by route. This is a 5-line type addition + a 10-line
-filter in `ContentViewSlot`. Existing claims without `route` continue
-to match the empty-route default.
+**Original (REVERSED, see design.md Decision 3 RECONSIDERED note).**
+The original Part C added `route?: string` to `PluginClaim` and a
+`forRoute` filter in `ContentViewSlot`. This has been walked back
+entirely. flows-plugin's three `content-view` claims now use the
+existing `predicate` field instead. Each predicate is a function
+exported from the plugin's client entry that reads the plugin's
+own UI-state store and returns whether that view should currently
+render.
 
-**`packages/dashboard-plugin-runtime/src/slot-consumers.tsx`**
-`ContentViewSlot` SHALL filter `claims` by matching `claim.route`
-against the active route extracted from `routeParams`. If multiple
-claims match, priority order applies as today. If no claims match,
-nothing renders.
+**Net delta from this reversal:**
 
-**`packages/dashboard-plugin-runtime/src/vite-plugin/index.ts`** — the
-existing manifest validator gains awareness of the `route` field; no
-new validation required (route is a free-form string).
+- `PluginClaim.route?` — REMOVED
+- `ClaimEntry.route?` — REMOVED
+- `forRoute` helper — REMOVED
+- `ContentViewSlot` `forRoute` call — reverted to `forSession`
+- `vite-plugin` `routeStr` emission — REMOVED
+- `App.tsx` `forRoute` import + gate — reverted to `forSession`-
+  based gate
+- `content-view-route-filtering.test.tsx` — DELETED
+
+**Rationale (short version).** `predicate` already exists in the
+slot system. It's a JavaScript function reference; it can read any
+state its module exports, not just `session`. The framing "predicates
+are session-shaped" in the original design was wrong; predicates can
+encode any "this view wants to render right now" condition that the
+plugin owns. Adding `route` was net new code in 5 places and one of
+those updates was missed (the manifest validator), causing the
+running chat to be silently masked. See design.md Decision 3 for the
+full walk-back.
 
 ### Part D — flows-plugin owns ALL flow logic
 

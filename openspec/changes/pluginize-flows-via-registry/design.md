@@ -125,30 +125,114 @@ prevents downstream cascade.
   the plugin populates.* Reintroduces server/bridge state plumbing.
   Same problem this change avoids.
 
-### Decision 3 — `route?` field on `PluginClaim`
+### Decision 3 — `route?` field on `PluginClaim`  ~~ORIGINAL~~  →  RECONSIDERED
 
-**Decision.** Add optional `route?: string` to `PluginClaim`.
-`ContentViewSlot` filters by route. Multiple `content-view` claims
-coexist when their routes differ.
+**Original decision (KEPT FOR HISTORY).** Add optional `route?: string`
+to `PluginClaim`. `ContentViewSlot` filters by route. Multiple
+`content-view` claims coexist when their routes differ.
 
-**Why.** `content-view` is `multiplicity: "one-active"`: today, only
-the first matching claim renders. With multiple plugins each owning
-their own routes (flows-plugin's `flow-agent-detail`,
-`flow-architect-detail`, `flow-yaml-preview`; openspec's future
-`spec-detail`; git's future `branch-graph`), some discriminator is
-required. Route-based filtering is the smallest, most explicit
-mechanism.
+**Original rationale.** `content-view` is `multiplicity: "one-active"`:
+only the first matching claim renders. With multiple claims per
+plugin (flows-plugin's `flow-agent-detail`, `flow-architect-detail`,
+`flow-yaml-preview`), some discriminator is required.
 
-**Why not predicates on content-view?** Predicates are session-shaped
-(`(session) => boolean`). Routes are intent-shaped ("the user
-navigated to this view"). They're orthogonal. A future change can
-combine them if needed; today, route is sufficient and matches the
-URL-routing the shell already does.
+**Original argument against predicates.** Predicates were framed as
+"`(session) => boolean`, session-shaped"; routes were framed as
+"intent-shaped, matching the URL routing the shell already does."
 
-**Risk.** Two claims could declare the same route. Resolution: priority
-order (existing slot semantic). The lint can flag duplicate routes
-across claims for the same plugin; cross-plugin route collisions are
-the user's problem (rare; documented).
+---
+
+#### RECONSIDERED — walk back, use predicates
+
+The original framing was wrong on both counts:
+
+1. **Predicates are NOT session-shaped.** `ClaimEntry.predicate` has
+   signature `(props: unknown) => boolean` (slot-registry.ts:32). The
+   filter helper `forSession(claims, session)` happens to pass
+   `session` as the argument, but predicates are just JavaScript
+   functions — they close over whatever state their module exports.
+   A predicate can read plugin-internal module state (e.g. the
+   `FlowsUiStateContext` store) and ignore the `session` argument
+   entirely. So predicates ARE "intent-shaped" too — the intent lives
+   in the plugin's own state and the predicate reports it.
+
+2. **"Matches the URL routing" was aspirational.** `pluginContext.
+   pluginRouter.open()` is a stub that `console.warn`s; the shell's
+   wouter has no per-plugin content-view routes; `routeParams` is
+   hardcoded to `{}` in every call site. The mechanism we said
+   matches doesn't exist.
+
+**Concrete cost of the original decision (observed):**
+
+- Added `route?` field in 5 places: type, claim entry, vite-plugin
+  emitter, filter helper, slot-consumer call.
+- Forgot to also update the manifest validator's allow-list of
+  preserved fields (`manifest-validator.ts:57`).
+- Result: validator silently dropped `route` for every claim. The
+  vite-plugin's `routeStr` emitted nothing. The runtime `forRoute`
+  filter then matched all claims against an empty active route
+  because all stored `route` values were `undefined`. The slot picked
+  the first content-view claim, which returned null (no flow active),
+  masking the chat. The exact failure mode the existing
+  `no-jsx-slot-nullish-fallback` lint was designed to catch — except
+  the lint accepted `getClaims().length > 0` as a sufficient gate
+  because at the time it was written, claims couldn't render null.
+
+**Reconsidered decision.** Remove `route?` entirely. flows-plugin's
+three content-view claims gain `predicate` references instead:
+
+| Component | Predicate | Reads |
+|---|---|---|
+| FlowAgentDetailClaim | `isFlowAgentDetailActive` | `FlowsUiState.flowDetailAgent != null` |
+| FlowArchitectDetailClaim | `isFlowArchitectDetailActive` | `FlowsUiState.architectDetailOpen` |
+| FlowYamlPreviewClaim | `isFlowYamlPreviewActive` | `FlowsUiState.flowYamlPreview != null` |
+
+The shell uses the existing `forSession` filter (which runs
+predicates). The gate becomes:
+
+```ts
+(selectedId && selectedSession && forSession(registry.getClaims("content-view"), selectedSession).length > 0
+  ? <ContentViewSlot/> : null) ?? sessionDetail
+```
+
+- When pi-flows engine isn't running → plugin state is empty → all
+  three predicates return false → forSession returns 0 → gate false
+  → chat renders.
+- When flows-plugin isn't even built into the dashboard → no claims
+  → forSession returns 0 → same outcome.
+- When user clicks into an agent detail →
+  `setFlowDetailAgent(name)` → predicate true → claim renders.
+- When user clicks the YAML viewer → `setFlowYamlPreview({...})` →
+  predicate true → claim renders.
+
+**Priority order for mutually-exclusive predicates.** When more than
+one predicate could be true simultaneously (e.g. user opens agent
+detail then clicks YAML), the slot's existing `(priority asc, pluginId
+asc)` order resolves the tie. flows-plugin assigns priorities matching
+the original App.tsx ternary chain it replaces:
+
+  - `FlowYamlPreviewClaim` priority 40 (was outermost branch)
+  - `FlowArchitectDetailClaim` priority 50
+  - `FlowAgentDetailClaim` priority 60
+  - (default: priority 100 — standard claim priority)
+
+The plugin's UI-state actions (FlowsUiStateContext) may also clear
+conflicting state in their setters — but with priority-based
+resolution, that becomes a polish, not a correctness invariant.
+
+**Architectural principle reinforced.** Plugins and SDK should be
+decoupled enough that plugins can compose without the SDK growing
+plugin-specific affordances. The `predicate` field is generic and
+already existed; `route` was a parallel mechanism the SDK didn't need
+to grow. Future plugins (openspec spec-detail, git branch-graph) use
+predicates the same way.
+
+**Risk.** Two claims could have predicates that return true
+simultaneously, with the priority tie-break choosing the "wrong" one
+from the user's POV. Mitigation: plugin UI-state action handlers
+should clear conflicting state (e.g. opening yaml preview should
+clear flowDetailAgent). The priority order ensures a deterministic
+fallback even when discipline lapses.
 
 ### Decision 4 — Slash commands via existing `command-route` slot
 

@@ -10,7 +10,7 @@
  */
 import React from "react";
 import { useSlotRegistryOrNull, CurrentPluginLayer } from "./plugin-context.js";
-import { forSessionRendered, forFolder, forTab, forToolName, forRoute } from "./slot-registry.js";
+import { forSession, forSessionRendered, forFolder, forTab, forToolName } from "./slot-registry.js";
 import { SlotErrorBoundary } from "./slot-error-boundary.js";
 import type { DashboardSession } from "@blackbelt-technology/pi-dashboard-shared/types.js";
 import type { SlotId } from "@blackbelt-technology/pi-dashboard-shared/dashboard-plugin/slot-types.js";
@@ -136,14 +136,15 @@ export function ContentViewSlot({
 }) {
   const registry = useSlotRegistryOrNull();
   if (!registry) return null;
-  // Multiple plugins may claim `content-view` with different `route`
-  // discriminators (e.g. flows-plugin's `flow-agent-detail` vs
-  // `flow-architect-detail`). Filter by `routeParams.route` so each
-  // route's claim is selectable independently. Claims without a route
-  // match the empty/default route. one-active: render the first
-  // matching claim after priority resolution. See change:
-  // pluginize-flows-via-registry.
-  const claims = forRoute(registry.getClaims("content-view"), routeParams.route);
+  // Multiple plugins may claim `content-view` (multiplicity:
+  // "one-active"). Each claim's optional `predicate` decides whether
+  // it wants to render right now; predicates close over the plugin's
+  // own UI-state store. The first claim (priority order) whose
+  // predicate returns true wins. If no predicate is true, this slot
+  // renders null so the shell's `?? sessionDetail` fallback shows the
+  // default chat view. See change: pluginize-flows-via-registry
+  // (design.md Decision 3 RECONSIDERED).
+  const claims = forSession(registry.getClaims("content-view"), session);
   if (!claims.length) return null;
   const claim = claims[0];
   return renderClaim(claim as Parameters<typeof renderClaim>[0], "content-view", {

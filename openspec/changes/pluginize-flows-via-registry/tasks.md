@@ -24,25 +24,25 @@ Sequenced per Decision 7. Each part is independently revertible.
       event, reference stability across no-op renders.
 - [ ] B.6 Build clean: `npm run build`. No regressions.
 
-## Part C — Plugin runtime: route filtering on content-view
+## Part C — ~~Plugin runtime: route filtering~~  → REVERSED
 
-- [ ] C.1 Add optional `route?: string` field to `PluginClaim` in
-      `packages/shared/src/dashboard-plugin/manifest-types.ts`.
-- [ ] C.2 In
-      `packages/dashboard-plugin-runtime/src/slot-consumers.tsx`,
-      modify `ContentViewSlot` to filter `claims` by matching
-      `claim.route` against the active route extracted from
-      `routeParams.route` (or whatever the route key is in the slot
-      props — read existing route plumbing). Priority resolution
-      among matching claims is unchanged.
-- [ ] C.3 In
-      `packages/dashboard-plugin-runtime/src/vite-plugin/index.ts`,
-      ensure `route` is preserved when generating the registry. No
-      validation added (free-form string).
-- [ ] C.4 Unit test
-      `packages/dashboard-plugin-runtime/src/__tests__/content-view-route-filtering.test.tsx`:
-      asserts route-based filtering, no-route fallback to empty
-      route, priority resolution among matching claims.
+This part was originally about adding a `route?` discriminator to
+`PluginClaim`. It has been walked back entirely; the existing
+`predicate` field on `PluginClaim` covers the same use case more
+cleanly. See design.md Decision 3 RECONSIDERED.
+
+- [x] C.1 ~~Add `route?: string`~~ — REVERSED. Existing `predicate`
+      field is used instead.
+- [x] C.2 `ContentViewSlot` filters using `forSession` (predicate
+      filter), NOT a `forRoute` helper. Filter runs each claim's
+      `predicate(session)` and renders the first claim (by priority)
+      whose predicate returns true.
+- [x] C.3 vite-plugin emission does NOT include a `route` field.
+      Existing predicate emission already covers the case.
+- [x] C.4 No `content-view-route-filtering.test.tsx` — the
+      corresponding behavior is asserted via the existing predicate
+      tests in `vite-plugin-predicate-emission.test.ts`. The original
+      route-filtering test was DELETED in the reversal.
 
 ## Part D — Plugin runtime: PluginRoot wrapper convention
 

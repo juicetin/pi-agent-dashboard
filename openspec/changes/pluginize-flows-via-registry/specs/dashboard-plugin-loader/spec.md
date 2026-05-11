@@ -44,40 +44,63 @@ session unregister.
 - **THEN** the hook SHALL return only `[a1, a2]`
 - **AND** SHALL NOT include any event from session `B`
 
-### Requirement: Plugin claims SHALL support an optional route field
+### Requirement: ContentViewSlot SHALL filter competing claims by predicate
 
-`PluginClaim` SHALL include an optional `route?: string` field. The
-field is consumed by `content-view` slot consumers to filter
-competing claims. Other slots MAY use it but it has no defined
-semantic outside `content-view`.
+`ContentViewSlot` SHALL select among multiple `content-view` claims by
+invoking each claim's optional `predicate` function and rendering the
+first claim (by priority order) whose predicate returns `true`. If no
+claim's predicate returns `true`, `ContentViewSlot` SHALL render
+nothing (return `null`), allowing the shell's fallback (`??
+sessionDetail`) to render the default chat view. The slot is
+`multiplicity: "one-active"`, so at most one claim renders at a time.
 
-The vite-plugin manifest validator SHALL accept the field as a
-free-form string. No name-resolution or export-existence check is
-performed against the field's value.
+The `predicate` field on `PluginClaim` is the SAME field used by
+session-card-badge and other session-scoped slots. It is a free
+JavaScript function name resolved at build time by the vite plugin
+against the plugin's client entry exports. The function's body MAY
+read any state its module exposes (including plugin-internal
+stores); the `session` argument is informational.
 
-#### Scenario: ContentViewSlot filters claims by route
+The SDK SHALL NOT add a parallel discriminator mechanism (such as a
+`route?` field). Plugins compose with the existing predicate slot
+field. (Earlier drafts of this change added a `route?` field; it was
+removed — see design.md Decision 3 RECONSIDERED.)
+
+#### Scenario: ContentViewSlot picks the predicate-true claim
 
 - **GIVEN** two `content-view` claims registered:
-  - Claim A: `{ component: "FlowAgentDetail", route: "flow-agent-detail" }`
-  - Claim B: `{ component: "FlowArchitectDetail", route: "flow-architect-detail" }`
-- **WHEN** the shell mounts `<ContentViewSlot>` with the active route
-  `"flow-agent-detail"`
+  - Claim A: `{ component: "FlowAgentDetail", predicate: "isFlowAgentDetailActive" }`
+  - Claim B: `{ component: "FlowArchitectDetail", predicate: "isFlowArchitectDetailActive" }`
+- **AND** `isFlowAgentDetailActive` returns `true`
+- **AND** `isFlowArchitectDetailActive` returns `false`
+- **WHEN** the shell mounts `<ContentViewSlot>`
 - **THEN** only Claim A SHALL render
 - **AND** Claim B SHALL NOT render
 
-#### Scenario: Claims without route match the empty route
+#### Scenario: ContentViewSlot renders nothing when all predicates are false
 
-- **GIVEN** a `content-view` claim without a `route` field
-- **WHEN** the shell mounts `<ContentViewSlot>` with no active route
-- **THEN** the claim SHALL be eligible to render (subject to existing
-  `one-active` priority resolution)
+- **GIVEN** content-view claims whose predicates all return `false`
+- **WHEN** the shell mounts `<ContentViewSlot>`
+- **THEN** the slot SHALL render nothing
+- **AND** the shell's `?? sessionDetail` fallback SHALL render the
+  chat view
 
-#### Scenario: Multiple claims with the same route resolve by priority
+#### Scenario: Multiple true predicates resolve by priority
 
-- **GIVEN** two `content-view` claims with `route: "spec-detail"`,
-  one from plugin priority 100 and one from plugin priority 200
-- **WHEN** the shell mounts `<ContentViewSlot>` with active route
-  `"spec-detail"`
-- **THEN** only the higher-priority plugin's claim SHALL render
-  (existing slot resolution applies)
+- **GIVEN** two content-view claims whose predicates both return
+  `true`, one at priority 40 and one at priority 60
+- **WHEN** the shell mounts `<ContentViewSlot>`
+- **THEN** only the lower-priority-value (priority 40) claim SHALL
+  render (existing slot `(priority asc, pluginId asc)` ordering)
+
+#### Scenario: Predicate can read plugin-internal state via closure
+
+- **GIVEN** a content-view claim's predicate function is defined in
+  the plugin's client entry and closes over a module-level state
+  store
+- **WHEN** the user triggers a plugin action that updates the store
+  (e.g. `setFlowDetailAgent(name)`)
+- **THEN** the predicate's next invocation SHALL reflect the new
+  state
+- **AND** the slot consumer SHALL pick up the change on next render
 

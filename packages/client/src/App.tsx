@@ -75,6 +75,7 @@ import {
   ContentViewSlot,
   ContentHeaderStickySlot,
   ContentInlineFooterSlot,
+  forSession,
 } from "@blackbelt-technology/dashboard-plugin-runtime";
 import { createSlotRegistry } from "@blackbelt-technology/dashboard-plugin-runtime";
 import { PLUGIN_REGISTRY } from "./generated/plugin-registry.js";
@@ -950,9 +951,11 @@ export default function App() {
               flows-plugin (FlowArchitectClaim, FlowDashboardClaim) and
               future plugins. The shell renders zero flow-specific
               content. See change: pluginize-flows-via-registry. */}
-          <div className="sticky top-0 z-10">
-            <ContentHeaderStickySlot session={sessions.get(selectedId)!} />
-          </div>
+          {selectedSession && (
+            <div className="sticky top-0 z-10">
+              <ContentHeaderStickySlot session={selectedSession} />
+            </div>
+          )}
           <ErrorBoundary fallback={
             <div className="flex-1 flex items-center justify-center p-8">
               <div className="text-center space-y-2">
@@ -1034,7 +1037,7 @@ export default function App() {
             onImagesChange={setImagesForSelected}
           />
           {/* Plugin slot: content-inline-footer — contributions from flows-plugin (per-session inline footer) and other plugins. */}
-          <ContentInlineFooterSlot session={sessions.get(selectedId)!} />
+          {selectedSession && <ContentInlineFooterSlot session={selectedSession} />}
           {/* Extension UI System (Phase 1): module picker + generic modal. */}
           {/* See change: add-extension-ui-modal. */}
           {extensionModulePickerOpen && selectedId && (() => {
@@ -1367,8 +1370,18 @@ export default function App() {
               onBack={() => setPreviewState(null)}
             />
           ) : (
-            /* Plugin slot: content-view (additive; rendered after existing routes, before sessionDetail fallback). Gate on registry claims so empty slot does NOT mask sessionDetail/LandingPage via `??`. */
-            (selectedId && selectedSession && _pluginRegistry.getClaims("content-view").length > 0
+            /* Plugin slot: content-view — only render when at least one
+               registered claim's predicate returns true for the current
+               session. Each claim's predicate closes over the plugin's
+               own UI-state store; a `false` predicate means "this claim
+               doesn't want to render right now" and the slot returns
+               null. Without this gate, plugins that registered
+               content-view claims with all-false predicates would cause
+               `<ContentViewSlot>` to return null while still satisfying
+               the `??` operator, masking sessionDetail / LandingPage.
+               See change: pluginize-flows-via-registry (design.md
+               Decision 3 RECONSIDERED). */
+            (selectedId && selectedSession && forSession(_pluginRegistry.getClaims("content-view"), selectedSession).length > 0
               ? <ContentViewSlot session={selectedSession} routeParams={{}} onClose={() => navigate("/")} />
               : null
             ) ?? sessionDetail ?? (

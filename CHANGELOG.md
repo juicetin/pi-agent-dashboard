@@ -15,6 +15,7 @@ see [`docs/release-process.md`](docs/release-process.md).
 ### Changed
 
 ### Fixed
+- Publish workflow: declared missing `tsx` devDependency so the bundle-recommended-extensions step resolves on CI. (change: fix-publish-tsx-missing)
 
 ## [0.5.2] - 2026-05-11
 

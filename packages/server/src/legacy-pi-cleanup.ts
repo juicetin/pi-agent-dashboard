@@ -17,7 +17,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { execSync } from "node:child_process";
+import { execSync } from "@blackbelt-technology/pi-dashboard-shared/platform/exec.js";
 
 export const LEGACY_PI_PACKAGE = "@mariozechner/pi-coding-agent";
 

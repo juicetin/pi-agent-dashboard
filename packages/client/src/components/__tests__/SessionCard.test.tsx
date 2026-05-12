@@ -446,11 +446,17 @@ describe("SessionCard subcard structure", () => {
     const titles = Array.from(container.querySelectorAll(".uppercase.rounded-full")).map(
       (el) => el.textContent,
     );
-    // MEMORY is intentionally absent (no plugin contributes).
-    // FLOWS subcard removed in pluginize-flows-via-registry — flows-plugin
-    // contributes via session-card-action-bar slot, not as a dedicated subcard.
-    const filtered = titles.filter((t) => t && /^(OPENSPEC|WORKSPACE|PROCESS|MEMORY)$/.test(t));
+    // MEMORY and FLOWS are intentionally absent (no plugin contributes in this
+    // test — the plugin registry is not populated). See change:
+    // add-flows-subcard for the new FLOWS subcard's wiring.
+    const filtered = titles.filter((t) => t && /^(OPENSPEC|WORKSPACE|PROCESS|FLOWS|MEMORY)$/.test(t));
     expect(filtered).toEqual(["OPENSPEC", "WORKSPACE", "PROCESS"]);
+  });
+
+  it("hides FLOWS subcard when no plugin claims session-card-flows", () => {
+    const session = makeSession();
+    render(<SessionCard session={session} {...defaultProps} />);
+    expect(screen.queryByText("FLOWS")).toBeNull();
   });
 
   it("hides PROCESS subcard when processes array is empty", () => {

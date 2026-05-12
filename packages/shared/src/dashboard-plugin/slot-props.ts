@@ -42,6 +42,10 @@ export interface SlotPropsMap {
     session: DashboardSession;
     pluginContext: AnyPluginContext;
   };
+  "session-card-flows": {
+    session: DashboardSession;
+    pluginContext: AnyPluginContext;
+  };
   "workspace-action-bar": {
     session: DashboardSession;
     pluginContext: AnyPluginContext;

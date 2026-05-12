@@ -35,7 +35,7 @@ import { InlineRenameInput } from "./InlineRenameInput.js";
 import { ProcessList, type ProcessEntry } from "./ProcessList.js";
 import type { CommandInfo } from "@blackbelt-technology/pi-dashboard-shared/types.js";
 import { useMobile } from "../hooks/useMobile.js";
-import { SessionCardBadgeSlot, SessionCardActionBarSlot, SessionCardMemorySlot, WorkspaceActionBarSlot, useSlotHasClaimsForSession } from "@blackbelt-technology/dashboard-plugin-runtime";
+import { SessionCardBadgeSlot, SessionCardActionBarSlot, SessionCardMemorySlot, SessionCardFlowsSlot, WorkspaceActionBarSlot, useSlotHasClaimsForSession } from "@blackbelt-technology/dashboard-plugin-runtime";
 import { SessionSubcard } from "./SessionSubcard.js";
 import { useSessionCardDragHandle } from "./SortableSessionCard.js";
 
@@ -690,16 +690,18 @@ export function SessionCard({
         </SessionSubcard>
       )}
 
+      {/* FLOWS subcard — plugin slot only.
+          Populated by flows-plugin's SessionFlowActionsClaim via the
+          dedicated `session-card-flows` slot. See change: add-flows-subcard. */}
+      <FlowsSubcard session={session} />
+
       {/* MEMORY subcard — plugin slot only */}
       <MemorySubcard session={session} />
 
-      {/* FLOWS subcard removed — flows-plugin contributes its own card
-          actions via SessionFlowActionsClaim through the session-card-
-          action-bar slot below. See change: pluginize-flows-via-registry. */}
-
       {/* Plugin slot: session-card-action-bar — generic card footer.
           Currently no claimers after jj/honcho rerouted to workspace-action-bar /
-          session-card-memory; kept rendered for future generic plugins. */}
+          session-card-memory and flows rerouted to session-card-flows; kept
+          rendered for future generic plugins. */}
       <SessionCardActionBarSlot session={session} />
       </div>{/* end card content */}
       </div>{/* end flex row */}
@@ -735,6 +737,21 @@ function MemorySubcard({ session }: { session: DashboardSession }) {
   return (
     <SessionSubcard title="MEMORY">
       <SessionCardMemorySlot session={session} />
+    </SessionSubcard>
+  );
+}
+
+/**
+ * FLOWS subcard — renders only when a plugin claims session-card-flows AND
+ * at least one claim's `shouldRender(session)` returns true. See change:
+ * add-flows-subcard.
+ */
+function FlowsSubcard({ session }: { session: DashboardSession }) {
+  const hasFlows = useSlotHasClaimsForSession("session-card-flows", session);
+  if (!hasFlows) return null;
+  return (
+    <SessionSubcard title="FLOWS">
+      <SessionCardFlowsSlot session={session} />
     </SessionSubcard>
   );
 }

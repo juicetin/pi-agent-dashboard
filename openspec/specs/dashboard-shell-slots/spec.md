@@ -125,6 +125,9 @@ type SlotId =
   | "sidebar-folder-section"
   | "session-card-badge"
   | "session-card-action-bar"
+  | "session-card-flows"
+  | "session-card-memory"
+  | "workspace-action-bar"
   | "content-view"
   | "content-header-sticky"
   | "content-inline-footer"
@@ -386,7 +389,7 @@ The shared package `@blackbelt-technology/pi-dashboard-shared/dashboard-plugin/s
 
 | Slot category | Slot ids | `SlotPredicateInput<S>` |
 |---|---|---|
-| Session-scoped | `session-card-badge`, `session-card-action-bar`, `session-card-memory`, `workspace-action-bar`, `content-view`, `content-header-sticky`, `content-inline-footer`, `command-route` | `DashboardSession \| null \| undefined` |
+| Session-scoped | `session-card-badge`, `session-card-action-bar`, `session-card-flows`, `session-card-memory`, `workspace-action-bar`, `content-view`, `content-header-sticky`, `content-inline-footer`, `command-route` | `DashboardSession \| null \| undefined` |
 | Folder-scoped | `sidebar-folder-section` | `FolderDescriptor` |
 | Predicate-irrelevant | every other `SlotId` (`settings-section`, `tool-renderer`, `anchored-popover`, all descriptor-only slots) | `never` |
 
@@ -397,6 +400,11 @@ The `never` value for predicate-irrelevant slots is documentation-only: under th
 #### Scenario: Session-scoped slot maps to DashboardSession input
 
 - **WHEN** type-checking `SlotPredicateInput<"session-card-badge">`
+- **THEN** the resolved type SHALL be `DashboardSession | null | undefined`.
+
+#### Scenario: New session-card-flows slot is session-scoped
+
+- **WHEN** type-checking `SlotPredicateInput<"session-card-flows">`
 - **THEN** the resolved type SHALL be `DashboardSession | null | undefined`.
 
 #### Scenario: Folder-scoped slot maps to FolderDescriptor input
@@ -468,7 +476,7 @@ All flow rendering SHALL go through slot consumers populated by
 `flows-plugin` claims. Specifically:
 
 - `FlowActivityBadge` rendered via `session-card-badge` slot.
-- `SessionFlowActions` rendered via `session-card-action-bar` slot.
+- `SessionFlowActions` rendered via `session-card-flows` slot.
 - `FlowDashboard` and `FlowArchitect` rendered via
   `content-header-sticky` slot.
 - `FlowAgentDetail`, `FlowArchitectDetail`, `FlowYamlPreview`
@@ -509,6 +517,43 @@ Slot consumers receive the standard prop contract for their slot
 - **WHEN** the user transitions through flow-detail and default views
 - **THEN** `<FlowDashboard>` SHALL be rendered exactly once at any
   point in time
+
+#### Scenario: SessionFlowActions renders inside FLOWS subcard
+
+- **GIVEN** a session whose `flowsList` is non-empty OR whose `commandsList` includes `flows:new`
+- **WHEN** the desktop session card is rendered
+- **THEN** `<SessionFlowActions>` SHALL render exactly once inside the FLOWS subcard via the `session-card-flows` slot
+- **AND** SHALL NOT render via the `session-card-action-bar` slot
+
+### Requirement: New plugin slot `session-card-flows` is reserved and consumed by FLOWS subcard
+
+A new dashboard plugin slot identifier `session-card-flows` SHALL be added to `SLOT_DEFINITIONS` in `packages/shared/src/dashboard-plugin/slot-types.ts`. Multiplicity SHALL be `many`. Payload tier SHALL be `react-only` (matching `session-card-action-bar` and `session-card-memory`). The slot SHALL render its claims inside the FLOWS subcard. When no plugin claims the slot, the subcard renders nothing.
+
+A matching consumer component `SessionCardFlowsSlot({ session })` SHALL be exported from `packages/dashboard-plugin-runtime/src/slot-consumers.tsx`. The consumer SHALL render both legacy refs claims (filtered via `forSessionRendered`) and intent-store contributions (via `useSlotIntents("session-card-flows", session.id)`), each wrapped in a per-claim `SlotErrorBoundary` + `CurrentPluginLayer`.
+
+The slot SHALL be classified as session-scoped: `SlotPredicateInput<"session-card-flows">` SHALL resolve to `DashboardSession | null | undefined`. The compile-time exhaustiveness assertion (`_AssertAllSlotsPredicateClassified`) SHALL cover the new slot id without modification beyond the union extension.
+
+#### Scenario: Slot definition exists
+
+- **WHEN** the slot registry is initialized
+- **THEN** `SLOT_DEFINITIONS` SHALL contain an entry with `id: "session-card-flows"` and `multiplicity: "many"`
+
+#### Scenario: Slot consumer is exported from the runtime
+
+- **WHEN** a consumer imports from `@blackbelt-technology/dashboard-plugin-runtime`
+- **THEN** the named export `SessionCardFlowsSlot` SHALL be present and accept a `{ session: DashboardSession }` prop
+
+#### Scenario: Plugin contribution renders inside FLOWS subcard
+
+- **WHEN** a plugin registers a `session-card-flows` claim that returns a non-empty React node for a session
+- **AND** a desktop session card is rendered for that session
+- **THEN** the rendered DOM SHALL contain a `FLOWS` titled subcard
+- **AND** the plugin's contribution SHALL appear inside that subcard's body
+
+#### Scenario: Predicate input is session-scoped
+
+- **WHEN** type-checking `SlotPredicateInput<"session-card-flows">`
+- **THEN** the resolved type SHALL be `DashboardSession | null | undefined`
 
 ## Related Capabilities
 

@@ -15,13 +15,14 @@ export type SlotId =
   | "sidebar-folder-section"
   | "session-card-action-bar"
   | "workspace-action-bar"
-  // (session-card-memory is also react-only; declared below for ordering)
+  // (session-card-memory and session-card-flows are also react-only; declared below for ordering)
   | "content-inline-footer"
   | "anchored-popover"
   | "command-route"
   | "tool-renderer"
   // React-or-descriptor slots
   | "session-card-memory"
+  | "session-card-flows"
   | "session-card-badge"
   | "content-view"
   | "content-header-sticky"
@@ -68,6 +69,11 @@ export const SLOT_DEFINITIONS: Record<SlotId, SlotDefinition> = {
     multiplicity: "many",
     payloadTier: "react-only",
     description: "Memory/Honcho contributions inside the MEMORY subcard of a session card",
+  },
+  "session-card-flows": {
+    multiplicity: "many",
+    payloadTier: "react-only",
+    description: "Flow contributions inside the FLOWS subcard of a session card",
   },
   "workspace-action-bar": {
     multiplicity: "many",
@@ -179,6 +185,7 @@ type SessionScopedSlot =
   | "session-card-badge"
   | "session-card-action-bar"
   | "session-card-memory"
+  | "session-card-flows"
   | "workspace-action-bar"
   | "content-view"
   | "content-header-sticky"

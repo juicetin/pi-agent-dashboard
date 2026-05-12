@@ -32,6 +32,10 @@ export { FlowAgentDetailClaim } from "./FlowAgentDetail.js";
 export { FlowSummaryClaim } from "./FlowSummary.js";
 export { FlowYamlPreviewClaim } from "./FlowYamlPreview.js";
 export { SessionFlowActionsClaim } from "./SessionFlowActions.js";
+
+// Manifest-level shouldRender predicate for the `session-card-flows` claim.
+// See change: add-flows-subcard.
+export { shouldRenderFlowsSubcard } from "./shouldRender.js";
 export {
   FlowsListRoute,
   FlowsNewRoute,
@@ -48,6 +52,15 @@ export {
 } from "./FlowsSessionStateContext.js";
 export type { FlowsSessionState } from "./FlowsSessionStateContext.js";
 import { getFlowsUiStateSnapshot } from "./FlowsUiStateContext.js";
+import { installFlowsAvailabilitySubscriber } from "./flowsAvailability.js";
+
+// Install the per-session flows-availability subscriber once at module
+// load. The subscriber populates the sync cache that
+// `shouldRenderFlowsSubcard` reads. Idempotent (guarded inside the
+// installer). See change: add-flows-subcard (design.md Decision 3 —
+// module-level subscriber breaks the chicken-and-egg cycle between
+// the predicate and the component it gates).
+installFlowsAvailabilitySubscriber();
 export {
   useFlowsUiState,
   useFlowsUiActions,

@@ -19,6 +19,16 @@
 
 const data = new Map<string, Map<string, unknown>>();
 const subscribers = new Map<string, Set<() => void>>();
+/**
+ * Subscribers that fire on every publish for a given key, regardless of
+ * session id. Callback receives `(sessionId, value)` and is invoked
+ * synchronously after the per-(sessionId,key) store update. Used by
+ * plugin-side caches (e.g. flows-plugin's per-session availability map)
+ * that need to react to publishes for sessions they haven't observed yet.
+ *
+ * See change: add-flows-subcard.
+ */
+const keySubscribers = new Map<string, Set<(sessionId: string, value: unknown) => void>>();
 
 /**
  * Publish a session-scoped data value under a string key. Plugins
@@ -34,6 +44,7 @@ export function publishSessionData<T>(sessionId: string, key: string, value: T):
   }
   session.set(key, value);
   notify(sessionId, key);
+  notifyKey(sessionId, key, value);
 }
 
 /**
@@ -44,7 +55,10 @@ export function clearSessionData(sessionId: string): void {
   const session = data.get(sessionId)!;
   const keys = Array.from(session.keys());
   data.delete(sessionId);
-  for (const key of keys) notify(sessionId, key);
+  for (const key of keys) {
+    notify(sessionId, key);
+    notifyKey(sessionId, key, undefined);
+  }
 }
 
 /**
@@ -91,6 +105,40 @@ function notify(sessionId: string, key: string): void {
   for (const cb of set) cb();
 }
 
+function notifyKey(sessionId: string, key: string, value: unknown): void {
+  const set = keySubscribers.get(key);
+  if (!set) return;
+  for (const cb of set) cb(sessionId, value);
+}
+
+/**
+ * Subscribe to publishes for a single `key` across every session. The
+ * callback receives `(sessionId, value)` after each publish. When a
+ * session is cleared via `clearSessionData`, the callback fires with
+ * `value === undefined` for every key the session held.
+ *
+ * Used by plugin caches that need to populate state for sessions whose
+ * data arrives at unpredictable times (e.g. flows-plugin's per-session
+ * availability cache). Returns an unsubscribe function.
+ *
+ * See change: add-flows-subcard.
+ */
+export function subscribeSessionDataKey(
+  key: string,
+  cb: (sessionId: string, value: unknown) => void,
+): () => void {
+  let set = keySubscribers.get(key);
+  if (!set) {
+    set = new Set();
+    keySubscribers.set(key, set);
+  }
+  set.add(cb);
+  return () => {
+    set!.delete(cb);
+    if (set!.size === 0) keySubscribers.delete(key);
+  };
+}
+
 /**
  * Test-only helper to reset the store between tests.
  *
@@ -99,4 +147,5 @@ function notify(sessionId: string, key: string): void {
 export function __resetSessionDataStoreForTests(): void {
   data.clear();
   subscribers.clear();
+  keySubscribers.clear();
 }

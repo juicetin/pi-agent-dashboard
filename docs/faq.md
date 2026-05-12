@@ -788,6 +788,24 @@ Cross-refs:
 - README.md:466
 - packages/dashboard-plugin-runtime/src/slot-registry.ts
 
+## How to add a new session-card subcard?
+
+Mirror MEMORY/FLOWS pattern. Five edits.
+
+1. `packages/shared/src/dashboard-plugin/slot-types.ts` — add slot id to `SlotId` union, `SLOT_DEFINITIONS`, `SessionScopedSlot`.
+2. `packages/shared/src/dashboard-plugin/slot-props.ts` — add `SlotPropsMap` entry.
+3. `packages/dashboard-plugin-runtime/src/slot-consumers.tsx` — copy `SessionCardMemorySlot`, rename + swap slot id.
+4. `packages/client/src/components/SessionCard.tsx` — add `XxxSubcard` wrapper gated by `useSlotHasClaimsForSession`; slot into stack.
+5. Plugin manifest declares claim with `shouldRender` ref. Plugin client entry exports predicate. Cache populator runs at module load via `subscribeSessionDataKey` (per-session) or module flag (global). Closed-by-default prevents flicker.
+
+See change: add-flows-subcard for worked example.
+
+Cross-refs:
+- docs/file-index-plugins.md
+- docs/file-index-shared.md
+- docs/file-index-client.md
+- docs/plugin-claim-gates.md
+
 ## How does the dashboard detect and spawn different session types?
 
 Two-tier type system. User config → platform availability → mechanism. Single pure selector.

@@ -26,6 +26,9 @@ export { setSender, sendPluginAction } from "./plugin-action-bridge.js";
 export {
   publishSessionData,
   clearSessionData,
+  subscribeSessionDataKey,
+  getSessionData,
+  __resetSessionDataStoreForTests,
 } from "./session-data-store.js";
 export {
   createUiPrimitiveRegistry,

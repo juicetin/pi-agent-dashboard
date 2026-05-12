@@ -155,6 +155,25 @@ export function SessionCardMemorySlot({ session }: { session: DashboardSession }
   );
 }
 
+export function SessionCardFlowsSlot({ session }: { session: DashboardSession }) {
+  const registry = useSlotRegistryOrNull();
+  const intents = useSlotIntents("session-card-flows", session.id);
+  const legacyClaims = registry
+    ? forSessionRendered(registry.getClaims("session-card-flows"), session)
+    : [];
+  if (!legacyClaims.length && intents.size === 0) return null;
+  return (
+    <>
+      {legacyClaims.map((c) =>
+        renderClaim(c as Parameters<typeof renderClaim>[0], "session-card-flows", { session }),
+      )}
+      {Array.from(intents.entries()).map(([pluginId, intent]) =>
+        renderIntent(pluginId, "session-card-flows", intent, session.id),
+      )}
+    </>
+  );
+}
+
 export function WorkspaceActionBarSlot({ session }: { session: DashboardSession }) {
   const registry = useSlotRegistryOrNull();
   const intents = useSlotIntents("workspace-action-bar", session.id);

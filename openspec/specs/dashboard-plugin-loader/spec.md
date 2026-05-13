@@ -115,31 +115,52 @@ A test SHALL exist asserting that every message type used by the server-to-brows
 
 ### Requirement: Bridge auto-register uses dashboard- key prefix
 
-The plugin loader SHALL extend the existing `~/.pi/agent/settings.json` writer (currently `packages/shared/src/bridge-register.ts`) so that every plugin declaring a `bridge` entry is registered under a managed key with the prefix `dashboard-<plugin-id>`.
+The plugin loader SHALL extend the existing `~/.pi/agent/settings.json` writer (`packages/shared/src/plugin-bridge-register.ts`) so that every plugin declaring a `bridge` entry is registered under a managed key with the prefix `dashboard-<plugin-id>` in TWO places, atomically:
 
-The loader SHALL NEVER write or delete entries that lack the `dashboard-` prefix. The loader SHALL detect when a `dashboard-<plugin-id>` entry already exists with a path that does not match the plugin's resolved bridge path; in that case the loader SHALL log a warning, skip the registration for that plugin, and surface the conflict via `/api/health.plugins[].error`.
+1. `dashboardPluginBridges["dashboard-<plugin-id>"] = "<absolute-bridge-path>"` — retained for forward compatibility when pi-coding-agent grows native support.
+2. `packages[]` — a new entry of shape `{ path: "<absolute-bridge-path>", _dashboardOwned: "dashboard-<plugin-id>" }` (or the same path string with a documented ownership marker mechanism). This is the key that pi-coding-agent actually reads, so this write makes the bridge load in real pi sessions.
+
+The loader SHALL NEVER write or delete entries in `packages[]` that lack the `_dashboardOwned` marker (or equivalent ownership mechanism). User-added entries SHALL remain untouched on plugin disable.
+
+On server start the loader SHALL run a one-shot reconciliation: for each entry in `dashboardPluginBridges`, ensure a matching `packages[]` entry exists with the same ownership marker; missing entries SHALL be added with a log line. This heals existing installs that pre-date this change without requiring plugin reinstall.
+
+The loader SHALL detect when a `dashboard-<plugin-id>` entry already exists with a path that does not match the plugin's resolved bridge path; in that case the loader SHALL log a warning, skip the registration for that plugin, and surface the conflict via `/api/health.plugins[].error`.
 
 The atomic write helper used by the existing dashboard-bridge entry SHALL be reused — the loader SHALL NOT re-implement file writes.
 
-#### Scenario: Plugin bridge entry registered under managed key
+An environment variable `PI_DASHBOARD_DISABLE_PLUGIN_BRIDGE_PACKAGES_WRITE=1` SHALL skip the `packages[]` write (rollback escape hatch for one minor release).
 
-- **WHEN** plugin "demo" declares `"bridge": "./dist/bridge/index.js"` and the dashboard starts
-- **THEN** `~/.pi/agent/settings.json` `extensions[]` SHALL contain an entry whose key starts with `dashboard-demo` and whose path equals the absolute resolved path of the plugin's bridge entry.
+#### Scenario: Plugin bridge entry registered in both registries
+
+- **WHEN** plugin "flows-anthropic-bridge" declares a `bridge` field and the dashboard starts
+- **THEN** `~/.pi/agent/settings.json` SHALL contain `dashboardPluginBridges["dashboard-flows-anthropic-bridge"]` pointing at the absolute bridge path
+- **AND** `packages[]` SHALL contain an entry for the same path marked `_dashboardOwned: "dashboard-flows-anthropic-bridge"`
+
+#### Scenario: pi loads the bridge from packages[] on next session
+
+- **WHEN** after the dual write completes, a pi session starts
+- **THEN** the bridge file SHALL be imported by pi-coding-agent's extension loader (which reads `packages[]`)
+- **AND** the bridge's `activate()` function SHALL execute, run its peer probe, and (when peers resolve) emit `flow:register-agent-extension`
+
+#### Scenario: One-shot reconciliation heals pre-existing installs
+
+- **WHEN** the server starts and `dashboardPluginBridges` contains an entry without a matching `packages[]` entry
+- **THEN** the loader SHALL add the missing `packages[]` entry with the same ownership marker and log an info line naming the plugin id
 
 #### Scenario: User-owned entries preserved
 
-- **WHEN** the user has manually added an extension entry under a key like `my-custom-extension` and the dashboard starts
-- **THEN** the loader SHALL leave that entry untouched and SHALL NOT delete it on plugin disable.
+- **WHEN** the user has manually added a `packages[]` entry without an ownership marker
+- **THEN** the loader SHALL leave that entry untouched and SHALL NOT delete it on plugin disable
 
-#### Scenario: Pre-existing dashboard- entry with mismatched path triggers warning
+#### Scenario: Disable removes managed entries from both registries
 
-- **WHEN** `~/.pi/agent/settings.json` already contains `dashboard-demo` pointing at a stale path different from the plugin's current resolved path
-- **THEN** the loader SHALL log a warning, leave the existing entry in place, mark plugin "demo" failed in `/api/health` with an error message identifying the path mismatch, and continue loading other plugins.
+- **WHEN** the user sets `plugins.<id>.enabled = false` and restarts the dashboard
+- **THEN** the loader SHALL remove BOTH the `dashboardPluginBridges["dashboard-<id>"]` key AND the matching ownership-marked `packages[]` entry, atomic-write the file, and SHALL NOT touch any other entry
 
-#### Scenario: Disable removes managed entry
+#### Scenario: Escape-hatch env var disables packages[] write
 
-- **WHEN** the user sets `plugins.demo.enabled = false` and restarts the dashboard
-- **THEN** the loader SHALL remove the `dashboard-demo` entry from `settings.json`, atomic-write the file, and SHALL NOT touch any other entry.
+- **WHEN** `PI_DASHBOARD_DISABLE_PLUGIN_BRIDGE_PACKAGES_WRITE=1` is set in the server env
+- **THEN** the loader SHALL write only to `dashboardPluginBridges` and SHALL NOT touch `packages[]` (rollback parity with the pre-change behavior)
 
 ### Requirement: Loader caches plugin discovery for both Vite and server startup
 
@@ -157,24 +178,36 @@ The loader SHALL implement a single discovery routine that globs `packages/*/pac
 
 ### Requirement: `/api/health.plugins[]` field is populated with one entry per discovered plugin
 
-The dashboard `GET /api/health` response SHALL include a `plugins` array. Each discovered plugin (regardless of enable state or load success) SHALL produce exactly one entry of the form `{ id, enabled, loaded, error?, claims }`.
+The dashboard `GET /api/health` response SHALL include a `plugins` array. Each discovered plugin (regardless of enable state or load success) SHALL produce exactly one entry of shape:
 
-The `claims` count SHALL reflect the number of slot claims the plugin manifest declares, not the number that successfully resolved at registration time. A failed plugin SHALL still report its declared `claims` count.
+```ts
+{
+  id: string,
+  enabled: boolean,
+  loaded: boolean,
+  error?: string,
+  claims: number,
+  bridgeLoadedFrom: "packages[]" | "dashboardPluginBridges" | "none",
+  lastProbe?: { status: "probing"|"waiting_peers"|"active"|"degraded", peers: object, at: number }
+}
+```
 
-#### Scenario: Healthy plugin reports loaded:true
+The `bridgeLoadedFrom` field SHALL be computed by re-reading `~/.pi/agent/settings.json` at health-check time and matching the plugin's resolved bridge path against entries in both registries. The `lastProbe` field SHALL be populated from forwarded `flows-anthropic-bridge:status` events kept in the server's per-PID status map (when the plugin is a status-emitting bridge plugin); for non-status-emitting bridges this field SHALL be omitted.
 
-- **WHEN** plugin "demo" loads successfully with two slot claims
-- **THEN** `/api/health` SHALL contain `{ id: "demo", enabled: true, loaded: true, claims: 2 }` and no `error` field.
+#### Scenario: Health reports bridge loaded from packages[]
 
-#### Scenario: Failed plugin reports loaded:false with error
+- **WHEN** plugin "flows-anthropic-bridge" has a `packages[]` entry with matching ownership marker and the plugin loaded successfully
+- **THEN** `GET /api/health` SHALL return `plugins[*]` with `id: "flows-anthropic-bridge", bridgeLoadedFrom: "packages[]", loaded: true`
 
-- **WHEN** plugin "demo"'s server entry throws on registration
-- **THEN** `/api/health` SHALL contain `{ id: "demo", enabled: true, loaded: false, error: "<message>", claims: 2 }`.
+#### Scenario: Health reports active bridge probe
 
-#### Scenario: Disabled plugin reports loaded:false without error
+- **WHEN** the bridge has reported `{status: "active"}` for a pi session
+- **THEN** the corresponding `/api/health.plugins[]` entry SHALL include `lastProbe.status: "active"` and an `at` timestamp within the past 60 s
 
-- **WHEN** the user disables plugin "demo" via config
-- **THEN** `/api/health` SHALL contain `{ id: "demo", enabled: false, loaded: false, claims: 2 }` and no `error` field.
+#### Scenario: Health reports legacy bridge without packages[] entry
+
+- **WHEN** a plugin's bridge is registered only in `dashboardPluginBridges` (e.g. escape-hatch env var was set) AND no matching `packages[]` entry exists
+- **THEN** `GET /api/health` SHALL report `bridgeLoadedFrom: "dashboardPluginBridges"` and `loaded: false` for that plugin (pi won't import it)
 
 ### Requirement: Loader does not crash dashboard on plugin failure
 

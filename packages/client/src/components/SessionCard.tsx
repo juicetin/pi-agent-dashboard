@@ -410,6 +410,17 @@ export function SessionCard({
             </span>
           )}
           <ActivityIndicator session={session} />
+          {/* Mid-turn queue count badge — bridge-owned queue depth.
+              Hidden when empty. See change: surface-mid-turn-prompt-queue. */}
+          {session.queue && session.queue.pending.length > 0 && (
+            <span
+              data-testid="queue-count-badge"
+              className="flex-shrink-0 inline-flex items-center px-1.5 py-0 text-[10px] rounded-full bg-blue-500/15 text-blue-300 border border-blue-500/30"
+              title={`${session.queue.pending.length} queued message${session.queue.pending.length === 1 ? "" : "s"}`}
+            >
+              {session.queue.pending.length}
+            </span>
+          )}
           <span className="flex-1" />
           <ContextUsageBar
             tokens={contextUsage?.tokens ?? null}

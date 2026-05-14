@@ -469,7 +469,12 @@ export function CommandInput({ commands: externalCommands, onSend, onListFiles, 
           onKeyDown={handleKeyDown}
           onPaste={handlePaste}
           placeholder="Message, /command, !shell, or @file..."
-          disabled={disabled || pendingPrompt}
+          /* Bridge-owned mid-turn queue: keep input enabled while the agent
+             is streaming so further sends queue. Per the modified
+             `optimistic-prompt` capability, disable only when pendingPrompt
+             is in flight AND the agent is NOT streaming (idle-send case).
+             See change: surface-mid-turn-prompt-queue. */
+          disabled={disabled || (pendingPrompt && !isWorking)}
           rows={1}
           className="flex-1 bg-[var(--bg-tertiary)] rounded-lg px-4 py-2 text-sm text-[var(--text-primary)] placeholder-gray-500 border border-[var(--border-secondary)] focus:border-blue-500 focus:outline-none disabled:opacity-50 resize-none"
           style={{ minHeight: "38px", maxHeight: "120px" }}
@@ -481,7 +486,9 @@ export function CommandInput({ commands: externalCommands, onSend, onListFiles, 
         />
         <button
           onClick={handleSend}
-          disabled={disabled || pendingPrompt || !text.trim()}
+          /* Send button mirrors textarea: enabled during streaming so the
+             user can queue another mid-turn message. */
+          disabled={disabled || (pendingPrompt && !isWorking) || !text.trim()}
           className="p-2 bg-blue-600 rounded-lg hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed self-end"
           title="Send"
           data-testid="send-button"

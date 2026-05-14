@@ -9,7 +9,7 @@ import type {
   ExtensionToServerMessage,
 } from "@blackbelt-technology/pi-dashboard-shared/protocol.js";
 import { killProcessByPgid } from "./process-scanner.js";
-import type { FileEntry, PiSessionInfo } from "@blackbelt-technology/pi-dashboard-shared/types.js";
+import type { FileEntry, ImageContent, PiSessionInfo } from "@blackbelt-technology/pi-dashboard-shared/types.js";
 import { filterHiddenCommands } from "./bridge-context.js";
 import { expandPromptTemplateFromDisk } from "./prompt-expander.js";
 import { tryDispatchExtensionCommand } from "./slash-dispatch.js";
@@ -170,6 +170,19 @@ export function createCommandHandler(
      * See change: fix-extension-slash-commands-in-dashboard.
      */
     sessionPrompt?: (text: string) => void | Promise<void>;
+    /**
+     * If the agent is currently streaming, enqueue the user prompt into the
+     * bridge-owned mid-turn queue and return `true`. The command handler then
+     * skips its own `pi.sendUserMessage` call. Returns `false` when the agent
+     * is idle so the handler delivers the prompt normally.
+     *
+     * Only applies to the passthrough branch (regular user text and
+     * image-bearing messages). Slash commands, !bash, /compact, /reload,
+     * /new, /model, and mgmt commands bypass the queue (they run synchronously
+     * in the bridge or are dispatched as pi events, never enter pi's user-
+     * message turn loop). See capability `mid-turn-prompt-queue`.
+     */
+    enqueueIfStreaming?: (text: string, images?: ImageContent[]) => boolean;
   },
 ): CommandHandler {
   const getSessionId = typeof sessionIdOrGetter === "function" ? sessionIdOrGetter : () => sessionIdOrGetter;
@@ -338,6 +351,14 @@ export function createCommandHandler(
           let outgoing = msg.text;
           if (outgoing.startsWith("/")) {
             outgoing = expandPromptTemplateFromDisk(outgoing, process.cwd(), pi);
+          }
+          // Bridge-owned mid-turn prompt queue: if the agent is streaming, push
+          // to the bridge queue instead of forwarding to pi. The bridge drains
+          // on `agent_end` (see bridge.ts), so messages run after the current
+          // turn completes. Cancel via `clear_queue`.
+          // See capability `mid-turn-prompt-queue`.
+          if (options?.enqueueIfStreaming?.(outgoing, msg.images)) {
+            return undefined;
           }
           sendUserMessageWithImages(pi, outgoing, msg.images);
           return undefined;

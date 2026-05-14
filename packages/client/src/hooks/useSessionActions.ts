@@ -57,6 +57,27 @@ export function useSessionActions(deps: SessionActionDeps) {
     if (selectedId) send({ type: "force_kill", sessionId: selectedId });
   }, [selectedId, send]);
 
+  /**
+   * Empty the bridge-owned mid-turn prompt queue for the selected session.
+   * Sends `clear_queue` to the server; the bridge drops its in-memory queue
+   * and emits a `queue_state { pending: [] }` snapshot which the server
+   * broadcasts back as a session_updated.
+   * See change: surface-mid-turn-prompt-queue.
+   */
+  const handleClearQueue = useCallback(() => {
+    if (selectedId) send({ type: "clear_queue", sessionId: selectedId });
+  }, [selectedId, send]);
+
+  /**
+   * Remove a single entry from the bridge-owned mid-turn queue by id.
+   * Sends `remove_queue_entry`; the bridge drops the matching entry and
+   * emits a fresh `queue_state` snapshot.
+   * See change: surface-mid-turn-prompt-queue.
+   */
+  const handleRemoveQueueEntry = useCallback((id: string) => {
+    if (selectedId) send({ type: "remove_queue_entry", sessionId: selectedId, id });
+  }, [selectedId, send]);
+
   const handleCancelPending = useCallback(() => {
     if (selectedId) {
       setSessionStates((prev) => {
@@ -273,7 +294,7 @@ export function useSessionActions(deps: SessionActionDeps) {
   }, [selectedId, send]);
 
   return {
-    handleAbort, handleForceKill, handleCancelPending, handleRespondToUi, handleFlowAction, handleSend,
+    handleAbort, handleForceKill, handleCancelPending, handleClearQueue, handleRemoveQueueEntry, handleRespondToUi, handleFlowAction, handleSend,
     handleSelect, handleRenameSession, handleShutdownSession, handleKillProcess,
     handleSendPromptToSession, handleResumeSession, handleResumeSessionKeepPosition, handleSpawnSession,
     handleHideSession, handleUnhideSession,

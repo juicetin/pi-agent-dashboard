@@ -30,6 +30,7 @@ import { PiUpdateBadge } from "./components/PiUpdateBadge.js";
 import { TokenStatsBar } from "./components/TokenStatsBar.js";
 
 import { CommandInput } from "./components/CommandInput.js";
+import { QueuePanel } from "./components/QueuePanel.js";
 import { readAllDrafts, writeDraft, deleteDraft } from "./lib/draft-storage.js";
 import { extractUserPromptHistory } from "./lib/message-history.js";
 import { StatusBar } from "./components/StatusBar.js";
@@ -46,6 +47,7 @@ import { TerminalsView } from "./components/TerminalsView.js";
 import { EditorView } from "./components/EditorView.js";
 import { decodeFolderPath, encodeFolderPath } from "./lib/folder-encoding.js";
 import { FileDiffView } from "./components/FileDiffView.js";
+import { SubagentPopoutPage } from "./components/SubagentPopoutPage.js";
 import { createInitialState, findLastUserPrompt, reduceEvent, resolveInteractiveRequest, type SessionState } from "./lib/event-reducer.js";
 import { useMessageHandler } from "./hooks/useMessageHandler.js";
 import { useEditors } from "./lib/use-editors.js";
@@ -266,6 +268,11 @@ export default function App() {
   const [readmeMatch, readmeParams] = useRoute("/folder/:encodedCwd/readme");
   const [piResourcesMatch, piResourcesParams] = useRoute("/folder/:encodedCwd/pi-resources");
   const [diffMatch, diffParams] = useRoute("/session/:id/diff");
+  // Subagent inspector popout (add-subagent-inspector). Same shape as the
+  // existing session route, plus :agentId.
+  const [subagentPopoutMatch, subagentPopoutParams] = useRoute<{ sessionId: string; agentId: string }>(
+    "/session/:sessionId/subagent/:agentId",
+  );
   const [piResourceFileMatch] = useRoute("/pi-resource");
   const [piResourceFileSearch] = useSearchParams();
   const piResourceFilePath = piResourceFileSearch.get("path");
@@ -277,9 +284,11 @@ export default function App() {
   const readmeCwd = readmeMatch && readmeParams ? decodeFolderPath(readmeParams.encodedCwd) : null;
   const piResourcesCwd = piResourcesMatch && piResourcesParams ? decodeFolderPath(piResourcesParams.encodedCwd) : null;
   const diffSessionId = diffMatch && diffParams ? diffParams.id : null;
+  const subagentPopoutSessionId = subagentPopoutMatch && subagentPopoutParams ? subagentPopoutParams.sessionId : null;
+  const subagentPopoutAgentId = subagentPopoutMatch && subagentPopoutParams ? subagentPopoutParams.agentId : null;
   const hasShellOverlayRoute =
     !!openspecPreviewMatch || !!archiveMatch || !!specsMatch ||
-    !!readmeMatch || !!piResourcesMatch || !!diffMatch;
+    !!readmeMatch || !!piResourcesMatch || !!diffMatch || !!subagentPopoutMatch;
   const hasPiResourceRouteFlag = !!piResourceFileMatch && !!piResourceFilePath;
   const selectedId = match ? params?.id : undefined;
   const selectedSessionIdRef = useRef<string | undefined>(selectedId);
@@ -533,6 +542,20 @@ export default function App() {
     }
   }, [selectedId, send, status]);
 
+  // Popout-route subscribe: when /session/:sid/subagent/:aid loads in a fresh
+  // tab, ensure we subscribe to the parent session so its state populates.
+  // See change: add-subagent-inspector.
+  useEffect(() => {
+    if (subagentPopoutSessionId && !subscribedRef.current.has(subagentPopoutSessionId) && status === "connected") {
+      subscribedRef.current.add(subagentPopoutSessionId);
+      send({
+        type: "subscribe",
+        sessionId: subagentPopoutSessionId,
+        lastSeq: maxSeqMapRef.current.get(subagentPopoutSessionId) ?? 0,
+      });
+    }
+  }, [subagentPopoutSessionId, send, status]);
+
   const selectedState = selectedId
     ? sessionStates.get(selectedId) ?? createInitialState()
     : createInitialState();
@@ -628,7 +651,15 @@ export default function App() {
     });
   }, []);
 
-  // Safety timeout: clear stuck pendingPrompt after 30s and show error
+  // Safety timeout: clear stuck pendingPrompt after 30s and show error.
+  // Pauses while the prompt text appears in the bridge-owned mid-turn queue
+  // (i.e. the bridge has acknowledged custody). Resumes on removal.
+  // See change: surface-mid-turn-prompt-queue.
+  const _selectedSessionForQueue = selectedId ? sessions.get(selectedId) : undefined;
+  const queuedTextsForSelected: string[] = _selectedSessionForQueue?.queue?.pending?.map((p) => p.text) ?? [];
+  const safetyTimerPaused = !!(
+    selectedState.pendingPrompt && queuedTextsForSelected.includes(selectedState.pendingPrompt.text)
+  );
   usePendingPromptTimeout(!!selectedState.pendingPrompt, useCallback(() => {
     if (selectedId) {
       setSessionStates((prev) => {
@@ -647,7 +678,7 @@ export default function App() {
         return next;
       });
     }
-  }, [selectedId, setSessionStates]));
+  }, [selectedId, setSessionStates]), safetyTimerPaused);
 
   const selectedCommands = selectedId
     ? sessionCommands.get(selectedId) ?? []
@@ -664,7 +695,9 @@ export default function App() {
   const toolContext: ToolContext = useMemo(() => ({
     cwd: selectedCwd,
     editors: selectedCwd ? editorMap.get(selectedCwd) ?? [] : [],
-  }), [selectedCwd, editorMap]);
+    sessionId: selectedId ?? undefined,
+    session: selectedState,
+  }), [selectedCwd, editorMap, selectedId, selectedState]);
 
   const contextUsageMap = useMemo(() => {
     const map = new Map<string, ContextUsageInfo>();
@@ -690,7 +723,7 @@ export default function App() {
     pendingSpawnsRef,
   });
   const {
-    handleAbort, handleForceKill, handleCancelPending, handleRespondToUi, handleSend,
+    handleAbort, handleForceKill, handleCancelPending, handleClearQueue, handleRemoveQueueEntry, handleRespondToUi, handleSend,
     handleSelect, handleRenameSession, handleShutdownSession, handleKillProcess,
     handleSendPromptToSession, handleResumeSession, handleResumeSessionKeepPosition, handleSpawnSession,
     handleHideSession, handleUnhideSession,
@@ -1031,6 +1064,17 @@ export default function App() {
         />
       ) : diffMatch && diffSessionId ? (
         <FileDiffView sessionId={diffSessionId} onBack={goBack} />
+      ) : subagentPopoutMatch && subagentPopoutSessionId && subagentPopoutAgentId ? (
+        <SubagentPopoutPage
+          sessionId={subagentPopoutSessionId}
+          agentId={subagentPopoutAgentId}
+          session={sessionStates.get(subagentPopoutSessionId)}
+          subscriptionResolved={
+            status === "connected" && subscribedRef.current.has(subagentPopoutSessionId)
+          }
+          parentLabel={sessions.get(subagentPopoutSessionId)?.cwd}
+          onBack={goBack}
+        />
       ) : (
         <>
           {/* Plugin slot: content-header-sticky — contributions from
@@ -1051,7 +1095,7 @@ export default function App() {
             </div>
           }>
             <SessionAssetsProvider assets={selectedSession?.assets}>
-            <ChatView ref={chatViewRef} sessionId={selectedId} state={selectedState} toolContext={toolContext} onCancelPending={handleCancelPending} onRespondToUi={handleRespondToUi} onAbort={handleAbort} onForceKill={handleForceKill} onForkFromMessage={selectedId ? (entryId) => handleResumeSession(selectedId, "fork", entryId) : undefined} onRetryAfterError={selectedId ? () => {
+            <ChatView ref={chatViewRef} sessionId={selectedId} state={selectedState} toolContext={toolContext} queuedTexts={queuedTextsForSelected} onCancelPending={handleCancelPending} onRespondToUi={handleRespondToUi} onAbort={handleAbort} onForceKill={handleForceKill} onForkFromMessage={selectedId ? (entryId) => handleResumeSession(selectedId, "fork", entryId) : undefined} onRetryAfterError={selectedId ? () => {
               // Retry the last user prompt by re-sending it via send_prompt.
               // The previous behaviour (handleResumeSession with mode="continue")
               // no-ops on alive-but-errored sessions because the server short-
@@ -1102,6 +1146,28 @@ export default function App() {
             onPresetDelete={(presetName) => {
               send({ type: "role_preset_delete", sessionId: selectedId, presetName });
             }}
+            sessionId={selectedId}
+            session={selectedState}
+            sessionEnded={selectedSession?.status === "ended"}
+            onSubagentStop={(agentId) => {
+              // Dispatch a natural-language prompt so the parent session
+              // routes through its existing tool plumbing (steer_subagent /
+              // subagent stop). Wire-protocol fast path (cross-ext RPC)
+              // is not yet surfaced through the dashboard — see task 6.4a
+              // in change `add-subagent-inspector`.
+              if (selectedId) handleSendPromptToSession(selectedId, `Please stop background subagent ${agentId}.`);
+            }}
+            onSubagentGetResult={(agentId) => {
+              if (selectedId) handleSendPromptToSession(selectedId, `Get the result of background subagent ${agentId}.`);
+            }}
+          />
+          {/* Mid-turn prompt queue panel (bridge-owned). Renders only when
+              the bridge has queued prompts for this session. Sits between
+              ChatView and CommandInput. See change: surface-mid-turn-prompt-queue. */}
+          <QueuePanel
+            pending={selectedSession?.queue?.pending ?? []}
+            onClearAll={handleClearQueue}
+            onRemove={handleRemoveQueueEntry}
           />
           <CommandInput
             commands={selectedCommands}
@@ -1292,6 +1358,17 @@ export default function App() {
               <SpecsBrowserView cwd={specsCwd} onBack={goBack} />
             ) : diffMatch && diffSessionId ? (
               <FileDiffView sessionId={diffSessionId} onBack={goBack} />
+            ) : subagentPopoutMatch && subagentPopoutSessionId && subagentPopoutAgentId ? (
+              <SubagentPopoutPage
+                sessionId={subagentPopoutSessionId}
+                agentId={subagentPopoutAgentId}
+                session={sessionStates.get(subagentPopoutSessionId)}
+                subscriptionResolved={
+                  status === "connected" && subscribedRef.current.has(subagentPopoutSessionId)
+                }
+                parentLabel={sessions.get(subagentPopoutSessionId)?.cwd}
+                onBack={goBack}
+              />
             ) : piResourceFileMatch && piResourceFilePath ? (
               <PiResourceFileRoute
                 filePath={piResourceFilePath}

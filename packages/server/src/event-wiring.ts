@@ -138,6 +138,20 @@ export function wireEvents(deps: EventWiringDeps): void {
 
   piGateway.onEvent = (sessionId, msg) => {
     if (msg.type === "event_forward") {
+      // Bridge-owned mid-turn prompt queue snapshot. NOT persisted to the
+      // event store (it is UI cache state, not history); replayed on
+      // subscribe alongside other Session.* fields. See change:
+      // surface-mid-turn-prompt-queue.
+      if (msg.event.eventType === "queue_state") {
+        const data = (msg.event.data ?? {}) as { pending?: unknown };
+        const pending = Array.isArray(data.pending) ? data.pending : [];
+        const queueUpdate = { queue: { pending } } as Partial<DashboardSession>;
+        sessionManager.update(sessionId, queueUpdate);
+        if (!replayingSessions.has(sessionId)) {
+          browserGateway.broadcastSessionUpdated(sessionId, queueUpdate);
+        }
+        return;
+      }
       // When canSkipWipe was true, the event store already has all events —
       // don't insert replayed events again (would cause exponential duplication)
       if (replayingSessions.has(sessionId) && skipReplayInsert.has(sessionId)) {

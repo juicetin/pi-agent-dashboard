@@ -126,6 +126,14 @@ export interface DashboardSession {
    * See change: chat-markdown-local-images-and-math.
    */
   assets?: Record<string, { data: string; mimeType: string }>;
+  /**
+   * Bridge-owned mid-turn prompt queue snapshot. `pending` contains prompts
+   * the user typed while the agent was streaming; the bridge holds them in
+   * memory, emits this snapshot via `queue_state` events, and drains them
+   * via `pi.sendUserMessage` on `agent_end`. Default `{ pending: [] }`.
+   * See capability `mid-turn-prompt-queue`.
+   */
+  queue?: { pending: PendingPrompt[] };
 }
 
 // ── Extension UI System (Phase 1: management-modal slot) ───────────
@@ -306,6 +314,18 @@ export interface ImageContent {
   type: "image";
   data: string;
   mimeType: string;
+}
+
+/**
+ * One entry in the bridge-owned mid-turn prompt queue. Pushed when a
+ * `send_prompt` arrives while the agent is streaming; drained on `agent_end`.
+ * `id` is a bridge-minted opaque key (`bq_<sessionId>_<counter>`). Server
+ * and client treat it as black-box. See change: surface-mid-turn-prompt-queue.
+ */
+export interface PendingPrompt {
+  id: string;
+  text: string;
+  images?: ImageContent[];
 }
 
 /** File entry from directory listing */

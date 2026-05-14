@@ -728,3 +728,46 @@ describe("CommandInput stale-closure regression (controlled mode, prop-ref chang
     }
   });
 });
+
+import { cleanup } from "@testing-library/react";
+import { afterEach } from "vitest";
+afterEach(() => cleanup());
+
+describe("CommandInput — input stays enabled mid-turn (mid-turn-prompt-queue)", () => {
+  it("disables textarea and send button when pendingPrompt && session is idle", () => {
+    const { textarea, container } = renderInput({
+      pendingPrompt: true,
+      sessionStatus: "idle",
+    });
+    expect((textarea as HTMLTextAreaElement).disabled).toBe(true);
+    const sendBtn = container.querySelector('[data-testid="send-button"]') as HTMLButtonElement;
+    expect(sendBtn.disabled).toBe(true);
+  });
+
+  it("keeps textarea and send button ENABLED when pendingPrompt && session is streaming", () => {
+    const { textarea, container } = renderInput({
+      pendingPrompt: true,
+      sessionStatus: "streaming",
+      draft: "hi",
+      onDraftChange: vi.fn(),
+    });
+    expect((textarea as HTMLTextAreaElement).disabled).toBe(false);
+    const sendBtn = container.querySelector('[data-testid="send-button"]') as HTMLButtonElement;
+    // Send button still needs non-empty text to be enabled.
+    expect(sendBtn.disabled).toBe(false);
+  });
+
+  it("re-enables when pendingPrompt clears and session is idle", () => {
+    const { textarea, rerender, container } = renderInput({
+      pendingPrompt: true,
+      sessionStatus: "idle",
+    });
+    expect((textarea as HTMLTextAreaElement).disabled).toBe(true);
+    rerender(
+      <CommandInput commands={commands} onSend={vi.fn()} pendingPrompt={false} sessionStatus="idle" />,
+    );
+    expect((textarea as HTMLTextAreaElement).disabled).toBe(false);
+    const sendBtn = container.querySelector('[data-testid="send-button"]') as HTMLButtonElement;
+    expect(sendBtn).toBeTruthy();
+  });
+});

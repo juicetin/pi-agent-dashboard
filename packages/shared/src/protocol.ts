@@ -1,7 +1,18 @@
 /**
  * Extension ↔ Server WebSocket protocol messages.
  */
-import type { DashboardEvent, CommandInfo, FlowInfo, SessionSource, ImageContent, FileEntry, TurnUsage, ContextUsage, ModelInfo, ProviderInfo, PiSessionInfo, OpenSpecPhase, RoleInfo, ExtensionUiModule, DecoratorDescriptor } from "./types.js";
+import type { DashboardEvent, CommandInfo, FlowInfo, SessionSource, ImageContent, FileEntry, TurnUsage, ContextUsage, ModelInfo, ProviderInfo, PiSessionInfo, OpenSpecPhase, RoleInfo, ExtensionUiModule, DecoratorDescriptor, PendingPrompt } from "./types.js";
+
+/**
+ * Bridge -> server: shape carried by `EventForwardMessage` with
+ * `event.eventType === "queue_state"`. Drives the `Session.queue.pending`
+ * cache via `event-wiring.ts` and the `mid-turn-prompt-queue` capability.
+ * The `pending` array is the full snapshot, not a delta.
+ * See change: surface-mid-turn-prompt-queue.
+ */
+export interface QueueStateEventData {
+  pending: PendingPrompt[];
+}
 
 // ── Extension → Server ──────────────────────────────────────────────
 
@@ -574,6 +585,29 @@ export interface ServerRestartingExtensionMessage {
   quiesceMs: number;
 }
 
+/**
+ * Server -> bridge: empty the bridge-owned mid-turn prompt queue for the
+ * given session. Bridge clears its in-memory queue and emits a follow-up
+ * `queue_state` event with `pending: []`. Idempotent on already-empty.
+ * See change: surface-mid-turn-prompt-queue.
+ */
+export interface ClearQueueExtensionMessage {
+  type: "clear_queue";
+  sessionId: string;
+}
+
+/**
+ * Server -> bridge: remove a single entry from the bridge-owned mid-turn
+ * queue by id. Bridge removes the matching entry and emits a fresh
+ * `queue_state` snapshot. Idempotent on missing id.
+ * See change: surface-mid-turn-prompt-queue.
+ */
+export interface RemoveQueueEntryExtensionMessage {
+  type: "remove_queue_entry";
+  sessionId: string;
+  id: string;
+}
+
 export type ServerToExtensionMessage =
   | SendPromptToExtensionMessage
   | AbortToExtensionMessage
@@ -602,4 +636,6 @@ export type ServerToExtensionMessage =
   | RequestRolesMessage
   | UiManagementMessage
   | KillProcessMessage
-  | ServerRestartingExtensionMessage;
+  | ServerRestartingExtensionMessage
+  | ClearQueueExtensionMessage
+  | RemoveQueueEntryExtensionMessage;

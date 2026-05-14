@@ -34,6 +34,13 @@ interface Props {
   onForkFromMessage?: (entryId: string) => void;
   onDismissError?: () => void;
   onRetryAfterError?: () => void;
+  /**
+   * Texts currently in the bridge-owned mid-turn queue. When `pendingPrompt.text`
+   * matches an entry, the optimistic card is suppressed in favour of the
+   * queue chip rendered by `QueuePanel`. See modified `optimistic-prompt`
+   * capability + change `surface-mid-turn-prompt-queue`.
+   */
+  queuedTexts?: string[];
 }
 
 function ImageAttachments({ images }: { images: ChatImage[] }) {
@@ -125,7 +132,7 @@ export interface ChatViewHandle {
   scrollToTurn: (turnIndex: number) => void;
 }
 
-export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView({ sessionId, state, toolContext, onCancelPending, onRespondToUi, onAbort, onForceKill, onForkFromMessage, onDismissError, onRetryAfterError }, ref) {
+export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView({ sessionId, state, toolContext, onCancelPending, onRespondToUi, onAbort, onForceKill, onForkFromMessage, onDismissError, onRetryAfterError, queuedTexts }, ref) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const isNearBottom = useRef(true);
   const programmaticScroll = useRef(false);
@@ -479,8 +486,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView({ se
         />
       )}
 
-      {/* Optimistic pending prompt card */}
-      {state.pendingPrompt && (
+      {/* Optimistic pending prompt card. Suppressed when the prompt text
+          has been observed in the bridge queue — the queue chip rendered
+          by QueuePanel becomes the canonical surface for that message.
+          See change: surface-mid-turn-prompt-queue. */}
+      {state.pendingPrompt && !(queuedTexts?.includes(state.pendingPrompt.text)) && (
         <div data-testid="pending-prompt-card" className="mt-4 mb-4 flex justify-end">
           <div className={`bg-blue-500/10 border border-blue-500/20 border-l-2 border-l-blue-400 rounded-xl shadow-md px-4 py-2 ${bubbleMax}`}>
             {state.pendingPrompt.images && state.pendingPrompt.images.length > 0 && (
@@ -496,7 +506,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView({ se
         </div>
       )}
 
-      {state.messages.length === 0 && !state.streamingText && !state.pendingPrompt && (
+      {state.messages.length === 0 && !state.streamingText && !(state.pendingPrompt && !(queuedTexts?.includes(state.pendingPrompt.text))) && (
         <div className="flex items-center justify-center h-full text-[var(--text-tertiary)]">
           <p>No messages yet</p>
         </div>

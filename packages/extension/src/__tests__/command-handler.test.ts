@@ -780,3 +780,106 @@ describe("parseSendPrompt", () => {
     });
   });
 });
+
+describe("CommandHandler enqueueIfStreaming (mid-turn-prompt-queue)", () => {
+  function createMockPi() {
+    return {
+      sendUserMessage: vi.fn(),
+      getCommands: vi.fn().mockReturnValue([]),
+      setSessionName: vi.fn(),
+      getSessionName: vi.fn(),
+      on: vi.fn(),
+    };
+  }
+
+  it("calls enqueueIfStreaming on passthrough text and skips pi.sendUserMessage when it returns true", async () => {
+    const pi = createMockPi();
+    const enqueueIfStreaming = vi.fn().mockReturnValue(true);
+    const handler = createCommandHandler(pi as any, "s1", { enqueueIfStreaming });
+
+    await handler.handle({
+      type: "send_prompt",
+      sessionId: "s1",
+      text: "queue me",
+    });
+
+    expect(enqueueIfStreaming).toHaveBeenCalledWith("queue me", undefined);
+    expect(pi.sendUserMessage).not.toHaveBeenCalled();
+  });
+
+  it("falls through to pi.sendUserMessage when enqueueIfStreaming returns false (agent idle)", async () => {
+    const pi = createMockPi();
+    const enqueueIfStreaming = vi.fn().mockReturnValue(false);
+    const handler = createCommandHandler(pi as any, "s1", { enqueueIfStreaming });
+
+    await handler.handle({
+      type: "send_prompt",
+      sessionId: "s1",
+      text: "send now",
+    });
+
+    expect(enqueueIfStreaming).toHaveBeenCalledWith("send now", undefined);
+    expect(pi.sendUserMessage).toHaveBeenCalledWith("send now", { deliverAs: "followUp" });
+  });
+
+  it("forwards images to enqueueIfStreaming and skips pi.sendUserMessage when enqueued", async () => {
+    const pi = createMockPi();
+    const images = [{ type: "image" as const, data: "AAA", mimeType: "image/png" }];
+    const enqueueIfStreaming = vi.fn().mockReturnValue(true);
+    const handler = createCommandHandler(pi as any, "s1", { enqueueIfStreaming });
+
+    await handler.handle({
+      type: "send_prompt",
+      sessionId: "s1",
+      text: "with image",
+      images,
+    });
+
+    expect(enqueueIfStreaming).toHaveBeenCalledWith("with image", images);
+    expect(pi.sendUserMessage).not.toHaveBeenCalled();
+  });
+
+  it("does not call enqueueIfStreaming for bash commands", async () => {
+    const pi = createMockPi();
+    pi.exec = vi.fn().mockResolvedValue({ stdout: "hi", stderr: "", exitCode: 0 });
+    const enqueueIfStreaming = vi.fn().mockReturnValue(true);
+    const handler = createCommandHandler(pi as any, "s1", { enqueueIfStreaming });
+
+    await handler.handle({
+      type: "send_prompt",
+      sessionId: "s1",
+      text: "!ls",
+    });
+
+    expect(enqueueIfStreaming).not.toHaveBeenCalled();
+  });
+
+  it("does not call enqueueIfStreaming for slash commands", async () => {
+    const pi = createMockPi();
+    const enqueueIfStreaming = vi.fn().mockReturnValue(true);
+    const sessionPrompt = vi.fn();
+    const handler = createCommandHandler(pi as any, "s1", { enqueueIfStreaming, sessionPrompt });
+
+    await handler.handle({
+      type: "send_prompt",
+      sessionId: "s1",
+      text: "/help",
+    });
+
+    expect(enqueueIfStreaming).not.toHaveBeenCalled();
+    expect(sessionPrompt).toHaveBeenCalledWith("/help");
+  });
+
+  it("behaves like today when enqueueIfStreaming is not provided (passthrough goes to pi)", async () => {
+    const pi = createMockPi();
+    const handler = createCommandHandler(pi as any, "s1");
+
+    await handler.handle({
+      type: "send_prompt",
+      sessionId: "s1",
+      text: "plain text",
+    });
+
+    expect(pi.sendUserMessage).toHaveBeenCalledWith("plain text", { deliverAs: "followUp" });
+  });
+});

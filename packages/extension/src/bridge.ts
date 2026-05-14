@@ -41,6 +41,8 @@ import { sendModelUpdateIfChanged as _sendModelUpdateIfChanged, sendSessionNameI
 import { registerFlowEventListeners, FLOW_EVENT_MAP, SUBAGENT_EVENT_MAP } from "./flow-event-wiring.js";
 import { refreshUiModules, subscribeUiInvalidate, handleUiManagement, type UiModulesBridgeCtx } from "./ui-modules.js";
 import { inlineMessageText, type ReadFileOutcome } from "./markdown-image-inliner.js";
+import { PromptQueue } from "./prompt-queue.js";
+import type { ImageContent } from "@blackbelt-technology/pi-dashboard-shared/types.js";
 
 const HEARTBEAT_INTERVAL = 15_000;
 const GIT_POLL_INTERVAL = 30_000;
@@ -199,6 +201,29 @@ function initBridge(pi: ExtensionAPI) {
   // `message_end` / `agent_end` events. See change: fix-provider-retry-infinite-loop.
   const retryTracker = new RetryTracker();
   const usageLimitOrderer = new UsageLimitOrderer();
+
+  // Bridge-owned mid-turn prompt queue per session. Holds prompts that arrive
+  // while the agent is streaming; drained on `agent_end`; cleared on user
+  // request. See change: surface-mid-turn-prompt-queue.
+  const promptQueues = new Map<string, PromptQueue>();
+  function getPromptQueue(sid: string): PromptQueue {
+    let q = promptQueues.get(sid);
+    if (!q) {
+      q = new PromptQueue(sid);
+      promptQueues.set(sid, q);
+    }
+    return q;
+  }
+  function emitQueueState(sid: string): void {
+    if (!isActive() || !sessionReady) return;
+    const q = promptQueues.get(sid);
+    const pending = q ? q.snapshot() : [];
+    connection.send({
+      type: "event_forward",
+      sessionId: sid,
+      event: { eventType: "queue_state", timestamp: Date.now(), data: { pending } },
+    });
+  }
 
   /** Forward a synthesized auto_retry_* event using the standard event_forward shape. */
   const sendSyntheticRetryEvent = (eventType: string, data: Record<string, unknown>): void => {
@@ -572,6 +597,28 @@ function initBridge(pi: ExtensionAPI) {
         }
         return;
       }
+      // Bridge-owned mid-turn queue: clear on user request. Routed at the
+      // bridge level (not in commandHandler) because the queue map lives in
+      // bridge.ts's closure. See change: surface-mid-turn-prompt-queue.
+      if (msg.type === "clear_queue") {
+        if (msg.sessionId === sessionId) {
+          const q = promptQueues.get(sessionId);
+          if (q) q.clear();
+          emitQueueState(sessionId);
+        }
+        return;
+      }
+      // Bridge-owned mid-turn queue: remove a single entry by id.
+      // Idempotent on missing id (still emits a snapshot for the caller).
+      // See change: surface-mid-turn-prompt-queue.
+      if (msg.type === "remove_queue_entry") {
+        if (msg.sessionId === sessionId) {
+          const q = promptQueues.get(sessionId);
+          if (q) q.remove(msg.id);
+          emitQueueState(sessionId);
+        }
+        return;
+      }
       const response = await commandHandler.handle(msg);
       if (response) connection.send(response);
       // Immediately send model/thinking update after handling set_thinking_level
@@ -694,6 +741,13 @@ function initBridge(pi: ExtensionAPI) {
     },
     spawnNew: () => {
       connection.send({ type: "spawn_new_session", sessionId, cwd: process.cwd() });
+    },
+    enqueueIfStreaming: (text: string, images?: ImageContent[]): boolean => {
+      if (!getBridgeState().isAgentStreaming) return false;
+      const q = getPromptQueue(sessionId);
+      q.enqueue(text, images);
+      emitQueueState(sessionId);
+      return true;
     },
     sessionPrompt: async (text) => {
       // Route slash commands: management events, flow:run, extension dispatch, then fallback.
@@ -857,6 +911,54 @@ function initBridge(pi: ExtensionAPI) {
           if (trackerSynth) {
             sendSyntheticRetryEvent(trackerSynth.eventType, trackerSynth.data);
           }
+        }
+        // Drain the bridge-owned mid-turn prompt queue. Deferred via
+        // setTimeout (NOT queueMicrotask) so any in-flight `clear_queue` /
+        // `remove_queue_entry` WS messages get processed first. Microtasks
+        // always run before I/O events; a 50ms macrotask delay gives a
+        // user's `Clear all` click time to traverse the loopback WS round-
+        // trip before the drain commits messages to pi. The drain itself
+        // also yields to I/O between entries via the sink wrapper so a
+        // late-arriving clear can still cancel remaining drains.
+        // See change: surface-mid-turn-prompt-queue.
+        const drainSid = sessionId;
+        const drainQueue = promptQueues.get(drainSid);
+        if (drainQueue && !drainQueue.isEmpty() && !drainQueue.isDraining()) {
+          const DRAIN_GRACE_MS = 50;
+          setTimeout(() => {
+            if (!isActive()) return;
+            // Re-check after the grace window: a clear_queue might have
+            // arrived and emptied the queue. Skip the drain entirely.
+            if (drainQueue.isEmpty()) return;
+            drainQueue
+              .drain(
+                async (text, images) => {
+                  if (!isActive()) return;
+                  if (images && images.length > 0) {
+                    const content = [
+                      { type: "text" as const, text },
+                      ...images.map((img) => ({
+                        type: "image" as const,
+                        data: img.data,
+                        mimeType: img.mimeType,
+                      })),
+                    ];
+                    (pi.sendUserMessage as any)(content);
+                  } else {
+                    (pi.sendUserMessage as any)(text);
+                  }
+                  // Yield to the I/O loop between drain steps so a mid-
+                  // drain `clear_queue` (or `remove_queue_entry`) can take
+                  // effect before the NEXT entry is committed to pi.
+                  await new Promise<void>((r) => setTimeout(r, 0));
+                },
+                () => emitQueueState(drainSid),
+              )
+              .catch((err) => {
+                console.error(`[dashboard] prompt queue drain failed: ${err?.message ?? err}`);
+                emitQueueState(drainSid);
+              });
+          }, DRAIN_GRACE_MS);
         }
       }
       // For model_select, enrich the event data with thinkingLevel
@@ -1494,6 +1596,17 @@ function initBridge(pi: ExtensionAPI) {
 
   // Shared handler for session changes (new/fork/resume)
   function handleSessionChange(ctx: any) {
+    // Drop any bridge-owned prompt queue for the outgoing session. New/forked
+    // sessions start fresh; the old queue is orphaned because pi's session id
+    // has changed and we cannot route its drain target anymore.
+    // See change: surface-mid-turn-prompt-queue.
+    const oldQueue = promptQueues.get(sessionId);
+    if (oldQueue && !oldQueue.isEmpty()) {
+      oldQueue.clear();
+      emitQueueState(sessionId);
+    }
+    promptQueues.delete(sessionId);
+
     const bc = syncBc();
     _handleSessionChange(bc, ctx, getFlowsList);
     applyBc(bc);

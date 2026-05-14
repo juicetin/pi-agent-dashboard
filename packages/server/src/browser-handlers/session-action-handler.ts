@@ -523,6 +523,37 @@ export function handleAbort(
   ctx.piGateway.sendToSession(msg.sessionId, { type: "abort", sessionId: msg.sessionId });
 }
 
+/**
+ * Empty the bridge-owned mid-turn prompt queue for the given session.
+ * Forwards `clear_queue` to the bridge, which drops its in-memory queue
+ * and emits a follow-up `queue_state { pending: [] }`. Drops silently
+ * when the session is unknown. See change: surface-mid-turn-prompt-queue.
+ */
+export function handleClearQueue(
+  msg: Extract<BrowserToServerMessage, { type: "clear_queue" }>,
+  ctx: BrowserHandlerContext,
+): void {
+  if (!ctx.sessionManager.get(msg.sessionId)) return;
+  ctx.piGateway.sendToSession(msg.sessionId, { type: "clear_queue", sessionId: msg.sessionId });
+}
+
+/**
+ * Remove a single entry from the bridge-owned mid-turn queue. Forwards
+ * `remove_queue_entry` to the bridge. Drops silently for unknown session.
+ * See change: surface-mid-turn-prompt-queue.
+ */
+export function handleRemoveQueueEntry(
+  msg: Extract<BrowserToServerMessage, { type: "remove_queue_entry" }>,
+  ctx: BrowserHandlerContext,
+): void {
+  if (!ctx.sessionManager.get(msg.sessionId)) return;
+  ctx.piGateway.sendToSession(msg.sessionId, {
+    type: "remove_queue_entry",
+    sessionId: msg.sessionId,
+    id: msg.id,
+  });
+}
+
 export function handleFlowControl(
   msg: Extract<BrowserToServerMessage, { type: "flow_control" }>,
   ctx: BrowserHandlerContext,

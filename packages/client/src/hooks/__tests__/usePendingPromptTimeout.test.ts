@@ -56,4 +56,42 @@ describe("usePendingPromptTimeout", () => {
     act(() => { vi.advanceTimersByTime(1_000); });
     expect(onTimeout).toHaveBeenCalledOnce();
   });
+
+  // Queue-awareness tests for `surface-mid-turn-prompt-queue`.
+  it("is suppressed while paused even after 30s", () => {
+    const onTimeout = vi.fn();
+    renderHook(() => usePendingPromptTimeout(true, onTimeout, true));
+    act(() => { vi.advanceTimersByTime(60_000); });
+    expect(onTimeout).not.toHaveBeenCalled();
+  });
+
+  it("resumes (and restarts the 30s clock) when paused flips from true to false", () => {
+    const onTimeout = vi.fn();
+    const { rerender } = renderHook(
+      ({ paused }) => usePendingPromptTimeout(true, onTimeout, paused),
+      { initialProps: { paused: true } },
+    );
+    // Long pause — timer should still be suppressed
+    act(() => { vi.advanceTimersByTime(120_000); });
+    expect(onTimeout).not.toHaveBeenCalled();
+
+    // Unpause — timer (re)starts from 0
+    rerender({ paused: false });
+    act(() => { vi.advanceTimersByTime(29_999); });
+    expect(onTimeout).not.toHaveBeenCalled();
+    act(() => { vi.advanceTimersByTime(1); });
+    expect(onTimeout).toHaveBeenCalledOnce();
+  });
+
+  it("pausing mid-flight cancels the in-progress timer", () => {
+    const onTimeout = vi.fn();
+    const { rerender } = renderHook(
+      ({ paused }) => usePendingPromptTimeout(true, onTimeout, paused),
+      { initialProps: { paused: false } },
+    );
+    act(() => { vi.advanceTimersByTime(25_000); });
+    rerender({ paused: true });
+    act(() => { vi.advanceTimersByTime(60_000); });
+    expect(onTimeout).not.toHaveBeenCalled();
+  });
 });

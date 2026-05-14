@@ -66,7 +66,7 @@ import { createViewedSessionTracker, type ViewedSessionTracker } from "./viewed-
 import type { TerminalManager } from "./terminal-manager.js";
 import type { BrowserHandlerContext } from "./browser-handlers/handler-context.js";
 import { handleSubscribe } from "./browser-handlers/subscription-handler.js";
-import { handleSendPrompt, handleResumeSession, handleSpawnSession, handleShutdown, handleAbort, handleFlowControl, handleForceKill, handleKillProcess } from "./browser-handlers/session-action-handler.js";
+import { handleSendPrompt, handleResumeSession, handleSpawnSession, handleShutdown, handleAbort, handleFlowControl, handleForceKill, handleKillProcess, handleClearQueue, handleRemoveQueueEntry } from "./browser-handlers/session-action-handler.js";
 import { handleRenameSession, handleHideSession, handleUnhideSession, handleAttachProposal, handleDetachProposal, handleFetchContent, handleListSessions } from "./browser-handlers/session-meta-handler.js";
 import { handleCreateTerminal, handleKillTerminal, handleRenameTerminal } from "./browser-handlers/terminal-handler.js";
 import { handlePinDirectory, handleUnpinDirectory, handleReorderPinnedDirs, handleReorderSessions, handleOpenSpecRefresh, handleOpenSpecBulkArchive, handleExtensionUiResponse, handlePiGatewayForward } from "./browser-handlers/directory-handler.js";
@@ -376,6 +376,12 @@ export function createBrowserGateway(
             break;
           case "abort":
             handleAbort(msg, ctx);
+            break;
+          case "clear_queue":
+            handleClearQueue(msg, ctx);
+            break;
+          case "remove_queue_entry":
+            handleRemoveQueueEntry(msg, ctx);
             break;
           case "force_kill":
             await handleForceKill(msg, ctx);

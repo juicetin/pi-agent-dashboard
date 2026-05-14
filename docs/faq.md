@@ -690,6 +690,20 @@ Cross-refs:
 - README.md:109
 - packages/extension/src/prompt-bus.ts
 
+## What happens when I type during an agent turn?
+
+Message queues. Bridge owns `PromptQueue` per session.
+
+- Above `CommandInput`, `QueuePanel.tsx` shows chip per queued message.
+- Click "Clear all" drops entire queue (`queue_clear` action).
+- Bridge runs queued messages in order after current turn ends (on `agent_end`, drains via `pi.sendUserMessage`).
+- Queue lost on bridge restart — in-memory only.
+
+Cross-refs:
+- packages/extension/src/prompt-queue.ts
+- packages/client/src/components/QueuePanel.tsx
+- See change: surface-mid-turn-prompt-queue
+
 ## How does the unread state machine work?
 
 `Session.unread: boolean`. Flips true when attention-worthy event fires while no browser views session. Clears when any browser opens session.

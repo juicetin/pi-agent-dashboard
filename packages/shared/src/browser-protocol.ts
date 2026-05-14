@@ -606,6 +606,29 @@ export interface AbortToBrowserMessage {
   sessionId: string;
 }
 
+/**
+ * Browser -> server: empty the bridge-owned mid-turn prompt queue for the
+ * given session. Server forwards as `clear_queue` to the bridge, which
+ * drops its in-memory queue and emits a `queue_state { pending: [] }`
+ * snapshot. Idempotent. See change: surface-mid-turn-prompt-queue.
+ */
+export interface ClearQueueBrowserMessage {
+  type: "clear_queue";
+  sessionId: string;
+}
+
+/**
+ * Browser -> server: remove a single entry from the bridge-owned mid-turn
+ * queue by id. Server forwards to the bridge. Bridge removes the matching
+ * entry and emits a fresh `queue_state` snapshot. Idempotent on missing id.
+ * See change: surface-mid-turn-prompt-queue.
+ */
+export interface RemoveQueueEntryBrowserMessage {
+  type: "remove_queue_entry";
+  sessionId: string;
+  id: string;
+}
+
 export interface RequestCommandsToBrowserMessage {
   type: "request_commands";
   sessionId: string;
@@ -987,4 +1010,6 @@ export type BrowserToServerMessage =
   | SessionViewBrowserMessage
   | SessionUnviewBrowserMessage
   | KillProcessBrowserMessage
+  | ClearQueueBrowserMessage
+  | RemoveQueueEntryBrowserMessage
   | PluginActionMessage;

@@ -106,6 +106,10 @@ export function createMemorySessionManager(): SessionManager {
         firstMessage: params.firstMessage ?? existing?.firstMessage,
         dataUnavailable: false,
         pid: params.pid,
+        // Bridge-owned mid-turn prompt queue: reset to empty on register /
+        // re-register; a fresh `queue_state` snapshot from the bridge will
+        // replace it. See change: surface-mid-turn-prompt-queue.
+        queue: { pending: [] },
       };
       sessions.set(params.id, session);
       mgr.onChange?.(params.id, {

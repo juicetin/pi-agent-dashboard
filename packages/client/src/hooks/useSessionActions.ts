@@ -50,12 +50,40 @@ export function useSessionActions(deps: SessionActionDeps) {
   };
 
   const handleAbort = useCallback(() => {
-    if (selectedId) send({ type: "abort", sessionId: selectedId });
-  }, [selectedId, send]);
+    if (!selectedId) return;
+    // Drop any optimistic `pendingPrompt` for this session. Abort tells
+    // the bridge to drop its queue (`clearQueueOnAbort`), so any text
+    // that was being represented as a queue chip will no longer appear
+    // in the next `queue_state` snapshot. Without this client-side
+    // clear, the chip-vs-card swap rule un-fires and the optimistic
+    // card pops back into view until pi finally emits `agent_end`.
+    // See change: surface-mid-turn-prompt-queue.
+    setSessionStates((prev) => {
+      const next = new Map(prev);
+      const current = next.get(selectedId);
+      if (current?.pendingPrompt) {
+        next.set(selectedId, { ...current, pendingPrompt: undefined });
+      }
+      return next;
+    });
+    send({ type: "abort", sessionId: selectedId });
+  }, [selectedId, send, setSessionStates]);
 
   const handleForceKill = useCallback(() => {
-    if (selectedId) send({ type: "force_kill", sessionId: selectedId });
-  }, [selectedId, send]);
+    if (!selectedId) return;
+    // Same rationale as handleAbort: force_kill nukes the pi process, so
+    // any optimistic pendingPrompt is doubly defunct. Clear it client-
+    // side so the optimistic card doesn't linger past the kill.
+    setSessionStates((prev) => {
+      const next = new Map(prev);
+      const current = next.get(selectedId);
+      if (current?.pendingPrompt) {
+        next.set(selectedId, { ...current, pendingPrompt: undefined });
+      }
+      return next;
+    });
+    send({ type: "force_kill", sessionId: selectedId });
+  }, [selectedId, send, setSessionStates]);
 
   /**
    * Empty the bridge-owned mid-turn prompt queue for the selected session.

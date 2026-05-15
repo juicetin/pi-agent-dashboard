@@ -1,19 +1,31 @@
 /**
  * Global UI preferences store — JSON-backed with debounced writes.
- * Stores cross-session state: pinned directories and session ordering.
+ * Stores cross-session state: pinned directories, session ordering, and
+ * folder-workspaces (named, collapsible containers grouping folders).
+ *
+ * Workspace membership is authoritative and orthogonal to pinning — see
+ * change: folder-workspaces. A folder may live in `pinnedDirectories`
+ * AND a workspace's `folders[]` independently; the two lists do not
+ * deduplicate against each other.
+ *
  * Replaces `state-store.ts` (hidden state moved to per-session `.meta.json`).
  */
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 import { CONFIG_DIR } from "@blackbelt-technology/pi-dashboard-shared/config.js";
+import type { Workspace } from "@blackbelt-technology/pi-dashboard-shared/browser-protocol.js";
 import { readJsonFile, writeJsonFile } from "./json-store.js";
 import { safeRealpathSync } from "./resolve-path.js";
 import { normalizePath } from "@blackbelt-technology/pi-dashboard-shared/platform/paths.js";
 
 export const PREFERENCES_FILE = path.join(CONFIG_DIR, "preferences.json");
 
+const NAME_MAX = 80;
+
 interface PreferencesData {
   sessionOrder: Record<string, string[]>;
   pinnedDirectories: string[];
+  workspaces?: Workspace[];
 }
 
 export interface PreferencesStore {
@@ -24,14 +36,79 @@ export interface PreferencesStore {
   pinDirectory(dirPath: string): void;
   unpinDirectory(dirPath: string): void;
   reorderPinnedDirs(dirs: string[]): void;
+  // ── folder-workspaces ────────────────────────────────────────────
+  getWorkspaces(): Workspace[];
+  /** Returns the created workspace, or null on invalid name. */
+  createWorkspace(name: string): Workspace | null;
+  /** Returns true on mutation, false on unknown id / invalid name. */
+  renameWorkspace(id: string, name: string): boolean;
+  /** Returns true on mutation, false on unknown id. */
+  deleteWorkspace(id: string): boolean;
+  /** Returns true on mutation, false on unknown id or no-op (same value). */
+  setWorkspaceCollapsed(id: string, collapsed: boolean): boolean;
+  /**
+   * Adds `path` to workspace `id`. Single-membership invariant: removes
+   * the canonicalized path from every other workspace first. Returns
+   * true on mutation, false on unknown id or already-member (no-op).
+   */
+  addFolderToWorkspace(id: string, dirPath: string): boolean;
+  /** Returns true on mutation, false on unknown id or not-member. */
+  removeFolderFromWorkspace(id: string, dirPath: string): boolean;
+  /**
+   * Replaces a workspace's folder order. Rejected if `paths` does not
+   * equal the current member set (after canonicalization). Returns true
+   * on mutation, false otherwise.
+   */
+  reorderWorkspaceFolders(id: string, paths: string[]): boolean;
+  /** Reorders workspaces. Rejected if `ids` doesn't equal current id set. */
+  reorderWorkspaces(ids: string[]): boolean;
   flush(): void;
   dispose(): void;
 }
 
 const DEBOUNCE_MS = 1000;
 
+function canonicalize(p: string): string {
+  // IMPORTANT: wrap normalizePath in an arrow so Array.prototype.map's
+  // (element, index, array) signature does not leak `index: number` into
+  // its 2nd `platform` parameter. See preferences-store git blame.
+  return safeRealpathSync(normalizePath(p));
+}
+
+function dedupePreserveOrder(arr: string[]): string[] {
+  return [...new Set(arr)];
+}
+
+function setEquals(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  const sa = new Set(a);
+  for (const x of b) if (!sa.has(x)) return false;
+  return true;
+}
+
+function sanitizeName(input: unknown): string | null {
+  if (typeof input !== "string") return null;
+  const trimmed = input.trim();
+  if (trimmed.length === 0 || trimmed.length > NAME_MAX) return null;
+  return trimmed;
+}
+
+function normalizeWorkspaceOnLoad(ws: Workspace): Workspace {
+  const folders = dedupePreserveOrder((ws.folders ?? []).map((p) => canonicalize(p)));
+  return {
+    id: typeof ws.id === "string" && ws.id.length > 0 ? ws.id : `ws_${randomUUID()}`,
+    name: typeof ws.name === "string" ? ws.name : "",
+    collapsed: Boolean(ws.collapsed),
+    folders,
+  };
+}
+
 export function createPreferencesStore(filePath: string = PREFERENCES_FILE): PreferencesStore {
-  const data: PreferencesData = readJsonFile<PreferencesData>(filePath, { sessionOrder: {}, pinnedDirectories: [] });
+  const data: PreferencesData = readJsonFile<PreferencesData>(filePath, {
+    sessionOrder: {},
+    pinnedDirectories: [],
+    workspaces: [],
+  });
   let sessionOrder: Record<string, string[]> = data.sessionOrder ?? {};
   // Normalize + resolve symlinks in stored pinned paths on load. Normalize
   // FIRST so cosmetic drift (trailing separator, mixed separators,
@@ -40,19 +117,24 @@ export function createPreferencesStore(filePath: string = PREFERENCES_FILE): Pre
   // not-yet-existing paths, so we keep its best-effort fallback.
   // See change: platform-path-normalization.
   const rawPinned = data.pinnedDirectories ?? [];
-  // IMPORTANT: wrap in arrow fn — `Array.prototype.map` passes `(element,
-  // index, array)`, and `normalizePath`'s 2nd param is a `platform:
-  // NodeJS.Platform`. Passing the index (a number) silently disables the
-  // Windows branch at runtime.
   let pinnedDirectories: string[] = rawPinned
     .map((p) => normalizePath(p))
     .map((p) => safeRealpathSync(p));
-  // Deduplicate post-normalization. Two previously-different entries that
-  // collapse to the same canonical form (e.g., with and without trailing
-  // slash) become one stored entry.
-  pinnedDirectories = [...new Set(pinnedDirectories)];
+  pinnedDirectories = dedupePreserveOrder(pinnedDirectories);
+
+  const rawWorkspaces = Array.isArray(data.workspaces) ? data.workspaces : [];
+  let workspaces: Workspace[] = rawWorkspaces.map(normalizeWorkspaceOnLoad);
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
-  let dirty = pinnedDirectories.length !== rawPinned.length || pinnedDirectories.some((p, i) => p !== rawPinned[i]);
+  let dirty =
+    pinnedDirectories.length !== rawPinned.length ||
+    pinnedDirectories.some((p, i) => p !== rawPinned[i]) ||
+    workspaces.length !== rawWorkspaces.length ||
+    workspaces.some((ws, i) => {
+      const raw = rawWorkspaces[i];
+      if (!raw) return true;
+      const rf = (raw.folders ?? []) as string[];
+      return ws.folders.length !== rf.length || ws.folders.some((f, j) => f !== rf[j]);
+    });
 
   function scheduleSave(): void {
     dirty = true;
@@ -61,7 +143,7 @@ export function createPreferencesStore(filePath: string = PREFERENCES_FILE): Pre
       debounceTimer = null;
       if (dirty) {
         dirty = false;
-        writeJsonFile(filePath, { sessionOrder, pinnedDirectories } satisfies PreferencesData);
+        writeJsonFile(filePath, { sessionOrder, pinnedDirectories, workspaces } satisfies PreferencesData);
       }
     }, DEBOUNCE_MS);
   }
@@ -73,11 +155,15 @@ export function createPreferencesStore(filePath: string = PREFERENCES_FILE): Pre
     }
     if (dirty) {
       dirty = false;
-      writeJsonFile(filePath, { sessionOrder, pinnedDirectories } satisfies PreferencesData);
+      writeJsonFile(filePath, { sessionOrder, pinnedDirectories, workspaces } satisfies PreferencesData);
     }
   }
 
   if (dirty) scheduleSave();
+
+  function findWs(id: string): Workspace | undefined {
+    return workspaces.find((w) => w.id === id);
+  }
 
   return {
     getSessionOrder(): Record<string, string[]> {
@@ -114,6 +200,106 @@ export function createPreferencesStore(filePath: string = PREFERENCES_FILE): Pre
     reorderPinnedDirs(dirs: string[]): void {
       pinnedDirectories = [...dirs];
       scheduleSave();
+    },
+
+    // ── folder-workspaces ───────────────────────────────────────────
+
+    getWorkspaces(): Workspace[] {
+      // Deep-ish clone so callers can't mutate internal state.
+      return workspaces.map((w) => ({ ...w, folders: [...w.folders] }));
+    },
+
+    createWorkspace(name: string): Workspace | null {
+      const clean = sanitizeName(name);
+      if (clean === null) return null;
+      const ws: Workspace = {
+        id: `ws_${randomUUID()}`,
+        name: clean,
+        collapsed: false,
+        folders: [],
+      };
+      workspaces.push(ws);
+      scheduleSave();
+      return { ...ws, folders: [...ws.folders] };
+    },
+
+    renameWorkspace(id: string, name: string): boolean {
+      const clean = sanitizeName(name);
+      if (clean === null) return false;
+      const ws = findWs(id);
+      if (!ws) return false;
+      if (ws.name === clean) return false;
+      ws.name = clean;
+      scheduleSave();
+      return true;
+    },
+
+    deleteWorkspace(id: string): boolean {
+      const idx = workspaces.findIndex((w) => w.id === id);
+      if (idx === -1) return false;
+      workspaces.splice(idx, 1);
+      scheduleSave();
+      return true;
+    },
+
+    setWorkspaceCollapsed(id: string, collapsed: boolean): boolean {
+      const ws = findWs(id);
+      if (!ws) return false;
+      if (ws.collapsed === collapsed) return false;
+      ws.collapsed = collapsed;
+      scheduleSave();
+      return true;
+    },
+
+    addFolderToWorkspace(id: string, dirPath: string): boolean {
+      const ws = findWs(id);
+      if (!ws) return false;
+      const canon = canonicalize(dirPath);
+      if (ws.folders.includes(canon)) return false;
+      // Single-membership invariant: detach from every OTHER workspace
+      // first. Idempotent — no-op if not currently in any other workspace.
+      for (const other of workspaces) {
+        if (other.id === id) continue;
+        const i = other.folders.indexOf(canon);
+        if (i !== -1) other.folders.splice(i, 1);
+      }
+      ws.folders.push(canon);
+      scheduleSave();
+      return true;
+    },
+
+    removeFolderFromWorkspace(id: string, dirPath: string): boolean {
+      const ws = findWs(id);
+      if (!ws) return false;
+      const canon = canonicalize(dirPath);
+      const i = ws.folders.indexOf(canon);
+      if (i === -1) return false;
+      ws.folders.splice(i, 1);
+      scheduleSave();
+      return true;
+    },
+
+    reorderWorkspaceFolders(id: string, paths: string[]): boolean {
+      const ws = findWs(id);
+      if (!ws) return false;
+      const canon = paths.map((p) => canonicalize(p));
+      // Reject if the supplied set != current set.
+      if (!setEquals(canon, ws.folders)) return false;
+      // Reject duplicates within the new order.
+      if (new Set(canon).size !== canon.length) return false;
+      ws.folders = canon;
+      scheduleSave();
+      return true;
+    },
+
+    reorderWorkspaces(ids: string[]): boolean {
+      const currentIds = workspaces.map((w) => w.id);
+      if (!setEquals(ids, currentIds)) return false;
+      if (new Set(ids).size !== ids.length) return false;
+      const byId = new Map(workspaces.map((w) => [w.id, w] as const));
+      workspaces = ids.map((id) => byId.get(id)!).filter(Boolean) as Workspace[];
+      scheduleSave();
+      return true;
     },
 
     flush(): void {

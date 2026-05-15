@@ -75,6 +75,75 @@ export function handleReorderPinnedDirs(
   }
 }
 
+// ── folder-workspaces handlers ──────────────────────────────────
+//
+// Each handler dispatches to PreferencesStore which returns true on
+// mutation. Broadcast `workspaces_updated` only on actual mutation
+// (no broadcast for no-op / invalid / unknown-id calls). See spec
+// folder-workspaces.
+
+function broadcastWorkspaces(ctx: BrowserHandlerContext): void {
+  if (!ctx.preferencesStore) return;
+  ctx.broadcast({ type: "workspaces_updated", workspaces: ctx.preferencesStore.getWorkspaces() });
+}
+
+export function handleCreateWorkspace(
+  msg: Extract<BrowserToServerMessage, { type: "create_workspace" }>,
+  ctx: BrowserHandlerContext,
+): void {
+  const ws = ctx.preferencesStore?.createWorkspace(msg.name);
+  if (ws) broadcastWorkspaces(ctx);
+}
+
+export function handleRenameWorkspace(
+  msg: Extract<BrowserToServerMessage, { type: "rename_workspace" }>,
+  ctx: BrowserHandlerContext,
+): void {
+  if (ctx.preferencesStore?.renameWorkspace(msg.id, msg.name)) broadcastWorkspaces(ctx);
+}
+
+export function handleDeleteWorkspace(
+  msg: Extract<BrowserToServerMessage, { type: "delete_workspace" }>,
+  ctx: BrowserHandlerContext,
+): void {
+  if (ctx.preferencesStore?.deleteWorkspace(msg.id)) broadcastWorkspaces(ctx);
+}
+
+export function handleSetWorkspaceCollapsed(
+  msg: Extract<BrowserToServerMessage, { type: "set_workspace_collapsed" }>,
+  ctx: BrowserHandlerContext,
+): void {
+  if (ctx.preferencesStore?.setWorkspaceCollapsed(msg.id, msg.collapsed)) broadcastWorkspaces(ctx);
+}
+
+export function handleAddFolderToWorkspace(
+  msg: Extract<BrowserToServerMessage, { type: "add_folder_to_workspace" }>,
+  ctx: BrowserHandlerContext,
+): void {
+  if (ctx.preferencesStore?.addFolderToWorkspace(msg.id, msg.path)) broadcastWorkspaces(ctx);
+}
+
+export function handleRemoveFolderFromWorkspace(
+  msg: Extract<BrowserToServerMessage, { type: "remove_folder_from_workspace" }>,
+  ctx: BrowserHandlerContext,
+): void {
+  if (ctx.preferencesStore?.removeFolderFromWorkspace(msg.id, msg.path)) broadcastWorkspaces(ctx);
+}
+
+export function handleReorderWorkspaceFolders(
+  msg: Extract<BrowserToServerMessage, { type: "reorder_workspace_folders" }>,
+  ctx: BrowserHandlerContext,
+): void {
+  if (ctx.preferencesStore?.reorderWorkspaceFolders(msg.id, msg.paths)) broadcastWorkspaces(ctx);
+}
+
+export function handleReorderWorkspaces(
+  msg: Extract<BrowserToServerMessage, { type: "reorder_workspaces" }>,
+  ctx: BrowserHandlerContext,
+): void {
+  if (ctx.preferencesStore?.reorderWorkspaces(msg.ids)) broadcastWorkspaces(ctx);
+}
+
 export function handleReorderSessions(
   msg: Extract<BrowserToServerMessage, { type: "reorder_sessions" }>,
   ctx: BrowserHandlerContext,

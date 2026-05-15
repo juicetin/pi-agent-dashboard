@@ -55,6 +55,8 @@ export interface MessageHandlerSetters {
   setSpawnResult: React.Dispatch<React.SetStateAction<{ success: boolean; message: string } | null>>;
   setSessionOrderMap: React.Dispatch<React.SetStateAction<Map<string, string[]>>>;
   setPinnedDirectories: React.Dispatch<React.SetStateAction<string[]>>;
+  /** folder-workspaces: full workspace list, kept in sync via `workspaces_updated`. */
+  setWorkspaces: React.Dispatch<React.SetStateAction<import("@blackbelt-technology/pi-dashboard-shared/browser-protocol.js").Workspace[]>>;
   setTerminals: React.Dispatch<React.SetStateAction<Map<string, TerminalSession>>>;
   setEditorStatuses: React.Dispatch<React.SetStateAction<Map<string, { id: string; status: EditorInstanceStatus }>>>;
   setDiscoveredServers: React.Dispatch<React.SetStateAction<DiscoveredServerInfo[]>>;
@@ -88,7 +90,7 @@ export function useMessageHandler(
   const {
     setSessions, setSessionStates, setSessionCommands,
     setFileResults, setOpenspecMap, setOpenspecGroupsMap, setModelsMap, setRolesMap, setSpawnResult,
-    setSessionOrderMap, setPinnedDirectories, setTerminals, setEditorStatuses,
+    setSessionOrderMap, setPinnedDirectories, setWorkspaces, setTerminals, setEditorStatuses,
     setDiscoveredServers, setSpawnErrors, setResumeErrors,
   } = setters;
   const { send, navigate, clearSpawningCwd, spawningCwdsRef, subscribedRef, pendingTerminalCwdRef, lastCreatedTerminalIdRef, maxSeqMapRef, selectedSessionIdRef, pendingSpawnsRef } = deps;
@@ -523,6 +525,12 @@ export function useMessageHandler(
         setPinnedDirectories(msg.paths);
         break;
 
+      case "workspaces_updated":
+        // folder-workspaces: server sends full snapshot on subscribe and
+        // after every mutation. Replace, do not merge.
+        setWorkspaces(msg.workspaces);
+        break;
+
       case "extension_ui_request":
         setSessionStates((prev) => {
           const next = new Map(prev);
@@ -743,5 +751,5 @@ export function useMessageHandler(
         break;
       }
     }
-  }, [send, clearSpawningCwd, navigate, setSessions, setSessionStates, setSessionCommands, setFileResults, setOpenspecMap, setModelsMap, setRolesMap, setSpawnResult, setSessionOrderMap, setPinnedDirectories, setTerminals, setEditorStatuses, setDiscoveredServers, spawningCwdsRef, subscribedRef, pendingTerminalCwdRef, maxSeqMapRef, selectedSessionIdRef]);
+  }, [send, clearSpawningCwd, navigate, setSessions, setSessionStates, setSessionCommands, setFileResults, setOpenspecMap, setModelsMap, setRolesMap, setSpawnResult, setSessionOrderMap, setPinnedDirectories, setWorkspaces, setTerminals, setEditorStatuses, setDiscoveredServers, spawningCwdsRef, subscribedRef, pendingTerminalCwdRef, maxSeqMapRef, selectedSessionIdRef]);
 }

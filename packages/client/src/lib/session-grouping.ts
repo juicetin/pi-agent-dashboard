@@ -52,6 +52,20 @@ export interface DirectoryGroup {
   pinned: boolean;
 }
 
+/**
+ * A workspace tier in the sidebar: a named, collapsible container whose
+ * `folders` are rendered using the same per-folder shape as top-level
+ * groups. Membership is authoritative — every folder in a workspace's
+ * `folders[]` appears here regardless of pin state or session count, and
+ * is excluded from the top-level area. See change: folder-workspaces.
+ */
+export interface WorkspaceGroup {
+  id: string;
+  name: string;
+  collapsed: boolean;
+  folders: DirectoryGroup[];
+}
+
 /** Sort sessions within a group by server order, then by startedAt descending for unordered ones. */
 export function sortSessionsByOrder(sessions: DashboardSession[], order?: string[]): DashboardSession[] {
   if (!order || order.length === 0) {
@@ -207,6 +221,85 @@ export function groupSessionsByDirectory(
     });
 
   return { pinned, unpinned };
+}
+
+/**
+ * Workspace-aware grouping. Returns:
+ *   - `workspaces`: one tier per workspace, in workspace-array order, each
+ *      containing its folders in `folders[]` order; every folder rendered
+ *      regardless of pin state or session count.
+ *   - `topLevel`: pinned-first-then-session-driven flat list restricted
+ *      to folders that are NOT in any workspace.
+ *
+ * Folders in a workspace are EXCLUDED from the top-level area entirely
+ * (even if also pinned). Pin state has no effect on intra-workspace order.
+ *
+ * See change: folder-workspaces (spec session-grouping).
+ */
+export function groupSessionsByDirectoryWithWorkspaces(
+  sessions: DashboardSession[],
+  workspaces: ReadonlyArray<{ id: string; name: string; collapsed: boolean; folders: string[] }>,
+  orderMap?: Map<string, string[]>,
+  pinnedDirectories?: string[],
+  platform?: NodeJS.Platform,
+): { workspaces: WorkspaceGroup[]; topLevel: DirectoryGroup[] } {
+  const plat = inferPlatform(
+    [
+      ...sessions.map((s) => s.cwd),
+      ...sessions.map((s) => s.jjState?.workspaceRoot),
+      ...(pinnedDirectories ?? []),
+      ...workspaces.flatMap((w) => w.folders),
+    ],
+    platform,
+  );
+
+  // Build the canonical "folder → workspace" map so we can exclude
+  // workspace-owned folders from the top level. Single-membership
+  // invariant is enforced server-side; if it's ever violated client-side
+  // we honor the FIRST workspace that claims a folder.
+  const folderToWs = new Map<string, { wsIdx: number; folderIdx: number }>();
+  workspaces.forEach((w, wsIdx) => {
+    w.folders.forEach((p, folderIdx) => {
+      const key = pathKey(p, plat);
+      if (!folderToWs.has(key)) folderToWs.set(key, { wsIdx, folderIdx });
+    });
+  });
+
+  // Reuse the existing grouper to compute pinned + unpinned. Then we
+  // partition each into "in a workspace" vs "top level" buckets.
+  const { pinned, unpinned } = groupSessionsByDirectory(
+    sessions, orderMap, pinnedDirectories, platform,
+  );
+
+  // Build a path → DirectoryGroup index covering pinned + unpinned. Then
+  // any workspace-listed folder NOT yet in either list (no sessions and
+  // not pinned) gets a synthetic empty group so it still renders.
+  const groupByKey = new Map<string, DirectoryGroup>();
+  for (const g of pinned) groupByKey.set(pathKey(g.cwd, plat), g);
+  for (const g of unpinned) groupByKey.set(pathKey(g.cwd, plat), g);
+
+  const wsTiers: WorkspaceGroup[] = workspaces.map((w) => {
+    const folders: DirectoryGroup[] = w.folders.map((p) => {
+      const key = pathKey(p, plat);
+      const existing = groupByKey.get(key);
+      if (existing) return existing;
+      // Synthetic: a workspace-owned folder with no sessions and no pin.
+      // The pin flag mirrors `pinnedDirectories` membership so the
+      // unpin/pin toggle continues to render correctly inside the workspace.
+      const pinnedSet = new Set((pinnedDirectories ?? []).map((d) => pathKey(d, plat)));
+      return { cwd: p, sessions: [], pinned: pinnedSet.has(key) };
+    });
+    return { id: w.id, name: w.name, collapsed: w.collapsed, folders };
+  });
+
+  // Top-level: everything NOT claimed by a workspace, preserving the
+  // original pinned-first-then-recency ordering produced by
+  // `groupSessionsByDirectory`.
+  const topLevel: DirectoryGroup[] = [...pinned, ...unpinned].filter(
+    (g) => !folderToWs.has(pathKey(g.cwd, plat)),
+  );
+
+  return { workspaces: wsTiers, topLevel };
 }
 
 /**

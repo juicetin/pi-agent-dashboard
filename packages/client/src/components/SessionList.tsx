@@ -15,11 +15,15 @@ import type { DashboardSession, OpenSpecData, OpenSpecGroup, CommandInfo, ImageC
 import type { TerminalSession } from "@blackbelt-technology/pi-dashboard-shared/terminal-types.js";
 import {
   groupSessionsByDirectory,
+  groupSessionsByDirectoryWithWorkspaces,
   filterSessions,
   filterByQuery,
   sortSessionsByOrder,
   type DirectoryGroup,
 } from "../lib/session-grouping.js";
+import { WorkspaceHeader } from "./WorkspaceHeader.js";
+import { NewWorkspaceDialog } from "./NewWorkspaceDialog.js";
+import { AddToWorkspaceMenu } from "./AddToWorkspaceMenu.js";
 // TerminalCard removed — terminals now in TerminalsView
 import {
   getCollapsedGroups,
@@ -88,6 +92,14 @@ interface Props {
   onOpenPinDialog?: () => void;
   onUnpinDirectory?: (dirPath: string) => void;
   onReorderPinnedDirs?: (paths: string[]) => void;
+  // ── folder-workspaces ──────────────────────────────────
+  workspaces?: import("@blackbelt-technology/pi-dashboard-shared/browser-protocol.js").Workspace[];
+  onCreateWorkspace?: (name: string) => void;
+  onRenameWorkspace?: (id: string, name: string) => void;
+  onDeleteWorkspace?: (id: string) => void;
+  onSetWorkspaceCollapsed?: (id: string, collapsed: boolean) => void;
+  onAddFolderToWorkspace?: (id: string, path: string) => void;
+  onRemoveFolderFromWorkspace?: (id: string, path: string) => void;
   terminals?: TerminalSession[];
   onKillTerminal?: (terminalId: string) => void;
   onRenameTerminal?: (terminalId: string, title: string) => void;
@@ -144,7 +156,7 @@ function ToggleButton({
   );
 }
 
-export function SessionList({ sessions, selectedId, onSelect, contextUsageMap, openspecMap, openspecGroupsMap, sessionOrderMap, onReorderSessions, onSendPrompt, onOpenSpecRefresh, onAttachProposal, onDetachProposal, onBulkArchive, onReadArtifact, onOpenPiResources, onRename, onShutdown, onResume, onResumeKeepPosition, onHideSession, onUnhideSession, onSpawnSession, spawningCwds, spawnResult, onSpawnResultSeen, pinnedDirectories, onPinDirectory, onOpenPinDialog, onUnpinDirectory, onReorderPinnedDirs, terminals, onKillTerminal, onRenameTerminal, onCollapseSidebar, commandsMap, onKillProcess, onOpenSpecs, onOpenArchive, onViewReadme, onOpenTerminals, onOpenEditor, editorStatuses, editorAvailable, headerExtra, errorSessionIds, retrySessionIds, spawnErrors, onDismissSpawnError, resumeErrors, onDismissResumeError }: Props) {
+export function SessionList({ sessions, selectedId, onSelect, contextUsageMap, openspecMap, openspecGroupsMap, sessionOrderMap, onReorderSessions, onSendPrompt, onOpenSpecRefresh, onAttachProposal, onDetachProposal, onBulkArchive, onReadArtifact, onOpenPiResources, onRename, onShutdown, onResume, onResumeKeepPosition, onHideSession, onUnhideSession, onSpawnSession, spawningCwds, spawnResult, onSpawnResultSeen, pinnedDirectories, onPinDirectory, onOpenPinDialog, onUnpinDirectory, onReorderPinnedDirs, workspaces, onCreateWorkspace, onRenameWorkspace, onDeleteWorkspace, onSetWorkspaceCollapsed, onAddFolderToWorkspace, onRemoveFolderFromWorkspace, terminals, onKillTerminal, onRenameTerminal, onCollapseSidebar, commandsMap, onKillProcess, onOpenSpecs, onOpenArchive, onViewReadme, onOpenTerminals, onOpenEditor, editorStatuses, editorAvailable, headerExtra, errorSessionIds, retrySessionIds, spawnErrors, onDismissSpawnError, resumeErrors, onDismissResumeError }: Props) {
   const now = Date.now();
   const [, navigate] = useLocation();
   const { messages, showToast, dismissToast } = useToast();
@@ -330,7 +342,65 @@ export function SessionList({ sessions, selectedId, onSelect, contextUsageMap, o
     () => groupSessionsByDirectory(filteredSessions, sessionOrderMap, pinnedDirectories),
     [filteredSessions, sessionOrderMap, pinnedDirectories],
   );
+  // folder-workspaces: derive workspace tier and the top-level view that
+  // EXCLUDES workspace-owned folders. The legacy `pinnedGroups` /
+  // `unpinnedGroups` are kept for DnD wiring of the existing pin-reorder
+  // behavior; workspace tier sits above them.
+  const workspaceTiers = useMemo(() => {
+    const list = workspaces ?? [];
+    if (list.length === 0) return null;
+    const result = groupSessionsByDirectoryWithWorkspaces(
+      filteredSessions, list, sessionOrderMap, pinnedDirectories,
+    );
+    return result;
+  }, [workspaces, filteredSessions, sessionOrderMap, pinnedDirectories]);
+  // Top-level groups: when any workspace exists, strip out workspace-owned
+  // folders so they don't double-render.
+  const visibleTopPinned = useMemo(() => {
+    if (!workspaceTiers) return pinnedGroups;
+    const claimed = new Set<string>(
+      (workspaces ?? []).flatMap((w) => w.folders),
+    );
+    return pinnedGroups.filter((g) => !claimed.has(g.cwd));
+  }, [workspaceTiers, pinnedGroups, workspaces]);
+  const visibleTopUnpinned = useMemo(() => {
+    if (!workspaceTiers) return unpinnedGroups;
+    const claimed = new Set<string>(
+      (workspaces ?? []).flatMap((w) => w.folders),
+    );
+    return unpinnedGroups.filter((g) => !claimed.has(g.cwd));
+  }, [workspaceTiers, unpinnedGroups, workspaces]);
   const allGroups = useMemo(() => [...pinnedGroups, ...unpinnedGroups], [pinnedGroups, unpinnedGroups]);
+
+  // Reverse lookup: cwd → owning workspace id (or null).
+  const folderWorkspaceMap = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const w of workspaces ?? []) for (const p of w.folders) m.set(p, w.id);
+    return m;
+  }, [workspaces]);
+
+  // Inline state for AddToWorkspace popover and NewWorkspace dialog.
+  // See change: folder-workspaces.
+  const [addToWsMenuFor, setAddToWsMenuFor] = React.useState<string | null>(null);
+  const [newWsOpen, setNewWsOpen] = React.useState<{ pendingFolder: string | null } | null>(null);
+  // After creating a workspace from the AddToWorkspace flow, we need to
+  // route the new id to add the pending folder. Server returns the new
+  // workspace via `workspaces_updated` broadcast — we detect by ref-check
+  // on the previous id set.
+  const prevWsIdsRef = React.useRef<Set<string>>(new Set());
+  React.useEffect(() => {
+    const ids = new Set((workspaces ?? []).map((w) => w.id));
+    if (newWsOpen?.pendingFolder) {
+      for (const id of ids) {
+        if (!prevWsIdsRef.current.has(id)) {
+          onAddFolderToWorkspace?.(id, newWsOpen.pendingFolder);
+          setNewWsOpen(null);
+          break;
+        }
+      }
+    }
+    prevWsIdsRef.current = ids;
+  }, [workspaces, newWsOpen, onAddFolderToWorkspace]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -421,7 +491,57 @@ export function SessionList({ sessions, selectedId, onSelect, contextUsageMap, o
     return collapsedGroups.has(cwd);
   }
 
-  function renderGroup(group: DirectoryGroup, isPinned: boolean) {
+  /**
+   * folder-workspaces: same as renderGroup but injects an "Add to
+   * workspace" affordance inside the header. Used for top-level groups
+   * only. Workspace-tier folders use the plain renderGroup since their
+   * membership is already established.
+   */
+  function renderGroupWithWorkspaceMenu(group: DirectoryGroup, isPinned: boolean) {
+    const owningWsId = folderWorkspaceMap.get(group.cwd) ?? null;
+    const menuOpen = addToWsMenuFor === group.cwd;
+    return (
+      <div className="relative">
+        {renderGroup(group, isPinned)}
+        {(onCreateWorkspace || (workspaces && workspaces.length > 0)) && (
+          <div className="absolute top-1 right-7">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setAddToWsMenuFor(menuOpen ? null : group.cwd);
+              }}
+              className="text-[10px] px-1 py-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--accent-blue)]"
+              title="Add to workspace"
+              data-testid={`add-to-workspace-btn-${group.cwd}`}
+            >
+              +ws
+            </button>
+            {menuOpen && (
+              <AddToWorkspaceMenu
+                workspaces={workspaces ?? []}
+                currentWorkspaceId={owningWsId}
+                onPick={(wsId) => {
+                  onAddFolderToWorkspace?.(wsId, group.cwd);
+                  setAddToWsMenuFor(null);
+                }}
+                onNewWorkspace={() => {
+                  setNewWsOpen({ pendingFolder: group.cwd });
+                  setAddToWsMenuFor(null);
+                }}
+                onRemoveFromWorkspace={() => {
+                  if (owningWsId) onRemoveFolderFromWorkspace?.(owningWsId, group.cwd);
+                  setAddToWsMenuFor(null);
+                }}
+                onClose={() => setAddToWsMenuFor(null)}
+              />
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  function renderGroup(group: DirectoryGroup, isPinned: boolean, inWorkspace: boolean = false) {
     const dirName = truncatePathMiddle(group.cwd, 45);
     const isCollapsed = isFolderCollapsed(group.cwd);
 
@@ -439,8 +559,11 @@ export function SessionList({ sessions, selectedId, onSelect, contextUsageMap, o
               <Icon path={isCollapsed ? mdiFolder : mdiFolderOpen} size={0.5} className="shrink-0" /> {dirName}
             </span>
             <span className="text-[10px] text-[var(--text-muted)]">({group.sessions.length})</span>
-            {/* Pin/Unpin toggle */}
-            {(isPinned || onPinDirectory) && (
+            {/* Pin/Unpin toggle. Hidden inside a workspace container — pin
+                is irrelevant for visibility/ordering there. The pin state
+                itself is preserved on the server (orthogonal to workspace
+                membership). See change: folder-workspaces. */}
+            {!inWorkspace && (isPinned || onPinDirectory) && (
               <button
                 onClick={(e) => {
                   e.stopPropagation();
@@ -783,17 +906,70 @@ export function SessionList({ sessions, selectedId, onSelect, contextUsageMap, o
         </div>
       </div>
       <div ref={listRef} className="flex-1 overflow-y-auto">
-      {filteredSessions.length === 0 && pinnedGroups.length === 0 ? (
+      {filteredSessions.length === 0 && pinnedGroups.length === 0 && (workspaces?.length ?? 0) === 0 ? (
         <div className="p-4 text-sm text-[var(--text-tertiary)]">No active sessions</div>
       ) : (
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
         <ul className="flex flex-col gap-2 p-2">
-          {/* Pinned directory groups (filtered if workspace/session filter active) */}
-          {pinnedGroups.length > 0 && (
-            <SortableContext items={pinnedGroups.filter(folderMatchesFilters).map((g) => g.cwd)} strategy={verticalListSortingStrategy}>
-              {pinnedGroups.filter(folderMatchesFilters).map((group) => (
+          {/* Workspace tier (folder-workspaces): rendered ABOVE the top-level
+              area when at least one workspace exists. */}
+          {workspaceTiers && workspaceTiers.workspaces.map((ws) => (
+            <li key={`ws-${ws.id}`} className="bg-[var(--bg-secondary)] rounded-lg">
+              <WorkspaceHeader
+                id={ws.id}
+                name={ws.name}
+                collapsed={ws.collapsed}
+                folderCount={ws.folders.length}
+                onToggleCollapsed={() => onSetWorkspaceCollapsed?.(ws.id, !ws.collapsed)}
+                onRename={(name) => onRenameWorkspace?.(ws.id, name)}
+                onDelete={() => onDeleteWorkspace?.(ws.id)}
+              />
+              {!ws.collapsed && (
+                <div className="flex flex-col gap-1 p-1.5">
+                  {ws.folders.length === 0 && (
+                    <div className="text-[11px] text-[var(--text-muted)] italic px-2 py-2 text-center">
+                      Empty workspace. Use “+ Add to workspace” on a folder’s actions to assign it here.
+                    </div>
+                  )}
+                  {ws.folders.map((folder) => (
+                    <div key={`ws-${ws.id}-f-${folder.cwd}`} className="relative">
+                      {renderGroup(folder, folder.pinned, true)}
+                      {/* Quick "remove from workspace" affordance —
+                          full menu lives on the folder action bar. */}
+                      <button
+                        onClick={() => onRemoveFolderFromWorkspace?.(ws.id, folder.cwd)}
+                        className="absolute top-1 right-1 text-[10px] text-[var(--text-muted)] hover:text-red-400 px-1"
+                        title="Remove from workspace"
+                        data-testid={`ws-remove-${ws.id}-${folder.cwd}`}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </li>
+          ))}
+          {/* "+ New workspace" affordance (only when workspaces feature is
+              wired). Hidden when no callback is provided. */}
+          {onCreateWorkspace && (
+            <li>
+              <button
+                onClick={() => setNewWsOpen({ pendingFolder: null })}
+                className="w-full text-[11px] text-[var(--text-tertiary)] hover:text-[var(--accent-blue)] py-1.5 px-2 rounded border border-dashed border-[var(--border-subtle)] hover:border-[var(--accent-blue)]"
+                data-testid="new-workspace-btn"
+              >
+                + New workspace…
+              </button>
+            </li>
+          )}
+          {/* Pinned directory groups (filtered if workspace/session filter active).
+              Workspace-owned folders are filtered out via visibleTopPinned. */}
+          {visibleTopPinned.length > 0 && (
+            <SortableContext items={visibleTopPinned.filter(folderMatchesFilters).map((g) => g.cwd)} strategy={verticalListSortingStrategy}>
+              {visibleTopPinned.filter(folderMatchesFilters).map((group) => (
                 <SortablePinnedGroup key={group.cwd} id={group.cwd}>
-                  {renderGroup(group, true)}
+                  {renderGroupWithWorkspaceMenu(group, true)}
                 </SortablePinnedGroup>
               ))}
             </SortableContext>
@@ -806,15 +982,27 @@ export function SessionList({ sessions, selectedId, onSelect, contextUsageMap, o
               keep the sidebar focused on workspaces the user is
               currently working in.
               See change: pin-and-search-sessions. */}
-          {unpinnedGroups
+          {visibleTopUnpinned
             .filter((g) =>
               workspaceFilter.length > 0
                 ? folderMatchesFilters(g)
                 : g.sessions.some((s) => s.status !== "ended")
             )
-            .map((group) => renderGroup(group, false))}
+            .map((group) => renderGroupWithWorkspaceMenu(group, false))}
         </ul>
         </DndContext>
+      )}
+      {newWsOpen && (
+        <NewWorkspaceDialog
+          onCancel={() => setNewWsOpen(null)}
+          onCreate={(name) => {
+            onCreateWorkspace?.(name);
+            // Effect above auto-routes pendingFolder once the new workspace
+            // arrives via `workspaces_updated`. For the standalone "+ New
+            // workspace…" case (no pending folder) we close immediately.
+            if (!newWsOpen.pendingFolder) setNewWsOpen(null);
+          }}
+        />
       )}
       {hiddenCount > 0 && !showHidden && (
         <div className="p-2 text-center text-[11px] text-[var(--text-muted)]">

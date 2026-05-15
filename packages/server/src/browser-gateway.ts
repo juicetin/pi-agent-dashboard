@@ -69,7 +69,7 @@ import { handleSubscribe } from "./browser-handlers/subscription-handler.js";
 import { handleSendPrompt, handleResumeSession, handleSpawnSession, handleShutdown, handleAbort, handleFlowControl, handleForceKill, handleKillProcess, handleClearQueue, handleRemoveQueueEntry } from "./browser-handlers/session-action-handler.js";
 import { handleRenameSession, handleHideSession, handleUnhideSession, handleAttachProposal, handleDetachProposal, handleFetchContent, handleListSessions } from "./browser-handlers/session-meta-handler.js";
 import { handleCreateTerminal, handleKillTerminal, handleRenameTerminal } from "./browser-handlers/terminal-handler.js";
-import { handlePinDirectory, handleUnpinDirectory, handleReorderPinnedDirs, handleReorderSessions, handleOpenSpecRefresh, handleOpenSpecBulkArchive, handleExtensionUiResponse, handlePiGatewayForward } from "./browser-handlers/directory-handler.js";
+import { handlePinDirectory, handleUnpinDirectory, handleReorderPinnedDirs, handleReorderSessions, handleOpenSpecRefresh, handleOpenSpecBulkArchive, handleExtensionUiResponse, handlePiGatewayForward, handleCreateWorkspace, handleRenameWorkspace, handleDeleteWorkspace, handleSetWorkspaceCollapsed, handleAddFolderToWorkspace, handleRemoveFolderFromWorkspace, handleReorderWorkspaceFolders, handleReorderWorkspaces } from "./browser-handlers/directory-handler.js";
 
 
 
@@ -293,6 +293,12 @@ export function createBrowserGateway(
     // Send pinned directories on connect
     if (preferencesStore) {
       sendTo(ws, { type: "pinned_dirs_updated", paths: preferencesStore.getPinnedDirectories() });
+      // Send current workspaces snapshot. See change: folder-workspaces.
+      // Guarded with `typeof` so old PreferencesStore stubs in tests that
+      // predate workspaces still work — they simply get no workspace snapshot.
+      if (typeof preferencesStore.getWorkspaces === "function") {
+        sendTo(ws, { type: "workspaces_updated", workspaces: preferencesStore.getWorkspaces() });
+      }
     }
 
     // Send OpenSpec data for every known directory — exactly one
@@ -433,6 +439,30 @@ export function createBrowserGateway(
             break;
           case "reorder_pinned_dirs":
             handleReorderPinnedDirs(msg, ctx);
+            break;
+          case "create_workspace":
+            handleCreateWorkspace(msg, ctx);
+            break;
+          case "rename_workspace":
+            handleRenameWorkspace(msg, ctx);
+            break;
+          case "delete_workspace":
+            handleDeleteWorkspace(msg, ctx);
+            break;
+          case "set_workspace_collapsed":
+            handleSetWorkspaceCollapsed(msg, ctx);
+            break;
+          case "add_folder_to_workspace":
+            handleAddFolderToWorkspace(msg, ctx);
+            break;
+          case "remove_folder_from_workspace":
+            handleRemoveFolderFromWorkspace(msg, ctx);
+            break;
+          case "reorder_workspace_folders":
+            handleReorderWorkspaceFolders(msg, ctx);
+            break;
+          case "reorder_workspaces":
+            handleReorderWorkspaces(msg, ctx);
             break;
           case "openspec_refresh":
             handleOpenSpecRefresh(msg, ctx);

@@ -174,4 +174,200 @@ describe("preferences-store", () => {
     expect(data.hiddenSessions).toBeUndefined();
     store.dispose();
   });
+
+  // ── folder-workspaces ──────────────────────────────────
+
+  describe("workspaces", () => {
+    it("defaults to empty workspaces[] when field absent", () => {
+      fs.writeFileSync(filePath, JSON.stringify({
+        pinnedDirectories: [A_PATH], sessionOrder: {},
+      }));
+      const store = createPreferencesStore(filePath);
+      expect(store.getWorkspaces()).toEqual([]);
+      store.dispose();
+    });
+
+    it("loads workspaces from disk preserving order, ids, name, collapsed, folders", () => {
+      fs.writeFileSync(filePath, JSON.stringify({
+        pinnedDirectories: [], sessionOrder: {},
+        workspaces: [
+          { id: "ws_1", name: "a", collapsed: false, folders: [A_PATH] },
+          { id: "ws_2", name: "b", collapsed: true, folders: [] },
+        ],
+      }));
+      const store = createPreferencesStore(filePath);
+      const got = store.getWorkspaces();
+      expect(got).toHaveLength(2);
+      expect(got[0]).toMatchObject({ id: "ws_1", name: "a", collapsed: false, folders: [A_PATH] });
+      expect(got[1]).toMatchObject({ id: "ws_2", name: "b", collapsed: true, folders: [] });
+      store.dispose();
+    });
+
+    it("createWorkspace generates ws_<uuid> id and trims name; rejects empty", () => {
+      const store = createPreferencesStore(filePath);
+      expect(store.createWorkspace("")).toBeNull();
+      expect(store.createWorkspace("   ")).toBeNull();
+      const w = store.createWorkspace("  client-work  ");
+      expect(w).not.toBeNull();
+      expect(w!.id).toMatch(/^ws_[0-9a-f-]{36}$/);
+      expect(w!.name).toBe("client-work");
+      expect(w!.collapsed).toBe(false);
+      expect(w!.folders).toEqual([]);
+      store.dispose();
+    });
+
+    it("createWorkspace rejects names longer than 80 chars", () => {
+      const store = createPreferencesStore(filePath);
+      expect(store.createWorkspace("x".repeat(81))).toBeNull();
+      expect(store.createWorkspace("x".repeat(80))).not.toBeNull();
+      store.dispose();
+    });
+
+    it("allows duplicate workspace names", () => {
+      const store = createPreferencesStore(filePath);
+      const a = store.createWorkspace("scratch");
+      const b = store.createWorkspace("scratch");
+      expect(a).not.toBeNull();
+      expect(b).not.toBeNull();
+      expect(a!.id).not.toBe(b!.id);
+      expect(store.getWorkspaces()).toHaveLength(2);
+      store.dispose();
+    });
+
+    it("renameWorkspace returns false on unknown id and on empty name", () => {
+      const store = createPreferencesStore(filePath);
+      const w = store.createWorkspace("a")!;
+      expect(store.renameWorkspace("missing", "x")).toBe(false);
+      expect(store.renameWorkspace(w.id, "")).toBe(false);
+      expect(store.renameWorkspace(w.id, "a")).toBe(false); // same value, no-op
+      expect(store.renameWorkspace(w.id, "b")).toBe(true);
+      expect(store.getWorkspaces()[0].name).toBe("b");
+      store.dispose();
+    });
+
+    it("deleteWorkspace removes record and leaves pinnedDirectories alone", () => {
+      const store = createPreferencesStore(filePath);
+      store.pinDirectory(A_PATH);
+      const w = store.createWorkspace("w")!;
+      store.addFolderToWorkspace(w.id, A_PATH);
+      expect(store.deleteWorkspace("missing")).toBe(false);
+      expect(store.deleteWorkspace(w.id)).toBe(true);
+      expect(store.getWorkspaces()).toEqual([]);
+      expect(store.getPinnedDirectories()).toEqual([A_PATH]);
+      store.dispose();
+    });
+
+    it("setWorkspaceCollapsed toggles flag; no-op on same value or unknown id", () => {
+      const store = createPreferencesStore(filePath);
+      const w = store.createWorkspace("w")!;
+      expect(store.setWorkspaceCollapsed("missing", true)).toBe(false);
+      expect(store.setWorkspaceCollapsed(w.id, false)).toBe(false); // already false
+      expect(store.setWorkspaceCollapsed(w.id, true)).toBe(true);
+      expect(store.getWorkspaces()[0].collapsed).toBe(true);
+      store.dispose();
+    });
+
+    it("addFolderToWorkspace appends and is idempotent on duplicate", () => {
+      const store = createPreferencesStore(filePath);
+      const w = store.createWorkspace("w")!;
+      expect(store.addFolderToWorkspace(w.id, A_PATH)).toBe(true);
+      expect(store.addFolderToWorkspace(w.id, A_PATH)).toBe(false); // idempotent
+      expect(store.getWorkspaces()[0].folders).toEqual([A_PATH]);
+      store.dispose();
+    });
+
+    it("single-membership: adding folder to workspace B detaches it from workspace A", () => {
+      const store = createPreferencesStore(filePath);
+      const a = store.createWorkspace("a")!;
+      const b = store.createWorkspace("b")!;
+      store.addFolderToWorkspace(a.id, A_PATH);
+      store.addFolderToWorkspace(b.id, A_PATH);
+      const ws = store.getWorkspaces();
+      expect(ws.find((w) => w.id === a.id)!.folders).toEqual([]);
+      expect(ws.find((w) => w.id === b.id)!.folders).toEqual([A_PATH]);
+      store.dispose();
+    });
+
+    it("adding folder does NOT touch pinnedDirectories", () => {
+      const store = createPreferencesStore(filePath);
+      store.pinDirectory(A_PATH);
+      const w = store.createWorkspace("w")!;
+      store.addFolderToWorkspace(w.id, A_PATH);
+      expect(store.getPinnedDirectories()).toEqual([A_PATH]);
+      expect(store.getWorkspaces()[0].folders).toEqual([A_PATH]);
+      store.dispose();
+    });
+
+    it("removeFolderFromWorkspace does NOT touch pinnedDirectories", () => {
+      const store = createPreferencesStore(filePath);
+      store.pinDirectory(A_PATH);
+      const w = store.createWorkspace("w")!;
+      store.addFolderToWorkspace(w.id, A_PATH);
+      expect(store.removeFolderFromWorkspace(w.id, A_PATH)).toBe(true);
+      expect(store.removeFolderFromWorkspace(w.id, A_PATH)).toBe(false); // not member
+      expect(store.getPinnedDirectories()).toEqual([A_PATH]);
+      expect(store.getWorkspaces()[0].folders).toEqual([]);
+      store.dispose();
+    });
+
+    it("reorderWorkspaceFolders rejects mismatched set", () => {
+      const store = createPreferencesStore(filePath);
+      const w = store.createWorkspace("w")!;
+      store.addFolderToWorkspace(w.id, A_PATH);
+      store.addFolderToWorkspace(w.id, B_PATH);
+      expect(store.reorderWorkspaceFolders(w.id, [A_PATH])).toBe(false); // missing B
+      expect(store.reorderWorkspaceFolders(w.id, [A_PATH, B_PATH, X_PATH])).toBe(false); // extra
+      expect(store.reorderWorkspaceFolders(w.id, [B_PATH, A_PATH])).toBe(true);
+      expect(store.getWorkspaces()[0].folders).toEqual([B_PATH, A_PATH]);
+      store.dispose();
+    });
+
+    it("reorderWorkspaces rejects mismatched id set", () => {
+      const store = createPreferencesStore(filePath);
+      const a = store.createWorkspace("a")!;
+      const b = store.createWorkspace("b")!;
+      expect(store.reorderWorkspaces([a.id])).toBe(false);
+      expect(store.reorderWorkspaces([a.id, b.id, "ghost"])).toBe(false);
+      expect(store.reorderWorkspaces([b.id, a.id])).toBe(true);
+      expect(store.getWorkspaces().map((w) => w.id)).toEqual([b.id, a.id]);
+      store.dispose();
+    });
+
+    it("workspaces persist round-trip through file with debounced write", () => {
+      const store = createPreferencesStore(filePath);
+      const w = store.createWorkspace("persisted")!;
+      store.addFolderToWorkspace(w.id, A_PATH);
+      store.setWorkspaceCollapsed(w.id, true);
+      store.flush();
+      const data = JSON.parse(fs.readFileSync(filePath, "utf-8"));
+      expect(data.workspaces).toHaveLength(1);
+      expect(data.workspaces[0]).toMatchObject({
+        id: w.id, name: "persisted", collapsed: true, folders: [A_PATH],
+      });
+      store.dispose();
+    });
+
+    it("mutation triggers debounced save", () => {
+      const store = createPreferencesStore(filePath);
+      store.createWorkspace("x");
+      expect(fs.existsSync(filePath)).toBe(false);
+      vi.advanceTimersByTime(1000);
+      const data = JSON.parse(fs.readFileSync(filePath, "utf-8"));
+      expect(data.workspaces).toHaveLength(1);
+      store.dispose();
+    });
+
+    it("getWorkspaces returns defensive clones — callers cannot mutate internal state", () => {
+      const store = createPreferencesStore(filePath);
+      const w = store.createWorkspace("w")!;
+      store.addFolderToWorkspace(w.id, A_PATH);
+      const snap = store.getWorkspaces();
+      snap[0].folders.push("/poisoned");
+      snap[0].name = "poisoned";
+      const fresh = store.getWorkspaces();
+      expect(fresh[0].folders).toEqual([A_PATH]);
+      expect(fresh[0].name).toBe("w");
+      store.dispose();
+    });
+  });
 });

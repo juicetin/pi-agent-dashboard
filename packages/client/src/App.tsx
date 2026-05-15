@@ -349,6 +349,8 @@ export default function App() {
   const pendingSpawnsRef = useRef<Map<string, { cwd: string; kind: "spawn" | "resume" }>>(new Map());
   const [sessionOrderMap, setSessionOrderMap] = useState<Map<string, string[]>>(new Map());
   const [pinnedDirectories, setPinnedDirectories] = useState<string[]>([]);
+  // folder-workspaces: full workspace list, kept in sync via workspaces_updated broadcast.
+  const [workspaces, setWorkspaces] = useState<import("@blackbelt-technology/pi-dashboard-shared/browser-protocol.js").Workspace[]>([]);
   const [pinDialogOpen, setPinDialogOpen] = useState(false);
   const providersReady = useProvidersReady();
   const [terminals, setTerminals] = useState<Map<string, TerminalSession>>(new Map());
@@ -437,7 +439,7 @@ export default function App() {
   }, []);
 
   const handleMessage = useMessageHandler(
-    { setSessions, setSessionStates, setSessionCommands, setFileResults, setOpenspecMap, setOpenspecGroupsMap, setModelsMap, setRolesMap, setSpawnResult, setSessionOrderMap, setPinnedDirectories, setTerminals, setEditorStatuses, setDiscoveredServers, setSpawnErrors, setResumeErrors },
+    { setSessions, setSessionStates, setSessionCommands, setFileResults, setOpenspecMap, setOpenspecGroupsMap, setModelsMap, setRolesMap, setSpawnResult, setSessionOrderMap, setPinnedDirectories, setWorkspaces, setTerminals, setEditorStatuses, setDiscoveredServers, setSpawnErrors, setResumeErrors },
     { send, navigate, clearSpawningCwd, spawningCwdsRef, subscribedRef, pendingTerminalCwdRef, lastCreatedTerminalIdRef, maxSeqMapRef, selectedSessionIdRef, pendingSpawnsRef },
   );
 
@@ -718,7 +720,7 @@ export default function App() {
 
   const sessionActions = useSessionActions({
     selectedId, send, navigate, setMobileOpen,
-    setSessions, setSessionStates, setSpawningCwds, setTerminals,
+    sessions, setSessions, setSessionStates, setSpawningCwds, setTerminals,
     clearSpawningCwd, spawnTimeoutsRef, pendingTerminalCwdRef, terminals,
     pendingSpawnsRef,
   });
@@ -876,6 +878,17 @@ export default function App() {
         setPinnedDirectories(paths);
         send({ type: "reorder_pinned_dirs", paths });
       }}
+      // folder-workspaces — optimistic UI is intentionally omitted: server
+      // is the single source of truth and broadcasts `workspaces_updated`
+      // for every mutation, so we just dispatch and let the broadcast
+      // arrive (matches the pattern of other workspace-scoped state).
+      workspaces={workspaces}
+      onCreateWorkspace={(name) => send({ type: "create_workspace", name })}
+      onRenameWorkspace={(id, name) => send({ type: "rename_workspace", id, name })}
+      onDeleteWorkspace={(id) => send({ type: "delete_workspace", id })}
+      onSetWorkspaceCollapsed={(id, collapsed) => send({ type: "set_workspace_collapsed", id, collapsed })}
+      onAddFolderToWorkspace={(id, path) => send({ type: "add_folder_to_workspace", id, path })}
+      onRemoveFolderFromWorkspace={(id, path) => send({ type: "remove_folder_from_workspace", id, path })}
       onKillTerminal={handleKillTerminal}
       onRenameTerminal={handleRenameTerminal}
       onCollapseSidebar={sidebar.toggleCollapse}

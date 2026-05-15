@@ -281,6 +281,28 @@ export interface PinnedDirsUpdatedMessage {
   paths: string[];
 }
 
+// ── Workspaces (folder-workspaces) ───────────────────────────────────
+
+/**
+ * Named, server-persisted, collapsible container grouping one or more
+ * folders. Membership is authoritative and orthogonal to pinning — a
+ * folder may be in `folders[]` and `pinnedDirectories` independently.
+ * Single-membership: a folder belongs to ≤1 workspace.
+ * See change: folder-workspaces.
+ */
+export interface Workspace {
+  id: string;
+  name: string;
+  collapsed: boolean;
+  folders: string[];
+}
+
+/** Server → browser: full workspace list snapshot (sent on subscribe + every mutation). */
+export interface WorkspacesUpdatedMessage {
+  type: "workspaces_updated";
+  workspaces: Workspace[];
+}
+
 export interface TerminalAddedMessage {
   type: "terminal_added";
   terminal: TerminalSession;
@@ -555,6 +577,7 @@ export type ServerToBrowserMessage =
   | SessionsReorderedMessage
   | SessionsSnapshotMessage
   | PinnedDirsUpdatedMessage
+  | WorkspacesUpdatedMessage
   | TerminalAddedMessage
   | TerminalRemovedMessage
   | TerminalUpdatedMessage
@@ -831,6 +854,54 @@ export interface ReorderPinnedDirsMessage {
   paths: string[];
 }
 
+// ── Workspace mutation messages (browser → server) ───────────────────
+// See change: folder-workspaces. Verb-first to match pin_directory family.
+
+export interface CreateWorkspaceMessage {
+  type: "create_workspace";
+  name: string;
+}
+
+export interface RenameWorkspaceMessage {
+  type: "rename_workspace";
+  id: string;
+  name: string;
+}
+
+export interface DeleteWorkspaceMessage {
+  type: "delete_workspace";
+  id: string;
+}
+
+export interface SetWorkspaceCollapsedMessage {
+  type: "set_workspace_collapsed";
+  id: string;
+  collapsed: boolean;
+}
+
+export interface AddFolderToWorkspaceMessage {
+  type: "add_folder_to_workspace";
+  id: string;
+  path: string;
+}
+
+export interface RemoveFolderFromWorkspaceMessage {
+  type: "remove_folder_from_workspace";
+  id: string;
+  path: string;
+}
+
+export interface ReorderWorkspaceFoldersMessage {
+  type: "reorder_workspace_folders";
+  id: string;
+  paths: string[];
+}
+
+export interface ReorderWorkspacesMessage {
+  type: "reorder_workspaces";
+  ids: string[];
+}
+
 export interface OpenSpecBulkArchiveBrowserMessage {
   type: "openspec_bulk_archive";
   cwd: string;
@@ -992,6 +1063,14 @@ export type BrowserToServerMessage =
   | PinDirectoryMessage
   | UnpinDirectoryMessage
   | ReorderPinnedDirsMessage
+  | CreateWorkspaceMessage
+  | RenameWorkspaceMessage
+  | DeleteWorkspaceMessage
+  | SetWorkspaceCollapsedMessage
+  | AddFolderToWorkspaceMessage
+  | RemoveFolderFromWorkspaceMessage
+  | ReorderWorkspaceFoldersMessage
+  | ReorderWorkspacesMessage
   | OpenSpecBulkArchiveBrowserMessage
   | CreateTerminalBrowserMessage
   | KillTerminalBrowserMessage

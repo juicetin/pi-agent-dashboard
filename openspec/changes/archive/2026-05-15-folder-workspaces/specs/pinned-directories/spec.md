@@ -1,4 +1,4 @@
-## ADDED Requirements
+## MODIFIED Requirements
 
 ### Requirement: Pinned directory persistence
 The server SHALL store an ordered list of pinned directory paths in `preferences.json` under the `pinnedDirectories` key as a `string[]`. Array position SHALL determine display order at the top level of the sidebar. The list SHALL survive server restarts.
@@ -55,17 +55,3 @@ The server SHALL support WebSocket messages for pinning, unpinning, and reorderi
 #### Scenario: Broadcast format
 - **WHEN** a `pinned_dirs_updated` message is broadcast
 - **THEN** it SHALL contain `{ type: "pinned_dirs_updated", paths: string[] }` with the full ordered list
-
-### Requirement: Pinned directories REST endpoint
-The server SHALL provide a REST endpoint to retrieve the current pinned directories list.
-
-#### Scenario: Get pinned directories
-- **WHEN** a GET request is made to `/api/pinned-dirs`
-- **THEN** the server SHALL return `{ success: true, data: string[] }` with the ordered list of pinned paths
-
-### Requirement: Initial pinned state on browser connect
-When a browser connects via WebSocket, the server SHALL include the current pinned directories in the initial state.
-
-#### Scenario: Browser connects
-- **WHEN** a browser WebSocket connection is established
-- **THEN** the server SHALL send a `pinned_dirs_updated` message with the current pinned directories list

@@ -26,6 +26,8 @@ import type { UiModelSelectorProps } from "@blackbelt-technology/pi-dashboard-sh
 import {
   BuiltInRolesSettings,
   inferProviderForBareId,
+  computeEffectiveRoles,
+  computeDirtyRoles,
 } from "../RolesSettingsSection.js";
 
 /**
@@ -123,24 +125,22 @@ describe("BuiltInRolesSettings", () => {
     expect(getByTestId("roles-row-planner")).toBeTruthy();
   });
 
-  it("clicking a role opens the model picker; selecting a model dispatches role_set", () => {
+  it("clicking a role + picking a model stages pending; does NOT dispatch role_set", () => {
+    // Deferred persistence: picks accumulate in local pending state.
+    // Save click is what flushes them. See change:
+    // defer-role-persistence-with-save-reload.
     const send = makeSend();
     seedConfig(sampleConfig);
     const { getByTestId } = render(wrap(<BuiltInRolesSettings />, send.fn));
     fireEvent.click(getByTestId("roles-row-architect"));
     expect(getByTestId("roles-model-picker")).toBeTruthy();
     fireEvent.click(getByTestId("roles-model-option-openai/gpt-4o"));
-    expect(send.messages).toEqual([
-      {
-        type: "role_set",
-        sessionId: "sess-live",
-        role: "architect",
-        provider: "openai",
-        // modelId is now the FULL `provider/id` label, not the bare id.
-        // This is what fixes the provider-info-loss bug downstream.
-        modelId: "openai/gpt-4o",
-      },
-    ]);
+    // No WS dispatch yet — only pending updated.
+    expect(send.messages).toEqual([]);
+    // Dirty marker should be present on the architect pill.
+    expect(getByTestId("roles-row-architect-dirty")).toBeTruthy();
+    // Save button label reflects dirty count.
+    expect(getByTestId("roles-save").textContent).toContain("Save (1)");
   });
 
   describe("inferProviderForBareId (read-time migration)", () => {
@@ -230,5 +230,230 @@ describe("BuiltInRolesSettings", () => {
     expect(send.messages).toEqual([
       { type: "role_preset_save", sessionId: "sess-live", presetName: "experiment" },
     ]);
+  });
+
+  // ---------------------------------------------------------------------
+  // Deferred persistence — change: defer-role-persistence-with-save-reload
+  // ---------------------------------------------------------------------
+
+  describe("pure helpers", () => {
+    it("computeEffectiveRoles overlays pending on rolesMap", () => {
+      expect(
+        computeEffectiveRoles(
+          { a: "x", b: "y" },
+          { b: "y2", c: "z" },
+        ),
+      ).toEqual({ a: "x", b: "y2", c: "z" });
+    });
+
+    it("computeDirtyRoles returns empty when pending is empty", () => {
+      expect(computeDirtyRoles({ a: "x" }, {})).toEqual([]);
+    });
+
+    it("computeDirtyRoles excludes round-tripped entries", () => {
+      expect(
+        computeDirtyRoles({ a: "x", b: "y" }, { a: "x", b: "y2" }),
+      ).toEqual(["b"]);
+    });
+
+    it("computeDirtyRoles returns all differing keys", () => {
+      expect(
+        computeDirtyRoles({ a: "x", b: "y" }, { a: "x2", b: "y2" }).sort(),
+      ).toEqual(["a", "b"]);
+    });
+  });
+
+  describe("Save / Reload / dirty tracking", () => {
+    it("picking the persisted value back clears the dirty marker", () => {
+      const send = makeSend();
+      seedConfig(sampleConfig);
+      const { getByTestId, queryByTestId } = render(
+        wrap(<BuiltInRolesSettings />, send.fn),
+      );
+      fireEvent.click(getByTestId("roles-row-architect"));
+      // Pick a different model first
+      fireEvent.click(getByTestId("roles-model-option-openai/gpt-4o"));
+      expect(getByTestId("roles-row-architect-dirty")).toBeTruthy();
+      // Re-open picker and pick the original
+      fireEvent.click(getByTestId("roles-row-architect"));
+      fireEvent.click(
+        getByTestId("roles-model-option-anthropic/claude-3-7-sonnet"),
+      );
+      expect(queryByTestId("roles-row-architect-dirty")).toBeNull();
+      // Still no dispatch.
+      expect(send.messages).toEqual([]);
+    });
+
+    it("Save dispatches one role_set per dirty role and clears pending", () => {
+      const send = makeSend();
+      seedConfig(sampleConfig);
+      const { getByTestId, queryByTestId } = render(
+        wrap(<BuiltInRolesSettings />, send.fn),
+      );
+      // Pick architect → openai/gpt-4o
+      fireEvent.click(getByTestId("roles-row-architect"));
+      fireEvent.click(getByTestId("roles-model-option-openai/gpt-4o"));
+      // Pick planner → openai/gpt-4o-mini
+      fireEvent.click(getByTestId("roles-row-planner"));
+      fireEvent.click(getByTestId("roles-model-option-openai/gpt-4o-mini"));
+      expect(getByTestId("roles-save").textContent).toContain("Save (2)");
+      // Click Save
+      fireEvent.click(getByTestId("roles-save"));
+      // Two role_set dispatches (order is by Object.keys, which preserves
+      // insertion for plain objects in modern V8 — but we don't depend
+      // on it; sort both sides).
+      const calls = (send.messages as Array<{ role: string }>).map(
+        (m) => m.role,
+      );
+      expect(calls.sort()).toEqual(["architect", "planner"]);
+      const archMsg = (send.messages as any[]).find(
+        (m) => m.role === "architect",
+      );
+      expect(archMsg).toMatchObject({
+        type: "role_set",
+        sessionId: "sess-live",
+        role: "architect",
+        provider: "openai",
+        modelId: "openai/gpt-4o",
+      });
+      // Dirty markers gone.
+      expect(queryByTestId("roles-row-architect-dirty")).toBeNull();
+      expect(queryByTestId("roles-row-planner-dirty")).toBeNull();
+    });
+
+    it("Save with no dirty roles dispatches nothing and is disabled", () => {
+      const send = makeSend();
+      seedConfig(sampleConfig);
+      const { getByTestId } = render(
+        wrap(<BuiltInRolesSettings />, send.fn),
+      );
+      const saveBtn = getByTestId("roles-save") as HTMLButtonElement;
+      expect(saveBtn.disabled).toBe(true);
+      fireEvent.click(saveBtn);
+      expect(send.messages).toEqual([]);
+    });
+
+    it("Reload dispatches request_roles and clears pending", () => {
+      const send = makeSend();
+      seedConfig(sampleConfig);
+      const { getByTestId, queryByTestId } = render(
+        wrap(<BuiltInRolesSettings />, send.fn),
+      );
+      fireEvent.click(getByTestId("roles-row-architect"));
+      fireEvent.click(getByTestId("roles-model-option-openai/gpt-4o"));
+      expect(getByTestId("roles-row-architect-dirty")).toBeTruthy();
+      fireEvent.click(getByTestId("roles-reload"));
+      expect(send.messages).toEqual([
+        { type: "request_roles", sessionId: "sess-live" },
+      ]);
+      expect(queryByTestId("roles-row-architect-dirty")).toBeNull();
+    });
+
+    it("incoming roles_list auto-cleans matching pending entries", () => {
+      const send = makeSend();
+      seedConfig(sampleConfig);
+      const { getByTestId, queryByTestId } = render(
+        wrap(<BuiltInRolesSettings />, send.fn),
+      );
+      // Stage a pick
+      fireEvent.click(getByTestId("roles-row-architect"));
+      fireEvent.click(getByTestId("roles-model-option-openai/gpt-4o"));
+      expect(getByTestId("roles-row-architect-dirty")).toBeTruthy();
+      // Server now reports the same value — auto-clean.
+      seedConfig({
+        ...sampleConfig,
+        roles: { ...sampleConfig.roles, architect: "openai/gpt-4o" },
+      });
+      expect(queryByTestId("roles-row-architect-dirty")).toBeNull();
+    });
+
+    it("incoming roles_list preserves conflicting pending entries", () => {
+      const send = makeSend();
+      seedConfig(sampleConfig);
+      const { getByTestId } = render(
+        wrap(<BuiltInRolesSettings />, send.fn),
+      );
+      // Stage a pick for architect
+      fireEvent.click(getByTestId("roles-row-architect"));
+      fireEvent.click(getByTestId("roles-model-option-openai/gpt-4o"));
+      // Server delivers a DIFFERENT third-party value
+      seedConfig({
+        ...sampleConfig,
+        roles: {
+          ...sampleConfig.roles,
+          architect: "openai/gpt-4o-mini",
+        },
+      });
+      // Dirty marker remains; pending preserved.
+      expect(getByTestId("roles-row-architect-dirty")).toBeTruthy();
+    });
+
+    it("preset Load while dirty prompts; cancel preserves pending", () => {
+      const send = makeSend();
+      seedConfig(sampleConfig);
+      const orig = window.confirm;
+      (window as any).confirm = () => false;
+      try {
+        const { getByTestId } = render(
+          wrap(<BuiltInRolesSettings />, send.fn),
+        );
+        fireEvent.click(getByTestId("roles-row-architect"));
+        fireEvent.click(getByTestId("roles-model-option-openai/gpt-4o"));
+        fireEvent.click(getByTestId("roles-preset-load-cheap"));
+        // No dispatch — user cancelled
+        expect(send.messages).toEqual([]);
+        // Dirty marker preserved
+        expect(getByTestId("roles-row-architect-dirty")).toBeTruthy();
+      } finally {
+        window.confirm = orig;
+      }
+    });
+
+    it("preset Load while dirty confirms; confirm clears pending and dispatches", () => {
+      const send = makeSend();
+      seedConfig(sampleConfig);
+      const orig = window.confirm;
+      (window as any).confirm = () => true;
+      try {
+        const { getByTestId, queryByTestId } = render(
+          wrap(<BuiltInRolesSettings />, send.fn),
+        );
+        fireEvent.click(getByTestId("roles-row-architect"));
+        fireEvent.click(getByTestId("roles-model-option-openai/gpt-4o"));
+        fireEvent.click(getByTestId("roles-preset-load-cheap"));
+        expect(send.messages).toEqual([
+          { type: "role_preset_load", sessionId: "sess-live", presetName: "cheap" },
+        ]);
+        expect(queryByTestId("roles-row-architect-dirty")).toBeNull();
+      } finally {
+        window.confirm = orig;
+      }
+    });
+
+    it("preset Save while dirty dispatches role_set first then role_preset_save", () => {
+      const send = makeSend();
+      seedConfig(sampleConfig);
+      const { getByTestId } = render(
+        wrap(<BuiltInRolesSettings />, send.fn),
+      );
+      // Stage a pick
+      fireEvent.click(getByTestId("roles-row-architect"));
+      fireEvent.click(getByTestId("roles-model-option-openai/gpt-4o"));
+      // Hint should appear before user confirms preset name
+      fireEvent.click(getByTestId("roles-preset-save-new"));
+      expect(getByTestId("roles-preset-save-dirty-hint")).toBeTruthy();
+      // Type a name and confirm
+      const input = getByTestId("roles-preset-name-input") as HTMLInputElement;
+      fireEvent.change(input, { target: { value: "hybrid" } });
+      fireEvent.keyDown(input, { key: "Enter" });
+      // role_set dispatched FIRST, then role_preset_save
+      expect(send.messages.length).toBe(2);
+      expect((send.messages[0] as any).type).toBe("role_set");
+      expect((send.messages[1] as any)).toEqual({
+        type: "role_preset_save",
+        sessionId: "sess-live",
+        presetName: "hybrid",
+      });
+    });
   });
 });

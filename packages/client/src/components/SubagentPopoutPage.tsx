@@ -1,0 +1,129 @@
+/**
+ * SubagentPopoutPage — fullscreen route content for /session/:sid/subagent/:aid.
+ *
+ * Renders the SubagentDetailView in `popout` mode plus a chrome header.
+ * Shows graceful empty states for:
+ *   - subscription not yet resolved (loading)
+ *   - parent session not found in client state
+ *   - subagent not present in parent session's `subagents` map
+ *
+ * See change: add-subagent-inspector.
+ */
+import React, { useEffect } from "react";
+import { Icon } from "@mdi/react";
+import { mdiArrowLeft, mdiClose } from "@mdi/js";
+import type { SessionState } from "../lib/event-reducer.js";
+import { SubagentDetailView } from "./SubagentDetailView.js";
+
+export interface SubagentPopoutPageProps {
+  sessionId: string;
+  agentId: string;
+  /** SessionState for the parent session, or undefined if not (yet) subscribed. */
+  session: SessionState | undefined;
+  /** True once the parent session's subscription has resolved (either with state or not-found). */
+  subscriptionResolved: boolean;
+  /** Optional parent-session display label (e.g. cwd basename) for the breadcrumb. */
+  parentLabel?: string;
+  onBack?: () => void;
+}
+
+export function SubagentPopoutPage({
+  sessionId,
+  agentId,
+  session,
+  subscriptionResolved,
+  parentLabel,
+  onBack,
+}: SubagentPopoutPageProps) {
+  const sub = session?.subagents.get(agentId);
+
+  // Page title: subagent display name · parent · pi
+  useEffect(() => {
+    const displayName = sub?.displayName || sub?.type || agentId;
+    document.title = `${displayName} · ${parentLabel ?? sessionId} · pi`;
+    return () => {
+      document.title = "pi";
+    };
+  }, [sub?.displayName, sub?.type, agentId, parentLabel, sessionId]);
+
+  // Loading: subscription has not resolved yet.
+  if (!subscriptionResolved) {
+    return (
+      <div className="flex flex-col h-full items-center justify-center text-sm text-[var(--text-muted)] gap-2">
+        <div>Loading parent session…</div>
+      </div>
+    );
+  }
+
+  // Parent session not found in client state.
+  if (!session) {
+    return (
+      <div className="flex flex-col h-full items-center justify-center text-sm text-[var(--text-muted)] gap-3 px-6 text-center">
+        <div className="text-base text-[var(--text-primary)]">Parent session not found</div>
+        <div className="max-w-md">
+          It may have been archived or deleted. Close this tab — the session
+          this subagent was launched from is no longer available in the
+          dashboard.
+        </div>
+        <button
+          onClick={() => window.close()}
+          className="text-xs text-[var(--text-tertiary)] hover:text-[var(--text-primary)] inline-flex items-center gap-1 mt-2 px-3 py-1 border border-[var(--border-primary)] rounded"
+        >
+          <Icon path={mdiClose} size={0.5} /> Close tab
+        </button>
+      </div>
+    );
+  }
+
+  // Subagent not in parent's subagents map.
+  if (!sub) {
+    return (
+      <div className="flex flex-col h-full overflow-hidden">
+        <div className="px-3 py-2 border-b border-[var(--border-subtle)] bg-[var(--bg-secondary)] flex items-center gap-2 flex-shrink-0">
+          {onBack && (
+            <button
+              onClick={onBack}
+              className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
+              title="Back"
+            >
+              <Icon path={mdiArrowLeft} size={0.7} />
+            </button>
+          )}
+          <span className="text-sm text-[var(--text-primary)]">
+            Subagent · {parentLabel ?? sessionId}
+          </span>
+        </div>
+        <div className="flex-1 flex items-center justify-center text-sm text-[var(--text-muted)] px-6 text-center">
+          Subagent not found — it may have been cleared from the parent
+          session's history.
+        </div>
+      </div>
+    );
+  }
+
+  // Found: render the detail view in popout mode with a chrome header.
+  return (
+    <div className="flex flex-col h-full overflow-hidden">
+      <div className="px-3 py-2 border-b border-[var(--border-primary)] bg-[var(--bg-primary)] flex items-center gap-2 flex-shrink-0">
+        {onBack && (
+          <button
+            onClick={onBack}
+            className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
+            title="Back"
+          >
+            <Icon path={mdiArrowLeft} size={0.7} />
+          </button>
+        )}
+        <span className="text-[11px] text-[var(--text-tertiary)] truncate">
+          {parentLabel ?? sessionId} ›
+        </span>
+        <span className="text-sm font-medium text-[var(--text-primary)] truncate">
+          {sub.displayName || sub.type}
+        </span>
+      </div>
+      <div className="flex-1 overflow-hidden">
+        <SubagentDetailView session={session} agentId={agentId} mode="popout" />
+      </div>
+    </div>
+  );
+}

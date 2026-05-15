@@ -1,0 +1,160 @@
+## ADDED Requirements
+
+### Requirement: Subagent card SHALL be inline-expandable
+
+The `Agent` tool card rendered by `AgentToolRenderer` SHALL display a collapse/expand toggle in its header. When expanded, the card body SHALL render the `<SubagentDetailView>` component for that subagent's `agentId`.
+
+#### Scenario: Default state is collapsed
+
+- **WHEN** the dashboard receives a new `Agent` tool call
+- **THEN** the rendered card body SHALL show only the collapsed header, description, activity line, and stats — no inline detail view
+
+#### Scenario: Expanding shows the detail view
+
+- **GIVEN** a collapsed `Agent` card with `details.agentId` resolvable
+- **WHEN** the user clicks the expand toggle
+- **THEN** the card body SHALL render `<SubagentDetailView mode="inline" agentId={…} />` with `max-h-[60vh]` internal scroll
+- **AND** the toggle icon SHALL flip to indicate the expanded state
+
+#### Scenario: Toggle persists across re-renders within the same page
+
+- **GIVEN** an expanded card
+- **WHEN** the parent session receives a streaming update that re-renders the card
+- **THEN** the card SHALL remain expanded
+
+### Requirement: Subagent card SHALL provide a popout button
+
+The card SHALL display a popout button (`mdiOpenInNew`) in its header. Clicking it SHALL open `/session/<sessionId>/subagent/<agentId>` in a new browser tab via `window.open(url, "_blank")`.
+
+#### Scenario: Popout opens the dedicated route
+
+- **GIVEN** an `Agent` card with `details.agentId === "abc123"` in session `sess_42`, and `context.sessionId === "sess_42"`
+- **WHEN** the user clicks the popout button
+- **THEN** the browser SHALL call `window.open("/session/sess_42/subagent/abc123", "_blank")` exactly once
+
+#### Scenario: Popout button is disabled when context.sessionId is missing
+
+- **GIVEN** an `Agent` card whose `context.sessionId` is `undefined`
+- **WHEN** the popout button is rendered
+- **THEN** it SHALL be disabled and clicking it SHALL NOT call `window.open`
+
+#### Scenario: Popout button is disabled when agentId is missing
+
+- **GIVEN** an `Agent` card whose `details.agentId` is `undefined` (e.g. early streaming frame before the agent is registered)
+- **WHEN** the popout button is rendered
+- **THEN** it SHALL be disabled and clicking it SHALL NOT call `window.open`
+
+### Requirement: The dashboard SHALL serve a popout route
+
+The dashboard client SHALL register a route at `/session/:sessionId/subagent/:agentId` that renders `<SubagentPopoutPage>`. The page SHALL subscribe to the parent session and render `<SubagentDetailView mode="popout" />` once data is available.
+
+#### Scenario: Route renders detail view when subagent is found
+
+- **GIVEN** the parent session `sess_42` is subscribed and contains a `subagents` entry for `abc123`
+- **WHEN** the user navigates to `/session/sess_42/subagent/abc123`
+- **THEN** the page SHALL render `<SubagentDetailView>` for that subagent with a chrome header showing the parent session label
+
+#### Scenario: Route renders 'not found' for unknown agentId
+
+- **GIVEN** subscription is resolved and the parent session has no `abc123` entry
+- **WHEN** the user navigates to `/session/sess_42/subagent/abc123`
+- **THEN** the page SHALL render: "Subagent not found — it may have been cleared from the parent session's history."
+
+#### Scenario: Route shows loading while parent subscription is in flight
+
+- **GIVEN** the popout opens in a fresh tab and the parent session is not yet subscribed
+- **WHEN** subscription has not resolved
+- **THEN** the page SHALL show a "Loading parent session…" indicator until subscription resolves
+
+#### Scenario: Route renders 'parent session not found' when subscription resolves empty
+
+- **GIVEN** subscription resolves but the parent session is unknown to the dashboard (e.g. archived/deleted)
+- **WHEN** the page renders post-resolution
+- **THEN** the page SHALL render: "Parent session not found — it may have been archived or deleted. Close this tab."
+
+### Requirement: `SubagentDetailView` SHALL render the timeline when `entries[]` is present
+
+When `SessionState.subagents[agentId].entries` is a non-empty array of `SubagentTimelineEntry` objects, `<SubagentDetailView>` SHALL render each entry using kind-specific renderers (`tool`, `text`, `thinking`, `error`).
+
+#### Scenario: Full timeline with entries
+
+- **GIVEN** a subagent state with `entries: [{ kind: "tool", toolName: "Read", input: { path: "/x" }, output: "...", ts: 1 }, { kind: "text", text: "Done.", ts: 2 }]`
+- **WHEN** `<SubagentDetailView agentId={…} />` renders
+- **THEN** it SHALL render the tool entry as a click-to-expand row showing `Read` and `/x`
+- **AND** it SHALL render the text entry as a markdown block containing `Done.`
+- **AND** thinking entries SHALL render as collapsible rows distinct from text rows
+- **AND** error entries SHALL render in error colour
+
+### Requirement: `SubagentDetailView` SHALL gracefully degrade when `entries[]` is absent
+
+When the producer hasn't streamed `entries[]` (e.g. user has `@tintinweb/pi-subagents` installed but not `pi-dashboard-agent`), the detail view SHALL fall back to summary content with a footnote.
+
+#### Scenario: Running, no entries
+
+- **GIVEN** a subagent with `status === "running"`, `activity === "Reading src/foo.ts"`, `toolUses === 5`, no `entries`
+- **WHEN** the detail view renders
+- **THEN** it SHALL show the activity string and counter values
+- **AND** it SHALL show a footnote: "Live timeline requires `@tintinweb/pi-subagents ≥ next version`. Showing summary."
+
+#### Scenario: Completed, no entries
+
+- **GIVEN** a subagent with `status === "completed"` and a `result` string, no `entries`
+- **WHEN** the detail view renders
+- **THEN** it SHALL render the `result` via the markdown renderer
+- **AND** the upgrade footnote SHALL NOT appear (result is the user's payoff)
+
+#### Scenario: No data at all
+
+- **GIVEN** a subagent state that has neither `entries`, `activity`, nor `result`
+- **WHEN** the detail view renders
+- **THEN** it SHALL render: "No detail available yet."
+
+### Requirement: `GetSubagentResultRenderer` SHALL include a "Show details" affordance
+
+The `get_subagent_result` tool renderer SHALL expose a "Show details" link/button when the result card has a resolvable `agent_id`. Clicking it SHALL open the popout route in a new tab.
+
+#### Scenario: Button opens the popout route
+
+- **GIVEN** a `get_subagent_result` tool call whose args contain `agent_id: "abc123"` in session `sess_42`
+- **WHEN** the renderer mounts with `context.sessionId === "sess_42"`
+- **THEN** a "Show details" affordance SHALL be visible
+- **AND** clicking it SHALL call `window.open("/session/sess_42/subagent/abc123", "_blank")` exactly once
+
+#### Scenario: Affordance is hidden when agent_id is unresolvable
+
+- **GIVEN** a `get_subagent_result` tool call whose args do not include a resolvable `agent_id`
+- **WHEN** the renderer mounts
+- **THEN** the "Show details" affordance SHALL NOT render
+
+### Requirement: `SessionState` SHALL carry the subagent timeline
+
+The reducer's `SubagentState` interface SHALL include an optional `entries?: SubagentTimelineEntry[]` field plus optional metadata fields (`activity`, `displayName`, `modelName`, `subagentType`, `startedAt`). The `subagent_*` event handlers SHALL read these from `data.details` when present.
+
+#### Scenario: Reducer ignores absent entries
+
+- **GIVEN** a `subagent_started` event whose `data.details` does not contain `entries`
+- **WHEN** the reducer processes the event
+- **THEN** the resulting `SubagentState.entries` SHALL be `undefined`
+
+#### Scenario: Reducer stores entries when present
+
+- **GIVEN** a `subagent_started` event whose `data.details.entries = [{ kind: "tool", … }]`
+- **WHEN** the reducer processes the event
+- **THEN** the resulting `SubagentState.entries` SHALL equal that array
+
+#### Scenario: Cumulative replace semantics
+
+- **GIVEN** a `SubagentState` with `entries.length === 3`
+- **WHEN** a new `subagent_started` event arrives with `details.entries.length === 5`
+- **THEN** the new `SubagentState.entries.length === 5`
+- **AND** entries are REPLACED, not appended (the producer is expected to send the full cumulative array)
+
+### Requirement: `ToolContext` SHALL carry sessionId for session-scoped URLs
+
+The `ToolContext` interface SHALL include optional `sessionId?: string` and `session?: SessionState` fields. Renderers needing session-scoped URLs (e.g. popout) SHALL read these.
+
+#### Scenario: ToolContext shape
+
+- **WHEN** `ChatView` constructs the `toolContext` passed to renderers
+- **THEN** the object SHALL include `sessionId` set to the current session id (or undefined when no session is selected)
+- **AND** it SHALL include `session` set to the current `SessionState` (or undefined)

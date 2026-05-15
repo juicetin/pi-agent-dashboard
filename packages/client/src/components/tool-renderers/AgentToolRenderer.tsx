@@ -32,7 +32,7 @@ interface AgentDetails {
   displayName?: string;
   description?: string;
   subagentType?: string;
-  status?: "queued" | "running" | "completed" | "steered" | "aborted" | "stopped" | "error" | "background";
+  status?: "queued" | "running" | "completed" | "steered" | "aborted" | "stopped" | "error";
   activity?: string;
   toolUses?: number;
   tokens?: string;
@@ -60,8 +60,6 @@ function mapStatus(details: AgentDetails | undefined, toolStatus: string): strin
       return "error";
     case "stopped":
       return "stopped";
-    case "background":
-      return "background";
     default:
       return "running";
   }
@@ -198,24 +196,6 @@ export function AgentToolRenderer({ args, status, result, toolDetails, context }
   }
 
   const statsText = buildStats(details);
-
-  // --- Background agent ---
-  if (details.status === "background") {
-    return (
-      <AgentCardShell
-        name={displayName}
-        status="background"
-        headerRight={controls}
-        stats={details.agentId ? <span className="font-mono">ID: {details.agentId}</span> : undefined}
-      >
-        {description && (
-          <div className="text-[11px] text-[var(--text-secondary)] mt-1 truncate">"{description}"</div>
-        )}
-        <div className="text-[11px] text-blue-400 mt-1">Running in background</div>
-        {expandedBody}
-      </AgentCardShell>
-    );
-  }
 
   // --- Running ---
   if (details.status === "running" || details.status === "queued") {

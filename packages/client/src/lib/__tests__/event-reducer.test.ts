@@ -1721,24 +1721,6 @@ describe("command_feedback events", () => {
       expect(sub.entries!.length).toBe(3);
     });
 
-    it("sets `isBackground` and status=`background` when details.isBackground is true", () => {
-      const state = applyEvents([
-        {
-          eventType: "subagent_started",
-          timestamp: 1000,
-          data: {
-            id: "sub-bg",
-            type: "general-purpose",
-            description: "long task",
-            details: { isBackground: true },
-          },
-        },
-      ]);
-      const sub = state.subagents.get("sub-bg")!;
-      expect(sub.status).toBe("background");
-      expect(sub.isBackground).toBe(true);
-    });
-
     it("records `startedAt` from event.timestamp on subagent_started", () => {
       const state = applyEvents([
         {

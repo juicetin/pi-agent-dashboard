@@ -106,17 +106,17 @@ export interface SubagentState {
   id: string;
   type: string;
   description: string;
-  status: "created" | "running" | "completed" | "failed" | "background";
+  status: "created" | "running" | "completed" | "failed";
   result?: string;
   error?: string;
   durationMs?: number;
   tokens?: { input: number; output: number; total: number };
   toolUses?: number;
-  /** Phase-2 forward-compat: full per-step timeline when upstream streams it. */
+  /** Full per-step timeline. Producer: pi-dashboard-agent extension. */
   entries?: SubagentTimelineEntry[];
-  /** Human-readable current activity (e.g. "reading src/foo.ts"). Streamed today. */
+  /** Human-readable current activity (e.g. "reading src/foo.ts"). */
   activity?: string;
-  /** Display name for the agent (e.g. "code-reviewer"). Optional; falls back to `type`. */
+  /** Display name for the agent (e.g. "code-reviewer"). Falls back to `type`. */
   displayName?: string;
   /** Short model name if different from parent. */
   modelName?: string;
@@ -124,8 +124,6 @@ export interface SubagentState {
   subagentType?: string;
   /** Started-at epoch ms (set on `subagent_started`; used for elapsed badge). */
   startedAt?: number;
-  /** True if this subagent was launched as a background task. */
-  isBackground?: boolean;
 }
 
 export interface SessionState {
@@ -1323,15 +1321,11 @@ export function reduceEvent(state: SessionState, event: DashboardEvent): Session
       const details = (data.details as Record<string, unknown> | undefined) ?? undefined;
       next.subagents = new Map(next.subagents);
       const existing = next.subagents.get(id);
-      // background status takes precedence (e.g. `isBackground` true) so the
-      // pill keeps showing the entry while it streams.
-      const isBackground = details?.isBackground === true || details?.status === "background";
       next.subagents.set(id, {
         ...(existing ?? { id, type: data.type as string ?? "unknown", description: data.description as string ?? "" }),
-        status: isBackground ? "background" : "running",
+        status: "running",
         startedAt: existing?.startedAt ?? (typeof event.timestamp === "number" ? event.timestamp : Date.now()),
         ...readSubagentDetails(details),
-        isBackground: isBackground || existing?.isBackground,
       });
       break;
     }

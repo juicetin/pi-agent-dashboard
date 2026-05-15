@@ -183,6 +183,13 @@ export function createCommandHandler(
      * message turn loop). See capability `mid-turn-prompt-queue`.
      */
     enqueueIfStreaming?: (text: string, images?: ImageContent[]) => boolean;
+    /**
+     * Drop any bridge-owned mid-turn queue entries for the current session.
+     * Invoked on user-initiated `abort` so a Stop click does NOT leave
+     * queued messages to be flushed by the upcoming `agent_end` drain.
+     * See change: surface-mid-turn-prompt-queue.
+     */
+    clearQueueOnAbort?: () => void;
   },
 ): CommandHandler {
   const getSessionId = typeof sessionIdOrGetter === "function" ? sessionIdOrGetter : () => sessionIdOrGetter;
@@ -365,6 +372,15 @@ export function createCommandHandler(
         }
 
         case "abort":
+          // Drop any queued mid-turn entries BEFORE invoking pi.abort().
+          // Pi will fire `agent_end` in response to the abort, which would
+          // normally trigger the bridge queue drain. Clearing first means
+          // Stop genuinely stops everything — including messages the user
+          // typed during the now-aborted turn. See change:
+          // surface-mid-turn-prompt-queue.
+          if (options?.clearQueueOnAbort) {
+            options.clearQueueOnAbort();
+          }
           if (options?.abort) {
             options.abort();
           }

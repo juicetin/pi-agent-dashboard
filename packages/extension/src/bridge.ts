@@ -749,6 +749,16 @@ function initBridge(pi: ExtensionAPI) {
       emitQueueState(sessionId);
       return true;
     },
+    clearQueueOnAbort: () => {
+      // User pressed Stop — drop the bridge-owned queue so the upcoming
+      // `agent_end` drain has nothing to flush. See change:
+      // surface-mid-turn-prompt-queue.
+      const q = promptQueues.get(sessionId);
+      if (q && !q.isEmpty()) {
+        q.clear();
+        emitQueueState(sessionId);
+      }
+    },
     sessionPrompt: async (text) => {
       // Route slash commands: management events, flow:run, extension dispatch, then fallback.
       // See change: fix-extension-slash-commands-in-dashboard.

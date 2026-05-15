@@ -882,4 +882,28 @@ describe("CommandHandler enqueueIfStreaming (mid-turn-prompt-queue)", () => {
 
     expect(pi.sendUserMessage).toHaveBeenCalledWith("plain text", { deliverAs: "followUp" });
   });
+
+  it("abort calls clearQueueOnAbort BEFORE options.abort so the post-abort agent_end drain finds an empty queue", async () => {
+    const pi = createMockPi();
+    const callOrder: string[] = [];
+    const clearQueueOnAbort = vi.fn(() => { callOrder.push("clear"); });
+    const abort = vi.fn(() => { callOrder.push("abort"); });
+    const handler = createCommandHandler(pi as any, "s1", { abort, clearQueueOnAbort });
+
+    await handler.handle({ type: "abort", sessionId: "s1" });
+
+    expect(clearQueueOnAbort).toHaveBeenCalledTimes(1);
+    expect(abort).toHaveBeenCalledTimes(1);
+    expect(callOrder).toEqual(["clear", "abort"]);
+  });
+
+  it("abort works without clearQueueOnAbort (back-compat for callers that don't pass it)", async () => {
+    const pi = createMockPi();
+    const abort = vi.fn();
+    const handler = createCommandHandler(pi as any, "s1", { abort });
+
+    await handler.handle({ type: "abort", sessionId: "s1" });
+
+    expect(abort).toHaveBeenCalledTimes(1);
+  });
 });

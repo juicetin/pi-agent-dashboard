@@ -47,7 +47,6 @@ import { TerminalsView } from "./components/TerminalsView.js";
 import { EditorView } from "./components/EditorView.js";
 import { decodeFolderPath, encodeFolderPath } from "./lib/folder-encoding.js";
 import { FileDiffView } from "./components/FileDiffView.js";
-import { SubagentPopoutPage } from "./components/SubagentPopoutPage.js";
 import { createInitialState, findLastUserPrompt, reduceEvent, resolveInteractiveRequest, type SessionState } from "./lib/event-reducer.js";
 import { useMessageHandler } from "./hooks/useMessageHandler.js";
 import { useEditors } from "./lib/use-editors.js";
@@ -268,11 +267,6 @@ export default function App() {
   const [readmeMatch, readmeParams] = useRoute("/folder/:encodedCwd/readme");
   const [piResourcesMatch, piResourcesParams] = useRoute("/folder/:encodedCwd/pi-resources");
   const [diffMatch, diffParams] = useRoute("/session/:id/diff");
-  // Subagent inspector popout (add-subagent-inspector). Same shape as the
-  // existing session route, plus :agentId.
-  const [subagentPopoutMatch, subagentPopoutParams] = useRoute<{ sessionId: string; agentId: string }>(
-    "/session/:sessionId/subagent/:agentId",
-  );
   const [piResourceFileMatch] = useRoute("/pi-resource");
   const [piResourceFileSearch] = useSearchParams();
   const piResourceFilePath = piResourceFileSearch.get("path");
@@ -284,11 +278,9 @@ export default function App() {
   const readmeCwd = readmeMatch && readmeParams ? decodeFolderPath(readmeParams.encodedCwd) : null;
   const piResourcesCwd = piResourcesMatch && piResourcesParams ? decodeFolderPath(piResourcesParams.encodedCwd) : null;
   const diffSessionId = diffMatch && diffParams ? diffParams.id : null;
-  const subagentPopoutSessionId = subagentPopoutMatch && subagentPopoutParams ? subagentPopoutParams.sessionId : null;
-  const subagentPopoutAgentId = subagentPopoutMatch && subagentPopoutParams ? subagentPopoutParams.agentId : null;
   const hasShellOverlayRoute =
     !!openspecPreviewMatch || !!archiveMatch || !!specsMatch ||
-    !!readmeMatch || !!piResourcesMatch || !!diffMatch || !!subagentPopoutMatch;
+    !!readmeMatch || !!piResourcesMatch || !!diffMatch;
   const hasPiResourceRouteFlag = !!piResourceFileMatch && !!piResourceFilePath;
   const selectedId = match ? params?.id : undefined;
   const selectedSessionIdRef = useRef<string | undefined>(selectedId);
@@ -544,20 +536,6 @@ export default function App() {
     }
   }, [selectedId, send, status]);
 
-  // Popout-route subscribe: when /session/:sid/subagent/:aid loads in a fresh
-  // tab, ensure we subscribe to the parent session so its state populates.
-  // See change: add-subagent-inspector.
-  useEffect(() => {
-    if (subagentPopoutSessionId && !subscribedRef.current.has(subagentPopoutSessionId) && status === "connected") {
-      subscribedRef.current.add(subagentPopoutSessionId);
-      send({
-        type: "subscribe",
-        sessionId: subagentPopoutSessionId,
-        lastSeq: maxSeqMapRef.current.get(subagentPopoutSessionId) ?? 0,
-      });
-    }
-  }, [subagentPopoutSessionId, send, status]);
-
   const selectedState = selectedId
     ? sessionStates.get(selectedId) ?? createInitialState()
     : createInitialState();
@@ -697,9 +675,7 @@ export default function App() {
   const toolContext: ToolContext = useMemo(() => ({
     cwd: selectedCwd,
     editors: selectedCwd ? editorMap.get(selectedCwd) ?? [] : [],
-    sessionId: selectedId ?? undefined,
-    session: selectedState,
-  }), [selectedCwd, editorMap, selectedId, selectedState]);
+  }), [selectedCwd, editorMap]);
 
   const contextUsageMap = useMemo(() => {
     const map = new Map<string, ContextUsageInfo>();
@@ -1077,17 +1053,6 @@ export default function App() {
         />
       ) : diffMatch && diffSessionId ? (
         <FileDiffView sessionId={diffSessionId} onBack={goBack} />
-      ) : subagentPopoutMatch && subagentPopoutSessionId && subagentPopoutAgentId ? (
-        <SubagentPopoutPage
-          sessionId={subagentPopoutSessionId}
-          agentId={subagentPopoutAgentId}
-          session={sessionStates.get(subagentPopoutSessionId)}
-          subscriptionResolved={
-            status === "connected" && subscribedRef.current.has(subagentPopoutSessionId)
-          }
-          parentLabel={sessions.get(subagentPopoutSessionId)?.cwd}
-          onBack={goBack}
-        />
       ) : (
         <>
           {/* Plugin slot: content-header-sticky — contributions from
@@ -1158,20 +1123,6 @@ export default function App() {
             }}
             onPresetDelete={(presetName) => {
               send({ type: "role_preset_delete", sessionId: selectedId, presetName });
-            }}
-            sessionId={selectedId}
-            session={selectedState}
-            sessionEnded={selectedSession?.status === "ended"}
-            onSubagentStop={(agentId) => {
-              // Dispatch a natural-language prompt so the parent session
-              // routes through its existing tool plumbing (steer_subagent /
-              // subagent stop). Wire-protocol fast path (cross-ext RPC)
-              // is not yet surfaced through the dashboard — see task 6.4a
-              // in change `add-subagent-inspector`.
-              if (selectedId) handleSendPromptToSession(selectedId, `Please stop background subagent ${agentId}.`);
-            }}
-            onSubagentGetResult={(agentId) => {
-              if (selectedId) handleSendPromptToSession(selectedId, `Get the result of background subagent ${agentId}.`);
             }}
           />
           {/* Mid-turn prompt queue panel (bridge-owned). Renders only when
@@ -1371,17 +1322,6 @@ export default function App() {
               <SpecsBrowserView cwd={specsCwd} onBack={goBack} />
             ) : diffMatch && diffSessionId ? (
               <FileDiffView sessionId={diffSessionId} onBack={goBack} />
-            ) : subagentPopoutMatch && subagentPopoutSessionId && subagentPopoutAgentId ? (
-              <SubagentPopoutPage
-                sessionId={subagentPopoutSessionId}
-                agentId={subagentPopoutAgentId}
-                session={sessionStates.get(subagentPopoutSessionId)}
-                subscriptionResolved={
-                  status === "connected" && subscribedRef.current.has(subagentPopoutSessionId)
-                }
-                parentLabel={sessions.get(subagentPopoutSessionId)?.cwd}
-                onBack={goBack}
-              />
             ) : piResourceFileMatch && piResourceFilePath ? (
               <PiResourceFileRoute
                 filePath={piResourceFilePath}

@@ -42,12 +42,12 @@ Any phase stalls → same text appears in `%TEMP%\pi-dashboard-electron.log` —
 
 ### Step 3 — First-run setup wizard
 
-On first launch, wizard opens automatically. Installs agent runtime (`@mariozechner/pi-coding-agent` + `tsx`) into `%USERPROFILE%\.pi-dashboard\node_modules\` using bundled Node + npm (no system Node required).
+On first launch, wizard opens automatically. Installs agent runtime (`@earendil-works/pi-coding-agent` + `tsx`) into `%USERPROFILE%\.pi-dashboard\node_modules\` using bundled Node + npm (no system Node required).
 
 | Phase | What happens |
 |---|---|
 | Download Node | Skipped — Node bundled inside Electron app |
-| Install pi-coding-agent | Spawns bundled `node.exe + npm-cli.js install @mariozechner/pi-coding-agent` |
+| Install pi-coding-agent | Spawns bundled `node.exe + npm-cli.js install @earendil-works/pi-coding-agent` |
 | Install openspec | Skipped if already on system PATH; otherwise installed via same bundled npm |
 | Install tsx | Skipped if already on system PATH; otherwise installed same way |
 
@@ -115,13 +115,13 @@ cd /d "%USERPROFILE%\.pi-dashboard"
 :: npm init -y fails because .pi-dashboard starts with a dot — write package.json manually
 echo {"name":"pi-dashboard-managed","version":"0.0.0","private":true} > package.json
 
-npm install @mariozechner/pi-coding-agent tsx
+npm install @earendil-works/pi-coding-agent tsx
 ```
 
 Verify:
 
 ```cmd
-dir node_modules\@mariozechner\pi-coding-agent\dist
+dir node_modules\@earendil-works\pi-coding-agent\dist
 :: should list index.js
 ```
 
@@ -203,7 +203,7 @@ cd /d "%USERPROFILE%\.pi-dashboard"
 
 if not exist package.json echo {"name":"pi-dashboard-managed","version":"0.0.0","private":true} > package.json
 
-npm install @mariozechner/pi-coding-agent
+npm install @earendil-works/pi-coding-agent
 ```
 
 Reopen Dashboard. Doctor shows ✓ pi CLI. Dismiss wizard (close window — Dashboard opens main UI automatically) or click **Doctor → Run Setup** to retry wizard for any remaining fixable items.
@@ -228,7 +228,7 @@ Overrides persist to `%USERPROFILE%\.pi\dashboard\tool-overrides.json` + survive
 
 **Fix 1 — rescan tools:** Settings → Tools → Rescan (top right). `pi-coding-agent` row flips to ✓ with source=`managed`.
 
-**Fix 2 — manual override:** expand `pi-coding-agent` row, paste `%USERPROFILE%\.pi-dashboard\node_modules\@mariozechner\pi-coding-agent\dist\index.js` into override field.
+**Fix 2 — manual override:** expand `pi-coding-agent` row, paste `%USERPROFILE%\.pi-dashboard\node_modules\@earendil-works\pi-coding-agent\dist\index.js` into override field.
 
 **Fix 3 — restart server:** pi-coding-agent installed *after* pi-dashboard started → server's cached environment stale. `pi-dashboard stop && pi-dashboard start` (or close + relaunch Electron app).
 
@@ -274,7 +274,7 @@ Dashboard tarballs installed but `tsx` missing. Run:
 
 ```cmd
 cd /d "%USERPROFILE%\.pi-dashboard"
-npm install tsx @mariozechner/pi-coding-agent
+npm install tsx @earendil-works/pi-coding-agent
 ```
 
 ### Non-ASCII username path issues
@@ -369,7 +369,7 @@ Added `~/.pi-dashboard/node_modules/.bin` to PATH via `setx` → remove that ent
 | Path | Purpose |
 |---|---|
 | `%USERPROFILE%\.pi-dashboard\` | Managed install directory |
-| `%USERPROFILE%\.pi-dashboard\node_modules\@mariozechner\pi-coding-agent\` | pi agent runtime |
+| `%USERPROFILE%\.pi-dashboard\node_modules\@earendil-works\pi-coding-agent\` | pi agent runtime |
 | `%USERPROFILE%\.pi-dashboard\node_modules\@blackbelt-technology\pi-dashboard-*\` | Dashboard packages (Path 2 only) |
 | `%USERPROFILE%\.pi\dashboard\server.log` | Server stdout/stderr (append mode, timestamped) |
 | `%USERPROFILE%\.pi\dashboard\preferences.json` | Pinned folders, session ordering |

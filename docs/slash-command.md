@@ -250,7 +250,7 @@ Pi's `_tryExecuteExtensionCommand` swallows handler exceptions and emits `extens
 - Keeper sidecar: `packages/server/src/rpc-keeper/keeper.cjs`, `packages/server/src/rpc-keeper/keeper-manager.ts`, `packages/server/src/rpc-keeper/dispatch-router.ts`
 - Architecture: `docs/architecture.md` § "RPC keeper sidecar"
 - Pi internals (read-only reference):
-  - `~/.nvm/versions/node/v25.8.1/lib/node_modules/@mariozechner/pi-coding-agent/dist/core/extensions/types.d.ts:770` ExtensionAPI surface
-  - `~/.nvm/versions/node/v25.8.1/lib/node_modules/@mariozechner/pi-coding-agent/dist/core/agent-session.js:798` _tryExecuteExtensionCommand
-  - `~/.nvm/versions/node/v25.8.1/lib/node_modules/@mariozechner/pi-coding-agent/dist/core/agent-session.js:1002` sendUserMessage → prompt({expandPromptTemplates:false})
-  - `~/.nvm/versions/node/v25.8.1/lib/node_modules/@mariozechner/pi-coding-agent/dist/modes/rpc/rpc-mode.js` RPC `prompt` command (proves slash dispatch works via session.prompt)
+  - `~/.nvm/versions/node/v25.8.1/lib/node_modules/@earendil-works/pi-coding-agent/dist/core/extensions/types.d.ts:770` ExtensionAPI surface
+  - `~/.nvm/versions/node/v25.8.1/lib/node_modules/@earendil-works/pi-coding-agent/dist/core/agent-session.js:798` _tryExecuteExtensionCommand
+  - `~/.nvm/versions/node/v25.8.1/lib/node_modules/@earendil-works/pi-coding-agent/dist/core/agent-session.js:1002` sendUserMessage → prompt({expandPromptTemplates:false})
+  - `~/.nvm/versions/node/v25.8.1/lib/node_modules/@earendil-works/pi-coding-agent/dist/modes/rpc/rpc-mode.js` RPC `prompt` command (proves slash dispatch works via session.prompt)

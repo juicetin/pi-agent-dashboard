@@ -90,7 +90,7 @@ Required for paths B + C only. Path A (Electron) bundles everything.
 
 | Requirement | Why |
 |---|---|
-| **pi** (`@mariozechner/pi-coding-agent`) | Agent monitored by dashboard |
+| **pi** (`@earendil-works/pi-coding-agent`) | Agent monitored by dashboard |
 | **Node.js ≥ 22.18.0** | Server runtime. 22.0.0–22.17.x and 24.1.0–24.2.x crash Fastify per nodejs/node#58515 |
 | **C++ build tools** | `node-pty` native addon for terminal. Xcode CLI (macOS) / `build-essential` (Linux) |
 
@@ -452,7 +452,7 @@ Single-session trial without registering: `pi -e /path/to/pi-agent-dashboard/pac
 Remove with `pi remove /path/to/pi-agent-dashboard`. Or add path directly to `~/.pi/agent/settings.json` under `"packages": [...]`.
 
 Prerequisites:
-- pi (`npm i -g @mariozechner/pi-coding-agent`)
+- pi (`npm i -g @earendil-works/pi-coding-agent`)
 - Node.js ≥ 22.18.0 (older 22.x / 24.x < 24.3.0 hit nodejs/node#58515 Fastify crash)
 - C++ build tools for `node-pty` (Xcode CLI Tools / `build-essential`)
 
@@ -955,7 +955,7 @@ Workaround (no rebuild): Install deps manually, relaunch:
 ```cmd
 cd /d "%USERPROFILE%\.pi-dashboard"
 if not exist package.json echo {"name":"pi-dashboard-managed","version":"0.0.0","private":true} > package.json
-npm install @mariozechner/pi-coding-agent
+npm install @earendil-works/pi-coding-agent
 ```
 
 Reopen Dashboard. Doctor shows ✓ pi CLI.
@@ -993,7 +993,7 @@ Steps:
 mkdir "%USERPROFILE%\.pi-dashboard"
 cd /d "%USERPROFILE%\.pi-dashboard"
 echo {"name":"pi-dashboard-managed","version":"0.0.0","private":true} > package.json
-npm install @mariozechner/pi-coding-agent tsx
+npm install @earendil-works/pi-coding-agent tsx
 ```
 
 2. Option A — from npm release:
@@ -1045,7 +1045,7 @@ Directory reference for config, logs, sessions, tool overrides.
 | Path | Purpose |
 |---|---|
 | `%USERPROFILE%\.pi-dashboard\` | Managed install directory (Path 2 only) |
-| `%USERPROFILE%\.pi-dashboard\node_modules\@mariozechner\pi-coding-agent\` | pi agent runtime |
+| `%USERPROFILE%\.pi-dashboard\node_modules\@earendil-works\pi-coding-agent\` | pi agent runtime |
 | `%USERPROFILE%\.pi\dashboard\server.log` | Server stdout/stderr (append mode, timestamped headers) |
 | `%USERPROFILE%\.pi\dashboard\preferences.json` | Pinned folders, session ordering |
 | `%USERPROFILE%\.pi\dashboard\tool-overrides.json` | Per-tool path overrides (Settings → Tools) |
@@ -1067,7 +1067,7 @@ Fixes (in order):
 
 2. **Manual override:** expand `pi-coding-agent` row, paste full path:
    ```
-   %USERPROFILE%\.pi-dashboard\node_modules\@mariozechner\pi-coding-agent\dist\index.js
+   %USERPROFILE%\.pi-dashboard\node_modules\@earendil-works\pi-coding-agent\dist\index.js
    ```
 
 3. **Restart server:** pi-coding-agent installed *after* pi-dashboard started → server's cached environment stale.
@@ -1178,7 +1178,7 @@ tsx binary resolution (launcher):
 2. System PATH: `which tsx`
 
 Wizard install list (into `~/.pi-dashboard/`):
-- `@mariozechner/pi-coding-agent` (pi CLI)
+- `@earendil-works/pi-coding-agent` (pi CLI)
 - `@fission-ai/openspec` (openspec CLI)
 - `tsx` (TypeScript runner)
 

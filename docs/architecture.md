@@ -425,7 +425,7 @@ The dashboard has three install paths that all converge on the shared
    `pi-dashboard` (or `pi-dashboard start`) launches and
    `ToolRegistry.resolve("pi")` fails, `cli.ts runDegradedModeBootstrap`
    flips `bootstrapState.status` to `"installing"`, kicks off
-   `bootstrapInstall({ packages: ["@mariozechner/pi-coding-agent", "@fission-ai/openspec", "tsx"] })`
+   `bootstrapInstall({ packages: ["@earendil-works/pi-coding-agent", "@fission-ai/openspec", "tsx"] })`
    asynchronously, and returns immediately so the server's
    `fastify.listen` remains responsive. The UI renders `BootstrapBanner`
    above the main layout. `session-api.ts gateOrEnqueue` queues
@@ -435,7 +435,7 @@ The dashboard has three install paths that all converge on the shared
    auto-wires the bridge so no manual step is required.
 
 3. **`pi-dashboard upgrade-pi` CLI subcommand** — runs
-   `bootstrapInstall({ packages: ["@mariozechner/pi-coding-agent"] })`
+   `bootstrapInstall({ packages: ["@earendil-works/pi-coding-agent"] })`
    either directly (when no dashboard is listening) or via
    `POST /api/bootstrap/upgrade-pi` (when one is). The REST path flips
    state through the existing broadcast hook so open dashboard tabs
@@ -459,7 +459,7 @@ in a future change SHOULD be matched by an equal bump to `minimum` and a
 lockstep bump of the offline-bundled pi version in
 `packages/electron/offline-packages.json`.
 
-The CLI also surfaces skew on stderr at startup: `cli.ts::logCompatibilityWarning` emits a three-line red block on below-minimum (including the exact `pi-dashboard upgrade-pi` remediation command) and a single advisory line on below-recommended. Silent when in range. This is in addition to the browser banner and the 503 gating, so terminal-only users (headless servers, CI) don't miss the signal. Note: `readCurrentPiVersion` uses `fs.realpathSync` on the registry-resolved bin path so the common npm-global symlink layout (`~/.nvm/.../bin/pi` → `../lib/node_modules/@mariozechner/pi-coding-agent/dist/cli.js`) resolves to the real `package.json` — without this, `compatibility.current` was silently `undefined` in every response.
+The CLI also surfaces skew on stderr at startup: `cli.ts::logCompatibilityWarning` emits a three-line red block on below-minimum (including the exact `pi-dashboard upgrade-pi` remediation command) and a single advisory line on below-recommended. Silent when in range. This is in addition to the browser banner and the 503 gating, so terminal-only users (headless servers, CI) don't miss the signal. Note: `readCurrentPiVersion` uses `fs.realpathSync` on the registry-resolved bin path so the common npm-global symlink layout (`~/.nvm/.../bin/pi` → `../lib/node_modules/@earendil-works/pi-coding-agent/dist/cli.js`) resolves to the real `package.json` — without this, `compatibility.current` was silently `undefined` in every response.
 
 #### Post-install repair (centralized hook)
 
@@ -1393,7 +1393,7 @@ The dashboard supports browser-based authentication with pi's LLM providers, ena
 
 ### Model metadata enrichment for custom providers
 
-Custom-provider `/v1/models` endpoints only advertise `{id, owned_by}` — do not expose `context_window`, `max_tokens`, `cost`, `reasoning`. Rather than hardcode flat 200k / 16k / $0 / no-reasoning on every discovered model (silently wrong for proxied frontier models like `proxy/cc/claude-opus-4-7` → Opus 4.7's 1M window), bridge's `registerEntry()` runs each discovered id through pure `enrichModelMetadata(id, api, probe)` helper. Helper: (a) strips common proxy prefixes (`cc/`, `anthropic/`, `openrouter/openai/…`) so bare id tried; (b) probes pi's `modelRegistry.find(provider, id)` via ordered api-appropriate candidate list (`anthropic-messages` → `["anthropic", "opencode"]`, `google-generative-ai` → `["google", "google-vertex"]`, `openai-completions` → `["openai", "openrouter", "groq", "xai", "mistral"]`); (c) returns registry's full metadata when matched. Registry reference captured from `ctx.modelRegistry` first time pi fires `session_start` on extension (`model_select` as fallback capture point) — no direct `@mariozechner/pi-ai` import. Since `activate()` registers providers before any event handler fires, first pass uses fallback defaults; `session_start` handler re-registers all providers with enriched metadata via `pi.registerProvider`'s idempotent "replace" semantics. When registry never available or no match, fallback keeps `input: ["text","image"]` so image-capable-by-default contract preserved. Built-in + OAuth providers bypass entirely — metadata comes from pi's bundled `models.generated.js`. See `packages/extension/src/provider-register.ts` + change `enrich-custom-provider-model-metadata`.
+Custom-provider `/v1/models` endpoints only advertise `{id, owned_by}` — do not expose `context_window`, `max_tokens`, `cost`, `reasoning`. Rather than hardcode flat 200k / 16k / $0 / no-reasoning on every discovered model (silently wrong for proxied frontier models like `proxy/cc/claude-opus-4-7` → Opus 4.7's 1M window), bridge's `registerEntry()` runs each discovered id through pure `enrichModelMetadata(id, api, probe)` helper. Helper: (a) strips common proxy prefixes (`cc/`, `anthropic/`, `openrouter/openai/…`) so bare id tried; (b) probes pi's `modelRegistry.find(provider, id)` via ordered api-appropriate candidate list (`anthropic-messages` → `["anthropic", "opencode"]`, `google-generative-ai` → `["google", "google-vertex"]`, `openai-completions` → `["openai", "openrouter", "groq", "xai", "mistral"]`); (c) returns registry's full metadata when matched. Registry reference captured from `ctx.modelRegistry` first time pi fires `session_start` on extension (`model_select` as fallback capture point) — no direct `@earendil-works/pi-ai` import. Since `activate()` registers providers before any event handler fires, first pass uses fallback defaults; `session_start` handler re-registers all providers with enriched metadata via `pi.registerProvider`'s idempotent "replace" semantics. When registry never available or no match, fallback keeps `input: ["text","image"]` so image-capable-by-default contract preserved. Built-in + OAuth providers bypass entirely — metadata comes from pi's bundled `models.generated.js`. See `packages/extension/src/provider-register.ts` + change `enrich-custom-provider-model-metadata`.
 
 ### Testing a custom provider (Test button)
 

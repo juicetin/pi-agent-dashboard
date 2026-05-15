@@ -237,7 +237,7 @@ NODE_PATH=/usr/lib/pi-dashboard/resources/server/node_modules:~/.pi-dashboard/no
 ```javascript
 // These installed into ~/.pi-dashboard/ via bundled npm:
 const packages = [
-  "@mariozechner/pi-coding-agent",   // pi CLI
+  "@earendil-works/pi-coding-agent",   // pi CLI
   "@fission-ai/openspec",            // openspec CLI
   "tsx",                              // TypeScript runner
 ];

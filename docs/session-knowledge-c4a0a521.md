@@ -276,7 +276,7 @@ curl -s -X POST http://localhost:8000/api/shutdown
 2. **Slash commands not working from dashboard**: `sendUserMessage` skips expansion → need `expandPromptTemplateFromDisk`
 3. **Slow operations (seconds)**: Check for `spawnSync`/`execSync` blocking event loop
 4. **Data lost after restart**: Check persistence fields, debounce flush, `register()` merge
-5. **Session file loading fails**: Don't use `import("@mariozechner/pi-coding-agent")` — use standalone readers
+5. **Session file loading fails**: Don't use `import("@earendil-works/pi-coding-agent")` (or legacy `@mariozechner/pi-coding-agent`) — use standalone readers
 6. **Sessions not discovered**: `discoverSessionsForCwd()` reads JSONL files directly from disk
 7. **Cards show stale status**: Check `onUnregister` broadcast and `session_added` on reconnect
 8. **Context bar empty**: Check `contextTokens`/`contextWindow` on DashboardSession + stats enrichment

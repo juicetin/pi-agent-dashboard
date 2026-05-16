@@ -34,7 +34,19 @@ describe("RECOMMENDED_EXTENSIONS manifest", () => {
 			expect(["required", "strongly-suggested", "optional"]).toContain(entry.status);
 			expect(Array.isArray(entry.unlocks)).toBe(true);
 			expect(entry.unlocks.length).toBeGreaterThan(0);
+			// dashboardPlugin is optional; when present, must be a non-empty string.
+			// See change: add-plugin-activation-ui.
+			if (entry.dashboardPlugin !== undefined) {
+				expect(typeof entry.dashboardPlugin).toBe("string");
+				expect(entry.dashboardPlugin.length).toBeGreaterThan(0);
+			}
 		}
+	});
+
+	it("pi-memory-honcho declares its companion dashboard plugin id", () => {
+		// See change: add-plugin-activation-ui (Layer 1.5).
+		const entry = getRecommendedExtension("pi-memory-honcho");
+		expect(entry?.dashboardPlugin).toBe("honcho");
 	});
 
 	it("pi-anthropic-messages is marked required and uses HTTPS git URL", () => {

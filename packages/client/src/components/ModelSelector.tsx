@@ -10,7 +10,7 @@ interface Props {
 
   /**
    * @deprecated Roles UI moved to a `settings-section` plugin contribution
-   * (BuiltInRolesSettings in @blackbelt-technology/pi-dashboard-builtins-plugin).
+   * (BuiltInRolesSettings in @blackbelt-technology/pi-dashboard-roles-plugin).
    * The prop is kept for backward compatibility with callers that still drill
    * `RoleInfo` through, but it has no effect on rendering. See change:
    * fix-pi-flows-end-to-end (Group 5).

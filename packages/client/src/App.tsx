@@ -89,6 +89,7 @@ import {
 } from "@blackbelt-technology/dashboard-plugin-runtime";
 import { createSlotRegistry } from "@blackbelt-technology/dashboard-plugin-runtime";
 import { PLUGIN_REGISTRY } from "./generated/plugin-registry.js";
+import { usePluginEnabledSet } from "./hooks/usePluginEnabledSet.js";
 
 // Populate the slot registry from the build-time generated plugin manifest.
 // PLUGIN_REGISTRY is `[]` on a fresh checkout (committed stub) — slot consumers
@@ -243,6 +244,12 @@ function PiResourceFileRoute({
 export default function App() {
   const [wsUrl, setWsUrl] = useState(getInitialWsUrl);
   const { send, onMessage, status } = useWebSocket(wsUrl);
+  // Drives the slot-registry enable filter from /api/health.plugins[] +
+  // plugin_config_update broadcasts. The returned `startedAt` is also
+  // consumed inside the Plugins tab via this same hook re-call, so we don't
+  // thread it through props here.
+  // See change: add-plugin-activation-ui.
+  usePluginEnabledSet(_pluginRegistry);
   const { messages: toastMessages, showToast, dismissToast } = useToast();
   const apiBase = useMemo(() => {
     const base = deriveApiBase(wsUrl) || VITE_API_URL;

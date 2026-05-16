@@ -1819,11 +1819,11 @@ See change: fix-pi-flows-end-to-end.
 
 Settings \u2192 General \u2192 Roles. Moved from model dropdown in dashboard 0.5.4.
 
-Built-ins plugin (`packages/builtins-plugin/`) renders it via `settings-section` slot. Edit per-session role-to-model maps. Save/load presets.
+Roles plugin (`packages/roles-plugin/`) renders it via `settings-section` slot under Settings ▸ Plugins. Edit per-session role-to-model maps. Save/load presets.
 
 Dispatches existing `role_set` / `role_preset_*` WS messages. No protocol change.
 
 See change: fix-pi-flows-end-to-end.
 
 Cross-refs:
-- packages/builtins-plugin/src/RolesSettingsSection.tsx
+- packages/roles-plugin/src/RolesSettingsSection.tsx

@@ -186,11 +186,30 @@ export function registerPluginBridge(
 
   const existing = managed[key];
   if (existing && existing !== bridgePath) {
-    return { type: "conflict", existingPath: existing, newPath: bridgePath };
+    // Self-heal: if the existing path no longer resolves on disk (typical
+    // after a dev-monorepo → deployed-bundle path change), silently replace.
+    // This avoids cosmetic "Bridge path conflict" errors on every restart
+    // when the user switches between dev and production launch sources.
+    // See change: add-plugin-activation-ui (deployment-fix follow-up).
+    let existingStillOnDisk = true;
+    try {
+      existingStillOnDisk = fs.existsSync(existing);
+    } catch {
+      existingStillOnDisk = false;
+    }
+    if (existingStillOnDisk) {
+      return { type: "conflict", existingPath: existing, newPath: bridgePath };
+    }
+    // Strip the stale entry and matching ownership/packages mirrors so the
+    // subsequent register block below installs the new path cleanly.
+    delete managed[key];
+    if (ownership[existing] === ownerMarker) delete ownership[existing];
+    const idx = packages.indexOf(existing);
+    if (idx >= 0) packages.splice(idx, 1);
   }
 
   let mutated = false;
-  if (!existing) {
+  if (!managed[key]) {
     managed[key] = bridgePath;
     settings.dashboardPluginBridges = managed;
     mutated = true;

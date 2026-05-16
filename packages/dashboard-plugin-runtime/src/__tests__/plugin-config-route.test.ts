@@ -19,21 +19,21 @@ describe("PluginStatusStore", () => {
 
   it("tracks disabled plugin status", () => {
     const store = createPluginStatusStore();
-    store.setStatus({ id: "demo", enabled: false, loaded: false, claims: 2 });
+    store.setStatus({ id: "demo", displayName: "Demo", enabled: false, loaded: false, claims: 2 });
     const status = store.getStatus("demo");
     expect(status?.enabled).toBe(false);
   });
 
   it("listAll returns all entries", () => {
     const store = createPluginStatusStore();
-    store.setStatus({ id: "a", enabled: true, loaded: true, claims: 1 });
-    store.setStatus({ id: "b", enabled: false, loaded: false, claims: 0 });
+    store.setStatus({ id: "a", displayName: "A", enabled: true, loaded: true, claims: 1 });
+    store.setStatus({ id: "b", displayName: "B", enabled: false, loaded: false, claims: 0 });
     expect(store.listAll()).toHaveLength(2);
   });
 
   it("tracks error for failed plugin", () => {
     const store = createPluginStatusStore();
-    store.setStatus({ id: "bad", enabled: true, loaded: false, error: "boom", claims: 1 });
+    store.setStatus({ id: "bad", displayName: "Bad", enabled: true, loaded: false, error: "boom", claims: 1 });
     expect(store.getStatus("bad")?.error).toBe("boom");
   });
 });

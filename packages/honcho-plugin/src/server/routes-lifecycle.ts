@@ -20,7 +20,11 @@ import {
   runMigrations,
 } from "./compose-lifecycle.js";
 import { ensureStorageBackend } from "./storage-backend.js";
-import { detectPiModelProxy } from "./pi-model-proxy-detect.js";
+// Lifted into dashboard-plugin-runtime so every plugin can declare
+// `requires.services: ["pi-model-proxy"]`. See change: add-plugin-activation-ui
+// (Layer 1.5, task 12).
+import { detectPiModelProxy } from "@blackbelt-technology/dashboard-plugin-runtime/server";
+import { getPluginStatusStore } from "@blackbelt-technology/dashboard-plugin-runtime/server";
 import { NotImplementedError } from "./compose-template.js";
 import { getStatus, setStatus, withMutex } from "./plugin-state.js";
 
@@ -40,14 +44,30 @@ async function startStack(
   const endpoint = cfg.hosts?.pi?.endpoint ?? `http://localhost:${apiPort}`;
 
   // Pre-check: pi-model-proxy reachability when selected.
+  // Source of truth is `PluginStatus.requirements.services["pi-model-proxy"]`
+  // populated by the dashboard runtime's `runRequirementProbes`. When the
+  // cached report is absent (e.g. cold boot, race with first probe), fall
+  // back to a direct `detectPiModelProxy` probe so this gate stays correct
+  // for the first request. See change: add-plugin-activation-ui.
   if (cfg.selfHost?.llm?.source === "pi-model-proxy") {
-    const probe = await detectPiModelProxy();
-    if (!probe.reachable) {
-      const err = `pi-model-proxy-unavailable: ${probe.error ?? "unreachable"}`;
+    const cached = getPluginStatusStore().getStatus("honcho")?.requirements?.services
+      ?.find((s) => s.name === "pi-model-proxy");
+    let reachable: boolean;
+    let error: string | undefined;
+    if (cached) {
+      reachable = cached.satisfied;
+      error = cached.error;
+    } else {
+      const probe = await detectPiModelProxy();
+      reachable = probe.reachable;
+      error = probe.error;
+    }
+    if (!reachable) {
+      const err = `pi-model-proxy-unavailable: ${error ?? "unreachable"}`;
       setStatus({ state: "stopped", lastError: err });
       const e = new Error(err) as Error & { http?: number; body?: unknown };
       e.http = 412;
-      e.body = { error: "pi-model-proxy-unavailable", detail: probe.error };
+      e.body = { error: "pi-model-proxy-unavailable", detail: error };
       throw e;
     }
   }

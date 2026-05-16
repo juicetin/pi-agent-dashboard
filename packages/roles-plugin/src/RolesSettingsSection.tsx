@@ -7,7 +7,7 @@
  * dashboard piggybacks on the existing `usePluginConfig` plumbing — every
  * other plugin's settings UI uses it — by having `useMessageHandler` route
  * incoming `roles_list` and `models_list` payloads through
- * `applyPluginConfigUpdate({ id: "builtins", config: ... })`. The component
+ * `applyPluginConfigUpdate({ id: "roles", config: ... })`. The component
  * reads via `usePluginConfig<BuiltinsConfig>()`. No new context primitive,
  * no per-session keying, no sentinel session id.
  *
@@ -95,7 +95,7 @@ export function computeDirtyRoles(
 /**
  * Plugin config shape for the built-ins plugin. Populated by
  * `useMessageHandler` routing `roles_list` and `models_list` WS payloads
- * through `applyPluginConfigUpdate({id: "builtins", ...})`.
+ * through `applyPluginConfigUpdate({id: "roles", ...})`.
  */
 interface BuiltinsConfig {
   roles?: Record<string, string>;
@@ -169,7 +169,8 @@ export function BuiltInRolesSettings() {
   if (Object.keys(rolesMap).length === 0) {
     return (
       <section data-testid="roles-settings-empty" className="text-xs text-[var(--text-muted)] py-2">
-pi-flows is not installed (or no roles configured yet). Install `pi-flows` to assign per-role models.
+        No roles configured yet. Install an extension that registers roles (e.g.{" "}
+        <code>pi-flows</code>) to assign per-role models.
       </section>
     );
   }
@@ -286,10 +287,10 @@ pi-flows is not installed (or no roles configured yet). Install `pi-flows` to as
     >
       <div className="flex items-baseline justify-between">
         <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
-          pi-flows Roles
+          Roles
         </h3>
         <span className="text-[10px] text-[var(--text-muted)]">
-          global role → model assignments (used by pi-flows)
+          global role → model assignments
         </span>
       </div>
 

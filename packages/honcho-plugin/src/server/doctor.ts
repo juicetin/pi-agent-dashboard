@@ -14,7 +14,8 @@ import {
   detectDocker,
   runCommand,
 } from "./compose-lifecycle.js";
-import { detectPiModelProxy } from "./pi-model-proxy-detect.js";
+// Lifted into dashboard-plugin-runtime. See change: add-plugin-activation-ui (task 12).
+import { detectPiModelProxy, getPluginStatusStore } from "@blackbelt-technology/dashboard-plugin-runtime/server";
 import type { DoctorCheck, DoctorResponse, HonchoPluginConfig } from "../shared/types.js";
 
 export interface DoctorDeps {
@@ -126,11 +127,26 @@ export async function runDoctor(
       });
     }
     if (source === "pi-model-proxy") {
-      const probe = await detectPiModelProxy({ fetchImpl: f });
+      // Prefer the cached probe from the shared requirements model; fall
+      // back to a direct fetch when the cache is empty (cold boot).
+      // See change: add-plugin-activation-ui.
+      const cached = getPluginStatusStore().getStatus("honcho")?.requirements?.services?.find(
+        (s) => s.name === "pi-model-proxy",
+      );
+      let reachable: boolean;
+      let error: string | undefined;
+      if (cached) {
+        reachable = cached.satisfied;
+        error = cached.error;
+      } else {
+        const probe = await detectPiModelProxy({ fetchImpl: f });
+        reachable = probe.reachable;
+        error = probe.error;
+      }
       checks.push({
         id: "pi-model-proxy-host-side",
-        status: probe.reachable ? "ok" : "fail",
-        detail: probe.reachable ? undefined : probe.error,
+        status: reachable ? "ok" : "fail",
+        detail: reachable ? undefined : error,
       });
       if (deps.isStackRunning?.()) {
         // docker exec into the api container and curl the host-gateway.

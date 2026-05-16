@@ -3,67 +3,83 @@
  * `useSlotHasClaimsForSession` hook so the MEMORY subcard hides cleanly when
  * `pi-memory-honcho` is not installed.
  *
- * The cache is module-level state populated by `primeExtensionInstalledCache`
- * and `useExtensionInstalled`. To exercise the sync gate without mounting a
- * React tree, we stub the underlying `checkExtensionInstalled` and call
- * `primeExtensionInstalledCache` directly between assertions.
+ * The sync cache is populated from `/api/health.plugins[]` via the dashboard's
+ * declarative requirements model. Tests mock `fetch` and prime the cache by
+ * importing the (private) refresh routine through the public hook surface.
  *
- * See change: auto-hide-empty-session-subcards.
+ * See change: add-plugin-activation-ui (Layer 1.5, replaces the dedicated
+ * `/api/packages/installed` probe). Originally introduced in
+ * auto-hide-empty-session-subcards.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const { checkExtensionInstalledMock } = vi.hoisted(() => ({
-  checkExtensionInstalledMock: vi.fn(),
-}));
+function healthWithHoncho(satisfied: boolean) {
+  return {
+    ok: true,
+    plugins: [
+      {
+        id: "honcho",
+        displayName: "Honcho Memory",
+        enabled: true,
+        loaded: true,
+        claims: 3,
+        requirements: {
+          piExtensions: [{ name: "pi-memory-honcho", satisfied }],
+          binaries: [],
+          services: [],
+        },
+        missingRequirements: satisfied ? [] : ["pi-memory-honcho"],
+      },
+    ],
+  };
+}
 
-vi.mock("../client/api.js", () => ({
-  checkExtensionInstalled: checkExtensionInstalledMock,
-  // Other exports honcho's hooks.ts imports — stubs are fine since unused here.
-  fetchConfig: vi.fn().mockResolvedValue(null),
-  fetchStatus: vi.fn().mockResolvedValue(null),
-}));
+const fetchMock = vi.fn();
 
-import {
-  getHonchoExtensionInstalledSync,
-  primeExtensionInstalledCache,
-} from "../client/hooks.js";
+beforeEach(() => {
+  fetchMock.mockReset();
+  vi.stubGlobal("fetch", fetchMock);
+});
+
+import { getHonchoExtensionPresentSync, useHonchoExtensionPresent } from "../client/hooks.js";
 import { shouldRenderHonchoMemory } from "../client/shouldRender.js";
+import { renderHook, waitFor } from "@testing-library/react";
+
+async function primeCache(satisfied: boolean | "reject") {
+  if (satisfied === "reject") {
+    fetchMock.mockRejectedValueOnce(new Error("nope"));
+  } else {
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify(healthWithHoncho(satisfied)), { status: 200 }),
+    );
+  }
+  // Mount the hook once to drive the refresh.
+  const { result, unmount } = renderHook(() => useHonchoExtensionPresent());
+  await waitFor(() => expect(result.current.checking).toBe(false));
+  unmount();
+}
 
 describe("shouldRenderHonchoMemory", () => {
-  beforeEach(() => {
-    checkExtensionInstalledMock.mockReset();
-  });
-
   it("returns false initially (closed-by-default before first probe)", async () => {
-    // Force the cache back into the closed-by-default state by re-priming
-    // with a rejected probe.
-    checkExtensionInstalledMock.mockRejectedValueOnce(new Error("nope"));
-    await primeExtensionInstalledCache();
-    expect(getHonchoExtensionInstalledSync()).toBe(false);
-    // Pass `null` to assert the gate doesn't depend on session shape
-    // (function reads the module-level installed-state cache, not its arg).
+    await primeCache("reject");
+    expect(getHonchoExtensionPresentSync()).toBe(false);
     expect(shouldRenderHonchoMemory(null)).toBe(false);
   });
 
-  it("returns false when the probe reports the extension uninstalled", async () => {
-    checkExtensionInstalledMock.mockResolvedValueOnce(false);
-    await primeExtensionInstalledCache();
+  it("returns false when the probe reports the extension unsatisfied", async () => {
+    await primeCache(false);
     expect(shouldRenderHonchoMemory(null)).toBe(false);
   });
 
-  it("returns true after the probe reports the extension installed", async () => {
-    checkExtensionInstalledMock.mockResolvedValueOnce(true);
-    await primeExtensionInstalledCache();
+  it("returns true after the probe reports the extension satisfied", async () => {
+    await primeCache(true);
     expect(shouldRenderHonchoMemory(null)).toBe(true);
   });
 
-  it("flips back to false when the extension is uninstalled", async () => {
-    checkExtensionInstalledMock.mockResolvedValueOnce(true);
-    await primeExtensionInstalledCache();
+  it("flips back to false when the extension becomes unsatisfied again", async () => {
+    await primeCache(true);
     expect(shouldRenderHonchoMemory(null)).toBe(true);
-
-    checkExtensionInstalledMock.mockResolvedValueOnce(false);
-    await primeExtensionInstalledCache();
+    await primeCache(false);
     expect(shouldRenderHonchoMemory(null)).toBe(false);
   });
 });

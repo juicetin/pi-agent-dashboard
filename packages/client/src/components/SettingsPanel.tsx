@@ -18,8 +18,8 @@ import { PackageReadmeDialog } from "./PackageReadmeDialog.js";
 import { useInstalledPackages } from "../hooks/useInstalledPackages.js";
 import { usePackageOperations } from "../hooks/usePackageOperations.js";
 import { UnifiedPackagesSection } from "./UnifiedPackagesSection.js";
+import { PluginsSection } from "./PluginsSection.js";
 import type { NpmPackageResult } from "@blackbelt-technology/pi-dashboard-shared/rest-api.js";
-import { SettingsSectionSlot } from "@blackbelt-technology/dashboard-plugin-runtime";
 
 interface ProviderConfig {
   clientId: string;
@@ -138,7 +138,7 @@ export function SettingsPanel({ availableModels }: { availableModels?: Array<{ p
   const [activeTab, setActiveTab] = useState(() => {
     const params = new URLSearchParams(window.location.search);
     const tab = params.get("tab");
-    return tab && ["general", "servers", "packages", "providers", "security", "advanced"].includes(tab) ? tab : "general";
+    return tab && ["general", "servers", "packages", "plugins", "providers", "security", "advanced"].includes(tab) ? tab : "general";
   });
 
   useEffect(() => {
@@ -338,6 +338,7 @@ export function SettingsPanel({ availableModels }: { availableModels?: Array<{ p
     { id: "general", label: "General" },
     { id: "servers", label: "Servers" },
     { id: "packages", label: "Packages" },
+    { id: "plugins", label: "Plugins" },
     { id: "providers", label: "Providers" },
     { id: "security", label: "Security" },
     { id: "advanced", label: "Advanced" },
@@ -574,8 +575,9 @@ export function SettingsPanel({ availableModels }: { availableModels?: Array<{ p
               <DiagnosticsSection />
               <ToolsSection />
               <SpawnFailuresSection />
-              {/* Plugin slot: settings-section (general tab) */}
-              <SettingsSectionSlot tab="general" />
+              {/* Plugin-contributed settings consolidated under Settings ▸ Plugins.
+                  Legacy `claim.tab` rendering removed.
+                  See change: add-plugin-activation-ui (settings-consolidation). */}
             </>
           )}
 
@@ -583,8 +585,7 @@ export function SettingsPanel({ availableModels }: { availableModels?: Array<{ p
           {activeTab === "servers" && (
             <>
               <ServersTab />
-              {/* Plugin slot: settings-section (servers tab) */}
-              <SettingsSectionSlot tab="servers" />
+              {/* Plugin-contributed settings consolidated under Settings ▸ Plugins. */}
             </>
           )}
 
@@ -626,8 +627,7 @@ export function SettingsPanel({ availableModels }: { availableModels?: Array<{ p
                   upstreamExtensionDetected={upstreamPiModelProxyInstalled}
                 />
               </Section>
-              {/* Plugin slot: settings-section (providers tab) */}
-              <SettingsSectionSlot tab="providers" />
+              {/* Plugin-contributed settings consolidated under Settings ▸ Plugins. */}
             </>
           )}
 
@@ -700,8 +700,7 @@ export function SettingsPanel({ availableModels }: { availableModels?: Array<{ p
                   c.auth.bypassHosts = nets;
                 })}
               />
-              {/* Plugin slot: settings-section (security tab) */}
-              <SettingsSectionSlot tab="security" />
+              {/* Plugin-contributed settings consolidated under Settings ▸ Plugins. */}
             </>
           )}
 
@@ -711,6 +710,11 @@ export function SettingsPanel({ availableModels }: { availableModels?: Array<{ p
               <UnifiedPackagesSection />
               <GlobalPackagesBrowseAndDialogs />
             </div>
+          )}
+
+          {activeTab === "plugins" && (
+            /* Plugins activation list — see change: add-plugin-activation-ui. */
+            <PluginsSection />
           )}
 
           {activeTab === "advanced" && (

@@ -408,6 +408,26 @@ Runtime: `/api/health` returns `bundleHash` field. Server computes via same `plu
 
 Client: `PluginStalenessBanner` fetches `/api/health` on mount. Compares `bundleHash` against imported `PLUGIN_REGISTRY_HASH`. Mismatch ⇒ render banner with Refresh + Dismiss buttons. Refresh calls `location.reload()`. Dismiss persists in `sessionStorage` key `pi-plugin-staleness-dismissed` (tab-scoped, clears on browser close). Dismissed banner stays hidden until next session.
 
+#### Plugin Activation UI
+
+Settings ▸ Plugins tab lists every discovered plugin (enabled or not) with display name, description, enable/disable toggle, missing-requirement chips, inline Install affordances.
+
+**Toggle workflow.** `PluginsSection` calls `POST /api/plugins/:id/toggle` (`packages/server/src/routes/plugin-activation-routes.ts`). Route writes `plugins.<id>.enabled` via config-api partial merge, broadcasts `plugin_config_update { id, config }` to every browser. Effect is **restart-required**: runtime claim filter (`SlotRegistry.setEnabledSet`) only re-reads enabled-set when client mounts or receives `plugin-config-update` event for the bundle's current plugin set; flipping `enabled` for a plugin whose server entry already loaded doesn't unload it. UI surfaces restart-required banner by comparing toggle timestamp to `/api/health.startedAt`.
+
+**Declarative requirements.** Plugins declare `requires: { piExtensions?, binaries?, services? }` in their manifest (`PluginManifest.requires`, validated by `manifest-validator.ts`). At plugin load, `loader.ts` runs `runRequirementProbes(manifest.requires, requirementDeps)` from `packages/dashboard-plugin-runtime/src/server/requirement-probes.ts`. Probes:
+
+- `probePiExtension(id)` cross-refs installed pi-extension set (deps.listInstalled).
+- `probeBinary(name)` resolves via tool registry.
+- `probeService(name)` dispatches to service-probe map (e.g. `service-probes/pi-model-proxy.ts::detectPiModelProxy`).
+
+Results populate `PluginStatus.requirements` + flat `missingRequirements: string[]`; surfaced via `GET /api/plugins`. 30s in-process cache keyed by category+name. `server.ts` invokes `refreshRequirementProbesFor(pluginIds)` on every successful `package_operation_complete` + broadcasts `plugin_config_update` for any plugin whose missing-set changed — install/uninstall of a pi-extension lights up dependent plugin without restart.
+
+**UI cross-references.** `RecommendedExtensions.tsx` reads `EnrichedRecommendedExtension.dashboardPluginInstalled` (computed server-side in `recommended-routes.ts::enrichEntry` from `RecommendedExtension.dashboardPlugin`) + renders `+plugin: <id>` badge linking to Plugins tab. `pi-memory-honcho` declares `dashboardPlugin: "honcho"`; `honcho-plugin` declares `requires.piExtensions: ["pi-memory-honcho"]` so install paths converge.
+
+**Restart-required model.** `usePluginEnabledSet` snapshots `/api/health.startedAt` ISO timestamp on first load. Subsequent `plugin_config_update` events update enabled-set live for claim filtering, but components that consumed plugin server entries (already loaded) require a restart to drop. `PluginsSection` compares toggle time to snapshot and renders "Restart required" banner when divergent.
+
+**Settings consolidation.** Plugin-contributed `settings-section` claims render only under owning plugin row in Settings ▸ Plugins. Legacy `claim.tab` manifest field preserved for back-compat manifests; `SettingsPanel` no longer consumes it. See change: add-plugin-activation-ui (settings-consolidation).
+
 ### Bootstrap & First Run
 
 The dashboard has three install paths that all converge on the shared

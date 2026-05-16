@@ -281,6 +281,10 @@ export function registerSystemRoutes(
       installable: bootstrapState?.get().installable,
       version: version ?? "unknown",
       uptime: Math.floor((Date.now() - serverStartTime) / 1000),
+      // ISO timestamp of process start. Used by the Plugins tab to detect
+      // server restarts and clear the Restart-required banner.
+      // See change: add-plugin-activation-ui.
+      startedAt: new Date(serverStartTime).toISOString(),
       mode: config.dev ? "dev" : "production",
       server: {
         rss: mem.rss,

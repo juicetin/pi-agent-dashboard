@@ -295,6 +295,8 @@ This section lists only the **architectural backbone** — the files agents touc
 | `packages/dashboard-plugin-runtime/src/server/server-context.ts` | `createServerPluginContext` — per-plugin scoped logger + config |
 | `packages/dashboard-plugin-runtime/src/server/config-validator.ts` | Ajv JSON-Schema 7 validation for plugin config writes |
 | `packages/dashboard-plugin-runtime/src/server/plugin-status-store.ts` | In-memory `PluginStatusStore` for `/api/health.plugins[]` |
+| `packages/dashboard-plugin-runtime/src/server/requirement-probes.ts` | Declarative requirement probes (piExtensions/binaries/services); 30s cache. See change: add-plugin-activation-ui. |
+| `src/server/routes/plugin-activation-routes.ts` | REST routes: GET /api/plugins, POST /api/plugins/:id/toggle. See change: add-plugin-activation-ui. |
 | `src/server/routes/plugin-config-routes.ts` | `POST /api/config/plugins/:id` — validates and merges plugin config (auth-gated) |
 | `packages/demo-plugin/` | Private fixture plugin exercising settings-section + tool-renderer slots |
 | `packages/dashboard-plugin-skill/` | Pi skill `dashboard-plugin-scaffold`. Modes: `new` (scaffold packages/<id>-plugin/), `augment` (inject manifest + src/dashboard/ into pi-extension at cwd). |
@@ -417,6 +419,7 @@ This section lists only the **architectural backbone** — the files agents touc
 | `src/extension/provider-register.ts` | Reads `providers.json`, calls `pi.registerProvider`, hot-reload on credentials change |
 | `src/client/lib/providers-api.ts` | Client fetch helper for `/api/providers/test` connection probe |
 | `src/client/components/ProviderAuthSection.tsx` | Settings section: OAuth login buttons, device-code modal, API key inputs |
+| `packages/client/src/components/PluginsSection.tsx` | Settings ▸ Plugins activation list; toggle + missing-requirement install. See change: add-plugin-activation-ui. |
 | `src/server/auth-plugin.ts` | Fastify plugin: auth routes, onRequest hook, WS upgrade validation |
 | `src/server/config-api.ts` | Config REST API: read (redacted), write (partial merge), secret preservation |
 | `src/client/components/SettingsPanel.tsx` | Settings UI: all dashboard config fields, grouped form, save to server |

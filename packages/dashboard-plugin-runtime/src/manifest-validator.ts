@@ -11,6 +11,7 @@ import {
 import type {
   PluginManifest,
   PluginClaim,
+  PluginRequirements,
 } from "@blackbelt-technology/pi-dashboard-shared/dashboard-plugin/manifest-types.js";
 
 export class ManifestValidationError extends Error {
@@ -123,6 +124,83 @@ export function validateManifest(raw: unknown, fallbackId = "unknown"): PluginMa
     }
   }
 
+  // requires: optional declarative requirements (see change: add-plugin-activation-ui).
+  let requires: PluginRequirements | undefined;
+  if (m.requires !== undefined) {
+    if (!m.requires || typeof m.requires !== "object" || Array.isArray(m.requires)) {
+      throw new ManifestValidationError(pluginId, "manifest.requires must be an object if provided");
+    }
+    const r = m.requires as Record<string, unknown>;
+    const out: PluginRequirements = {};
+    for (const field of ["piExtensions", "binaries", "services"] as const) {
+      const arr = r[field];
+      if (arr === undefined) continue;
+      if (!Array.isArray(arr)) {
+        throw new ManifestValidationError(
+          pluginId,
+          `manifest.requires.${field} must be a string array if provided`,
+        );
+      }
+      const seen = new Set<string>();
+      const normalised: string[] = [];
+      for (let i = 0; i < arr.length; i++) {
+        const v = arr[i];
+        if (typeof v !== "string" || v.trim() === "") {
+          throw new ManifestValidationError(
+            pluginId,
+            `manifest.requires.${field}[${i}] must be a non-empty, non-whitespace string`,
+          );
+        }
+        if (seen.has(v)) {
+          throw new ManifestValidationError(
+            pluginId,
+            `manifest.requires.${field} contains duplicate entry "${v}"`,
+          );
+        }
+        seen.add(v);
+        normalised.push(v);
+      }
+      out[field] = normalised;
+    }
+    if (Object.keys(out).length > 0) requires = out;
+  }
+
+  // dependsOn: optional string array. Reject self-reference + duplicates +
+  // non-string entries. Cycle detection is deferred to discovery (soft-fail).
+  // See change: add-plugin-activation-ui (Layer 2).
+  let dependsOn: string[] | undefined;
+  if (m.dependsOn !== undefined) {
+    if (!Array.isArray(m.dependsOn)) {
+      throw new ManifestValidationError(pluginId, "manifest.dependsOn must be a string array if provided");
+    }
+    const seen = new Set<string>();
+    const normalised: string[] = [];
+    for (let i = 0; i < m.dependsOn.length; i++) {
+      const v = m.dependsOn[i];
+      if (typeof v !== "string" || v.trim() === "") {
+        throw new ManifestValidationError(
+          pluginId,
+          `manifest.dependsOn[${i}] must be a non-empty string`,
+        );
+      }
+      if (v === pluginId) {
+        throw new ManifestValidationError(
+          pluginId,
+          `manifest.dependsOn contains self-reference "${pluginId}"`,
+        );
+      }
+      if (seen.has(v)) {
+        throw new ManifestValidationError(
+          pluginId,
+          `manifest.dependsOn contains duplicate entry "${v}"`,
+        );
+      }
+      seen.add(v);
+      normalised.push(v);
+    }
+    if (normalised.length > 0) dependsOn = normalised;
+  }
+
   // claims: required array
   if (!Array.isArray(m.claims)) {
     throw new ManifestValidationError(pluginId, "manifest.claims must be an array");
@@ -164,5 +242,7 @@ export function validateManifest(raw: unknown, fallbackId = "unknown"): PluginMa
     ...(typeof m.bridge === "string" ? { bridge: m.bridge } : {}),
     ...(typeof m.configSchema === "string" ? { configSchema: m.configSchema } : {}),
     ...(m.fixture === true ? { fixture: true } : {}),
+    ...(requires ? { requires } : {}),
+    ...(dependsOn ? { dependsOn } : {}),
   };
 }

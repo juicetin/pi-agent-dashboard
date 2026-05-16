@@ -88,6 +88,35 @@ export async function createE2eServerFixture(): Promise<E2eServerFixture> {
     return { success: true, data: installedPackages };
   });
 
+  // ── /api/health stub ─────────────────────────────────────────────────────
+  // After change: add-plugin-activation-ui, honcho's client gate reads plugin
+  // status (PluginStatus.requirements.piExtensions) off /api/health.plugins[]
+  // instead of /api/packages/installed. Mirror the installed-state here.
+  fastify.get("/api/health", async () => {
+    const satisfied = installedPackages.some(
+      (p) => p.source === HONCHO_EXTENSION.source || p.name === "pi-memory-honcho",
+    );
+    return {
+      ok: true,
+      startedAt: new Date().toISOString(),
+      plugins: [
+        {
+          id: "honcho",
+          displayName: "Honcho Memory",
+          enabled: true,
+          loaded: true,
+          claims: 3,
+          requirements: {
+            piExtensions: [{ name: "pi-memory-honcho", satisfied }],
+            binaries: [],
+            services: [],
+          },
+          missingRequirements: satisfied ? [] : ["pi-memory-honcho"],
+        },
+      ],
+    };
+  });
+
   fastify.post<{ Body: { source?: string } }>(
     "/api/packages/install",
     async (req, reply) => {

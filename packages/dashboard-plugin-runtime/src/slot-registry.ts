@@ -75,14 +75,36 @@ export interface ClaimEntry<S extends SlotId = SlotId> {
 }
 
 export interface SlotRegistry {
-  /** All claims for the given slot, pre-sorted. */
+  /**
+   * All claims for the given slot, pre-sorted.
+   *
+   * After `setEnabledSet` has been called at least once, claims whose
+   * `pluginId` is not in the enabled set are filtered out. Before any
+   * `setEnabledSet` call, every claim is returned (preserves SSR/legacy
+   * behaviour). See change: add-plugin-activation-ui.
+   */
   getClaims(slotId: SlotId): ClaimEntry[];
-  /** All claims across all slots. */
+  /** All claims across all slots (subject to the same enable filter as `getClaims`). */
   getAllClaims(): ClaimEntry[];
   /** Add a claim. Inserts in sorted order. */
   addClaim(claim: ClaimEntry): void;
   /** Remove all claims belonging to a plugin. */
   removeClaims(pluginId: string): void;
+  /**
+   * Replace the active enabled-plugins set. After the first call, every
+   * `getClaims` / `getAllClaims` query SHALL omit claims whose `pluginId`
+   * is not in the set.
+   * See change: add-plugin-activation-ui.
+   */
+  setEnabledSet(ids: ReadonlySet<string>): void;
+  /**
+   * Activation-UI escape hatch: returns claims grouped by plugin id,
+   * IGNORING the enabled-set filter. Used by the Plugins tab so disabled
+   * plugins still appear in the activation list. Every other consumer
+   * SHOULD use `getClaims` and get free filtering.
+   * See change: add-plugin-activation-ui.
+   */
+  getAllPluginsForActivationUi(): Map<string, ClaimEntry[]>;
 }
 
 function compareClaims(a: ClaimEntry, b: ClaimEntry): number {
@@ -94,21 +116,30 @@ function compareClaims(a: ClaimEntry, b: ClaimEntry): number {
 
 export function createSlotRegistry(): SlotRegistry {
   const store = new Map<SlotId, ClaimEntry[]>();
+  // `null` = filter inactive (default state, returns all claims).
+  // `Set<string>` = filter active, only listed pluginIds are kept.
+  let enabledSet: ReadonlySet<string> | null = null;
 
   function getBucket(slotId: SlotId): ClaimEntry[] {
     if (!store.has(slotId)) store.set(slotId, []);
     return store.get(slotId)!;
   }
 
+  function applyFilter(claims: ClaimEntry[]): ClaimEntry[] {
+    if (enabledSet === null) return claims;
+    const set = enabledSet;
+    return claims.filter((c) => set.has(c.pluginId));
+  }
+
   return {
     getClaims(slotId: SlotId): ClaimEntry[] {
-      return store.get(slotId) ?? [];
+      return applyFilter(store.get(slotId) ?? []);
     },
 
     getAllClaims(): ClaimEntry[] {
       const all: ClaimEntry[] = [];
       for (const claims of store.values()) all.push(...claims);
-      return all;
+      return applyFilter(all);
     },
 
     addClaim(claim: ClaimEntry): void {
@@ -122,6 +153,25 @@ export function createSlotRegistry(): SlotRegistry {
         const filtered = claims.filter(c => c.pluginId !== pluginId);
         store.set(slotId, filtered);
       }
+    },
+
+    setEnabledSet(ids: ReadonlySet<string>): void {
+      enabledSet = ids;
+    },
+
+    getAllPluginsForActivationUi(): Map<string, ClaimEntry[]> {
+      const grouped = new Map<string, ClaimEntry[]>();
+      for (const bucket of store.values()) {
+        for (const claim of bucket) {
+          let arr = grouped.get(claim.pluginId);
+          if (!arr) {
+            arr = [];
+            grouped.set(claim.pluginId, arr);
+          }
+          arr.push(claim);
+        }
+      }
+      return grouped;
     },
   };
 }

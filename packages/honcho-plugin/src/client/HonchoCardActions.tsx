@@ -8,7 +8,7 @@
 import React, { useState } from "react";
 import Icon from "@mdi/react";
 import { mdiBrain, mdiSync, mdiTagOutline, mdiLoading } from "@mdi/js";
-import { useExtensionInstalled } from "./hooks.js";
+import { useHonchoExtensionPresent } from "./hooks.js";
 import { triggerSync, submitInterview } from "./api.js";
 
 interface Props {
@@ -18,7 +18,7 @@ interface Props {
 }
 
 export function HonchoCardActions({ cwd: _cwd, onOpenPopover, sessionId }: Props) {
-  const { installed, checking } = useExtensionInstalled();
+  const { installed, checking } = useHonchoExtensionPresent();
   const [interviewOpen, setInterviewOpen] = useState(false);
   const [interviewText, setInterviewText] = useState("");
   const [interviewBusy, setInterviewBusy] = useState(false);

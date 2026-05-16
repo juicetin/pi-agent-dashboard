@@ -150,6 +150,9 @@ describe("loadServerEntries", () => {
     const status = store.getStatus("client-only");
     expect(status?.loaded).toBe(true);
     expect(status?.enabled).toBe(true);
+    // displayName from the manifest must be carried into status.
+    // See change: add-plugin-activation-ui.
+    expect(status?.displayName).toBe("CO");
   });
 
   it("marks disabled plugin as not loaded", async () => {

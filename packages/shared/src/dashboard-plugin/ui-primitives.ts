@@ -175,7 +175,7 @@ export interface UiStatusPillProps {
  *
  * Role/preset props that historically existed on `ModelSelector` are NOT part
  * of this contract — role management is a host concern (see
- * `BuiltInRolesSettings` in builtins-plugin) layered on top.
+ * `BuiltInRolesSettings` in roles-plugin) layered on top.
  */
 export interface UiModelSelectorProps {
   /** Currently-selected model label in `"<provider>/<id>"` form, or undefined. */

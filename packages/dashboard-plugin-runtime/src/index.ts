@@ -3,6 +3,7 @@
  */
 export * from "./slot-registry.js";
 export * from "./slot-consumers.js";
+export * from "./dependency-graph.js";
 export * from "./slot-error-boundary.js";
 export {
   PluginContextProvider,

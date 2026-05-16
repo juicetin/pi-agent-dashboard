@@ -73,13 +73,14 @@ import { createEditorPidRegistry } from "./editor-pid-registry.js";
 import { registerEditorRoutes } from "./routes/editor-routes.js";
 import { registerKnownServersRoutes } from "./routes/known-servers-routes.js";
 import { registerPluginConfigRoutes } from "./routes/plugin-config-routes.js";
+import { registerPluginActivationRoutes } from "./routes/plugin-activation-routes.js";
 import { createModelProxyAuthGate } from "./model-proxy/auth-gate.js";
 import { registerModelProxyRoutes } from "./routes/model-proxy-routes.js";
 import { registerModelProxyApiKeyRoutes } from "./routes/model-proxy-api-key-routes.js";
 import { registerModelProxyRefreshRoutes } from "./routes/model-proxy-refresh-routes.js";
 import { getModelRegistry, getStreamSimpleFn } from "./model-proxy/registry-singleton.js";
 import { writeConfigPartial } from "./config-api.js";
-import { loadServerEntries, discoverPlugins, getPluginStatusStore } from "@blackbelt-technology/dashboard-plugin-runtime/server";
+import { loadServerEntries, discoverPlugins, getPluginStatusStore, refreshRequirementProbesFor } from "@blackbelt-technology/dashboard-plugin-runtime/server";
 import { createServerPluginContext } from "@blackbelt-technology/dashboard-plugin-runtime/server";
 import { getPluginConfig as getPluginConfigFromFile } from "@blackbelt-technology/pi-dashboard-shared/config.js";
 import {
@@ -929,6 +930,24 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
       ...(result.partialSuccess ? { partialSuccess: result.partialSuccess } : {}),
     } as any);
     if (result.success) invalidateRecommendedCache();
+    // A successful package operation may have changed plugin requirement
+    // satisfaction. Refresh probes and broadcast plugin_config_update for
+    // any plugin whose `missingRequirements` flipped.
+    // See change: add-plugin-activation-ui.
+    if (result.success) {
+      void refreshRequirementProbesFor(null, {
+        listInstalled: () => packageManagerWrapper.listInstalled("global"),
+      }).then((changed) => {
+        for (const id of changed) {
+          const status = getPluginStatusStore().getStatus(id);
+          browserGateway.broadcast({
+            type: "plugin_config_update",
+            id,
+            config: status ?? {},
+          });
+        }
+      });
+    }
   });
 
   // Reload all active sessions after a successful package operation
@@ -1018,6 +1037,10 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
   registerProviderAuthRoutes(fastify, { piGateway, browserGateway });
   registerKnownServersRoutes(fastify, { networkGuard, getPeerServers: () => peerServers });
   registerPluginConfigRoutes(fastify, {
+    networkGuard,
+    broadcast: (msg) => browserGateway.broadcast(msg),
+  });
+  registerPluginActivationRoutes(fastify, {
     networkGuard,
     broadcast: (msg) => browserGateway.broadcast(msg),
   });
@@ -1228,6 +1251,9 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
             const pluginCfg = getPluginConfigFromFile(cfg, pluginId) as Record<string, unknown>;
             return pluginCfg.enabled !== false;
           },
+          requirementDeps: {
+            listInstalled: () => packageManagerWrapper.listInstalled("global"),
+          },
           createContext: (plugin) => createServerPluginContext(
             {
               fastify,
@@ -1436,6 +1462,7 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
             const existing = store.getStatus(id);
             store.setStatus({
               id,
+              displayName: existing?.displayName ?? id,
               enabled: existing?.enabled ?? true,
               loaded: existing?.loaded ?? false,
               error: `Bridge path conflict: existing=${result.existingPath}, new=${result.newPath}`,

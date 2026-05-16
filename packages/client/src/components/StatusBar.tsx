@@ -17,7 +17,7 @@ interface Props {
 
   /**
    * @deprecated Roles UI moved to a `settings-section` plugin contribution
-   * in `@blackbelt-technology/pi-dashboard-builtins-plugin` (Settings →
+   * in `@blackbelt-technology/pi-dashboard-roles-plugin` (Settings →
    * General → Roles). These props are still accepted for one minor so the
    * App.tsx call site can be cleaned up incrementally; they are not used
    * here. See change: fix-pi-flows-end-to-end (Group 5).

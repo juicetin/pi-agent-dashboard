@@ -13,7 +13,7 @@
  */
 import React, { useState, useCallback } from "react";
 import { usePluginConfig } from "@blackbelt-technology/dashboard-plugin-runtime/context";
-import { useExtensionInstalled, useHonchoConfig, useHonchoStatus } from "./hooks.js";
+import { useHonchoExtensionPresent, useHonchoConfig, useHonchoStatus } from "./hooks.js";
 import { InstallGate } from "./InstallGate.js";
 import { StatusHeader } from "./StatusHeader.js";
 import { ConnectionSection } from "./ConnectionSection.js";
@@ -30,7 +30,7 @@ import { saveConfig } from "./api.js";
 import type { HonchoPluginConfig, RedactedHonchoPluginConfig } from "../shared/types.js";
 
 export function HonchoSettings() {
-  const { installed, checking, recheck } = useExtensionInstalled();
+  const { installed, checking, recheck } = useHonchoExtensionPresent();
   const { config, loading, refresh } = useHonchoConfig();
   const { status, refresh: refreshStatus } = useHonchoStatus();
   const [saving, setSaving] = useState(false);

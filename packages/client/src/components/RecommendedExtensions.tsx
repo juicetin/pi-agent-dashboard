@@ -239,6 +239,24 @@ export function RecommendedExtensions({ scope, cwd }: Props) {
                   >
                     {statusLabel(entry.status, entry.activeInPi)}
                   </span>
+                  {entry.dashboardPlugin && (
+                    // Companion-plugin badge. See change: add-plugin-activation-ui.
+                    <span
+                      className={`text-[10px] px-1.5 py-0.5 rounded border whitespace-nowrap ${
+                        entry.dashboardPluginInstalled
+                          ? "bg-blue-500/15 text-blue-300 border-blue-500/40"
+                          : "bg-[var(--bg-tertiary)] text-[var(--text-muted)] border-[var(--border-secondary)]"
+                      }`}
+                      title={
+                        entry.dashboardPluginInstalled
+                          ? `Companion dashboard plugin "${entry.dashboardPlugin}" is installed`
+                          : `Companion dashboard plugin "${entry.dashboardPlugin}" — not installed`
+                      }
+                      data-testid={`recommended-companion-plugin-${entry.id}`}
+                    >
+                      +plugin: {entry.dashboardPlugin}
+                    </span>
+                  )}
                 </div>
               </div>
 

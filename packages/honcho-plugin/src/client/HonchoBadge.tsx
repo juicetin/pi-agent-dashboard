@@ -7,7 +7,7 @@
 import React, { useEffect, useState } from "react";
 import Icon from "@mdi/react";
 import { mdiBrain } from "@mdi/js";
-import { useExtensionInstalled, useHonchoStatus } from "./hooks.js";
+import { useHonchoExtensionPresent, useHonchoStatus } from "./hooks.js";
 
 /** Tracks `<html data-theme>` reactively so badge palette flips with the dashboard theme. */
 function useIsLightTheme(): boolean {
@@ -53,7 +53,7 @@ const STATE_STYLE_LIGHT: Record<string, { bg: string; fg: string }> = {
 };
 
 export function HonchoBadge() {
-  const { installed, checking } = useExtensionInstalled();
+  const { installed, checking } = useHonchoExtensionPresent();
   const { status } = useHonchoStatus();
   const light = useIsLightTheme();
 

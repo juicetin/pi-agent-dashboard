@@ -128,24 +128,9 @@ export async function refreshModels(
 
 // ── Install gate ─────────────────────────────────────────────────────────────
 
-export async function checkExtensionInstalled(): Promise<boolean> {
-  try {
-    const res = await fetch(`${getApiBase()}/api/packages/installed`);
-    const json = await res.json();
-    // Response: { success, data: Array<{ source, displayName, installedPath, ... }> }
-    const list: Array<{ source?: string; displayName?: string; name?: string; id?: string }> =
-      json?.data ?? json?.packages ?? json ?? [];
-    return list.some(
-      (p) =>
-        p.source === "npm:pi-memory-honcho" ||
-        p.displayName === "pi-memory-honcho" ||
-        p.name === "pi-memory-honcho" ||
-        p.id === "pi-memory-honcho",
-    );
-  } catch {
-    return false;
-  }
-}
+// checkExtensionInstalled retired in favour of the declarative requirements
+// model. See getHonchoExtensionPresentSync in ./hooks.ts.
+// Change: add-plugin-activation-ui (Layer 1.5).
 
 export async function installExtension(): Promise<void> {
   const res = await fetch(`${getApiBase()}/api/packages/install`, {

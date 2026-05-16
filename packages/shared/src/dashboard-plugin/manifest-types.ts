@@ -41,6 +41,27 @@ export interface PluginClaim {
 }
 
 /**
+ * Declarative requirements a plugin has on its environment.
+ * Probed by the dashboard-plugin-runtime; surfaced in PluginStatus.requirements.
+ *
+ * Names are matched against pi extensions (via /api/packages/installed),
+ * binaries (via the shared ToolRegistry), and named service probes from a
+ * closed built-in registry. Plugins SHALL NOT register additional service
+ * names in V1.
+ *
+ * See change: add-plugin-activation-ui (Layer 1.5).
+ */
+export interface PluginRequirements {
+  /** pi extension package identifiers (matched via the same logic
+      RECOMMENDED_EXTENSIONS uses: name / id / source / displayName). */
+  piExtensions?: string[];
+  /** Binaries that must resolve on PATH via the tool-registry. */
+  binaries?: string[];
+  /** Named service probes (closed built-in registry; "pi-model-proxy" only in V1). */
+  services?: string[];
+}
+
+/**
  * The pi-dashboard-plugin manifest.
  * Declared as the `pi-dashboard-plugin` field in a package.json,
  * or as a top-level `dashboard-plugin.json` adjacent to package.json.
@@ -65,6 +86,22 @@ export interface PluginManifest {
   configSchema?: string;
   /** Slot claims. */
   claims: PluginClaim[];
+  /**
+   * Optional declarative requirements probed by the runtime and surfaced as
+   * `PluginStatus.requirements` / `missingRequirements`.
+   * See change: add-plugin-activation-ui (Layer 1.5).
+   */
+  requires?: PluginRequirements;
+  /**
+   * Other plugin ids this plugin requires (hard, transitive). When a
+   * dependency is missing from discovery or disabled in config, the loader
+   * SHALL skip this plugin's server entry and surface the gap via
+   * `PluginStatus.missingDeps`. Cycles soft-fail at discovery (loaded: false
+   * for every plugin in the cycle).
+   *
+   * See change: add-plugin-activation-ui (Layer 2 — dependency graph).
+   */
+  dependsOn?: string[];
   /**
    * When true, the plugin is a test fixture and SHALL be excluded from
    * production bundles (NODE_ENV=production).

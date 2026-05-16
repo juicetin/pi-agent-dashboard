@@ -173,6 +173,24 @@ async function enrichEntry(
 		}
 	}
 
+	// Cross-reference companion dashboard plugin (Layer 1.5 of
+	// add-plugin-activation-ui). When the entry names a `dashboardPlugin`,
+	// look it up in the plugin status store so the install browser can show
+	// a "+plugin" badge that knows whether the plugin is currently present.
+	let dashboardPluginInstalled: boolean | undefined;
+	if (entry.dashboardPlugin) {
+		try {
+			const { getPluginStatusStore } = await import(
+				"@blackbelt-technology/dashboard-plugin-runtime/server"
+			);
+			dashboardPluginInstalled = Boolean(
+				getPluginStatusStore().getStatus(entry.dashboardPlugin),
+			);
+		} catch {
+			dashboardPluginInstalled = false;
+		}
+	}
+
 	return {
 		...entry,
 		description,
@@ -180,6 +198,9 @@ async function enrichEntry(
 		installed: { scope: installedScope },
 		activeInPi,
 		updateAvailable,
+		...(entry.dashboardPlugin
+			? { dashboardPluginInstalled: dashboardPluginInstalled ?? false }
+			: {}),
 	};
 }
 

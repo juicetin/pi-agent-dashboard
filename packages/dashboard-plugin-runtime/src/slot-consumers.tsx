@@ -333,6 +333,35 @@ export function SettingsSectionSlot({ tab = "general" }: { tab?: string }) {
   );
 }
 
+/**
+ * Render every `settings-section` claim that belongs to a single plugin id,
+ * irrespective of the claim's `tab` field. Used by the Plugins activation tab
+ * to render a plugin's settings inline beneath its activation row.
+ *
+ * Sorted by registry order (descending priority, ties broken by registration
+ * order — the registry already pre-sorts).
+ *
+ * See change: add-plugin-activation-ui.
+ */
+export function SettingsSectionByPluginSlot({ pluginId }: { pluginId: string }) {
+  const registry = useSlotRegistryOrNull();
+  // Note: we deliberately do NOT use the intent store here. Activation-tab
+  // rendering only consumes the claim form. If a plugin author later adds
+  // intent-driven settings sections, they will still surface through the
+  // legacy <SettingsSectionSlot tab="..."> consumers in SettingsPanel.
+  const claims = registry
+    ? registry.getClaims("settings-section").filter((c) => c.pluginId === pluginId)
+    : [];
+  if (!claims.length) return null;
+  return (
+    <>
+      {claims.map((c) =>
+        renderClaim(c as Parameters<typeof renderClaim>[0], "settings-section", {}),
+      )}
+    </>
+  );
+}
+
 export function ToolRendererSlot({
   toolName,
   toolInput,

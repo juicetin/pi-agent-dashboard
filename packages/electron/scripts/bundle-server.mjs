@@ -26,6 +26,7 @@ import {
   lstatSync,
   mkdirSync,
   readdirSync,
+  readFileSync,
   readlinkSync,
   renameSync,
   rmSync,
@@ -57,7 +58,7 @@ mkdirSync(path.join(SERVER_BUNDLE, "packages", "dist", "client"), {
   recursive: true,
 });
 
-// ── copy workspace source ────────────────────────────────────────────────
+// ── copy workspace source ─────────────────────────────────────────────────────────
 // dashboard-plugin-runtime: included so the server-side plugin loader
 // (e.g. pluginRegistryHash exported from server/loader.ts) ships with the
 // bundle. Without this, npm install resolves it from the registry, which
@@ -77,6 +78,48 @@ for (const pkg of BUNDLED_WORKSPACE_PKGS) {
     { recursive: true, dereference: false },
   );
 }
+
+// ── copy first-party plugins ───────────────────────────────────────────────────────
+// Monorepo plugin packages ship inside `resources/plugins/<id>/` so the
+// runtime `findBundledPluginsDir()` walk-up locates them after extraction
+// (lands at `~/.pi-dashboard/resources/plugins/`). Without this, every
+// fresh Electron install sees zero plugins because:
+//   1. `findMonorepoRoot()` can't find pnpm-workspace.yaml under the
+//      managed dir,
+//   2. `findInstalledPluginsDir()` looks at `~/.pi/dashboard/plugins/` which
+//      only third-party installs populate,
+//   3. `findBundledPluginsDir()` walks up from loader.ts for
+//      `resources/plugins/` — the path we feed here.
+//
+// Fixture-only plugins (manifest.fixture === true, e.g. demo-plugin) are
+// excluded — same rule as the build-time PLUGIN_REGISTRY filter in
+// production builds.
+// See change: add-plugin-activation-ui (deployment gap follow-up).
+const BUNDLED_PLUGINS = [
+  "roles-plugin",
+  "jj-plugin",
+  "flows-plugin",
+  "honcho-plugin",
+  "flows-anthropic-bridge-plugin",
+];
+const BUNDLED_PLUGINS_DIR = path.join(SERVER_BUNDLE, "resources", "plugins");
+mkdirSync(BUNDLED_PLUGINS_DIR, { recursive: true });
+for (const pluginDir of BUNDLED_PLUGINS) {
+  const src = path.join(PROJECT_DIR, "packages", pluginDir);
+  if (!existsSync(path.join(src, "package.json"))) continue;
+  // Read manifest to honour fixture flag.
+  try {
+    const raw = JSON.parse(readFileSync(path.join(src, "package.json"), "utf-8"));
+    if (raw?.["pi-dashboard-plugin"]?.fixture === true) continue;
+  } catch {
+    /* parse error — skip defensively */
+  }
+  const dst = path.join(BUNDLED_PLUGINS_DIR, pluginDir);
+  cpSync(src, dst, { recursive: true, dereference: false });
+}
+console.log(
+  `  Bundled ${BUNDLED_PLUGINS.length} first-party plugin(s) into resources/plugins/`,
+);
 
 // ── locate built client ──────────────────────────────────────────────────
 const clientCandidates = [

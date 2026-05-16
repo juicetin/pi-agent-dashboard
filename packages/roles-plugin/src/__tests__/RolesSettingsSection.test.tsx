@@ -72,7 +72,7 @@ function wrap(children: React.ReactNode, send?: (m: unknown) => void) {
       sessions={[{ id: "sess-live", cwd: "/x", status: "idle" } as any]}
       send={send}
     >
-      <CurrentPluginLayer pluginId="builtins">{children}</CurrentPluginLayer>
+      <CurrentPluginLayer pluginId="roles">{children}</CurrentPluginLayer>
     </PluginContextProvider>,
   );
 }
@@ -95,7 +95,7 @@ function seedConfig(cfg: Record<string, unknown>) {
   act(() => {
     applyPluginConfigUpdate({
       type: "plugin_config_update",
-      id: "builtins",
+      id: "roles",
       config: cfg,
     });
   });

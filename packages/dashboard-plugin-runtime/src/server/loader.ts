@@ -14,6 +14,18 @@ import { validateManifest, ManifestValidationError } from "../manifest-validator
 import type { PluginManifest } from "@blackbelt-technology/pi-dashboard-shared/dashboard-plugin/manifest-types.js";
 import type { ServerPluginContext } from "./server-context.js";
 import { createPluginStatusStore, type PluginStatusStore } from "./plugin-status-store.js";
+import {
+  runRequirementProbes,
+  missingFromReport,
+  setCachedReport,
+  type RequirementProbeDeps,
+} from "./requirement-probes.js";
+import {
+  buildGraph,
+  detectCycles,
+  topologicalSort,
+  transitiveDependents,
+} from "../dependency-graph.js";
 
 // ── Discovery cache ────────────────────────────────────────────────────────
 
@@ -283,6 +295,13 @@ export interface ServerLoadDeps {
   isEnabled: (pluginId: string) => boolean;
   /** Repo root for discovery (defaults to cwd). */
   repoRoot?: string;
+  /**
+   * Optional probe dependencies. When provided, the loader runs declarative
+   * requirement probes for each plugin (fire-and-forget; does not affect
+   * `loaded`) and writes the result into the status store.
+   * See change: add-plugin-activation-ui.
+   */
+  requirementDeps?: RequirementProbeDeps;
 }
 
 /**
@@ -294,16 +313,97 @@ export async function loadServerEntries(deps: ServerLoadDeps): Promise<void> {
   const store = getPluginStatusStore();
   const plugins = discoverPlugins(deps.repoRoot);
 
-  for (const plugin of plugins) {
+  // ---- Build dependency graph + soft-fail cycles ----------------------
+  // See change: add-plugin-activation-ui (Layer 2 — dependency graph).
+  const manifestSpecs = plugins.map((p) => ({
+    id: p.manifest.id,
+    dependsOn: p.manifest.dependsOn ?? [],
+    priority: p.manifest.priority,
+  }));
+  const graph = buildGraph(manifestSpecs, deps.isEnabled);
+  const cycles = detectCycles(graph);
+  const cycleErrorById = new Map<string, string>();
+  for (const cycle of cycles) {
+    // cycle ends with the start id repeated, e.g. [a, b, a].
+    const label = cycle.join("→");
+    for (const id of cycle) cycleErrorById.set(id, `cycle: ${label}`);
+  }
+
+  // Topological order so deps are attempted before dependents.
+  const orderedIds = topologicalSort(manifestSpecs);
+  const orderedPlugins = orderedIds
+    .map((id) => plugins.find((p) => p.manifest.id === id))
+    .filter((p): p is DiscoveredPlugin => Boolean(p));
+
+  // Inverse-dependents map (computed once, surfaced via PluginStatus.dependents).
+  const dependentsById = new Map<string, string[]>();
+  for (const id of graph.keys()) {
+    dependentsById.set(id, Array.from(transitiveDependents(graph, id)).sort());
+  }
+
+  // The set of plugin ids that successfully loaded in this pass; consulted
+  // by subsequent plugins' dep-validation step.
+  const loadedIds = new Set<string>();
+
+  for (const plugin of orderedPlugins) {
     const { manifest } = plugin;
     const enabled = deps.isEnabled(manifest.id);
+    const dependsOn = manifest.dependsOn ?? [];
+    const dependents = dependentsById.get(manifest.id) ?? [];
+    const cycleError = cycleErrorById.get(manifest.id);
+
+    // ---- Cycle soft-fail ---------------------------------------------
+    if (cycleError) {
+      store.setStatus({
+        id: manifest.id,
+        displayName: manifest.displayName,
+        enabled,
+        loaded: false,
+        error: cycleError,
+        claims: manifest.claims.length,
+        dependsOn,
+        dependents,
+      });
+      console.error(`[plugin-loader] Skipping plugin "${manifest.id}" — ${cycleError}`);
+      continue;
+    }
+
+    // ---- Dep validation (only when this plugin is itself enabled) ----
+    if (enabled && dependsOn.length > 0) {
+      const missingDeps: string[] = [];
+      for (const depId of dependsOn) {
+        const depNode = graph.get(depId);
+        if (!depNode) missingDeps.push(depId);
+        else if (!depNode.enabled || !loadedIds.has(depId)) missingDeps.push(depId);
+      }
+      if (missingDeps.length > 0) {
+        store.setStatus({
+          id: manifest.id,
+          displayName: manifest.displayName,
+          enabled,
+          loaded: false,
+          error: `missing/disabled dep: ${missingDeps.join(", ")}`,
+          claims: manifest.claims.length,
+          dependsOn,
+          dependents,
+          missingDeps,
+        });
+        console.warn(
+          `[plugin-loader] Skipping plugin "${manifest.id}" — missing/disabled dep: ${missingDeps.join(", ")}`,
+        );
+        continue;
+      }
+    }
 
     if (!enabled) {
       store.setStatus({
         id: manifest.id,
+        displayName: manifest.displayName,
         enabled: false,
         loaded: false,
         claims: manifest.claims.length,
+        dependsOn,
+        dependents,
       });
       continue;
     }
@@ -312,10 +412,14 @@ export async function loadServerEntries(deps: ServerLoadDeps): Promise<void> {
       // No server entry — still mark as loaded (client-only plugin)
       store.setStatus({
         id: manifest.id,
+        displayName: manifest.displayName,
         enabled: true,
         loaded: true,
         claims: manifest.claims.length,
+        dependsOn,
+        dependents,
       });
+      loadedIds.add(manifest.id);
       continue;
     }
 
@@ -328,21 +432,92 @@ export async function loadServerEntries(deps: ServerLoadDeps): Promise<void> {
       await mod.default(ctx);
       store.setStatus({
         id: manifest.id,
+        displayName: manifest.displayName,
         enabled: true,
         loaded: true,
         claims: manifest.claims.length,
+        dependsOn,
+        dependents,
       });
+      loadedIds.add(manifest.id);
       console.info(`[plugin-loader] Loaded plugin "${manifest.id}"`);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       store.setStatus({
         id: manifest.id,
+        displayName: manifest.displayName,
         enabled: true,
         loaded: false,
         error: msg,
         claims: manifest.claims.length,
+        dependsOn,
+        dependents,
       });
       console.error(`[plugin-loader] Failed to load plugin "${manifest.id}": ${msg}`);
     }
   }
+
+  // Fire-and-forget requirement probes. Loader does NOT block on these; a
+  // plugin whose requirements are unsatisfied is still "loaded" from the
+  // loader's perspective — the UI surfaces the missing pieces and offers
+  // an inline install. See change: add-plugin-activation-ui.
+  if (deps.requirementDeps) {
+    void refreshRequirementProbesFor(plugins, deps.requirementDeps);
+  }
+}
+
+/**
+ * Walk the discovered plugin set, probe each plugin's declarative
+ * `requires`, and update the status store. Idempotent; safe to call
+ * repeatedly. Exported so the server can re-run probes after a successful
+ * package_operation_complete broadcast.
+ *
+ * Returns a list of plugin ids whose `missingRequirements` actually changed
+ * between the previous and new report, so the caller can broadcast
+ * targeted `plugin_config_update` messages for them.
+ *
+ * See change: add-plugin-activation-ui.
+ */
+export async function refreshRequirementProbesFor(
+  pluginsOverride: DiscoveredPlugin[] | null,
+  reqDeps: RequirementProbeDeps,
+): Promise<string[]> {
+  const plugins = pluginsOverride ?? discoverPlugins();
+  const store = getPluginStatusStore();
+  const changed: string[] = [];
+
+  await Promise.all(
+    plugins.map(async (plugin) => {
+      const { manifest } = plugin;
+      try {
+        const report = await runRequirementProbes(manifest, reqDeps);
+        const missing = missingFromReport(report);
+        setCachedReport(manifest.id, report);
+        const existing = store.getStatus(manifest.id);
+        const prevMissing = existing?.missingRequirements ?? [];
+        const missingChanged =
+          prevMissing.length !== missing.length ||
+          prevMissing.some((n) => !missing.includes(n)) ||
+          missing.some((n) => !prevMissing.includes(n));
+        store.setStatus({
+          id: manifest.id,
+          displayName: manifest.displayName,
+          enabled: existing?.enabled ?? true,
+          loaded: existing?.loaded ?? true,
+          claims: manifest.claims.length,
+          ...(existing?.error ? { error: existing.error } : {}),
+          requirements: report,
+          missingRequirements: missing,
+        });
+        if (missingChanged) changed.push(manifest.id);
+      } catch (e) {
+        console.warn(
+          `[plugin-loader] requirement probe failed for plugin "${manifest.id}":`,
+          e,
+        );
+      }
+    }),
+  );
+
+  return changed;
 }

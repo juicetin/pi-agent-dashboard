@@ -61,6 +61,16 @@ export interface RecommendedExtension {
 	 * start working.
 	 */
 	autowired?: boolean;
+
+	/**
+	 * Companion dashboard plugin id, if this extension is paired with one
+	 * (e.g. `pi-memory-honcho` extension <-> `honcho` dashboard plugin).
+	 * The recommended-extensions enricher carries this through alongside a
+	 * computed `dashboardPluginInstalled: boolean` so the install browser
+	 * can render a "+plugin: <id>" badge.
+	 * See change: add-plugin-activation-ui (Layer 1.5).
+	 */
+	dashboardPlugin?: string;
 }
 
 /** Enriched manifest entry returned by GET /api/packages/recommended. */
@@ -77,6 +87,12 @@ export interface EnrichedRecommendedExtension extends RecommendedExtension {
 	activeInPi: boolean;
 	/** True iff a newer version is available upstream. */
 	updateAvailable: boolean;
+	/**
+	 * True iff the entry declares a `dashboardPlugin` and the named plugin is
+	 * present in the dashboard's plugin status store.
+	 * See change: add-plugin-activation-ui.
+	 */
+	dashboardPluginInstalled?: boolean;
 }
 
 export const RECOMMENDED_EXTENSIONS: readonly RecommendedExtension[] = [
@@ -182,6 +198,8 @@ export const RECOMMENDED_EXTENSIONS: readonly RecommendedExtension[] = [
 		],
 		toolsRegistered: ["honcho_search", "honcho_context", "honcho_profile"],
 		autowired: true,
+		// Companion dashboard plugin id. See change: add-plugin-activation-ui.
+		dashboardPlugin: "honcho",
 	},
 ];
 

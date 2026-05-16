@@ -281,10 +281,10 @@ export function useMessageHandler(
           next.set(msg.sessionId, msg.models);
           return next;
         });
-        const prevCfg = getPluginConfig("builtins") as Record<string, unknown>;
+        const prevCfg = getPluginConfig("roles") as Record<string, unknown>;
         applyPluginConfigUpdate({
           type: "plugin_config_update",
-          id: "builtins",
+          id: "roles",
           config: { ...prevCfg, models: msg.models },
         });
         break;
@@ -310,10 +310,10 @@ export function useMessageHandler(
           next.set(msg.sessionId, roleInfo);
           return next;
         });
-        const prevCfg = getPluginConfig("builtins") as Record<string, unknown>;
+        const prevCfg = getPluginConfig("roles") as Record<string, unknown>;
         applyPluginConfigUpdate({
           type: "plugin_config_update",
-          id: "builtins",
+          id: "roles",
           config: { ...prevCfg, ...roleInfo },
         });
         break;
@@ -659,6 +659,10 @@ export function useMessageHandler(
       case "plugin_config_update":
         // Update the plugin config store and re-render any usePluginConfig consumers.
         applyPluginConfigUpdate(msg);
+        // Notify usePluginEnabledSet (and any other listener) so they can
+        // refetch /api/health and propagate the new enabled set into the
+        // slot registry. See change: add-plugin-activation-ui.
+        window.dispatchEvent(new CustomEvent("plugin-config-update", { detail: msg }));
         break;
 
       case "bootstrap_status_update":

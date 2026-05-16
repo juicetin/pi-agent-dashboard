@@ -1,9 +1,17 @@
 /**
  * Shared hooks for honcho plugin client components.
+ *
+ * The extension-presence gate previously hand-rolled here (probing
+ * `/api/packages/installed` for `pi-memory-honcho`, caching the result in a
+ * module-level `let`) is now driven by the dashboard's declarative
+ * requirements model. See change: add-plugin-activation-ui (Layer 1.5).
  */
 import { useState, useEffect, useCallback } from "react";
 import type { RedactedHonchoPluginConfig, HonchoPluginStatus } from "../shared/types.js";
-import { fetchConfig, fetchStatus, checkExtensionInstalled } from "./api.js";
+import { fetchConfig, fetchStatus } from "./api.js";
+
+// Same-origin in the dashboard plugin context.
+const API_BASE = "";
 
 /** Poll-based config fetcher. Refreshes on `deps` change or manual trigger. */
 export function useHonchoConfig() {
@@ -49,65 +57,73 @@ export function useHonchoStatus() {
   return { status, refresh };
 }
 
-// Module-level sync-readable install-state cache.
+// Module-level sync-readable cache: is the pi-memory-honcho requirement
+// satisfied (per the plugin status store)? Driven by /api/health, refreshed
+// on every plugin_config_update broadcast.
 //
-// The `useExtensionInstalled` hook is async (it probes `/api/packages/installed`)
-// but `shouldRender` callbacks declared in the plugin manifest must be
-// synchronous. We mirror the latest probe result into this cache so the
-// manifest-level gate can read it without awaiting.
+// `shouldRender` callbacks declared in the plugin manifest must be sync, so
+// the cache mirrors the async probe. Default `false` (closed-by-default)
+// prevents the MEMORY subcard from flickering visible-then-hidden on cold
+// boot.
 //
-// Default is `false` (closed-by-default) until the first probe completes —
-// this prevents the MEMORY subcard from flickering visible-then-hidden on cold
-// boot. The cache is updated on every `useExtensionInstalled` mount/refresh,
-// and is also re-populated by the new `primeExtensionInstalledCache()` entry
-// point so non-hook code paths can trigger a refresh.
-//
-// See change: auto-hide-empty-session-subcards.
-let extensionInstalledCache = false;
-let initialPrimePromise: Promise<void> | null = null;
+// See change: add-plugin-activation-ui (Layer 1.5, replaces the prior
+// dedicated probe).
+let extensionPresentCache = false;
 
 /** Sync-readable accessor. Returns false until the first probe completes. */
-export function getHonchoExtensionInstalledSync(): boolean {
-  return extensionInstalledCache;
+export function getHonchoExtensionPresentSync(): boolean {
+  return extensionPresentCache;
 }
 
-/** Imperative refresh of the sync cache. Fire-and-forget; resolves on completion. */
-export async function primeExtensionInstalledCache(): Promise<void> {
-  if (initialPrimePromise) return initialPrimePromise;
-  initialPrimePromise = (async () => {
-    try {
-      extensionInstalledCache = await checkExtensionInstalled();
-    } catch {
-      extensionInstalledCache = false;
-    }
-  })();
+async function refreshExtensionPresentCache(): Promise<boolean> {
   try {
-    await initialPrimePromise;
-  } finally {
-    initialPrimePromise = null;
+    const res = await fetch(`${API_BASE}/api/health`);
+    if (!res.ok) {
+      extensionPresentCache = false;
+      return false;
+    }
+    const body = await res.json();
+    const honcho = (body?.plugins ?? []).find(
+      (p: { id?: string }) => p?.id === "honcho",
+    ) as { requirements?: { piExtensions?: { name: string; satisfied: boolean }[] } } | undefined;
+    const ext = honcho?.requirements?.piExtensions ?? [];
+    const target = ext.find((r) => r.name === "pi-memory-honcho");
+    extensionPresentCache = Boolean(target?.satisfied);
+    return extensionPresentCache;
+  } catch {
+    extensionPresentCache = false;
+    return false;
   }
 }
 
-// Kick off the initial probe at module-load time so the cache populates as
-// soon as the plugin's client entry is imported. The promise is intentionally
-// fire-and-forget; UI components consult the cache via
-// `getHonchoExtensionInstalledSync()`.
-void primeExtensionInstalledCache();
+// Kick off the initial probe at module-load time; cache populates as soon as
+// the plugin's client entry is imported.
+void refreshExtensionPresentCache();
 
-/** Check if pi-memory-honcho extension is installed. */
-export function useExtensionInstalled() {
+if (typeof window !== "undefined") {
+  window.addEventListener("plugin-config-update", () => {
+    void refreshExtensionPresentCache();
+  });
+}
+
+/**
+ * Reactive presence hook, kept on the legacy `{ installed, checking, recheck }`
+ * shape so existing callers in `HonchoBadge`, `HonchoCardActions`, and
+ * `HonchoSettings` need only update their import name.
+ *
+ * See change: add-plugin-activation-ui (Layer 1.5).
+ */
+export function useHonchoExtensionPresent() {
   const [installed, setInstalled] = useState<boolean | null>(null);
   const [checking, setChecking] = useState(true);
 
   const check = useCallback(async () => {
     setChecking(true);
     try {
-      const result = await checkExtensionInstalled();
+      const result = await refreshExtensionPresentCache();
       setInstalled(result);
-      extensionInstalledCache = result;
     } catch {
       setInstalled(false);
-      extensionInstalledCache = false;
     } finally {
       setChecking(false);
     }

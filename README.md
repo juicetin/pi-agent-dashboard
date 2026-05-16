@@ -407,9 +407,9 @@ The dashboard integrates tightly with a small, curated set of pi extensions — 
 
 | Extension | Source | Status | Unlocks |
 |---|---|---|---|
-| `pi-anthropic-messages` | `git@github.com:BlackBeltTechnology/pi-anthropic-messages.git` | **required** | Tool calls on Claude-model Anthropic OAuth / 9Router `cc/*` / pi-model-proxy providers. Without it, tool calls fall back to Claude Code's built-in `bash_ide` sandbox and fail. |
+| `pi-anthropic-messages` | `npm:@blackbelt-technology/pi-anthropic-messages` | **required** | Tool calls on Claude-model Anthropic OAuth / 9Router `cc/*` / pi-model-proxy providers. Without it, tool calls fall back to Claude Code's built-in `bash_ide` sandbox and fail. |
 | `@tintinweb/pi-subagents` | `npm:@tintinweb/pi-subagents` | strongly suggested | `Agent` tool card UI, subagent activity badge, `get_subagent_result` / `steer_subagent` renderers |
-| `pi-flows` | `git@github.com:BlackBeltTechnology/pi-flows.git` | strongly suggested | Flow dashboard, role aliases (`@planning`, `@coding`, …), subagent / flow_write / flow_results / agent_write / ask_user / skill_read / finish tools |
+| `pi-flows` | `npm:@blackbelt-technology/pi-flows` | strongly suggested | Flow dashboard, role aliases (`@planning`, `@coding`, …), subagent / flow_write / flow_results / agent_write / ask_user / skill_read / finish tools |
 | `pi-web-access` | `npm:pi-web-access` | strongly suggested | `web_search`, `code_search`, `fetch_content`, `get_search_content` |
 | `pi-agent-browser` | `npm:pi-agent-browser` | optional | `browser` tool (open, snapshot, click, screenshot) |
 
@@ -495,7 +495,7 @@ Open **Settings → General → Tools**, click the chevron next to the failing t
 
 ### Recommended extensions: "Permission denied (publickey)"
 
-`pi-flows` and `pi-anthropic-messages` install via SSH (`git@github.com:…`). If your system has no GitHub SSH key, set one up following [GitHub's SSH docs](https://docs.github.com/en/authentication/connecting-to-github-with-ssh), or substitute the equivalent HTTPS URL in the manifest if your fork is public.
+Since `pi-flows` and `pi-anthropic-messages` are now published to npm under the `@blackbelt-technology` scope, runtime install no longer requires GitHub SSH. The Electron offline-bundling pipeline still clones from GitHub (`bundleSource`); if that step fails in a custom build, set up a GitHub SSH key per [GitHub's SSH docs](https://docs.github.com/en/authentication/connecting-to-github-with-ssh) or switch to HTTPS.
 
 ---
 

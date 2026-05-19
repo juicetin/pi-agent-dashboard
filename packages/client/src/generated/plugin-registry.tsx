@@ -4,6 +4,7 @@ import { FlowActivityBadgeClaim, SessionFlowActionsClaim, shouldRenderFlowsSubca
 import { HonchoSettings, HonchoBadge, shouldRenderHonchoMemory, HonchoCardActions, HonchoMapPopover } from "../../../honcho-plugin/src/client/index";
 import { JjWorkspaceBadge, isInJjWorkspace, JjActionBar, isInJjRepo, JjInitAffordance, isInGitRepoButNotJj, JjWorkspaceList, JjWorkspaceView, JjPluginSettings } from "../../../jj-plugin/src/client/index";
 import { BuiltInRolesSettings } from "../../../roles-plugin/src/index";
+import { SubagentsSettings } from "../../../subagents-plugin/src/client/index";
 import { FlowsAnthropicBridgeSettings } from "../../../flows-anthropic-bridge-plugin/src/client";
 
 import type { PluginManifest } from "@blackbelt-technology/pi-dashboard-shared/dashboard-plugin/manifest-types.js";
@@ -177,10 +178,24 @@ export const PLUGIN_REGISTRY: RegistryEntry[] = [
         "id": "subagents",
         "displayName": "Subagent Inspector",
         "priority": 100,
-        "claims": [],
-        "client": "./src/client/index.tsx"
+        "claims": [
+            {
+                "slot": "settings-section",
+                "component": "SubagentsSettings",
+                "tab": "general"
+            }
+        ],
+        "client": "./src/client/index.tsx",
+        "server": "./src/server/index.ts",
+        "configSchema": "./src/configSchema.json",
+        "requires": {
+            "piExtensions": [
+                "pi-dashboard-subagents"
+            ]
+        }
     },
     claims: [
+      { pluginId: "subagents", priority: 100, slot: "settings-section", tab: "general", Component: SubagentsSettings },
     ],
   },
   {
@@ -206,4 +221,4 @@ export const PLUGIN_REGISTRY: RegistryEntry[] = [
   },
 ];
 
-export const PLUGIN_REGISTRY_HASH = "1e3b455427f528aca4561caeac1f3138ca46cb5346b65d31001933038603680f";
+export const PLUGIN_REGISTRY_HASH = "390df37bb6863d1e7b2dea89874d51d0c109840b3720f51efabe0ef489ad8300";

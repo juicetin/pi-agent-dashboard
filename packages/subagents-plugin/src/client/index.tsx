@@ -22,4 +22,6 @@ export type { SubagentDetailMode, SubagentDetailViewProps } from "./SubagentDeta
 export { SubagentPopoutPage } from "./SubagentPopoutPage.js";
 export type { SubagentPopoutPageProps } from "./SubagentPopoutPage.js";
 
+export { SubagentsSettings } from "./SubagentsSettings.js";
+
 export type { SubagentTimelineEntry, SubagentState } from "./types.js";

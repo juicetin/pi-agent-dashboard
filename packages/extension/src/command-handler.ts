@@ -332,6 +332,8 @@ export function createCommandHandler(
                 parsed.text,
                 sessionId,
                 options?.eventSink,
+                undefined, // connection — absent in non-bridge path
+                msg.delivery,
               );
               if (!handled) {
                 // sendUserMessage exempt from gating: only typed single-line

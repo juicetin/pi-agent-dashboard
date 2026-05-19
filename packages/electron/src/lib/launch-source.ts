@@ -21,7 +21,7 @@ import { ToolResolver } from "@blackbelt-technology/pi-dashboard-shared/platform
 import { launchDashboardServer } from "@blackbelt-technology/pi-dashboard-shared/server-launcher.js";
 import { listPiPackages, type ResolvedPiPackage } from "@blackbelt-technology/pi-dashboard-shared/pi-package-resolver.js";
 import { installStandalone } from "./dependency-installer.js";
-import { execFileSync } from "node:child_process";
+import { execFileSync } from "@blackbelt-technology/pi-dashboard-shared/platform/exec.js";
 import { getBundledNodePath } from "./bundled-node.js";
 import { detectSystemNode } from "./dependency-detector.js";
 import { pickNodeForServer } from "./pick-node.js";

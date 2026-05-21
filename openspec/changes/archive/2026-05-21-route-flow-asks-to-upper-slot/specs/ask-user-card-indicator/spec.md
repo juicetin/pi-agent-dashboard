@@ -1,8 +1,5 @@
-# ask-user-card-indicator Specification
+## MODIFIED Requirements
 
-## Purpose
-Defines how session cards visually distinguish a session waiting for human input (`ask_user`) from a session that is actively streaming or executing other tools, and how that signal is suppressed for flow-routed prompts that surface in the FlowDashboard upper slot rather than in chat.
-## Requirements
 ### Requirement: Card pulse distinguishes ask_user from processing
 
 When a session's `currentTool` is `"ask_user"`, the session card SHALL use a distinct purple pulse animation instead of the amber working pulse used for streaming/resuming.
@@ -48,13 +45,3 @@ The `ActivityIndicator` component SHALL display a distinct label when the sessio
 #### Scenario: Other tool active
 - **WHEN** `session.currentTool` is set to any value other than `"ask_user"`
 - **THEN** the activity indicator shows the tool name with flash icon in yellow (unchanged)
-
-### Requirement: CSS animation for card-input-pulse
-
-A `card-input-pulse` keyframe animation SHALL exist in the stylesheet with a purple/violet background tint, visually distinct from the amber `card-working-pulse`.
-
-#### Scenario: Animation definition
-- **WHEN** `card-input-pulse` class is applied to an element
-- **THEN** the element pulses with a purple tint (`rgba(168, 85, 247, 0.08)` at 50%)
-- **AND** returns to transparent at 0% and 100%
-

@@ -42,6 +42,12 @@
         "slot": "settings-section",
         "component": "SubagentsSettings",
         "tab": "general"
+      },
+      {
+        "slot": "shell-overlay-route",
+        "component": "SubagentPopoutClaim",
+        "path": "/session/:sessionId/subagent/:agentId",
+        "sessionParam": "sessionId"
       }
     ],
     "requires": {

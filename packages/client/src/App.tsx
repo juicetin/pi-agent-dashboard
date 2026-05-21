@@ -48,7 +48,9 @@ import { TerminalsView } from "./components/TerminalsView.js";
 import { EditorView } from "./components/EditorView.js";
 import { decodeFolderPath, encodeFolderPath } from "./lib/folder-encoding.js";
 import { FileDiffView } from "./components/FileDiffView.js";
-import { SubagentPopoutPage } from "@blackbelt-technology/pi-dashboard-subagents-plugin/client";
+// SubagentPopoutPage no longer imported by the shell — it's registered via
+// the subagents-plugin's `shell-overlay-route` claim and mounted through
+// `<ShellOverlayRouteSlot>` below. See change: add-flow-agent-popout.
 import { createInitialState, findLastUserPrompt, reduceEvent, resolveInteractiveRequest, type SessionState } from "./lib/event-reducer.js";
 import { useMessageHandler } from "./hooks/useMessageHandler.js";
 import { useEditors } from "./lib/use-editors.js";
@@ -83,11 +85,18 @@ import type { ContextUsageInfo } from "./components/SessionList.js";
 import { ApiContext, deriveApiBase, VITE_API_URL, setGlobalApiBase } from "./lib/api-context.js";
 import { SessionAssetsProvider } from "./lib/SessionAssetsContext.js";
 import { PluginContextProvider, applyPluginConfigUpdate } from "@blackbelt-technology/dashboard-plugin-runtime/context";
+// Stable empty references for plugin context's session-state primitives.
+// See change: route-flow-asks-to-upper-slot + add-flow-agent-popout.
+const EMPTY_INTERACTIVE_REQUESTS: readonly never[] = Object.freeze([]);
+const EMPTY_SUBAGENTS_MAP: ReadonlyMap<string, never> = Object.freeze(new Map());
 import {
   ContentViewSlot,
   ContentHeaderStickySlot,
   ContentInlineFooterSlot,
   forSession,
+  ShellOverlayRouteSlot,
+  ShellSessionsProvider,
+  useShellOverlayRouteMatched,
 } from "@blackbelt-technology/dashboard-plugin-runtime";
 import { createSlotRegistry } from "@blackbelt-technology/dashboard-plugin-runtime";
 import { PLUGIN_REGISTRY } from "./generated/plugin-registry.js";
@@ -277,7 +286,9 @@ export default function App() {
   const [piResourcesMatch, piResourcesParams] = useRoute("/folder/:encodedCwd/pi-resources");
   const [diffMatch, diffParams] = useRoute("/session/:id/diff");
   // Subagent inspector popout route. See change: add-subagent-inspector §7.
-  const [subagentPopoutMatch, subagentPopoutParams] = useRoute("/session/:sessionId/subagent/:agentId");
+  // Plugin-owned overlay routes (subagent popout, flow-agent popout, etc.)
+  // dispatch via `<ShellOverlayRouteSlot>` from dashboard-plugin-runtime.
+  // No per-route useRoute() here. See change: add-flow-agent-popout.
   const [piResourceFileMatch] = useRoute("/pi-resource");
   const [piResourceFileSearch] = useSearchParams();
   const piResourceFilePath = piResourceFileSearch.get("path");
@@ -291,13 +302,16 @@ export default function App() {
   const diffSessionId = diffMatch && diffParams ? diffParams.id : null;
   // Subagent popout decoded params + parent-session label.
   // See change: add-subagent-inspector §7.
-  const subagentPopoutSessionId =
-    subagentPopoutMatch && subagentPopoutParams ? subagentPopoutParams.sessionId : null;
-  const subagentPopoutAgentId =
-    subagentPopoutMatch && subagentPopoutParams ? subagentPopoutParams.agentId : null;
+  // Plugin overlay routes are tracked by the slot consumer hook.
+  // We pass `_pluginRegistry` explicitly because this hook is called from
+  // App's body — BEFORE the `<PluginContextProvider>` (rendered later in
+  // App's JSX) wraps the tree, so `useSlotRegistryOrNull()` would return
+  // null at this call site. See change: fix-flows-plugin-polish
+  // (hook-outside-provider fix).
+  const pluginOverlayMatched = useShellOverlayRouteMatched(_pluginRegistry);
   const hasShellOverlayRoute =
     !!openspecPreviewMatch || !!archiveMatch || !!specsMatch ||
-    !!readmeMatch || !!piResourcesMatch || !!diffMatch || !!subagentPopoutMatch;
+    !!readmeMatch || !!piResourcesMatch || !!diffMatch || pluginOverlayMatched;
   const hasPiResourceRouteFlag = !!piResourceFileMatch && !!piResourceFilePath;
   const selectedId = match ? params?.id : undefined;
   const selectedSessionIdRef = useRef<string | undefined>(selectedId);
@@ -553,26 +567,10 @@ export default function App() {
     }
   }, [selectedId, send, status]);
 
-  // Subagent popout: when opened in a fresh tab, the parent session is not
-  // yet subscribed (selectedId is undefined because the URL is
-  // /session/<sid>/subagent/<aid>, not /session/<sid>). Subscribe explicitly
-  // so the popout can read parent session state. See change:
-  // add-subagent-inspector §7.3 + design.md Decision 6.
-  useEffect(() => {
-    if (
-      subagentPopoutMatch &&
-      subagentPopoutSessionId &&
-      status === "connected" &&
-      !subscribedRef.current.has(subagentPopoutSessionId)
-    ) {
-      subscribedRef.current.add(subagentPopoutSessionId);
-      send({
-        type: "subscribe",
-        sessionId: subagentPopoutSessionId,
-        lastSeq: maxSeqMapRef.current.get(subagentPopoutSessionId) ?? 0,
-      });
-    }
-  }, [subagentPopoutMatch, subagentPopoutSessionId, status, send]);
+  // Cold-open subscription for plugin overlay routes is now the claim's
+  // responsibility — each claim (e.g. SubagentPopoutClaim, FlowAgentPopoutClaim)
+  // subscribes on mount via `usePluginSend({ type: "subscribe", ... })`.
+  // See change: add-flow-agent-popout.
 
   const selectedState = selectedId
     ? sessionStates.get(selectedId) ?? createInitialState()
@@ -1069,20 +1067,7 @@ export default function App() {
           onTurnClick={(turnIndex) => chatViewRef.current?.scrollToTurn(turnIndex)}
         />
       )}
-      {subagentPopoutMatch && subagentPopoutSessionId && subagentPopoutAgentId ? (
-        // Subagent inspector popout (desktop layout).
-        // See change: add-subagent-inspector §7.
-        <SubagentPopoutPage
-          sessionId={subagentPopoutSessionId}
-          agentId={subagentPopoutAgentId}
-          session={sessionStates.get(subagentPopoutSessionId)}
-          subscriptionResolved={
-            status === "connected" && subscribedRef.current.has(subagentPopoutSessionId)
-          }
-          parentLabel={sessions.get(subagentPopoutSessionId)?.cwd}
-          onBack={goBack}
-        />
-      ) : archiveMatch && archiveCwd ? (
+      {archiveMatch && archiveCwd ? (
         <ArchiveBrowserView cwd={archiveCwd} onBack={goBack} />
       ) : specsMatch && specsCwd ? (
         <SpecsBrowserView cwd={specsCwd} onBack={goBack} />
@@ -1319,7 +1304,15 @@ export default function App() {
         sessions={allSessionsList}
         selectedSessionId={selectedId}
         send={(msg) => send(msg as Parameters<typeof send>[0])}
+        useSessionInteractiveRequests={(sid) =>
+          sessionStates.get(sid)?.interactiveRequests ?? EMPTY_INTERACTIVE_REQUESTS
+        }
+        useSessionSubagents={(sid) =>
+          (sessionStates.get(sid)?.subagents ?? EMPTY_SUBAGENTS_MAP)
+        }
+        connectionStatus={status}
       >
+      <ShellSessionsProvider value={sessions}>
         <ErrorBoundary fallback={
           <div className="min-h-screen flex items-center justify-center p-8 bg-[var(--bg-primary)] text-[var(--text-primary)]" data-testid="shell-error-fallback">
             <div className="text-center space-y-2">
@@ -1330,6 +1323,7 @@ export default function App() {
         }>
           {children}
         </ErrorBoundary>
+      </ShellSessionsProvider>
       </PluginContextProvider>
     </ApiContext.Provider>
   );
@@ -1376,19 +1370,13 @@ export default function App() {
               <SettingsPanel />
             ) : tunnelSetupMatch ? (
               <ZrokInstallGuide onBack={() => navigate("/")} />
-            ) : subagentPopoutMatch && subagentPopoutSessionId && subagentPopoutAgentId ? (
-              // Subagent inspector popout (mobile shell).
-              // See change: add-subagent-inspector §7.
-              <SubagentPopoutPage
-                sessionId={subagentPopoutSessionId}
-                agentId={subagentPopoutAgentId}
-                session={sessionStates.get(subagentPopoutSessionId)}
-                subscriptionResolved={
-                  status === "connected" && subscribedRef.current.has(subagentPopoutSessionId)
-                }
-                parentLabel={sessions.get(subagentPopoutSessionId)?.cwd}
-                onBack={goBack}
-              />
+            ) : pluginOverlayMatched ? (
+              // Plugin-owned overlay routes (subagent popout, flow-agent popout,
+              // any future plugin route). The slot consumer matches the active
+              // URL against every registered claim's `config.path`.
+              // We pass `_pluginRegistry` explicitly for the same reason the
+              // hook does — see change: fix-flows-plugin-polish.
+              <ShellOverlayRouteSlot onBack={goBack} registry={_pluginRegistry} />
             ) : archiveMatch && archiveCwd ? (
               <ArchiveBrowserView cwd={archiveCwd} onBack={goBack} />
             ) : specsMatch && specsCwd ? (
@@ -1487,7 +1475,12 @@ export default function App() {
         )}
         {/* Show session detail or landing page when no folder view is selected */}
         {!folderTermCwd && !folderEditorCwd && !settingsMatch && !tunnelSetupMatch && (
-          archiveMatch && archiveCwd ? (
+          pluginOverlayMatched ? (
+            // Plugin-owned overlay routes — see change: add-flow-agent-popout.
+            // Pass `_pluginRegistry` explicitly (see comment on
+            // `pluginOverlayMatched` declaration above).
+            <ShellOverlayRouteSlot onBack={goBack} registry={_pluginRegistry} />
+          ) : archiveMatch && archiveCwd ? (
             <ArchiveBrowserView cwd={archiveCwd} onBack={goBack} />
           ) : specsMatch && specsCwd ? (
             <SpecsBrowserView cwd={specsCwd} onBack={goBack} />

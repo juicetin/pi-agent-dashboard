@@ -129,29 +129,60 @@ The header meta block (model name, tokens, duration) SHALL render only when the 
 
 ### Requirement: Plugin consumer shims preserve their public API
 
-`packages/subagents-plugin/src/client/SubagentDetailView.tsx` and `packages/flows-plugin/src/client/FlowAgentDetail.tsx` SHALL each be reduced to a thin adapter component (the "shim") that:
+`SubagentDetailView.tsx`, `FlowAgentDetail.tsx`, AND `FlowArchitect.tsx`'s `FlowArchitectDetail` component SHALL each be reduced to a thin adapter that:
 
-1. Accepts the same props it accepts today (`SubagentDetailView`: `session, agentId, mode?, onBack?`; `FlowAgentDetail`: `agent, onBack`).
-2. Maps the producer-specific state shape to `MinimalChatView` props (title, subtitle, status, entries, meta, mode, onBack).
+1. Accepts the same props it accepted before the migration.
+2. Maps producer-specific state to `MinimalChatView` props.
 3. Renders `MinimalChatView`.
 
-The shim SHALL NOT contain any of the duplicated inline helpers (`ToolCallEntry`, `TextEntry`, `ThinkingEntry`, `extractInputPreview`, `statusIconPath`, `statusColor`) — those live exclusively in `MinimalChatView`.
+The shim SHALL NOT contain any local declaration of `ToolCallEntry`,
+`TextEntry`, `ThinkingEntry`, `extractInputPreview`, `statusIconPath`,
+or `statusColor` — those live exclusively in `MinimalChatView`.
 
-#### Scenario: SubagentDetailView retains its existing prop API
+#### Scenario: FlowArchitectDetail retains its prop API
 
-- **WHEN** any existing call site renders `<SubagentDetailView session={...} agentId={...} mode="popout" onBack={...} />`
-- **THEN** the component SHALL render successfully without code changes at the call site
-- **AND** the rendered DOM SHALL be equivalent to the pre-extraction render (same title, same status pill, same entry list, same header meta, same modes)
+- **WHEN** the architect's eye-button popover renders
+  `<FlowArchitectDetail state={...} onBack={...} />`
+- **THEN** the component SHALL render successfully without code changes
+  at the call site
+- **AND** the rendered DOM SHALL be visually equivalent to the
+  pre-extraction render (same title, status icon, mode pill,
+  iteration counter, entries list)
 
-#### Scenario: FlowAgentDetail retains its existing prop API
+#### Scenario: FlowArchitectDetail contains no duplicated helpers
 
-- **WHEN** `FlowAgentCard` renders `<FlowAgentDetail agent={...} onBack={...} />` inside the eye-button popover
-- **THEN** the component SHALL render successfully without code changes at the call site
-- **AND** the rendered DOM SHALL be equivalent to the pre-extraction render
+- **WHEN** static analysis inspects
+  `packages/flows-plugin/src/client/FlowArchitect.tsx`
+- **THEN** the file SHALL NOT contain a local `function ToolCallEntry`,
+  `function TextEntry`, `function ThinkingEntry`, or `function
+  extractInputPreview` declaration
+- **AND** it SHALL import `MinimalChatView` from the
+  `client-utils/minimal-chat` subpath
 
-#### Scenario: Shims contain no duplicated helpers
+### Requirement: Architect status maps to the shared status enum
 
-- **WHEN** static analysis inspects `SubagentDetailView.tsx` and `FlowAgentDetail.tsx` after the refactor
-- **THEN** neither file SHALL contain a local `function ToolCallEntry`, `function TextEntry`, `function ThinkingEntry`, `function extractInputPreview`, `function statusIconPath`, or `function statusColor` declaration
-- **AND** both files SHALL import `MinimalChatView` from the `client-utils/minimal-chat` subpath
+`FlowArchitectDetail` SHALL map `ArchitectState.phase` to the shared
+`MinimalChatStatus` union as follows:
+
+| `ArchitectState.phase` | `MinimalChatStatus` |
+|---|---|
+| `"context"`        | `"running"` |
+| `"designing"`      | `"running"` |
+| `"abort_pending"`  | `"running"` |
+| `"complete"`       | `"complete"` |
+| `"error"`          | `"error"` |
+| (any other)        | `"pending"` |
+
+The mapping SHALL be exhaustive — adding a new phase value SHALL be a
+compile-time error in the shim (via `never` default).
+
+#### Scenario: Designing phase maps to running
+
+- **WHEN** `FlowArchitectDetail` receives `state.phase === "designing"`
+- **THEN** `MinimalChatView` SHALL be called with `status: "running"`
+
+#### Scenario: Complete phase maps to complete
+
+- **WHEN** `FlowArchitectDetail` receives `state.phase === "complete"`
+- **THEN** `MinimalChatView` SHALL be called with `status: "complete"`
 

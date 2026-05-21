@@ -24,6 +24,8 @@ export interface SubagentPopoutPageProps {
   /** Optional parent-session display label (e.g. cwd basename) for the breadcrumb. */
   parentLabel?: string;
   onBack?: () => void;
+  /** Forwarded to SubagentDetailView → MinimalChatView so per-tool renderers can build session-scoped links. */
+  forwardSessionId?: string;
 }
 
 export function SubagentPopoutPage({
@@ -33,6 +35,7 @@ export function SubagentPopoutPage({
   subscriptionResolved,
   parentLabel,
   onBack,
+  forwardSessionId,
 }: SubagentPopoutPageProps) {
   const sub = session?.subagents.get(agentId);
 
@@ -130,8 +133,10 @@ export function SubagentPopoutPage({
           )}
         </div>
       </div>
-      <div className="flex-1 overflow-hidden">
-        <SubagentDetailView session={session} agentId={agentId} mode="popout" />
+      {/* `min-h-0` is required so the body scrolls instead of overflowing.
+          See change: fix-flows-plugin-polish (scrollbar fix). */}
+      <div className="flex-1 min-h-0 overflow-hidden">
+        <SubagentDetailView session={session} agentId={agentId} mode="popout" sessionId={forwardSessionId ?? sessionId} />
       </div>
     </div>
   );

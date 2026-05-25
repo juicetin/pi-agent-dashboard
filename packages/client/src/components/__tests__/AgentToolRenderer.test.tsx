@@ -114,8 +114,12 @@ describe("AgentToolRenderer — expand + popout", () => {
         toolDetails={{ displayName: "explorer", status: "running", agentId: "abc123" }}
       />
     ));
-    fireEvent.click(screen.getByTitle(/Open in new tab/i));
-    expect(open).toHaveBeenCalledWith("/session/sess_42/subagent/abc123", "_blank");
+    // Title is "Open subagent in new tab" — see fix-flows-plugin-polish
+    // (pill-style popout button with subagent-specific label).
+    fireEvent.click(screen.getByTitle(/Open subagent in new tab/i));
+    // Third arg `"noopener"` is a security best practice preventing the
+    // popup from accessing window.opener. Added in fix-flows-plugin-polish.
+    expect(open).toHaveBeenCalledWith("/session/sess_42/subagent/abc123", "_blank", "noopener");
     open.mockRestore();
   });
 

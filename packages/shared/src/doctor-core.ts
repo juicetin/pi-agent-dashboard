@@ -13,10 +13,52 @@
 import { execSync } from "./platform/exec.js";
 import { existsSync, readFileSync, statSync, renameSync, appendFileSync, rmSync } from "node:fs";
 import path from "node:path";
+import { createRequire } from "node:module";
+import dns from "node:dns";
+import { readZrokEnvironment } from "./zrok-env.js";
+
+// Used by the TypeScript-loader check to locate bundled jiti/tsx via
+// Node's standard module resolution — finds copies under
+// `Resources/server/node_modules/` in the Electron bundle. See change:
+// fix-doctor-bundled-tool-detection.
+const doctorRequire = createRequire(import.meta.url);
+function tryResolvePkg(name: string): string | null {
+  try {
+    return doctorRequire.resolve(`${name}/package.json`);
+  } catch {
+    return null;
+  }
+}
 
 // ─── Types ─────────────────────────────────────────────────────────────
 
-export type DoctorSection = "runtime" | "pi-tooling" | "server" | "setup" | "diagnostics";
+export type DoctorSection =
+  | "runtime"
+  | "pi-tooling"
+  | "server"
+  | "tunnel"
+  | "setup"
+  | "diagnostics";
+
+/**
+ * Structural view of the tunnel-watchdog status the doctor consumes.
+ * Mirrors `TunnelWatchdogStatus` from
+ * `packages/server/src/tunnel-watchdog.ts` but lives here so the shared
+ * doctor-core can stay free of server imports.
+ */
+export interface TunnelWatchdogStatusLike {
+  running: boolean;
+  intervalMs: number;
+  failureThreshold: number;
+  probeTimeoutMs: number;
+  lastProbeAt: number | null;
+  lastSuccessAt: number | null;
+  lastFailureAt: number | null;
+  lastFailureReason: string | null;
+  consecutiveFailures: number;
+  lastRecycleAt: number | null;
+  recycleCount: number;
+}
 
 export type DoctorStatus = "ok" | "warning" | "error";
 
@@ -315,6 +357,16 @@ export const SECTION_OF: Record<string, DoctorSection> = {
   "Bundled npm": "runtime",
   "Managed Node runtime": "runtime",
   // pi-tooling
+  // Two-row split: library (embedded, used by dashboard internals via
+  // Node module resolution) vs. CLI on PATH (callable from a user's
+  // shell or a non-dashboard subprocess). See change:
+  // fix-doctor-bundled-tool-detection.
+  "pi (library)": "pi-tooling",
+  "pi (CLI on PATH)": "pi-tooling",
+  "openspec (library)": "pi-tooling",
+  "openspec (CLI on PATH)": "pi-tooling",
+  // Legacy aliases retained so any client still matching the old names
+  // (older Electron Doctor renderers) keeps section mapping.
   "pi CLI": "pi-tooling",
   "openspec CLI": "pi-tooling",
   // server
@@ -329,6 +381,11 @@ export const SECTION_OF: Record<string, DoctorSection> = {
   // setup
   "Setup wizard": "setup",
   "API key": "setup",
+  // tunnel
+  "zrok binary": "tunnel",
+  "zrok environment": "tunnel",
+  "zrok API reachable": "tunnel",
+  "tunnel runtime": "tunnel",
   // diagnostics
   "Managed install (~/.pi-dashboard)": "diagnostics",
 };
@@ -378,18 +435,31 @@ export const SUGGESTIONS: Record<string, SuggestionFn> = {
     status === "ok"
       ? undefined
       : "Managed Node runtime missing under `~/.pi-dashboard/node`. Re-run the setup wizard (Help → Setup).",
-  "pi CLI": (status, _d, kind) =>
+  "pi (library)": (status, _d, kind) =>
     status === "ok"
       ? undefined
       : kind
-        ? execKindSuggestion("pi CLI", kind, 5)
-        : "`pi` not found. Run the setup wizard (Help → Setup) to install it under `~/.pi-dashboard`.",
-  "openspec CLI": (status, _d, kind) =>
+        ? execKindSuggestion("pi (library)", kind, 5)
+        : "pi library not found in any known location (bundled, managed, or PATH). Reinstall **PI Dashboard** or run the setup wizard.",
+  "pi (CLI on PATH)": (status) =>
+    status === "ok"
+      ? undefined
+      : "`pi` is not on your shell `$PATH`. Dashboard-spawned sessions still work (the dashboard injects PATH for them), but you cannot run `pi` from a fresh terminal. Fix: `npm i -g @earendil-works/pi-coding-agent`, or add the dashboard's `server/node_modules/.bin` to your PATH.",
+  "openspec (library)": (status, _d, kind) =>
     status === "ok"
       ? undefined
       : kind
-        ? execKindSuggestion("openspec CLI", kind, 5)
-        : "`openspec` not found. Optional, but required for OpenSpec workflows. Run the setup wizard.",
+        ? execKindSuggestion("openspec (library)", kind, 5)
+        : "openspec library not found. Optional, but required for OpenSpec workflows the dashboard runs internally. Run the setup wizard.",
+  "openspec (CLI on PATH)": (status) =>
+    status === "ok"
+      ? undefined
+      : "`openspec` is not on your shell `$PATH`. Dashboard-spawned sessions still work; manual terminal use does not. Fix: `npm i -g @fission-ai/openspec`, or add the dashboard's `server/node_modules/.bin` to your PATH.",
+  // Legacy aliases (kept so older renderers don't lose suggestions).
+  "pi CLI": (status) =>
+    status === "ok" ? undefined : "`pi` not found. Run the setup wizard (Help → Setup) to install it under `~/.pi-dashboard`.",
+  "openspec CLI": (status) =>
+    status === "ok" ? undefined : "`openspec` not found. Optional, but required for OpenSpec workflows. Run the setup wizard.",
   "Dashboard server code": (status) =>
     status === "ok"
       ? undefined
@@ -436,7 +506,49 @@ export const SUGGESTIONS: Record<string, SuggestionFn> = {
     status === "ok"
       ? undefined
       : "Managed install incomplete. Run the setup wizard (**Help → Setup**) to finish first-run install.",
+  "zrok binary": (status) =>
+    status === "ok"
+      ? undefined
+      : `\`zrok\` not found on this machine. Install it: on macOS \`brew install zrok\`; on Linux/Windows see [zrok.io/docs/getting-started](https://docs.zrok.io/docs/getting-started/). Restart the dashboard after install so the binary is picked up.`,
+  "zrok environment": (status) =>
+    status === "ok"
+      ? undefined
+      : "zrok is not enrolled on this machine. Create an account at [zrok.io](https://zrok.io/) (or `zrok invite` from another enrolled host), then run `zrok enable <token>` once. The dashboard's tunnel button will then work.",
+  "zrok API reachable": (status) =>
+    status === "ok"
+      ? undefined
+      : "DNS lookup of `api-v1.zrok.io` failed. Check your network connection, DNS resolver, and any VPN or corporate proxy. The tunnel cannot start until this host resolves.",
+  "tunnel runtime": (status) =>
+    status === "ok"
+      ? undefined
+      : "Active tunnel is failing its periodic health probe. Click the 🌐 Tunnel button in the sidebar to recycle it, or check `~/.pi-dashboard/server.log` for the underlying error.",
 };
+
+// ─── dns helper (test seam) ─────────────────────────────────────────
+
+/**
+ * Default DNS lookup with a hard timeout. Used by the `zrok API
+ * reachable` check. Exposed as the `dnsLookup` test seam on
+ * `SharedChecksDeps` so tests inject a mock instead of hitting real DNS.
+ */
+export async function defaultDnsLookup(host: string, timeoutMs: number): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`timeout ${timeoutMs}ms`));
+    }, timeoutMs);
+    if (typeof (timer as any).unref === "function") (timer as any).unref();
+    dns.promises
+      .lookup(host)
+      .then(() => {
+        clearTimeout(timer);
+        resolve();
+      })
+      .catch((err) => {
+        clearTimeout(timer);
+        reject(err);
+      });
+  });
+}
 
 // ─── runSharedChecks ──────────────────────────────────────────────────
 
@@ -444,10 +556,45 @@ export interface SharedChecksDeps {
   managedDir: string;
   /** Detector for system Node ({path, found}). */
   detectSystemNode: () => { found: boolean; path?: string };
-  /** Detector for pi CLI ({path, source, found}). */
+  /**
+   * Resolver for the zrok binary. When omitted, the `zrok binary` check is
+   * skipped entirely. The server wires this to the same `ToolResolver`
+   * used by `tunnel.ts` so diagnostic and runtime never disagree about
+   * which binary will be invoked.
+   */
+  resolveZrokBinary?: () => { found: boolean; path?: string };
+  /**
+   * Test seam for the `zrok API reachable` check. Defaults to
+   * `dns.promises.lookup` with a 3000 ms hard cap. Should resolve on
+   * success and reject with an `Error` on failure (NXDOMAIN, EAI_AGAIN,
+   * timeout, etc.) so the check can surface the captured reason.
+   */
+  dnsLookup?: (host: string, timeoutMs: number) => Promise<void>;
+  /**
+   * Read the in-process tunnel-watchdog status. Returns `null` when no
+   * tunnel is active. Omitted in Electron (no server in process) — the
+   * `tunnel runtime` check then resolves to `ok` with "no tunnel data
+   * available" so the section still renders four rows on both surfaces.
+   */
+  getTunnelWatchdogStatus?: () => TunnelWatchdogStatusLike | null;
+  /**
+   * Detector for the pi **library** (embedded copy used by the dashboard
+   * via Node module resolution). Returns the resolved entry path.
+   */
   detectPi: () => { found: boolean; path?: string; source?: string };
-  /** Detector for openspec CLI. */
+  /** Detector for the openspec **library** (embedded copy). */
   detectOpenSpec: () => { found: boolean; path?: string; source?: string };
+  /**
+   * Detector for `pi` on the user's shell `$PATH`. Distinct from the
+   * library check above: even when the library is bundled inside the
+   * app, a user opening a fresh terminal cannot run `pi` unless it is
+   * also installed somewhere on PATH (`npm i -g`, brew, nvm, etc.).
+   * Optional for backward compatibility; when omitted, the row is
+   * suppressed.
+   */
+  detectPiOnPath?: () => { found: boolean; path?: string };
+  /** Detector for `openspec` on the user's shell `$PATH`. */
+  detectOpenSpecOnPath?: () => { found: boolean; path?: string };
   /** Optional: localhost server probe. Default uses curl-style fetch. */
   probeServer?: () => Promise<{
     running: boolean;
@@ -497,24 +644,24 @@ export async function runSharedChecks(deps: SharedChecksDeps): Promise<DoctorChe
     }),
   );
 
-  // pi CLI
+  // pi (library) — embedded copy used by the dashboard internally
   checks.push(
-    await safeCheck("pi CLI", "pi-tooling", () => {
+    await safeCheck("pi (library)", "pi-tooling", () => {
       const pi = deps.detectPi();
       if (!pi.found || !pi.path) {
         return {
-          name: "pi CLI",
+          name: "pi (library)",
           section: "pi-tooling",
           status: "error",
-          message: "Not found — required to run agent sessions",
-          detail: "Searched system PATH and managed install",
+          message: "Library not found — dashboard cannot spawn agent sessions",
+          detail: "Searched override, bundled (server/node_modules), managed install, and system PATH",
           fixable: true,
         };
       }
       const ver = safeExec(`"${pi.path}" --version`, { timeoutMs: 5000 });
       const versionDisplay = ver.ok ? ver.stdout.trim() : "?";
       return {
-        name: "pi CLI",
+        name: "pi (library)",
         section: "pi-tooling",
         status: "ok",
         message: `${versionDisplay} (${pi.source ?? "unknown"}) at ${pi.path}`,
@@ -522,30 +669,82 @@ export async function runSharedChecks(deps: SharedChecksDeps): Promise<DoctorChe
     }),
   );
 
-  // openspec CLI
+  // pi (CLI on PATH) — distinct from library; what `which pi` returns
+  if (deps.detectPiOnPath) {
+    const detectPiOnPath = deps.detectPiOnPath;
+    checks.push(
+      await safeCheck("pi (CLI on PATH)", "pi-tooling", () => {
+        const r = detectPiOnPath();
+        if (!r.found || !r.path) {
+          return {
+            name: "pi (CLI on PATH)",
+            section: "pi-tooling",
+            status: "warning",
+            message: "Not on $PATH — `pi` won't run from a fresh terminal",
+            detail: "Dashboard-spawned sessions still work (the dashboard injects PATH for them). Manual `pi` invocation in any other shell does not.",
+            fixable: true,
+          };
+        }
+        return {
+          name: "pi (CLI on PATH)",
+          section: "pi-tooling",
+          status: "ok",
+          message: `On PATH at ${r.path}`,
+        };
+      }),
+    );
+  }
+
+  // openspec (library)
   checks.push(
-    await safeCheck("openspec CLI", "pi-tooling", () => {
+    await safeCheck("openspec (library)", "pi-tooling", () => {
       const os = deps.detectOpenSpec();
       if (!os.found || !os.path) {
         return {
-          name: "openspec CLI",
+          name: "openspec (library)",
           section: "pi-tooling",
           status: "warning",
-          message: "Not found — optional, needed for OpenSpec workflows",
-          detail: "Searched system PATH and managed install",
+          message: "Library not found — dashboard-internal OpenSpec workflows disabled",
+          detail: "Searched override, bundled (server/node_modules), managed install, and system PATH",
           fixable: true,
         };
       }
       const ver = safeExec(`"${os.path}" --version`, { timeoutMs: 5000 });
       const versionDisplay = ver.ok ? ver.stdout.trim() : "?";
       return {
-        name: "openspec CLI",
+        name: "openspec (library)",
         section: "pi-tooling",
         status: "ok",
         message: `${versionDisplay} (${os.source ?? "unknown"}) at ${os.path}`,
       };
     }),
   );
+
+  // openspec (CLI on PATH)
+  if (deps.detectOpenSpecOnPath) {
+    const detectOpenSpecOnPath = deps.detectOpenSpecOnPath;
+    checks.push(
+      await safeCheck("openspec (CLI on PATH)", "pi-tooling", () => {
+        const r = detectOpenSpecOnPath();
+        if (!r.found || !r.path) {
+          return {
+            name: "openspec (CLI on PATH)",
+            section: "pi-tooling",
+            status: "warning",
+            message: "Not on $PATH — `openspec` won't run from a fresh terminal",
+            detail: "Optional. Needed only for running `openspec` manually in a terminal; dashboard-internal use already covered by the library row above.",
+            fixable: true,
+          };
+        }
+        return {
+          name: "openspec (CLI on PATH)",
+          section: "pi-tooling",
+          status: "ok",
+          message: `On PATH at ${r.path}`,
+        };
+      }),
+    );
+  }
 
   // TypeScript loader (jiti preferred; tsx accepted as fallback)
   // The dashboard server runs via jiti by default (see shared/server-launcher.ts
@@ -568,6 +767,16 @@ export async function runSharedChecks(deps: SharedChecksDeps): Promise<DoctorChe
       }
       const jitiVersion = readVersion(managedJitiPkg);
       const tsxVersion = readVersion(managedTsxPkg);
+
+      // Bundled fallback: look up jiti/tsx via Node module resolution
+      // so copies inside the Electron bundle's `Resources/server/node_modules/`
+      // satisfy the check. Without this, Electron-launched servers
+      // falsely reported the loader as missing even though they were
+      // running on it.
+      const bundledJitiPkg = jitiVersion ? null : tryResolvePkg("jiti");
+      const bundledTsxPkg = tsxVersion ? null : tryResolvePkg("tsx");
+      const bundledJitiVersion = bundledJitiPkg ? readVersion(bundledJitiPkg) : null;
+      const bundledTsxVersion = bundledTsxPkg ? readVersion(bundledTsxPkg) : null;
 
       let systemTsx: string | null = null;
       const lookupCmd = process.platform === "win32" ? "where tsx" : "which tsx"; // platform-branch-ok: localised PATH-lookup primitive
@@ -592,6 +801,22 @@ export async function runSharedChecks(deps: SharedChecksDeps): Promise<DoctorChe
           message: `tsx v${tsxVersion} (managed) at ${path.dirname(managedTsxPkg)}`,
         };
       }
+      if (bundledJitiVersion && bundledJitiPkg) {
+        return {
+          name: "TypeScript loader",
+          section: "server",
+          status: "ok",
+          message: `jiti v${bundledJitiVersion} (bundled) at ${path.dirname(bundledJitiPkg)}`,
+        };
+      }
+      if (bundledTsxVersion && bundledTsxPkg) {
+        return {
+          name: "TypeScript loader",
+          section: "server",
+          status: "ok",
+          message: `tsx v${bundledTsxVersion} (bundled) at ${path.dirname(bundledTsxPkg)}`,
+        };
+      }
       if (systemTsx) {
         return {
           name: "TypeScript loader",
@@ -605,7 +830,7 @@ export async function runSharedChecks(deps: SharedChecksDeps): Promise<DoctorChe
         section: "server",
         status: "error",
         message: "Not found — required to run the dashboard server",
-        detail: `Looked under ${managedJitiPkg}, ${managedTsxPkg}, and on PATH`,
+        detail: `Looked under ${managedJitiPkg}, ${managedTsxPkg}, bundled (server/node_modules), and on PATH`,
         fixable: true,
       };
     }),
@@ -687,6 +912,135 @@ export async function runSharedChecks(deps: SharedChecksDeps): Promise<DoctorChe
     );
   }
 
+  // ── Tunnel section ───────────────────────────────────────────────
+
+  // zrok binary — only run when the caller provided a resolver
+  if (deps.resolveZrokBinary) {
+    const resolveZrokBinary = deps.resolveZrokBinary;
+    checks.push(
+      await safeCheck("zrok binary", "tunnel", () => {
+        const r = resolveZrokBinary();
+        if (!r.found || !r.path) {
+          return {
+            name: "zrok binary",
+            section: "tunnel",
+            status: "warning",
+            message: "Not found — public tunnel button cannot be used",
+            detail: "Searched override, managed install, and system PATH",
+          };
+        }
+        return {
+          name: "zrok binary",
+          section: "tunnel",
+          status: "ok",
+          message: `Found at ${r.path}`,
+        };
+      }),
+    );
+  }
+
+  // zrok environment — always runs; checks ~/.zrok2 then ~/.zrok
+  checks.push(
+    await safeCheck("zrok environment", "tunnel", () => {
+      const r = readZrokEnvironment();
+      if (!r.found) {
+        return {
+          name: "zrok environment",
+          section: "tunnel",
+          status: "warning",
+          message: "Not enrolled — public tunnel cannot start",
+          detail: r.reason ?? "No zrok environment file present",
+        };
+      }
+      return {
+        name: "zrok environment",
+        section: "tunnel",
+        status: "ok",
+        message: `Enrolled (${r.kind}) at ${r.path}`,
+      };
+    }),
+  );
+
+  // zrok API reachable — DNS probe of api-v1.zrok.io with 3s cap.
+  // This is the check that catches transient DNS failures during
+  // `zrok reserve` that are otherwise invisible to the user (the only
+  // signal is a spinning Tunnel button and a buried server.log line).
+  checks.push(
+    await safeCheck("zrok API reachable", "tunnel", async () => {
+      const lookup = deps.dnsLookup ?? defaultDnsLookup;
+      try {
+        await lookup("api-v1.zrok.io", 3000);
+        return {
+          name: "zrok API reachable",
+          section: "tunnel",
+          status: "ok",
+          message: "DNS lookup of api-v1.zrok.io succeeded",
+        };
+      } catch (err: any) {
+        const reason = err?.message ?? String(err);
+        return {
+          name: "zrok API reachable",
+          section: "tunnel",
+          status: "warning",
+          message: "DNS lookup of api-v1.zrok.io failed",
+          detail: reason,
+        };
+      }
+    }),
+  );
+
+  // tunnel runtime — consumes the watchdog status when available
+  checks.push(
+    await safeCheck("tunnel runtime", "tunnel", () => {
+      if (!deps.getTunnelWatchdogStatus) {
+        return {
+          name: "tunnel runtime",
+          section: "tunnel",
+          status: "ok",
+          message: "No tunnel data available",
+          detail: "The host process does not run an in-process tunnel watchdog",
+        };
+      }
+      const wd = deps.getTunnelWatchdogStatus();
+      if (!wd) {
+        return {
+          name: "tunnel runtime",
+          section: "tunnel",
+          status: "ok",
+          message: "No tunnel active",
+          detail: "Click the 🌐 Tunnel button to start one",
+        };
+      }
+      const now = Date.now();
+      const staleAfter = wd.intervalMs * 3;
+      const stale =
+        wd.lastSuccessAt === null || now - wd.lastSuccessAt > staleAfter;
+      const failing = wd.consecutiveFailures > 0;
+      if (failing || stale) {
+        return {
+          name: "tunnel runtime",
+          section: "tunnel",
+          status: "warning",
+          message: failing
+            ? `Probe failing (${wd.consecutiveFailures}/${wd.failureThreshold})`
+            : "No successful probe in the last 3 intervals",
+          detail: [
+            `lastFailureReason: ${wd.lastFailureReason ?? "(none yet)"}`,
+            `recycleCount: ${wd.recycleCount}`,
+            `lastSuccessAt: ${wd.lastSuccessAt ? new Date(wd.lastSuccessAt).toISOString() : "(never)"}`,
+          ].join("\n"),
+        };
+      }
+      return {
+        name: "tunnel runtime",
+        section: "tunnel",
+        status: "ok",
+        message: `Healthy — ${wd.recycleCount} recycle(s) so far`,
+        detail: `lastSuccessAt: ${new Date(wd.lastSuccessAt!).toISOString()}`,
+      };
+    }),
+  );
+
   // Managed install
   checks.push(
     await safeCheck("Managed install (~/.pi-dashboard)", "diagnostics", () => {
@@ -738,6 +1092,7 @@ const SECTION_ORDER: DoctorSection[] = [
   "runtime",
   "pi-tooling",
   "server",
+  "tunnel",
   "setup",
   "diagnostics",
 ];
@@ -745,6 +1100,7 @@ const SECTION_LABEL: Record<DoctorSection, string> = {
   runtime: "Runtime",
   "pi-tooling": "PI Tooling",
   server: "Server",
+  tunnel: "Tunnel",
   setup: "Setup",
   diagnostics: "Diagnostics",
 };

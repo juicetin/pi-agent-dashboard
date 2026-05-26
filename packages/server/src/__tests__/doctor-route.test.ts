@@ -39,6 +39,8 @@ function fakeDeps(overrides: Partial<SharedChecksDeps> = {}): SharedChecksDeps {
     detectSystemNode: () => ({ found: true, path: "/usr/bin/node" }),
     detectPi: () => ({ found: true, path: "/usr/local/bin/pi", source: "system" }),
     detectOpenSpec: () => ({ found: false }),
+    detectPiOnPath: () => ({ found: true, path: "/usr/local/bin/pi" }),
+    detectOpenSpecOnPath: () => ({ found: false }),
     isApiKeyConfigured: () => true,
     probeServer: async () => ({ running: true, version: "0.4.6", mode: "production" }),
     ...overrides,
@@ -67,7 +69,7 @@ describe("/api/doctor", () => {
     const body = res.json() as DoctorReport;
     for (const c of body.checks) {
       expect(c.section).toBeDefined();
-      expect(["runtime", "pi-tooling", "server", "setup", "diagnostics"]).toContain(c.section);
+      expect(["runtime", "pi-tooling", "server", "tunnel", "setup", "diagnostics"]).toContain(c.section);
     }
   });
 
@@ -165,6 +167,76 @@ describe("/api/doctor", () => {
       else process.env.DASHBOARD_INSTALLABLE_TOTAL = prev.DASHBOARD_INSTALLABLE_TOTAL;
       if (prev.DASHBOARD_INSTALLABLE_INSTALLED === undefined) delete process.env.DASHBOARD_INSTALLABLE_INSTALLED;
       else process.env.DASHBOARD_INSTALLABLE_INSTALLED = prev.DASHBOARD_INSTALLABLE_INSTALLED;
+    }
+  });
+
+  it("emits separate library + CLI-on-PATH rows when both detectors are wired", async () => {
+    // Library found via registry; CLI not on PATH (typical Electron-bundle case).
+    app = await makeApp(() =>
+      fakeDeps({
+        detectPi: () => ({
+          found: true,
+          path: "/bundle/server/node_modules/pi/cli.js",
+          source: "bare-import",
+        }),
+        detectPiOnPath: () => ({ found: false }),
+        detectOpenSpec: () => ({
+          found: true,
+          path: "/bundle/server/node_modules/openspec/bin/openspec.js",
+          source: "bare-import",
+        }),
+        detectOpenSpecOnPath: () => ({ found: false }),
+      }),
+    );
+    const res = await app.inject({ method: "GET", url: "/api/doctor" });
+    const body = res.json() as DoctorReport;
+    const names = body.checks.map((c) => c.name);
+    expect(names).toContain("pi (library)");
+    expect(names).toContain("pi (CLI on PATH)");
+    expect(names).toContain("openspec (library)");
+    expect(names).toContain("openspec (CLI on PATH)");
+    const piLib = body.checks.find((c) => c.name === "pi (library)");
+    const piCli = body.checks.find((c) => c.name === "pi (CLI on PATH)");
+    expect(piLib?.status).toBe("ok");
+    // CLI-not-on-PATH while library present → warning, not error.
+    expect(piCli?.status).toBe("warning");
+    expect(piCli?.message).toMatch(/\$PATH/);
+  });
+
+  it("suppresses CLI-on-PATH rows when detectors are not provided (legacy callers)", async () => {
+    app = await makeApp(() =>
+      fakeDeps({ detectPiOnPath: undefined, detectOpenSpecOnPath: undefined }),
+    );
+    const res = await app.inject({ method: "GET", url: "/api/doctor" });
+    const body = res.json() as DoctorReport;
+    const names = body.checks.map((c) => c.name);
+    expect(names).not.toContain("pi (CLI on PATH)");
+    expect(names).not.toContain("openspec (CLI on PATH)");
+    // Library rows still present.
+    expect(names).toContain("pi (library)");
+    expect(names).toContain("openspec (library)");
+  });
+
+  it("buildDefaultDeps resolves pi/openspec via ToolRegistry (bundled fallback works)", async () => {
+    // Smoke test: default deps must find pi + openspec when the registry
+    // can resolve them (which it can in this repo via bare-import).
+    // Regression for the bug where doctor used `which` only and falsely
+    // reported "Not found" for bundled tools.
+    app = await makeApp();
+    const res = await app.inject({ method: "GET", url: "/api/doctor" });
+    const body = res.json() as DoctorReport;
+    const pi = body.checks.find((c) => c.name === "pi (library)");
+    const os = body.checks.find((c) => c.name === "openspec (library)");
+    expect(pi).toBeDefined();
+    expect(os).toBeDefined();
+    // If the registry resolves them, both should be ok. If neither the
+    // registry nor PATH can find them (e.g. CI without pi installed),
+    // the detail string must still reflect the new search order — not
+    // the legacy "Searched system PATH and managed install".
+    for (const c of [pi!, os!]) {
+      if (c.status !== "ok") {
+        expect(c.detail ?? "").toMatch(/bundled.*server\/node_modules/);
+      }
     }
   });
 

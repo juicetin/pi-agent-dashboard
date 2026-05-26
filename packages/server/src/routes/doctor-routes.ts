@@ -24,6 +24,8 @@ import {
   type DoctorReport,
   type SharedChecksDeps,
 } from "@blackbelt-technology/pi-dashboard-shared/doctor-core.js";
+import { getDefaultRegistry } from "@blackbelt-technology/pi-dashboard-shared/tool-registry/index.js";
+import { getTunnelWatchdogStatus } from "../tunnel-watchdog.js";
 
 function getManagedDir(): string {
   return process.env.MANAGED_DIR || path.join(os.homedir(), ".pi-dashboard");
@@ -43,6 +45,29 @@ function detectOnPath(name: string): { found: boolean; path?: string; source?: s
   if (!r.ok) return { found: false };
   const first = r.stdout.trim().split("\n")[0];
   return first ? { found: true, path: first, source: "system" } : { found: false };
+}
+
+/**
+ * Tool detection that mirrors the ToolRegistry resolution chain used
+ * by the rest of the server (override → bundled/bare-import → managed →
+ * PATH). Without this, the doctor falsely reported pi/openspec as
+ * "Not found" when the Electron app shipped them inside
+ * `Resources/server/node_modules/` — bypassing the registry that
+ * `/api/tools` already consults. See change: fix-doctor-bundled-tool-detection.
+ */
+function detectViaRegistry(name: "pi" | "openspec"): { found: boolean; path?: string; source?: string } {
+  try {
+    const reg = getDefaultRegistry();
+    if (reg.has(name)) {
+      const r = reg.resolve(name);
+      if (r.ok && r.path) {
+        return { found: true, path: r.path, source: r.source ?? "system" };
+      }
+    }
+  } catch {
+    // Registry not initialised or threw — fall through to PATH.
+  }
+  return detectOnPath(name);
 }
 
 function isApiKeyConfigured(): boolean {
@@ -66,9 +91,31 @@ function buildDefaultDeps(): SharedChecksDeps {
   return {
     managedDir: getManagedDir(),
     detectSystemNode,
-    detectPi: () => detectOnPath("pi"),
-    detectOpenSpec: () => detectOnPath("openspec"),
+    detectPi: () => detectViaRegistry("pi"),
+    detectOpenSpec: () => detectViaRegistry("openspec"),
+    // CLI-on-PATH checks: deliberately use PATH-only lookup so the
+    // result reflects what a human's shell sees, NOT what the dashboard
+    // can resolve via its bundled node_modules. See change:
+    // fix-doctor-bundled-tool-detection.
+    detectPiOnPath: () => detectOnPath("pi"),
+    detectOpenSpecOnPath: () => detectOnPath("openspec"),
     isApiKeyConfigured,
+    resolveZrokBinary: () => {
+      // Use the same ToolRegistry that backs Settings ▸ Tools. Its
+      // `whereStrategy` is login-shell-aware, so the diagnostic and the
+      // Tools card never disagree about whether zrok is reachable.
+      try {
+        const reg = getDefaultRegistry();
+        if (reg.has("zrok")) {
+          const r = reg.resolve("zrok");
+          if (r.ok && r.path) return { found: true, path: r.path };
+        }
+      } catch {
+        /* registry not initialised — fall through */
+      }
+      return { found: false };
+    },
+    getTunnelWatchdogStatus: () => getTunnelWatchdogStatus(),
     probeServer: async () => {
       // CRITICAL: do NOT shell out to `curl http://localhost:8000/api/health`
       // here. `safeExec` uses synchronous `execSync`, which blocks the Node

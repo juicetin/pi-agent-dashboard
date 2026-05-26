@@ -10,6 +10,19 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { app } from "electron";
 import { detectPi, detectOpenSpec, detectSystemNode, detectDashboardPackage } from "./dependency-detector.js";
+
+/**
+ * PATH-only lookup for the CLI-on-PATH Doctor rows. Bypasses the
+ * ToolRegistry deliberately: we want to know whether the user's shell
+ * can find `pi`/`openspec`, not whether the bundled library resolves.
+ */
+function detectOnUserPath(name: string): { found: boolean; path?: string } {
+  const cmd = process.platform === "win32" ? `where ${name}` : `which ${name}`; // platform-branch-ok
+  const r = safeExec(cmd, { timeoutMs: 3000 });
+  if (!r.ok) return { found: false };
+  const first = r.stdout.trim().split("\n")[0];
+  return first ? { found: true, path: first } : { found: false };
+}
 import { getBundledNodePath, getBundledNpmPath, getBundledNodeDir } from "./bundled-node.js";
 import { pickNodeForServer } from "./pick-node.js";
 import { isApiKeyConfigured } from "./wizard-state.js";
@@ -253,6 +266,12 @@ async function runDoctorInner(): Promise<DoctorReport> {
       const r = detectOpenSpec();
       return { found: r.found, path: r.path, source: r.source };
     },
+    // CLI-on-PATH checks (split from library check, see change:
+    // fix-doctor-bundled-tool-detection). Uses `which`/`where` directly
+    // so the result reflects the user's interactive shell state, NOT
+    // what the Electron app can resolve via its bundled node_modules.
+    detectPiOnPath: () => detectOnUserPath("pi"),
+    detectOpenSpecOnPath: () => detectOnUserPath("openspec"),
     probeServer,
     isApiKeyConfigured,
   });

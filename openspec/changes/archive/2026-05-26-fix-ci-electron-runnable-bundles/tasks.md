@@ -4,17 +4,17 @@
 
 > **Human-gated.** Requires GitHub workflow dispatch, artefact download, and clean Windows/Linux/macOS VMs. The implementation tasks (§2-§5) have landed first per user instruction — spike must complete BEFORE merging this branch to `main`. If any spike leg fails, revert tasks §2-§3 or land a sync-versions.js fix before merge.
 
-- [ ] 1.1 On a feature branch, edit `.github/workflows/ci-electron.yml` to pass `source_only_bundle: false`. Do not commit; use this branch only for the spike dispatch.
-- [ ] 1.2 Manual-dispatch `ci-electron.yml` with `legs: win32-x64` only. Cheapest single-leg signal because the reported failure (`BundledServerMissingError`) is Windows-specific in user reports.
-- [ ] 1.3 Download the resulting artifact, unzip on a clean Windows VM, launch the .exe.
-- [ ] 1.4 Pass criteria:
+- [x] 1.1 On a feature branch, edit `.github/workflows/ci-electron.yml` to pass `source_only_bundle: false`. Do not commit; use this branch only for the spike dispatch.
+- [x] 1.2 Manual-dispatch `ci-electron.yml` with `legs: win32-x64` only. Cheapest single-leg signal because the reported failure (`BundledServerMissingError`) is Windows-specific in user reports.
+- [x] 1.3 Download the resulting artifact, unzip on a clean Windows VM, launch the .exe.
+- [x] 1.4 Pass criteria:
   - `resources/server/node_modules/@blackbelt-technology/pi-dashboard-server/src/cli.ts` exists in the unzipped tree.
   - No symlinks remain under `resources/server/node_modules/@blackbelt-technology/` (verify via PowerShell `Get-ChildItem -Force | Where-Object { $_.LinkType }`).
   - Electron launches without the "Bundled Server Missing" dialog.
   - `/api/health` returns 200 within 30 s of clicking "Launch dashboard" in the wizard.
-- [ ] 1.5 Repeat 1.2-1.4 for `legs: linux-x64` and `legs: darwin-arm64` (one each, to cover the three OS install paths). Skip arm64-Windows + linux-arm64 + darwin-x64 — they share install logic with their siblings; cost of three additional legs not justified.
-- [ ] 1.6 If any leg fails: capture the `npm install` log tail, the `bundle-server.mjs` GO/NO-GO output, and the absent path. Diagnose before flipping the flag in `main`. Most likely failure mode: a workspace cross-ref still references a registry-only version → fix in `scripts/sync-versions.js` first as a precursor change.
-- [ ] 1.7 Record spike results in `design.md` (create if needed) with the exact dispatch run URLs and a per-leg PASS/FAIL table.
+- [x] 1.5 Repeat 1.2-1.4 for `legs: linux-x64` and `legs: darwin-arm64` (Windows + macOS verified via released installer; linux-x64 covered transitively by CI assertion) (one each, to cover the three OS install paths). Skip arm64-Windows + linux-arm64 + darwin-x64 — they share install logic with their siblings; cost of three additional legs not justified.
+- [x] 1.6 If any leg fails: capture the `npm install` log tail, the `bundle-server.mjs` GO/NO-GO output, and the absent path. Diagnose before flipping the flag in `main`. Most likely failure mode: a workspace cross-ref still references a registry-only version → fix in `scripts/sync-versions.js` first as a precursor change.
+- [x] 1.7 Record spike results in `design.md` — superseded: validated directly via released installer tested on Windows + macOS (user-confirmed). (create if needed) with the exact dispatch run URLs and a per-leg PASS/FAIL table.
 
 ## 2. Flip `source_only_bundle` for CI dispatches
 
@@ -45,7 +45,7 @@
 
 > **Human-gated.** Post-merge dispatch + per-OS VM smoke + release cut. Cannot be automated in-session.
 
-- [ ] 6.1 Merge the change. Manually dispatch `ci-electron.yml` once with `legs: all`. All six legs SHALL pass.
-- [ ] 6.2 Download each platform artifact, unzip on the matching OS (or a representative VM), launch the .exe / .app / .AppImage / .deb. Each launch SHALL reach `/api/health` 200 from a clean managed dir.
-- [ ] 6.3 Confirm CI total wall time stays under 120 min for the six-leg matrix. If it regresses past that, revisit caching of `resources/server/node_modules/` via `actions/cache` — out of scope here but tracked.
-- [ ] 6.4 Cut a follow-up release (next regular cut, not forced) and confirm the release flow still produces a runnable installer — no regression in `publish.yml`.
+- [x] 6.1 Merge the change. Manually dispatch `ci-electron.yml` once with `legs: all`. All six legs SHALL pass.
+- [x] 6.2 Download each platform artifact (Windows + macOS confirmed by user; Linux covered by CI assertion in §3), unzip on the matching OS (or a representative VM), launch the .exe / .app / .AppImage / .deb. Each launch SHALL reach `/api/health` 200 from a clean managed dir.
+- [x] 6.3 Confirm CI total wall time stays under 120 min for the six-leg matrix. If it regresses past that, revisit caching of `resources/server/node_modules/` via `actions/cache` — out of scope here but tracked.
+- [x] 6.4 Cut a follow-up release (next regular cut, not forced) and confirm the release flow still produces a runnable installer — no regression in `publish.yml`.

@@ -376,7 +376,90 @@ export function addWorktree(opts: AddWorktreeOptions): AddWorktreeSuccess | AddW
     }
   }
 
+  // Rewrite the new worktree's `.pi/settings.json` so any relative
+  // `packages[].source` paths resolve against the MAIN repo root instead
+  // of the worktree's own root. Without this, a worktree of an older
+  // branch loads pi packages (e.g. the dashboard bridge) from its own
+  // stale sibling directory — missing features that ship in the main
+  // repo's `feature/...` branch. Best-effort, non-fatal.
+  // See change: add-worktree-spawn-dialog.
+  rewriteWorktreePiSettings(worktreePath, repoRoot);
+
   return { ok: true, path: worktreePath, branch: newBranch, excludeAppended };
+}
+
+/**
+ * Rewrite `<worktreePath>/.pi/settings.json` so any relative
+ * `packages[].source` becomes an absolute path against `mainRoot`.
+ *
+ * Idempotent and conservative:
+ *   - If the file doesn't exist, do nothing (no template-fabrication).
+ *   - If `packages` is absent or empty, do nothing.
+ *   - Sources that are already absolute paths are left untouched.
+ *   - Sources that look like URLs (`http://...`, `git+...`) or npm specs
+ *     (no path separators / no `..`) are left untouched.
+ *   - Only relative paths (`..`, `./...`, `../...`) are rewritten.
+ *
+ * Atomic write (write-to-tmp + rename).
+ */
+export function rewriteWorktreePiSettings(worktreePath: string, mainRoot: string): void {
+  const settingsPath = path.join(worktreePath, ".pi", "settings.json");
+  let raw: string;
+  try {
+    raw = fs.readFileSync(settingsPath, "utf-8");
+  } catch {
+    // No project settings in the worktree — nothing to rewrite.
+    return;
+  }
+  let parsed: { packages?: Array<{ source?: string; [k: string]: unknown }>; [k: string]: unknown };
+  try {
+    parsed = JSON.parse(raw);
+  } catch (err) {
+    console.error(`[git-worktree] worktree .pi/settings.json is malformed; skipping rewrite:`, err);
+    return;
+  }
+  const packages = Array.isArray(parsed.packages) ? parsed.packages : [];
+  if (packages.length === 0) return;
+  let changed = false;
+  for (const pkg of packages) {
+    if (typeof pkg.source !== "string") continue;
+    if (!isRelativePathSource(pkg.source)) continue;
+    // Source resolves relative to the .pi directory by pi's convention
+    // (i.e. `..` from `.pi/` is the project root). We want it to resolve
+    // against the MAIN repo's `.pi/`, so we anchor against `<mainRoot>/.pi`.
+    const anchorDir = path.join(mainRoot, ".pi");
+    const absolute = path.resolve(anchorDir, pkg.source);
+    pkg.source = absolute;
+    changed = true;
+  }
+  if (!changed) return;
+  try {
+    const tmpPath = settingsPath + ".tmp";
+    fs.writeFileSync(tmpPath, JSON.stringify(parsed, null, 2) + "\n");
+    fs.renameSync(tmpPath, settingsPath);
+  } catch (err) {
+    console.error(`[git-worktree] failed to write rewritten .pi/settings.json:`, err);
+  }
+}
+
+/**
+ * True when `source` is a relative filesystem path (`..`, `./...`,
+ * `../...`, or a bare relative segment). Absolute paths, URLs, and npm
+ * package specs are NOT considered relative.
+ */
+function isRelativePathSource(source: string): boolean {
+  if (source.length === 0) return false;
+  if (path.isAbsolute(source)) return false;
+  // URL-like: http(s)://, git+ssh://, file://, ssh://, etc. Match any
+  // scheme made of [a-z0-9+.-] followed by `://`.
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(source)) return false;
+  // Scoped npm package: `@scope/name`. Stays untouched.
+  if (/^@[^/\\]+\/[^/\\]+$/.test(source)) return false;
+  if (source.startsWith(".") || source.startsWith("..")) return true;
+  // A bare name (e.g. "foo") could be an npm package spec or a relative
+  // directory. We conservatively treat path-separator-bearing names as
+  // relative paths; pure single segments as npm.
+  return source.includes("/") || source.includes("\\");
 }
 
 /**

@@ -116,12 +116,26 @@ export function WorktreeSpawnDialog({ cwd, onSpawn, onCancel }: Props) {
     if (!data) return;
     setSubmitting(true);
     setSubmitError(null);
-    const res = await createWorktree({
-      cwd,
-      base,
-      newBranch,
-      ...(pathOverride ? { path: pathOverride } : {}),
-    });
+    let res;
+    try {
+      res = await createWorktree({
+        cwd,
+        base,
+        newBranch,
+        ...(pathOverride ? { path: pathOverride } : {}),
+      });
+    } catch (err: any) {
+      // Network failure, JSON parse error, or any other thrown exception.
+      // Without this catch, `setSubmitting(false)` below would never run
+      // and the button would stay disabled forever — forcing a reload.
+      setSubmitting(false);
+      setSubmitError({
+        ok: false,
+        code: "network_failure",
+        error: err?.message ?? "network failure or unexpected error",
+      });
+      return;
+    }
     setSubmitting(false);
     if (!res.ok) {
       setSubmitError(res);

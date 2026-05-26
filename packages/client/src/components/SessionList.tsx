@@ -84,7 +84,7 @@ interface Props {
   onResumeKeepPosition?: (sessionId: string) => void;
   onHideSession?: (sessionId: string) => void;
   onUnhideSession?: (sessionId: string) => void;
-  onSpawnSession?: (cwd: string, attachProposal?: string) => void;
+  onSpawnSession?: (cwd: string, attachProposal?: string, opts?: { gitWorktreeBase?: string }) => void;
   spawningCwds?: Set<string>;
   spawnResult?: { success: boolean; message: string } | null;
   onSpawnResultSeen?: () => void;
@@ -1040,9 +1040,9 @@ export function SessionList({ sessions, selectedId, onSelect, contextUsageMap, o
         <WorktreeSpawnDialog
           cwd={worktreeDialogCwd}
           onCancel={() => setWorktreeDialogCwd(null)}
-          onSpawn={(path /* opts ignored until §8 wires gitWorktreeBase */) => {
+          onSpawn={(path, opts) => {
             setWorktreeDialogCwd(null);
-            onSpawnSession?.(path);
+            onSpawnSession?.(path, undefined, opts);
           }}
         />
       )}

@@ -62,9 +62,9 @@
 
 ## 8. Auto-spawn wiring
 
-- [ ] 8.1 After the dialog calls `createWorktree`, invoke the existing spawn action with `cwd = <new worktree path>` and propagate `base` through a new spawn-options field `gitWorktreeBase` so the server can persist it to `.meta.json` on session creation
-- [ ] 8.2 Server: on `spawn` actions carrying `gitWorktreeBase`, write that field to the session's `.meta.json` before bridge attaches
-- [ ] 8.3 End-to-end test (server + client): dialog create → spawn → resulting session has `gitWorktree.base` populated in its `session_added` payload
+- [x] 8.1 Client: `handleSpawnSession(cwd, attachProposal?, opts?: { gitWorktreeBase? })` extended; `SessionList.WorktreeSpawnDialog onSpawn` forwards `opts` through. Protocol: `SpawnSessionBrowserMessage.gitWorktreeBase?: string` added (additive, backward-compatible).
+- [x] 8.2 Server: new `pending-worktree-base-registry.ts` (sibling of `pending-attach-registry.ts`, FIFO per cwd, 60s TTL, cap 8). `handleSpawnSession` enqueues on spawn. `event-wiring.ts#onSessionRegistered` consumes on register, stamps `DashboardSession.gitWorktreeBase`, calls `mergeSessionMeta` (synchronous durability), and broadcasts `session_updated`. `server.ts#onChange` save payload now includes `gitWorktreeBase` so the debounced meta-persistence path also picks it up after natural session updates.
+- [x] 8.3 9/9 tests pass: 7 unit-level for the registry (FIFO, cap, TTL, normalization, empty-base) + 2 end-to-end via a real `DashboardServer` over local WS gateways (spawn→register→meta.json persistence; absence path when `gitWorktreeBase` omitted). Also caught and fixed a clobber bug: `event-wiring.ts`'s `writeSessionMeta({source: "dashboard"})` was overwriting sibling sync meta writes; replaced with `mergeSessionMeta`.
 
 ## 9. Supersede prior changes
 

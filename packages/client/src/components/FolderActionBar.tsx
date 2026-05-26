@@ -12,8 +12,10 @@ import {
   mdiOpenInNew,
   mdiAlertCircleOutline,
   mdiCircleSmall,
+  mdiSourceBranchPlus,
 } from "@mdi/js";
 import type { DetectedEditor } from "../lib/editor-api.js";
+import { isLocalhost } from "../lib/editor-api.js";
 import type { EditorInstanceStatus } from "@blackbelt-technology/pi-dashboard-shared/editor-types.js";
 
 interface Props {
@@ -23,11 +25,20 @@ interface Props {
   editorAvailable?: boolean; // Whether code-server binary is detected
   nativeEditors: DetectedEditor[];
   spawningDisabled?: boolean;
+  /**
+   * Whether the folder is detected as a git repository. When false, the
+   * `+Worktree` button is hidden (no git ops apply). When undefined, the
+   * caller hasn't probed yet — we hide the button defensively.
+   * See change: add-worktree-spawn-dialog.
+   */
+  isGitRepo?: boolean;
   onSpawnSession: () => void;
   onOpenTerminals: () => void;
   onOpenEditor: () => void;
   onOpenNativeEditor: (editorId: string) => void;
   onOpenPiResources: () => void;
+  /** Open the worktree spawn dialog scoped to this folder's cwd. */
+  onOpenWorktreeDialog?: () => void;
 }
 
 // Icon map for native editors
@@ -42,14 +53,20 @@ export function FolderActionBar({
   editorAvailable = true,
   nativeEditors,
   spawningDisabled,
+  isGitRepo,
   onSpawnSession,
   onOpenTerminals,
   onOpenEditor,
   onOpenNativeEditor,
   onOpenPiResources,
+  onOpenWorktreeDialog,
 }: Props) {
   // Filter out vscode/code from native editors (served via EditorView)
   const filteredNativeEditors = nativeEditors.filter((e) => e.id !== "vscode" && e.id !== "code");
+  // +Worktree button visibility: localhost-only (worktree create is a
+  // local filesystem operation, never makes sense via tunnel/remote)
+  // AND folder must be a known git repo. See change: add-worktree-spawn-dialog.
+  const showWorktreeButton = isGitRepo === true && isLocalhost() && !!onOpenWorktreeDialog;
 
   return (
     <div className="flex items-center gap-1 flex-wrap">
@@ -67,6 +84,20 @@ export function FolderActionBar({
           <Icon path={mdiPlus} size={0.5} /> Session
         </span>
       </button>
+
+      {/* +Worktree (localhost + git only) */}
+      {showWorktreeButton && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onOpenWorktreeDialog!(); }}
+          data-testid="spawn-worktree-btn"
+          className="text-[10px] px-1.5 py-0.5 rounded border border-[var(--border-secondary)] text-[var(--text-secondary)] hover:text-yellow-400 hover:border-yellow-500/50"
+          title="New pi session in a git worktree"
+        >
+          <span className="inline-flex items-center gap-0.5">
+            <Icon path={mdiSourceBranchPlus} size={0.5} /> Worktree
+          </span>
+        </button>
+      )}
 
       {/* Terminals(N) */}
       <button

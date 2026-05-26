@@ -9,11 +9,11 @@
 
 ## 2. Server-side propagation + meta persistence
 
-- [ ] 2.1 Store `gitWorktree` on the in-memory `Session` model (`packages/server/src/memory-session-manager.ts` or wherever `DashboardSession` lives in-process)
-- [ ] 2.2 Forward `gitWorktree` on `session_added` / `session_updated` browser messages
-- [ ] 2.3 Extend `.meta.json` writer to persist a new optional `gitWorktreeBase: string` field
-- [ ] 2.4 Compose `gitWorktree.base` into browser payloads by merging `meta.gitWorktreeBase` with the live `gitWorktree` when both are present
-- [ ] 2.5 Backward-compat tests: older bridges (no `gitWorktree` field) round-trip correctly; clients without the field treat session as plain checkout
+- [x] 2.1 Store `gitWorktree` on the in-memory `Session` model — already handled by `Object.assign` in `memory-session-manager.ts#update`; field added to `DashboardSession` in §1
+- [x] 2.2 Forward `gitWorktree` on `session_added` / `session_updated` browser messages — already covered by generic `broadcastSessionUpdated(updates)` spread; `event-wiring.ts` now includes `gitUpdates.gitWorktree`
+- [x] 2.3 Extend `.meta.json` writer to persist a new optional `gitWorktreeBase: string` field on `SessionMeta`
+- [x] 2.4 Compose `gitWorktree.base` into browser payloads via new pure helper `composeWorktreePayload` in `packages/server/src/git-worktree-compose.ts`; wired into `event-wiring.ts#git_info_update`; `session-scanner.ts` loads `meta.gitWorktreeBase` onto `DashboardSession.gitWorktreeBase` (server-internal cache field)
+- [x] 2.5 Backward-compat tests: 5 unit tests for `composeWorktreePayload` (undefined / null / wire-without-base / wire-with-base / cache-merge / immutability); 4 tests for `SessionMeta.gitWorktreeBase` round-trip incl. legacy-meta-file scenario
 
 ## 3. Pure helpers
 

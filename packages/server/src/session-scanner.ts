@@ -88,6 +88,12 @@ function sessionFromMeta(
     // Restore unread bit from .meta.json so it survives server restart.
     // See change: session-card-unread-stripes.
     unread: meta.unread,
+    // Cache the worktree base ref from meta so a later git_info_update
+    // can compose it into gitWorktree.base for browser payloads. Field
+    // is server-internal storage on DashboardSession (the wire shape's
+    // gitWorktree.base is the merged value, not this raw cache).
+    // See change: add-worktree-spawn-dialog.
+    gitWorktreeBase: meta.gitWorktreeBase,
     dataUnavailable: true,
   };
 }

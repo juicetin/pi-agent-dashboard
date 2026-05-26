@@ -106,10 +106,21 @@ export interface DashboardSession {
   /**
    * Per-session git-worktree identity. Set only when the session's cwd
    * is a git worktree (not the main checkout). See `GitWorktreeInfo`.
-   * Absent on older bridges and for plain checkouts.
+   * Absent on older bridges and for plain checkouts. Clients should read
+   * `gitWorktree.base` for the create-from ref (when known); the raw
+   * `gitWorktreeBase` field below is the server-side cache used to
+   * compose `base` on the broadcast payload.
    * See change: add-worktree-spawn-dialog.
    */
   gitWorktree?: GitWorktreeInfo;
+  /**
+   * Server-cached base ref for the session's worktree, loaded from the
+   * sidecar `.meta.json` (`gitWorktreeBase`). Used internally to compose
+   * `gitWorktree.base` when broadcasting; clients SHOULD prefer
+   * `gitWorktree.base` (merged) and ignore this raw cache.
+   * See change: add-worktree-spawn-dialog.
+   */
+  gitWorktreeBase?: string;
   openspecPhase?: OpenSpecPhase | null;
   openspecChange?: string | null;
   attachedProposal?: string | null;

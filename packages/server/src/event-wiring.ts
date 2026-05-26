@@ -10,6 +10,7 @@ import type { SessionOrderManager } from "./session-order-manager.js";
 import type { PendingForkRegistry } from "./pending-fork-registry.js";
 import type { DirectoryService } from "./directory-service.js";
 import { extractSessionUpdates, isActivityEvent, isUnreadTrigger } from "./event-status-extraction.js";
+import { composeWorktreePayload } from "./git-worktree-compose.js";
 import type { ViewedSessionTracker } from "./viewed-session-tracker.js";
 import { setCatalogueForSession } from "./provider-catalogue-cache.js";
 import { spawnPiSession } from "./process-manager.js";
@@ -637,12 +638,25 @@ export function wireEvents(deps: EventWiringDeps): void {
     }
 
     if (msg.type === "git_info_update") {
-      const gitUpdates = {
+      // Compose live worktree state from bridge + server-cached base ref
+      // (loaded earlier from .meta.json by session-scanner / spawn flow).
+      // `null` clears, `undefined` leaves existing value untouched.
+      // See change: add-worktree-spawn-dialog.
+      const composedWorktree = composeWorktreePayload(
+        msg.gitWorktree,
+        sessionManager.get(sessionId)?.gitWorktreeBase,
+      );
+      const gitUpdates: Record<string, unknown> = {
         gitBranch: msg.gitBranch,
         gitBranchUrl: msg.gitBranchUrl,
         gitPrNumber: msg.gitPrNumber,
         gitPrUrl: msg.gitPrUrl,
       };
+      if (composedWorktree !== undefined) {
+        // Map wire `null` → in-memory `undefined` so the field clears
+        // cleanly on the DashboardSession.
+        gitUpdates.gitWorktree = composedWorktree ?? undefined;
+      }
       sessionManager.update(sessionId, gitUpdates);
       browserGateway.broadcastSessionUpdated(sessionId, gitUpdates);
     }

@@ -15,7 +15,6 @@ import {
   mdiSourceBranchPlus,
 } from "@mdi/js";
 import type { DetectedEditor } from "../lib/editor-api.js";
-import { isLocalhost } from "../lib/editor-api.js";
 import type { EditorInstanceStatus } from "@blackbelt-technology/pi-dashboard-shared/editor-types.js";
 
 interface Props {
@@ -63,10 +62,13 @@ export function FolderActionBar({
 }: Props) {
   // Filter out vscode/code from native editors (served via EditorView)
   const filteredNativeEditors = nativeEditors.filter((e) => e.id !== "vscode" && e.id !== "code");
-  // +Worktree button visibility: localhost-only (worktree create is a
-  // local filesystem operation, never makes sense via tunnel/remote)
-  // AND folder must be a known git repo. See change: add-worktree-spawn-dialog.
-  const showWorktreeButton = isGitRepo === true && isLocalhost() && !!onOpenWorktreeDialog;
+  // +Worktree button visibility: shown when the folder is a known git
+  // repo AND a handler is wired. NO loopback gate — the worktree-add
+  // happens on the server, which is the user's machine regardless of
+  // whether the browser came in via localhost or a tunnel. Server-side
+  // networkGuard already enforces access for the REST endpoint.
+  // See change: add-worktree-spawn-dialog.
+  const showWorktreeButton = isGitRepo === true && !!onOpenWorktreeDialog;
 
   return (
     <div className="flex items-center gap-1 flex-wrap">

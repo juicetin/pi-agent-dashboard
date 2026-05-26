@@ -56,7 +56,7 @@
 
 - [x] 7.1 Added `+Worktree` button to `FolderActionBar.tsx` between `+Session` and `Terminals(N)` with `mdiSourceBranchPlus` icon and yellow hover tone.
 - [x] 7.2 Hidden when folder is not a git repo. Signal: `isGitRepo` prop wired from `SessionList` based on `group.sessions.some((s) => !!s.gitBranch)` — same any-session-has-branch heuristic used by other folder-level git affordances. `isGitRepo` undefined defaults to hidden (defensive).
-- [x] 7.3 Hidden on non-loopback via the existing `isLocalhost()` helper from `lib/editor-api.ts`. Worktree create is a local filesystem operation — never makes sense via tunnel/remote.
+- [x] 7.3 Loopback gate **rejected during review** — the worktree-add runs on the server (= the user's machine) in every access mode (localhost, tunnel, authenticated remote), so a tunneled browser is functionally identical to a local one. Access control for `POST /api/git/worktree` is enforced server-side by `networkGuard`. Spec scenario amended from "hide on non-loopback" to "button renders identically for local and tunneled browsers".
 - [x] 7.4 `SessionList` holds `worktreeDialogCwd` state; the button's onClick sets it. Dialog mounts once at the SessionList level (not per-folder) so only one is open at a time. `onSpawn(path)` closes the dialog and calls `onSpawnSession(path)`. (Second arg `gitWorktreeBase` is dropped pending §8 wiring.)
 - [x] 7.5 7 component tests covering: render with all conditions, hidden when not git repo, hidden when isGitRepo undefined, hidden on non-loopback (via mocked isLocalhost), hidden when handler absent, click invokes handler, +Session button still renders regardless of git/localhost state.
 

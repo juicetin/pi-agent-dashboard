@@ -3,33 +3,20 @@
  *
  * Pins the §7 contract from `add-worktree-spawn-dialog`:
  *   - Button hidden when folder is not a git repo (`isGitRepo` false/undefined).
- *   - Button hidden on non-loopback (`isLocalhost()` returns false).
  *   - Button hidden when no `onOpenWorktreeDialog` is provided.
- *   - Button visible when all three conditions hold; click calls the callback.
- *
- * Localhost detection is mocked via the same `lib/editor-api` module the
- * component imports from, so we can flip it per test.
+ *   - Button visible when both conditions hold; click calls the callback.
+ *   - Visibility is NOT gated on loopback — the worktree-add runs on the
+ *     server (= the user's machine) regardless of how the browser reached
+ *     the dashboard. Server-side `networkGuard` enforces access.
  */
 import React from "react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-
-const { isLocalhost } = vi.hoisted(() => ({ isLocalhost: vi.fn(() => true) }));
-
-vi.mock("../../lib/editor-api.js", async () => {
-  const actual = await vi.importActual<typeof import("../../lib/editor-api.js")>("../../lib/editor-api.js");
-  return { ...actual, isLocalhost };
-});
-
 import { FolderActionBar } from "../FolderActionBar.js";
 
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
-});
-
-beforeEach(() => {
-  isLocalhost.mockReturnValue(true);
 });
 
 function renderBar(overrides: Partial<React.ComponentProps<typeof FolderActionBar>> = {}) {
@@ -65,10 +52,13 @@ describe("FolderActionBar +Worktree button — visibility gating", () => {
     expect(screen.queryByTestId("spawn-worktree-btn")).toBeNull();
   });
 
-  it("hides the button on non-loopback access", () => {
-    isLocalhost.mockReturnValue(false);
+  it("renders the button regardless of how the browser reached the dashboard (no loopback gate)", () => {
+    // Sanity: the action bar does not consult window.location.hostname.
+    // This documents the design choice — the server is the user's
+    // machine in every access mode; the worktree-add lands on local
+    // disk identically.
     renderBar();
-    expect(screen.queryByTestId("spawn-worktree-btn")).toBeNull();
+    expect(screen.getByTestId("spawn-worktree-btn")).toBeTruthy();
   });
 
   it("hides the button when no onOpenWorktreeDialog handler is provided", () => {
@@ -93,8 +83,7 @@ describe("FolderActionBar +Worktree button — visibility gating", () => {
 });
 
 describe("FolderActionBar +Session button — unchanged", () => {
-  it("still renders the +Session button regardless of git/localhost state", () => {
-    isLocalhost.mockReturnValue(false);
+  it("still renders the +Session button regardless of git state", () => {
     renderBar({ isGitRepo: false });
     expect(screen.getByTestId("spawn-session-btn")).toBeTruthy();
   });

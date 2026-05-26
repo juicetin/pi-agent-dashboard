@@ -2,46 +2,64 @@
   "schemaVersion": 1,
   "groups": [
     {
+      "id": "small-change",
+      "name": "Small Change",
+      "color": "#a855f7",
+      "order": 0
+    },
+    {
       "id": "ui",
       "name": "Current",
       "color": "#22c55e",
-      "order": 0
+      "order": 1
     },
     {
       "id": "next-phase",
       "name": "Next phase",
       "color": "#3b82f6",
-      "order": 1
+      "order": 2
     },
     {
       "id": "sdasdasd",
       "name": "Later",
       "color": "#eab308",
-      "order": 2
+      "order": 3
     },
     {
       "id": "future",
       "name": "Future",
       "color": "#f97316",
-      "order": 3
+      "order": 4
     },
     {
       "id": "separate-functions-to-plugins",
       "name": "Separate functions to plugins",
       "color": "#ef4444",
-      "order": 4
+      "order": 5
     },
     {
       "id": "electrun-execution",
       "name": "Electrun execution",
       "color": "#a855f7",
-      "order": 5
+      "order": 6
     },
     {
       "id": "context-render",
       "name": "Context Render",
       "color": "#3b82f6",
-      "order": 6
+      "order": 7
+    },
+    {
+      "id": "worktree",
+      "name": "Worktree",
+      "color": "#22c55e",
+      "order": 8
+    },
+    {
+      "id": "ui-extensions",
+      "name": "UI Extensions",
+      "color": "#eab308",
+      "order": 9
     }
   ],
   "assignments": {
@@ -60,7 +78,7 @@
     "wire-plugin-registry-into-shell": "ui",
     "consolidate-platform-handlers": "ui",
     "fix-fork-empty-session-silent-timeout": "ui",
-    "extension-ui-system": "next-phase",
+    "extension-ui-system": "ui-extensions",
     "linked-session-pill-lifecycle-icons": "ui",
     "add-plugin-activation-ui": "next-phase",
     "external-dashboard-plugins": "next-phase",
@@ -77,9 +95,9 @@
     "skip-rpc-probes-in-event-forwarder": "future",
     "modernize-pi-version-handling": "future",
     "overlay-url-routing": "sdasdasd",
-    "history-nav-only-when-empty": "sdasdasd",
+    "history-nav-only-when-empty": "small-change",
     "adopt-pi-071-072-073-features": "future",
-    "workspace-actions": "future",
+    "workspace-actions": "worktree",
     "docker-packaging": "future",
     "session-card-attached-change-link": "next-phase",
     "focus-driven-folder-compaction": "next-phase",
@@ -88,13 +106,13 @@
     "inject-session-context-into-agent": "next-phase",
     "add-server-push-notifications": "future",
     "add-capacitor-mobile-shell": "future",
-    "windows-authenticode-signing": "future",
+    "windows-authenticode-signing": "electrun-execution",
     "manage-node-runtime-updates": "next-phase",
     "fix-release-lockfile-drift": "ui",
     "extract-client-utils-package": "future",
     "unify-dialog-system": "next-phase",
-    "add-extension-ui-rjsf-form": "separate-functions-to-plugins",
-    "worktree-awareness": "future",
+    "add-extension-ui-rjsf-form": "ui-extensions",
+    "worktree-awareness": "worktree",
     "new-spec-spawn": "future",
     "accordion-workspace-folders": "future",
     "pi-log-miner-skill": "future",
@@ -116,7 +134,7 @@
     "honcho-card-fullscreen-dialogs": "next-phase",
     "honcho-remint-proxy-key": "next-phase",
     "add-honcho-docker-integration-tests": "next-phase",
-    "pi-flows-adopt-extension-ui": "separate-functions-to-plugins",
+    "pi-flows-adopt-extension-ui": "ui-extensions",
     "add-rpc-stdin-dispatch-with-keeper-sidecar": "ui",
     "fix-flows-anthropic-bridge-resolution": "separate-functions-to-plugins",
     "harvest-bootstrap-survivor-fixes": "ui",
@@ -126,7 +144,7 @@
     "add-wizard-launch-progress-log": "electrun-execution",
     "fix-doctor-bundle-aware-probes": "electrun-execution",
     "fix-doctor-windows-launch-test": "electrun-execution",
-    "tighten-process-list-ux": "ui",
+    "tighten-process-list-ux": "small-change",
     "fix-ci-electron-runnable-bundles": "electrun-execution",
     "add-ci-electron-on-demand-build": "electrun-execution",
     "add-bundle-mode-marker": "electrun-execution",
@@ -148,6 +166,20 @@
     "electron-attach-ownership-fixes": "electrun-execution",
     "fix-windows-path-system32-missing": "electrun-execution",
     "replace-wmic-with-powershell": "electrun-execution",
-    "fix-electron-launch-source-bundled-node-dir": "electrun-execution"
+    "fix-electron-launch-source-bundled-node-dir": "electrun-execution",
+    "add-worktree-spawn-dialog": "worktree",
+    "embed-git-bash-on-windows": "electrun-execution",
+    "fix-doctor-oauth-credential-detection": "electrun-execution",
+    "add-extension-ui-a11y-baseline": "ui-extensions",
+    "add-extension-ui-module-lifecycle": "ui-extensions",
+    "add-extension-ui-safety-bounds": "ui-extensions",
+    "add-extension-ui-action-result-contract": "ui-extensions",
+    "restore-windows-nsis-installer": "electrun-execution",
+    "enable-rpc-keeper-by-default": "electrun-execution",
+    "add-bundle-immutable-health-flag": "electrun-execution",
+    "retire-rpc-keeper-when-dispatchcommand-available": "electrun-execution",
+    "fix-doctor-stale-managed-install-check": "electrun-execution",
+    "add-tunnel-diagnostic-checks": "electrun-execution",
+    "bump-pi-compat-to-0.75": "ui"
   }
 }

@@ -2,9 +2,29 @@
 
 ## Overview
 
-PI Dashboard has two independent startup chains leading to same server process. Each chain MUST resolve tool paths (pi, openspec, node, tsx, bridge extension) to launch server + spawn pi sessions. Doc describes both chains, tool resolution problem, target architecture.
+PI Dashboard reaches one server process via **3 starters** (`Electron`, `Bridge`, `Standalone`) exposed across **2 invocation surfaces** (GUI click, shell command). Each starter MUST resolve tool paths (pi, openspec, node, tsx, bridge extension) to launch server + spawn pi sessions. Doc describes starters, surfaces, tool resolution problem, target architecture. See [Concepts](#concepts) for the runtime-vs-doc-device split.
 
 **R3 update** (`eliminate-electron-runtime-install`): Electron is launcher only. Runtime install eliminated. pi/openspec/tsx ship as regular npm dependencies inside the .app and load read-only from `<resourcesPath>/server/node_modules/`. `selectLaunchSource()` resolves to `attach | devMonorepo | bundled` (3 strategies). See [electron-bootstrap-flow.md](./electron-bootstrap-flow.md) for the 6-state startup machine. See [electron-immutable-bundle.md](./electron-immutable-bundle.md) for the immutable-bundle invariant.
+
+## Concepts
+
+Two doc devices. One runtime fact.
+
+**Starter** — runtime identity. 3 values: `Electron`, `Bridge`, `Standalone`. Stamped via `DASHBOARD_STARTER` env in `packages/shared/src/server-launcher.ts#launchDashboardServer`. Exposed as `launchSource` on `GET /api/health`. Read by `decideShutdownOnQuit` (Electron) + `useLaunchSource()` (client). Single source of truth for pid ownership and arm-aware UI gating.
+
+**Invocation surface** — user entry point. 2 values: GUI click, shell command. Not observable at runtime. Doc device only. Groups starters by PATH-inheritance pedigree.
+
+Mapping:
+
+| Surface | Starter    | PATH source                  | Owns pid?      | Detached? |
+|---------|------------|------------------------------|----------------|-----------|
+| GUI     | Electron   | minimal system PATH          | yes            | no        |
+| shell   | Bridge     | full shell PATH (nvm/brew)   | no             | yes       |
+| shell   | Standalone | full shell PATH (nvm/brew)   | yes (SIGINT)   | no        |
+
+Chain 1 = GUI surface → Electron starter. Chain 2 = shell surface → Bridge or Standalone starter (PATH pedigree shared, lifecycle differs).
+
+Client gates on `launchSource === "electron"` as proxy for "immutable bundle" (`UnifiedPackagesSection.tsx`, `App.tsx#PiUpdateBadge`). Bridge vs. Standalone never branched at server level — identical from server POV. Difference is detachment + invocation surface, not server behavior.
 
 ## Startup Chains
 

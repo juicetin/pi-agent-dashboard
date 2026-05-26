@@ -387,6 +387,158 @@ describe("CommandInput — controlled draft prop", () => {
   });
 });
 
+// --- Gating rule change: history-nav-only-when-empty -------------------------
+//
+// Tests covering the new "input completely empty" entry rule plus the
+// Ctrl/Meta force-history shortcut. See spec: chat-input-state.
+// -----------------------------------------------------------------------------
+
+describe("CommandInput — history-nav gating (only-when-empty)", () => {
+  it("1.1 bare ArrowUp on a single-line non-empty draft does NOT trigger history recall", () => {
+    const onDraftChange = vi.fn();
+    const { textarea } = renderInput({
+      draft: "fix bug",
+      onDraftChange,
+      history: ["prev-prompt"],
+    });
+    setCaret(textarea, 0);
+    fireEvent.keyDown(textarea, { key: "ArrowUp" });
+    expect(onDraftChange).not.toHaveBeenCalledWith("prev-prompt");
+  });
+
+  it("1.2 bare ArrowUp on the first line of a multi-line draft does NOT trigger history recall", () => {
+    const onDraftChange = vi.fn();
+    const { textarea } = renderInput({
+      draft: "line one\nline two",
+      onDraftChange,
+      history: ["prev-prompt"],
+    });
+    setCaret(textarea, 0); // first line, column 0
+    fireEvent.keyDown(textarea, { key: "ArrowUp" });
+    expect(onDraftChange).not.toHaveBeenCalledWith("prev-prompt");
+  });
+
+  it("1.3 bare ArrowUp on empty input DOES trigger history recall", () => {
+    const onDraftChange = vi.fn();
+    const { textarea } = renderInput({
+      draft: "",
+      onDraftChange,
+      history: ["newest", "older"],
+    });
+    setCaret(textarea, 0);
+    fireEvent.keyDown(textarea, { key: "ArrowUp" });
+    expect(onDraftChange).toHaveBeenLastCalledWith("newest");
+  });
+
+  it("1.4 bare ArrowUp when empty text but pending image attached does NOT trigger history recall", () => {
+    const onDraftChange = vi.fn();
+    const onImagesChange = vi.fn();
+    const images = [{ type: "image" as const, data: "AAA", mimeType: "image/png" }];
+    const { textarea } = renderInput({
+      draft: "",
+      onDraftChange,
+      images,
+      onImagesChange,
+      history: ["prev-prompt"],
+    });
+    setCaret(textarea, 0);
+    fireEvent.keyDown(textarea, { key: "ArrowUp" });
+    expect(onDraftChange).not.toHaveBeenCalledWith("prev-prompt");
+    // Images stay attached (no clear was triggered).
+    expect(onImagesChange).not.toHaveBeenCalled();
+  });
+
+  it("1.5 Ctrl+ArrowUp with non-empty text recalls history and preserves prior text as draft (Escape restores)", () => {
+    function Controlled() {
+      const [d, setD] = React.useState("half-typed");
+      return <CommandInput commands={commands} onSend={vi.fn()} draft={d} onDraftChange={setD} history={["recent"]} />;
+    }
+    const { container } = render(<Controlled />);
+    const textarea = container.querySelector("textarea")!;
+    setCaret(textarea, textarea.value.length);
+    fireEvent.keyDown(textarea, { key: "ArrowUp", ctrlKey: true });
+    expect(textarea.value).toBe("recent");
+    fireEvent.keyDown(textarea, { key: "Escape" });
+    expect(textarea.value).toBe("half-typed");
+  });
+
+  it("1.6 Cmd+ArrowUp (metaKey) with non-empty text behaves the same as Ctrl+ArrowUp", () => {
+    function Controlled() {
+      const [d, setD] = React.useState("half-typed");
+      return <CommandInput commands={commands} onSend={vi.fn()} draft={d} onDraftChange={setD} history={["recent"]} />;
+    }
+    const { container } = render(<Controlled />);
+    const textarea = container.querySelector("textarea")!;
+    setCaret(textarea, textarea.value.length);
+    fireEvent.keyDown(textarea, { key: "ArrowUp", metaKey: true });
+    expect(textarea.value).toBe("recent");
+    fireEvent.keyDown(textarea, { key: "Escape" });
+    expect(textarea.value).toBe("half-typed");
+  });
+
+  it("1.7 Ctrl+ArrowDown walks forward and past the newest entry restores the in-progress draft", () => {
+    function Controlled() {
+      const [d, setD] = React.useState("half-typed");
+      return <CommandInput commands={commands} onSend={vi.fn()} draft={d} onDraftChange={setD} history={["recent", "older"]} />;
+    }
+    const { container } = render(<Controlled />);
+    const textarea = container.querySelector("textarea")!;
+    setCaret(textarea, textarea.value.length);
+    fireEvent.keyDown(textarea, { key: "ArrowUp", ctrlKey: true }); // -> recent
+    expect(textarea.value).toBe("recent");
+    fireEvent.keyDown(textarea, { key: "ArrowUp", ctrlKey: true }); // -> older
+    expect(textarea.value).toBe("older");
+    fireEvent.keyDown(textarea, { key: "ArrowDown", ctrlKey: true }); // -> recent
+    expect(textarea.value).toBe("recent");
+    fireEvent.keyDown(textarea, { key: "ArrowDown", ctrlKey: true }); // -> restored draft
+    expect(textarea.value).toBe("half-typed");
+  });
+
+  it("1.8 Ctrl+ArrowUp while the /-command dropdown is open does NOT trigger history recall", () => {
+    const onDraftChange = vi.fn();
+    const { textarea, container } = renderInput({
+      draft: "/d",
+      onDraftChange,
+      history: ["prev-prompt"],
+    });
+    expect(getDropdownItems(container).length).toBeGreaterThan(0);
+    setCaret(textarea, 2);
+    fireEvent.keyDown(textarea, { key: "ArrowUp", ctrlKey: true });
+    expect(onDraftChange).not.toHaveBeenCalledWith("prev-prompt");
+  });
+
+  it("1.9 Ctrl+ArrowUp while a prompt is pending does NOT trigger history recall", () => {
+    const onDraftChange = vi.fn();
+    const { textarea } = renderInput({
+      draft: "text",
+      onDraftChange,
+      pendingPrompt: true,
+      history: ["prev-prompt"],
+    });
+    setCaret(textarea, textarea.value.length);
+    fireEvent.keyDown(textarea, { key: "ArrowUp", ctrlKey: true });
+    expect(onDraftChange).not.toHaveBeenCalledWith("prev-prompt");
+  });
+
+  it("1.10 Ctrl+ArrowUp with empty text but pending image attached recalls history AND preserves the image", () => {
+    function Controlled() {
+      const [d, setD] = React.useState("");
+      const [imgs, setImgs] = React.useState([
+        { type: "image" as const, data: "AAA", mimeType: "image/png" },
+      ]);
+      return <CommandInput commands={commands} onSend={vi.fn()} draft={d} onDraftChange={setD} images={imgs} onImagesChange={setImgs} history={["recent"]} />;
+    }
+    const { container } = render(<Controlled />);
+    const textarea = container.querySelector("textarea")!;
+    setCaret(textarea, 0);
+    fireEvent.keyDown(textarea, { key: "ArrowUp", ctrlKey: true });
+    expect(textarea.value).toBe("recent");
+    // Image thumbnail still rendered (ImagePreviewStrip emits img.h-16 per pending image).
+    const img = container.querySelector("img.h-16");
+    expect(img).not.toBeNull();
+  });
+});
+
 describe("CommandInput — history recall", () => {
   it("ArrowUp from empty draft loads the newest history entry", () => {
     const onDraftChange = vi.fn();
@@ -422,10 +574,10 @@ describe("CommandInput — history recall", () => {
     }
     const { container } = render(<Controlled />);
     const textarea = container.querySelector("textarea")!;
-    setCaret(textarea, (textarea as HTMLTextAreaElement).value.length);
-    // First ArrowUp must be at top-of-textarea; single-line so caret=end counts as first line.
-    setCaret(textarea, 0);
-    fireEvent.keyDown(textarea, { key: "ArrowUp" }); // -> recent
+    // Non-empty draft — enter history mode via force-history modifier; once
+    // in history mode, bare arrows continue to walk.
+    setCaret(textarea, textarea.value.length);
+    fireEvent.keyDown(textarea, { key: "ArrowUp", ctrlKey: true }); // -> recent
     expect(textarea.value).toBe("recent");
     setCaret(textarea, textarea.value.length);
     fireEvent.keyDown(textarea, { key: "ArrowUp" }); // -> older
@@ -446,7 +598,8 @@ describe("CommandInput — history recall", () => {
     const { container } = render(<Controlled />);
     const textarea = container.querySelector("textarea")!;
     setCaret(textarea, 0);
-    fireEvent.keyDown(textarea, { key: "ArrowUp" });
+    // Non-empty draft — must use Ctrl modifier to enter history mode.
+    fireEvent.keyDown(textarea, { key: "ArrowUp", ctrlKey: true });
     expect(textarea.value).toBe("recent");
     fireEvent.keyDown(textarea, { key: "Escape" });
     expect(textarea.value).toBe("wip");
@@ -521,7 +674,8 @@ describe("CommandInput — history recall", () => {
     const { container } = render(<Controlled />);
     const textarea = container.querySelector("textarea")!;
     setCaret(textarea, 0);
-    fireEvent.keyDown(textarea, { key: "ArrowUp" });
+    // Non-empty draft — enter via force-history.
+    fireEvent.keyDown(textarea, { key: "ArrowUp", ctrlKey: true });
     expect(textarea.value).toBe("recent");
     // User edits the recalled entry.
     fireEvent.change(textarea, { target: { value: "recent-edited" } });

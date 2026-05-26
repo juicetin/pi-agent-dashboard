@@ -51,30 +51,6 @@ interface Props {
   onImagesChange?: (next: ImageContent[]) => void;
 }
 
-/**
- * Caret-on-first-line predicate: returns true iff `selectionStart` sits at or
- * before the first `\n` (so `ArrowUp` would have nowhere to go natively).
- * Always false when there is a non-empty selection.
- */
-export function isCaretOnFirstLine(selectionStart: number, selectionEnd: number, value: string): boolean {
-  if (selectionStart !== selectionEnd) return false;
-  const firstNewline = value.indexOf("\n");
-  if (firstNewline === -1) return true;
-  return selectionStart <= firstNewline;
-}
-
-/**
- * Caret-on-last-line predicate: returns true iff `selectionStart` sits at or
- * after the position following the last `\n` (so `ArrowDown` would have
- * nowhere to go natively). Always false when there is a non-empty selection.
- */
-export function isCaretOnLastLine(selectionStart: number, selectionEnd: number, value: string): boolean {
-  if (selectionStart !== selectionEnd) return false;
-  const lastNewline = value.lastIndexOf("\n");
-  if (lastNewline === -1) return true;
-  return selectionStart >= lastNewline + 1;
-}
-
 const sourceIcons: Record<string, ReactNode> = {
   extension: <Icon path={mdiFlash} size={0.6} />,
   prompt: <Icon path={mdiClipboardText} size={0.6} />,
@@ -341,9 +317,16 @@ export function CommandInput({ commands: externalCommands, onSend, onListFiles, 
           return;
         }
         if (ta && historyList.length > 0 && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
-          const selStart = ta.selectionStart ?? text.length;
-          const selEnd = ta.selectionEnd ?? selStart;
-          if (e.key === "ArrowUp" && isCaretOnFirstLine(selStart, selEnd, text)) {
+          // Entry gate: bare arrows activate history only when the input is
+          // completely empty (no text, no pending images). Ctrl/Meta force
+          // activation regardless of content. Once in history mode
+          // (`historyIndex !== null`), bare arrows continue walking.
+          // See change: history-nav-only-when-empty.
+          const isForceHistory = e.ctrlKey || e.metaKey;
+          const inHistoryMode = historyIndex !== null;
+          const isEmpty = text === "" && pendingImages.length === 0;
+          const historyEnabled = isForceHistory || inHistoryMode || isEmpty;
+          if (e.key === "ArrowUp" && historyEnabled) {
             e.preventDefault();
             const nextIdx = historyIndex === null ? 0 : Math.min(historyIndex + 1, historyList.length - 1);
             if (historyIndex === null) {
@@ -359,7 +342,7 @@ export function CommandInput({ commands: externalCommands, onSend, onListFiles, 
             });
             return;
           }
-          if (e.key === "ArrowDown" && historyIndex !== null && isCaretOnLastLine(selStart, selEnd, text)) {
+          if (e.key === "ArrowDown" && historyIndex !== null) {
             e.preventDefault();
             if (historyIndex === 0) {
               const restored = savedDraftRef.current;
@@ -398,7 +381,7 @@ export function CommandInput({ commands: externalCommands, onSend, onListFiles, 
     // are plain closures (see comment at their definition) and recomputed
     // every render anyway, so listing them would only cause unnecessary
     // handler-identity churn without affecting correctness.
-    [dropdownMode, dropdownLength, filteredCommands, fileItems, selectedIndex, handleSend, setText, text, pendingPrompt, onCancelPending, historyIndex, historyList]
+    [dropdownMode, dropdownLength, filteredCommands, fileItems, selectedIndex, handleSend, setText, text, pendingPrompt, onCancelPending, historyIndex, historyList, pendingImages]
   );
 
   // Clipboard paste + preview-strip are delegated to the shared hook +

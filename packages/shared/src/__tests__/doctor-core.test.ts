@@ -15,18 +15,39 @@ import {
 const ALL_CHECK_NAMES = Object.keys(SECTION_OF);
 
 describe("SECTION_OF", () => {
-  it("maps every canonical check name to one of the five sections", () => {
-    const allowed = new Set(["runtime", "pi-tooling", "server", "setup", "diagnostics"]);
+  it("maps every canonical check name to one of the six sections", () => {
+    const allowed = new Set([
+      "runtime",
+      "pi-tooling",
+      "server",
+      "tunnel",
+      "setup",
+      "diagnostics",
+    ]);
     for (const name of ALL_CHECK_NAMES) {
       expect(allowed.has(SECTION_OF[name])).toBe(true);
     }
   });
 
-  it("covers all five sections (none empty)", () => {
+  it("covers all six sections (none empty)", () => {
     const sections = new Set(Object.values(SECTION_OF));
-    for (const s of ["runtime", "pi-tooling", "server", "setup", "diagnostics"]) {
+    for (const s of [
+      "runtime",
+      "pi-tooling",
+      "server",
+      "tunnel",
+      "setup",
+      "diagnostics",
+    ]) {
       expect(sections.has(s as never)).toBe(true);
     }
+  });
+
+  it("routes the four tunnel checks to section: 'tunnel'", () => {
+    expect(SECTION_OF["zrok binary"]).toBe("tunnel");
+    expect(SECTION_OF["zrok environment"]).toBe("tunnel");
+    expect(SECTION_OF["zrok API reachable"]).toBe("tunnel");
+    expect(SECTION_OF["tunnel runtime"]).toBe("tunnel");
   });
 });
 

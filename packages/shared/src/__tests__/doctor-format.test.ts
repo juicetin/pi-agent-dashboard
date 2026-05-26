@@ -25,6 +25,7 @@ describe("formatDoctorReportMarkdown", () => {
       { name: "API key", section: "setup", status: "ok", message: "Configured" },
       { name: "pi CLI", section: "pi-tooling", status: "ok", message: "v1" },
       { name: "Electron", section: "runtime", status: "ok", message: "v40" },
+      { name: "zrok binary", section: "tunnel", status: "ok", message: "found" },
       {
         name: "Managed install (~/.pi-dashboard)",
         section: "diagnostics",
@@ -35,13 +36,15 @@ describe("formatDoctorReportMarkdown", () => {
     const md = formatDoctorReportMarkdown(report);
     const runtimeIdx = md.indexOf("## Runtime");
     const piIdx = md.indexOf("## PI Tooling");
+    const tunnelIdx = md.indexOf("## Tunnel");
     const setupIdx = md.indexOf("## Setup");
     const diagIdx = md.indexOf("## Diagnostics");
     // Server section absent — skipped silently.
     expect(md.includes("## Server")).toBe(false);
     expect(runtimeIdx).toBeGreaterThan(0);
     expect(runtimeIdx).toBeLessThan(piIdx);
-    expect(piIdx).toBeLessThan(setupIdx);
+    expect(piIdx).toBeLessThan(tunnelIdx);
+    expect(tunnelIdx).toBeLessThan(setupIdx);
     expect(setupIdx).toBeLessThan(diagIdx);
   });
 

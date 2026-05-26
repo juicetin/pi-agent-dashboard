@@ -19,14 +19,12 @@ const zrokResolver = new ToolResolver({ processExecPath: process.execPath });
 import type { TunnelStatus } from "@blackbelt-technology/pi-dashboard-shared/rest-api.js";
 import { getTunnelWatchdogStatus } from "./tunnel-watchdog.js";
 import { CONFIG_FILE } from "@blackbelt-technology/pi-dashboard-shared/config.js";
+import { readZrokEnvironment, type ZrokEnvData } from "@blackbelt-technology/pi-dashboard-shared/zrok-env.js";
 
 export type { TunnelStatus };
 
-export interface ZrokEnv {
-  apiEndpoint: string;
-  envZId: string;
-  token: string;
-}
+// Backwards-compatible alias; the canonical shape lives in `pi-dashboard-shared/zrok-env`.
+export type ZrokEnv = ZrokEnvData;
 
 function getZrokPidPath(): string {
   return path.join(os.homedir(), ".pi", "dashboard", "zrok.pid");
@@ -129,22 +127,8 @@ export async function cleanupStaleZrok(): Promise<void> {
  * Checks v2 path first, falls back to v1.
  */
 export function loadZrokEnv(): ZrokEnv | null {
-  try {
-    const v2 = path.join(os.homedir(), ".zrok2", "environment.json");
-    const v1 = path.join(os.homedir(), ".zrok", "environment.json");
-    const envFile = fs.existsSync(v2) ? v2 : v1;
-    if (!fs.existsSync(envFile)) return null;
-
-    const data = JSON.parse(fs.readFileSync(envFile, "utf-8"));
-    const apiEndpoint = data.api_endpoint;
-    const envZId = data.ziti_identity;
-    const token = data.zrok_token;
-
-    if (!apiEndpoint || !envZId || !token) return null;
-    return { apiEndpoint, envZId, token };
-  } catch {
-    return null;
-  }
+  const r = readZrokEnvironment();
+  return r.found ? r.env : null;
 }
 
 // ── Reserved Share ───────────────────────────────────────────────────

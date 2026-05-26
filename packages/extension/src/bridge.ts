@@ -187,6 +187,7 @@ function initBridge(pi: ExtensionAPI) {
   let lastGitBranch: string | undefined;
   let lastGitPrNumber: number | undefined;
   let lastJjStateJson: string | undefined; // see change: add-jj-workspace-plugin
+  let lastGitWorktreeJson: string | undefined; // see change: add-worktree-spawn-dialog
   let lastSessionName: string | undefined;
   let cachedHasUI: boolean | undefined = prev.hasUI;
   let cachedModelRegistry: any | undefined = prev.modelRegistry;
@@ -949,6 +950,7 @@ function initBridge(pi: ExtensionAPI) {
       lastSessionFile, lastSessionDir, lastFirstMessage,
       lastGitBranch, lastGitPrNumber, lastSessionName,
       lastJjStateJson,
+      lastGitWorktreeJson,
       hasRegisteredOnce,
     };
   }
@@ -967,6 +969,7 @@ function initBridge(pi: ExtensionAPI) {
     lastGitPrNumber = bc.lastGitPrNumber;
     lastSessionName = bc.lastSessionName;
     lastJjStateJson = bc.lastJjStateJson;
+    lastGitWorktreeJson = bc.lastGitWorktreeJson;
     hasRegisteredOnce = bc.hasRegisteredOnce;
   }
 

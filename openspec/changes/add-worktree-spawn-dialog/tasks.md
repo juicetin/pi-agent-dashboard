@@ -1,11 +1,11 @@
 ## 1. Shared types + bridge detection
 
-- [ ] 1.1 Add `GitWorktreeInfo` interface to `packages/shared/src/types.ts` (`mainPath: string; name: string; base?: string`) and `gitWorktree?: GitWorktreeInfo` on `DashboardSession`
-- [ ] 1.2 Mirror the field on `GitInfo` in `packages/extension/src/git-info.ts`
-- [ ] 1.3 Implement `detectWorktree(cwd)` in `git-info.ts`: run `git rev-parse --git-common-dir` and `--show-toplevel`; return `{ mainPath, name }` when common-dir is outside top-level, else `undefined`
-- [ ] 1.4 Wire `detectWorktree` into `gatherGitInfo` and ensure failure of the rev-parse pair short-circuits to `undefined` (does NOT block branch / remote / PR detection)
-- [ ] 1.5 Unit tests for `detectWorktree`: main checkout, worktree, non-git dir, rev-parse failure (use a tmpdir + real `git init` + `git worktree add`)
-- [ ] 1.6 Forward `gitWorktree` on `session_register` and `git_info_update` payloads in the bridge
+- [x] 1.1 Add `GitWorktreeInfo` interface to `packages/shared/src/types.ts` (`mainPath: string; name: string; base?: string`) and `gitWorktree?: GitWorktreeInfo` on `DashboardSession`
+- [x] 1.2 Mirror the field on `GitInfo` in `packages/extension/src/vcs-info.ts` (`git-info.ts` was renamed in an earlier change)
+- [x] 1.3 Implement `detectWorktree(cwd)` in `vcs-info.ts`: run `git rev-parse --git-common-dir` and `--show-toplevel` via new `commonDirOr` / `toplevelOr` recipes in `platform/git.ts`; return `{ mainPath, name }` when common-dir is outside top-level, else `undefined`
+- [x] 1.4 Wire `detectWorktree` into `gatherGitInfo` and ensure failure of the rev-parse pair short-circuits to `undefined` (does NOT block branch / remote / PR detection)
+- [x] 1.5 Unit tests for `detectWorktree`: main checkout (abs + rel commonDir), worktree, sibling-layout worktree, nested-cwd-not-worktree, rev-parse failure (mocked at platform layer)
+- [x] 1.6 Forward `gitWorktree` on `git_info_update` payload (session_register itself does not carry git info; followup git_info_update covers both register and live update paths); add `lastGitWorktreeJson` change-detection cache to `BridgeContext` + sync wrappers
 
 ## 2. Server-side propagation + meta persistence
 

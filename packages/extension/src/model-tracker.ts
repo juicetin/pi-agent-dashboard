@@ -40,18 +40,30 @@ export function sendSessionNameIfChanged(bc: BridgeContext): void {
 }
 
 /**
- * Send git_info_update if branch or PR has changed since last send.
+ * Send git_info_update if branch, PR, or worktree state has changed since last send.
  */
 export function sendGitInfoIfChanged(bc: BridgeContext, cwd: string): void {
   const info = gatherGitInfo(cwd);
   if (!info) return;
-  if (info.gitBranch === bc.lastGitBranch && info.gitPrNumber === bc.lastGitPrNumber) return;
+  // Worktree state diff: serialise to a stable string. `"null"` marks an
+  // explicit "cwd is not a worktree" so a subsequent transition into a
+  // worktree still counts as a change.
+  const nextWorktreeJson = info.gitWorktree ? JSON.stringify(info.gitWorktree) : "null";
+  if (
+    info.gitBranch === bc.lastGitBranch &&
+    info.gitPrNumber === bc.lastGitPrNumber &&
+    nextWorktreeJson === bc.lastGitWorktreeJson
+  ) return;
   bc.lastGitBranch = info.gitBranch;
   bc.lastGitPrNumber = info.gitPrNumber;
+  bc.lastGitWorktreeJson = nextWorktreeJson;
   bc.connection.send({
     type: "git_info_update",
     sessionId: bc.sessionId,
     ...info,
+    // Use explicit `null` on the wire when worktree state went from
+    // present → absent, so the server can clear its cached value.
+    gitWorktree: info.gitWorktree ?? null,
   });
 }
 
@@ -69,6 +81,7 @@ export function resetReconnectCaches(bc: BridgeContext): void {
   // doesn't surface stale branch info if .meta.json wasn't persisted yet.
   bc.lastGitBranch = undefined;
   bc.lastGitPrNumber = undefined;
+  bc.lastGitWorktreeJson = undefined;
 }
 
 /**

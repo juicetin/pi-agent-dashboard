@@ -21,6 +21,14 @@ export interface BridgeContext {
   lastGitBranch: string | undefined;
   lastGitPrNumber: number | undefined;
   /**
+   * Last serialized `GitWorktreeInfo` snapshot sent to the server, or
+   * the literal string `"null"` when we explicitly cleared worktree
+   * state. Compared on every probe tick so we only re-send when the
+   * value actually changes. `undefined` means "nothing sent yet".
+   * See change: add-worktree-spawn-dialog.
+   */
+  lastGitWorktreeJson: string | undefined;
+  /**
    * Last serialized `JjState` snapshot sent to the server, or `null`
    * when the previous probe explicitly cleared it. Compared on every
    * probe tick so we only send `jj_state_update` when the value actually

@@ -149,6 +149,13 @@ export interface GitInfoUpdateMessage {
   gitBranchUrl?: string;
   gitPrNumber?: number;
   gitPrUrl?: string;
+  /**
+   * Set when the session's cwd is a git worktree. `null` clears any
+   * previously-stored worktree state on the server (e.g. cwd switched
+   * to a non-worktree). Absent on older bridges — server treats as
+   * "no change". See change: add-worktree-spawn-dialog.
+   */
+  gitWorktree?: import("./types.js").GitWorktreeInfo | null;
 }
 
 /**

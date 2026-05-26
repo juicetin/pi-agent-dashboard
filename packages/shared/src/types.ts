@@ -29,6 +29,31 @@ export interface JjState {
   lastError?: string;
 }
 
+/**
+ * Per-session git-worktree state. Populated by the bridge's VCS probe when
+ * `git rev-parse --git-common-dir` resolves outside `--show-toplevel` (the
+ * canonical signal that this cwd is a worktree, not the main checkout).
+ * Absent (or `undefined`) for plain checkouts — clients MUST treat absence
+ * as "not a worktree". Used by the dashboard to (a) group worktree
+ * sessions under their parent repo, (b) render the WORKSPACE-subcard
+ * worktree pill.
+ *
+ * `base` is post-create metadata, set by the server when a session is
+ * spawned via the dashboard's worktree dialog and persisted to
+ * `.meta.json` as `gitWorktreeBase`. The bridge itself never populates
+ * `base` (git does not record the ref a worktree was forked from).
+ *
+ * See change: add-worktree-spawn-dialog.
+ */
+export interface GitWorktreeInfo {
+  /** Absolute path of the main worktree (parent repo root). */
+  mainPath: string;
+  /** Basename of the worktree directory (typically `<repo>/.worktrees/<name>`). */
+  name: string;
+  /** Base ref the worktree was created from. Server-supplied, optional. */
+  base?: string;
+}
+
 /** A dashboard session representing a connected pi instance */
 export interface DashboardSession {
   id: string;
@@ -78,6 +103,13 @@ export interface DashboardSession {
    * See change: add-jj-workspace-plugin.
    */
   jjState?: JjState;
+  /**
+   * Per-session git-worktree identity. Set only when the session's cwd
+   * is a git worktree (not the main checkout). See `GitWorktreeInfo`.
+   * Absent on older bridges and for plain checkouts.
+   * See change: add-worktree-spawn-dialog.
+   */
+  gitWorktree?: GitWorktreeInfo;
   openspecPhase?: OpenSpecPhase | null;
   openspecChange?: string | null;
   attachedProposal?: string | null;

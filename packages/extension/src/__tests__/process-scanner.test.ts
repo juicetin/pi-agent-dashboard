@@ -150,6 +150,55 @@ describe("scanChildProcesses (combined)", () => {
   });
 });
 
+describe("excludedPgids exclusion set (tighten-process-list-ux)", () => {
+  it("captureChildPgids refuses to track an excluded PGID", () => {
+    const mock: SpawnSyncFn = (cmd, args) => {
+      if (cmd === "ps" && args[0] === "-eo" && args[1] === "pid=,ppid=") {
+        return mockResult(psChildOutput([[200, 100]]));
+      }
+      if (cmd === "ps" && args[0] === "-p" && args[1] === "200") {
+        return mockResult("  200\n");
+      }
+      return fail();
+    };
+    const tracked = new Set<number>();
+    const excluded = new Set<number>([200]);
+    captureChildPgids(100, tracked, { _spawnSync: mock, excludedPgids: excluded });
+    expect(tracked.has(200)).toBe(false);
+    expect(tracked.size).toBe(0);
+  });
+
+  it("scanTrackedProcesses skips an alive process whose PGID is excluded (defense-in-depth)", () => {
+    const mock: SpawnSyncFn = (cmd) => {
+      if (cmd === "ps") {
+        return mockResult("  300  200 02:00 node vitest\n");
+      }
+      return fail();
+    };
+    const tracked = new Set([200]);
+    const excluded = new Set([200]);
+    const result = scanTrackedProcesses(tracked, 0, { _spawnSync: mock, excludedPgids: excluded });
+    expect(result).toHaveLength(0);
+    // PGID is alive, so it stays in tracked (still alive) and excluded.
+    expect(tracked.has(200)).toBe(true);
+    expect(excluded.has(200)).toBe(true);
+  });
+
+  it("scanTrackedProcesses reaps a dead PGID from the excludedPgids set", () => {
+    // ps output reports other processes only — the excluded PGID is dead.
+    const mock: SpawnSyncFn = (cmd) => {
+      if (cmd === "ps") {
+        return mockResult("  500  500 01:00 node other\n");
+      }
+      return fail();
+    };
+    const tracked = new Set<number>();
+    const excluded = new Set<number>([777]);
+    scanTrackedProcesses(tracked, 0, { _spawnSync: mock, excludedPgids: excluded });
+    expect(excluded.has(777)).toBe(false);
+  });
+});
+
 describe("killProcessByPgid", () => {
   it("returns false for non-existent process group", () => {
     expect(killProcessByPgid(99999)).toBe(false);

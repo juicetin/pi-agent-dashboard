@@ -8,7 +8,7 @@
 
 | File | Purpose |
 |------|---------|
-| `src/client/components/ProcessList.tsx` | Session card process list with elapsed time + red ✕ kill button |
+| `src/client/components/ProcessList.tsx` | Session card process list with elapsed time + red ✕ kill button. See change: tighten-process-list-ux. Rendered list enforces floor of 5 row slots (skeleton rows with `aria-hidden="true"` when `processes.length < 5`) + ceiling of 5 visible rows. Excess collapses into single `+N more processes` overflow row with `title` tooltip listing hidden command lines. Rows sorted by `elapsedMs` descending. Pure helper `computeVisibleRows` exported for tests. |
 | `src/client/components/BranchPicker.tsx` | Typeahead branch picker with keyboard navigation |
 | `src/client/components/BranchSwitchDialog.tsx` | Checkout orchestration: dirty-state stash, pop prompt |
 | `src/client/lib/git-api.ts` | Client-side fetch helpers for git API endpoints |

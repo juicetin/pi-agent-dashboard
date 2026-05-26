@@ -16,7 +16,7 @@ export interface DiscoveredServer {
 export interface AutoStartDeps {
   discoverDashboard: (timeout?: number) => Promise<DiscoveredServer[]>;
   isDashboardRunning: (port: number) => Promise<{ running: boolean; portConflict?: boolean }>;
-  launchServer: (config: any) => Promise<{ success: boolean; message: string }>;
+  launchServer: (config: any) => Promise<{ success: boolean; message: string; childPid?: number }>;
   notify: (message: string, level: "info" | "warning") => void;
   /**
    * Optional callback fired immediately BEFORE `launchServer(config)` is
@@ -32,6 +32,15 @@ export interface AutoStartDeps {
    * Passes the final success state so the caller can clear spinners.
    */
   onLaunchEnd?: (success: boolean) => void;
+  /**
+   * Optional callback fired synchronously after `launchServer` reports
+   * success and returned a `childPid`. Used by the bridge to register
+   * the spawned server's PID into its `selfSpawnedPgids` exclusion set
+   * BEFORE the next process-scan tick, so the dashboard's own server
+   * never surfaces in the session-card process list.
+   * See change: tighten-process-list-ux.
+   */
+  onServerSpawned?: (childPid: number) => void;
   /**
    * Optional predicate. When it returns true, the auto-start spawn step
    * (step 3 below) is skipped — mDNS discovery + health check still run,
@@ -93,6 +102,9 @@ export async function autoStartServer(
   deps.onLaunchStart?.();
   const result = await deps.launchServer(config);
   if (result.success) {
+    if (typeof result.childPid === "number" && result.childPid > 0) {
+      deps.onServerSpawned?.(result.childPid);
+    }
     deps.onLaunchEnd?.(true);
     deps.notify(`🌐 Dashboard started at http://localhost:${config.port}`, "info");
 

@@ -112,6 +112,25 @@ function parsePsLine(line: string): ChildProcessInfo | null {
 
 export interface ScanOptions {
   _spawnSync?: SpawnSyncFn;
+  /**
+   * PGIDs that the caller has already identified as its own self-spawned
+   * infrastructure (e.g. dashboard server, RPC keeper) and does NOT want
+   * surfaced in the scanner's output.
+   *
+   * Two enforcement points (defense-in-depth against spawn→register race):
+   *  1. Capture-time refusal in `captureChildPgids` — excluded PGIDs are
+   *     never added to `trackedPgids`.
+   *  2. Filter-time skip in `scanTrackedProcesses` — any alive process
+   *     whose PGID is in this set is dropped from the output even if it
+   *     somehow made it into `trackedPgids`.
+   *
+   * Also acts as a self-pruning registry: dead PGIDs in this set are
+   * dropped on each scan tick (same `alivePgids` sweep that prunes
+   * `trackedPgids`).
+   *
+   * See change: tighten-process-list-ux.
+   */
+  excludedPgids?: Set<number>;
 }
 
 /**
@@ -153,9 +172,11 @@ export function captureChildPgids(
     });
     if (result.status !== 0 || !result.stdout) return;
 
+    const excluded = options?.excludedPgids;
     for (const line of result.stdout.split("\n")) {
       const pgid = parseInt(line.trim(), 10);
       if (!isNaN(pgid) && pgid > 0) {
+        if (excluded?.has(pgid)) continue; // see change: tighten-process-list-ux
         trackedPgids.add(pgid);
       }
     }
@@ -174,7 +195,13 @@ export function scanTrackedProcesses(
   options?: ScanOptions,
 ): ChildProcessInfo[] {
   const platform = (options as any)?._platform ?? process.platform;
-  if (platform === "win32" || trackedPgids.size === 0) return [];
+  if (platform === "win32") return [];
+  // Allow the function to run when only `excludedPgids` is non-empty
+  // so dead self-spawned PGIDs get reaped even with no tracked entries.
+  // See change: tighten-process-list-ux.
+  if (trackedPgids.size === 0 && !(options?.excludedPgids && options.excludedPgids.size > 0)) {
+    return [];
+  }
 
   const spawnSync: SpawnSyncFn = options?._spawnSync ?? defaultSpawnSync;
 
@@ -192,12 +219,15 @@ export function scanTrackedProcesses(
     if (result.status !== 0 || !result.stdout) return [];
 
     const pgidSet = new Set(pgidList);
-    const alivePgids = new Set<number>();
+    const excluded = options?.excludedPgids;
+    const alivePgidsAll = new Set<number>(); // every alive PGID seen this scan
+    const alivePgids = new Set<number>();    // tracked PGIDs still alive
     const processes: ChildProcessInfo[] = [];
 
     for (const line of result.stdout.split("\n")) {
       const info = parsePsLine(line);
       if (!info) continue;
+      alivePgidsAll.add(info.pgid);
       if (!pgidSet.has(info.pgid)) continue;
 
       alivePgids.add(info.pgid);
@@ -205,6 +235,11 @@ export function scanTrackedProcesses(
       // Skip bash/sh wrappers (show the actual commands, not the shell)
       const binary = info.command.split(/\s/)[0]?.split("/").pop() ?? "";
       if (binary === "bash" || binary === "sh") continue;
+
+      // Defense-in-depth: skip processes whose PGID is excluded, in case a
+      // self-spawned PID raced into `trackedPgids` before registration.
+      // See change: tighten-process-list-ux.
+      if (excluded?.has(info.pgid)) continue;
 
       if (info.elapsedMs >= minElapsedMs) {
         processes.push(info);
@@ -215,6 +250,17 @@ export function scanTrackedProcesses(
     for (const pgid of pgidList) {
       if (!alivePgids.has(pgid)) {
         trackedPgids.delete(pgid);
+      }
+    }
+
+    // Reap dead PGIDs from the caller's exclusion set so it doesn't leak
+    // across long-lived bridges (e.g. server restart re-spawns with fresh
+    // PIDs). See change: tighten-process-list-ux.
+    if (excluded) {
+      for (const pgid of excluded) {
+        if (!alivePgidsAll.has(pgid)) {
+          excluded.delete(pgid);
+        }
       }
     }
 

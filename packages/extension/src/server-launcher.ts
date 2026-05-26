@@ -20,6 +20,13 @@ const require = createRequire(import.meta.url);
 export interface LaunchResult {
   success: boolean;
   message: string;
+  /**
+   * PID of the spawned child process when `success === true`. Surfaces
+   * `launchDashboardServer`'s underlying `childPid` so callers (e.g. the
+   * bridge) can register self-spawned PIDs into their exclusion set
+   * synchronously after launch. See change: tighten-process-list-ux.
+   */
+  childPid?: number;
 }
 
 /**
@@ -88,7 +95,7 @@ export async function launchServer(config: DashboardConfig): Promise<LaunchResul
   const args = buildSpawnArgs(config);
 
   try {
-    await launchDashboardServer({
+    const result = await launchDashboardServer({
       cliPath,
       extraArgs: args,
       stdio: "ignore",
@@ -96,7 +103,7 @@ export async function launchServer(config: DashboardConfig): Promise<LaunchResul
       port: config.port,
       starter: "Bridge",
     });
-    return { success: true, message: "Server started" };
+    return { success: true, message: "Server started", childPid: result.childPid };
   } catch (err: unknown) {
     if (err instanceof JitiNotFoundError) {
       return { success: false, message: err.message };

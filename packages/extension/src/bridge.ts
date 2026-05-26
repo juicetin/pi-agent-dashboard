@@ -46,7 +46,12 @@ import type { ImageContent } from "@blackbelt-technology/pi-dashboard-shared/typ
 
 const HEARTBEAT_INTERVAL = 15_000;
 const GIT_POLL_INTERVAL = 30_000;
-const PROCESS_SCAN_INTERVAL = 10_000;
+// Platform-aware process scan cadence. Windows keeps the original 10 s /
+// 30 s floor because `wmic` / PowerShell are expensive and flash consoles;
+// Unix uses 5 s / 5 s so legitimate bash subprocesses surface while still
+// running. See change: tighten-process-list-ux.
+const PROCESS_SCAN_INTERVAL = process.platform === "win32" ? 10_000 : 5_000; // platform-branch-ok: top-level cadence tuning; Windows uses costly wmic/PowerShell
+const PROCESS_MIN_ELAPSED_MS = process.platform === "win32" ? 30_000 : 5_000; // platform-branch-ok: matches PROCESS_SCAN_INTERVAL's Windows-safe defaults
 
 
 
@@ -184,6 +189,11 @@ function initBridge(pi: ExtensionAPI) {
   let processScanTimer: ReturnType<typeof setInterval> | null = null;
   let previousProcessPids: string = ""; // JSON-stringified PID set for diff
   const trackedPgids = new Set<number>(); // PGIDs captured during bash tool calls
+  // PIDs of subprocesses the bridge has spawned itself (dashboard server,
+  // RPC keeper). Threaded into `scanChildProcesses` as `excludedPgids` so
+  // bridge infrastructure never surfaces in the process list.
+  // See change: tighten-process-list-ux.
+  const selfSpawnedPgids = new Set<number>();
   let lastGitBranch: string | undefined;
   let lastGitPrNumber: number | undefined;
   let lastJjStateJson: string | undefined; // see change: add-jj-workspace-plugin
@@ -950,6 +960,7 @@ function initBridge(pi: ExtensionAPI) {
       lastGitBranch, lastGitPrNumber, lastSessionName,
       lastJjStateJson,
       hasRegisteredOnce,
+      selfSpawnedPgids,
     };
   }
   /** Sync BridgeContext mutations back to local variables */
@@ -1685,6 +1696,13 @@ function initBridge(pi: ExtensionAPI) {
       onLaunchEnd: () => {
         stopSpinner();
       },
+      // Register the spawned dashboard-server PID into `selfSpawnedPgids`
+      // synchronously, before the next 5 s process-scan tick. Keeps the
+      // dashboard's own `node` infrastructure out of the session-card
+      // process list. See change: tighten-process-list-ux.
+      onServerSpawned: (childPid: number) => {
+        selfSpawnedPgids.add(childPid);
+      },
       // Honor the server's `server_restarting` quiesce window. While a
       // deliberate restart/shutdown is in flight, skip the spawn step so we
       // don't race the orchestrator. Discovery + reconnection still run.
@@ -1728,7 +1746,12 @@ function initBridge(pi: ExtensionAPI) {
     // Captures new child PGIDs during active bash calls, then checks tracked PGIDs
     processScanTimer = setInterval(() => {
       if (!isActive()) return;
-      const processes = scanChildProcesses(process.pid, trackedPgids);
+      const processes = scanChildProcesses(
+        process.pid,
+        trackedPgids,
+        PROCESS_MIN_ELAPSED_MS,
+        { excludedPgids: selfSpawnedPgids },
+      );
       const currentPids = JSON.stringify(processes.map((p) => p.pid).sort());
       if (currentPids !== previousProcessPids) {
         previousProcessPids = currentPids;

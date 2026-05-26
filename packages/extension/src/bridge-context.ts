@@ -38,6 +38,18 @@ export interface BridgeContext {
    * See change: reattach-move-to-front.
    */
   hasRegisteredOnce: boolean;
+  /**
+   * PIDs (== PGIDs on Unix at spawn time, since `spawnDetached` makes the
+   * child a session/process-group leader) of subprocesses the bridge has
+   * spawned itself — dashboard server auto-start, RPC keeper sidecar, etc.
+   *
+   * Passed to `scanChildProcesses` as `excludedPgids` so the bridge's own
+   * infrastructure never surfaces in the session-card process list.
+   * Pruned in-place by the scanner when entries die.
+   *
+   * See change: tighten-process-list-ux.
+   */
+  selfSpawnedPgids: Set<number>;
 }
 
 // Commands that the dashboard handles natively with superior UX, filtered from

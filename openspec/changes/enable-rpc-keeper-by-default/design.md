@@ -1,15 +1,18 @@
 ## Context
 
-The `add-rpc-stdin-dispatch-with-keeper-sidecar` change shipped in **v0.5.3** (2026-05-11) and has had one full release cycle of soak time through **v0.5.4** (2026-05-26) with no reported regressions. The parent change's tasks.md §13 explicitly defers the "default-on + legacy-removal" step to a follow-up change once that soak window clears. This change is that follow-up.
+The `add-rpc-stdin-dispatch-with-keeper-sidecar` change shipped in **v0.5.3** (2026-05-11) and has had one full release cycle of soak time through **v0.5.4** (2026-05-26) with no critical regressions. The parent change's tasks.md §13 explicitly defers the "default-on + legacy-removal" step to a follow-up change once that soak window clears. This change is that follow-up.
 
-Current state in the working tree:
+**One real bug surfaced during soak and was already fixed in-place** — `fix-rpc-keeper-pi-resolution` (archived 2026-05-27) discovered that `keeper.cjs`'s bare `spawn("pi", …)` failed `ENOENT` under Electron because the resource-bundled server has no `node_modules/.bin` on PATH. The fix added `resolvePiCommand()` at spawn time and forwards the absolute argv to the keeper via `PI_KEEPER_PI_CMD`. The fact that this bug only blocked **Electron-resume of an already-running keeper-spawned session** (not initial spawn) is itself a positive signal: the keeper path is exercised enough internally that a real-world resume-under-Electron edge case found a real defect, and the fix landed cleanly without touching the keeper gating. Confidence to flip default is higher post-fix than it would have been at v0.5.3 + 2 weeks of pure absence-of-bug-reports.
 
-- `packages/shared/src/config.ts:310` — `DEFAULT_CONFIG.useRpcKeeper = false`.
-- `packages/shared/src/config.ts:250` — `useRpcKeeper: boolean` field in the schema; L597 parses it.
-- `packages/server/src/process-manager.ts:83-93` — `_setUseRpcKeeperOverrideForTests` + `shouldUseRpcKeeper()` runtime gate.
-- `packages/server/src/process-manager.ts:409-419` — Unix legacy `sh -c "tail -f /dev/null | pi --mode rpc"` shell wrapper.
-- `packages/server/src/process-manager.ts:480-525` — Windows legacy direct-stdin pipe (loses pi on dashboard server restart).
-- `packages/server/src/__tests__/process-manager-keeper-spawn.test.ts` — exercises both branches via the override hook.
+Current state in the working tree (verified 2026-05-27 post-`fix-rpc-keeper-pi-resolution`):
+
+- `packages/shared/src/config.ts:310` — `DEFAULT_CONFIG.useRpcKeeper = false`. Schema field at L250, loader at L597.
+- `packages/server/src/process-manager.ts:83-94` — `_setUseRpcKeeperOverrideForTests` + `useRpcKeeperOverride` module var + `shouldUseRpcKeeper()` runtime gate.
+- `packages/server/src/process-manager.ts:454-462` — the `shouldUseRpcKeeper()` branch (now calls `resolvePiCommand()` then dispatches to `spawnHeadlessViaKeeper(cwd, env, args, piCmd)` for **both** Unix and Windows — uniform across OSes once flag is on).
+- `packages/server/src/process-manager.ts:464-498` — the legacy fall-through: Unix uses the `sh -c "tail -f /dev/null | …"` shell wrapper (L478-481); Windows calls `spawnHeadlessDetached(cwd, bin, prefixArgs, args, env)` at L470, which itself lives at L589… and pipes pi's stdin directly from the dashboard server.
+- `packages/server/src/__tests__/process-manager-keeper-spawn.test.ts` — exercises the keeper branch via 6 `_setUseRpcKeeperOverrideForTests(true)` setups (L112/158/187/210/226) plus one `(false)` legacy-path teardown (L241).
+- `packages/extension/src/slash-dispatch.ts:130-135` — Path-D stopgap error message `RPC_KEEPER_HINT` literally instructs users to add `"useRpcKeeper": true` to their dashboard config. After this change, the flag no longer exists — the message text must be rewritten.
+- `packages/extension/src/__tests__/bridge-slash-command-routing.test.ts:108,196,311` — three assertions check that the stopgap error message contains the substring `"useRpcKeeper"`. Updated to match the new message text.
 
 User-visible symptom while keeper is opt-in: every slash command typed in a dashboard-spawned headless session (`/ctx-stats`, `/curator`, `/agents`, `/flows:*`) returns the stopgap `command_feedback {error}` ("requires pi 0.71+") unless the user has hand-edited `~/.pi/dashboard/config.json`. The keeper architecture exists specifically to fix this. Default-off means default-broken.
 
@@ -62,7 +65,11 @@ User-visible symptom while keeper is opt-in: every slash command typed in a dash
 
 **Decision:** delete.
 
-### Decision 3 — Bridge-side `isHeadlessRpcSession()` probe stays as-is
+### Decision 3 — Bridge-side `isHeadlessRpcSession()` probe stays as-is; Path-D hint text is rewritten
+
+(see also Decision 5 for the hint-text rewrite that this change forces)
+
+#### Probe stays as-is
 
 **What:** No change to the bridge's headless-detection logic in `slash-dispatch.ts`.
 
@@ -74,6 +81,10 @@ User-visible symptom while keeper is opt-in: every slash command typed in a dash
 
 ### Decision 4 — Tmux / wt / wsl-tmux strategies are untouched
 
+**Note:** the Path-D stopgap message in `slash-dispatch.ts` currently points users at `"useRpcKeeper": true`. After this change there is no such config flag, so the message must be rewritten. See Decision 5.
+
+
+
 **What:** Those spawn paths continue without any RPC stdin channel. Slash commands typed in them still emit the stopgap error.
 
 **Rationale:**
@@ -81,6 +92,14 @@ User-visible symptom while keeper is opt-in: every slash command typed in a dash
 - The proper long-term fix for tmux / wt is upstream `pi.dispatchCommand` (Path B from `slash-command.md`).
 
 **Decision:** out of scope. Path A → Path B remains the upgrade path for terminal-hosted sessions.
+
+### Decision 5 — Path-D stopgap hint loses its `useRpcKeeper` reference
+
+**What:** `RPC_KEEPER_HINT` in `packages/extension/src/slash-dispatch.ts:130-135` is rewritten. Today it says: *"Extension slash commands cannot be dispatched from the dashboard for non-headless (tmux/wt) sessions. If you're using headless mode, add `"useRpcKeeper": true` to your dashboard config."* After this change the second sentence is wrong (the flag no longer exists). The new text is roughly: *"Extension slash commands cannot be dispatched from this session shape (typically tmux / Windows Terminal sessions, where the user's terminal owns pi's stdin). Headless dashboard-spawned sessions support slash commands natively."*
+
+**Rationale:** keeping the old message would point users at a removed config field, producing a worse error than today. The rewrite is the minimum surface change — same emit site, same `command_feedback` shape, just different message text.
+
+**Decision:** rewrite, update the 3 test assertions in `bridge-slash-command-routing.test.ts`. Test assertions move from substring-match on `"useRpcKeeper"` to substring-match on a stable token in the new text (e.g. `"tmux"` or `"session shape"`).
 
 ## Risks / Trade-offs
 

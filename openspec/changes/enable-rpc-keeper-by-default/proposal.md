@@ -40,10 +40,12 @@ Three concrete problems persist while keeper is opt-in:
 ## Impact
 
 - **MODIFIED files**:
-  - `packages/shared/src/config.ts` — flip default, then in the same change remove the field entirely (`DEFAULT_CONFIG.useRpcKeeper`, schema entry, loader parse line) (~10 LOC removed)
-  - `packages/server/src/process-manager.ts` — delete `shouldUseRpcKeeper()`, `_setUseRpcKeeperOverrideForTests`, the legacy Unix shell-wrapper branch, the legacy Windows direct-pipe branch; `spawnHeadless` becomes "always go through the keeper" (~150 LOC removed, ~10 LOC added for cleanup-of-the-conditional)
-  - `packages/server/src/__tests__/process-manager-keeper-spawn.test.ts` — drop the override-flag setup, drop the "flag-off keeps the legacy path" scenario; the remaining tests simplify (~30 LOC delta)
-  - `packages/server/src/__tests__/` — any other test that used `_setUseRpcKeeperOverrideForTests` is updated to remove the call (none currently expected, but grep before implementing)
+  - `packages/shared/src/config.ts` — flip default, then in the same change remove the field entirely (`DEFAULT_CONFIG.useRpcKeeper` at L310, schema entry at L250, loader parse line at L597) (~10 LOC removed)
+  - `packages/server/src/process-manager.ts` — delete `shouldUseRpcKeeper()` (L91-94), `_setUseRpcKeeperOverrideForTests` (L83-89), the `useRpcKeeperOverride` module var (L87); collapse `spawnHeadless` (L445-498) so the keeper branch becomes unconditional; delete the Unix `sh -c "tail -f /dev/null | …"` fallback (L478-481) and the Windows `spawnHeadlessDetached` callsite + likely the whole `spawnHeadlessDetached` function (L589-…) once it has no callers; `resolvePiCommand()` runs once before `spawnHeadlessViaKeeper` (already does, just deduplicated) (~150 LOC removed, ~10 LOC added)
+  - `packages/server/src/__tests__/process-manager-keeper-spawn.test.ts` — drop the 6 `_setUseRpcKeeperOverrideForTests(true)` setup calls (L112/158/187/210/226) and the `(false)` legacy-path teardown (L241); drop the global afterEach reset (L95); the suite renames from `"spawnHeadless (useRpcKeeper: true)"` to `"spawnHeadless (headless via keeper)"` (~30 LOC delta)
+  - `packages/extension/src/slash-dispatch.ts` — the Path-D stopgap hint string (`RPC_KEEPER_HINT`, L130-135) currently advises users to set `"useRpcKeeper": true`. After this change there is no flag to set; the message SHALL be rewritten to a generic "extension slash commands not available in this session shape" form. Comment block at L124-131 referencing `useRpcKeeper` is updated.
+  - `packages/extension/src/__tests__/bridge-slash-command-routing.test.ts` — 3 assertions (`L108, L196, L311`) check that the stopgap error message contains `"useRpcKeeper"`. Updated to assert on the new message shape.
+  - `packages/server/src/__tests__/` — grep for any other `_setUseRpcKeeperOverrideForTests` callsite confirms only `process-manager-keeper-spawn.test.ts` uses it (verified 2026-05-27).
   - `CHANGELOG.md` `[Unreleased] → Changed` — keeper default-on entry with migration note (~8 LOC)
   - `docs/faq.md` — collapse the three-session-type entry to two (~10 LOC delta)
   - `docs/architecture.md` — drop "experimental" framing, drop legacy-spawn paragraphs (~20 LOC delta)
@@ -77,11 +79,13 @@ As of drafting (2026-05-10), the parent change is implemented but its CHANGELOG 
 
 ### Empirical evidence
 
-- `packages/shared/src/config.ts:273` — `DEFAULT_CONFIG.useRpcKeeper = false` (the line this change flips, then deletes).
-- `packages/server/src/process-manager.ts:409-419` — current Unix `tail -f /dev/null | pi --mode rpc` wrapper (the durability invariant source this change retires).
-- `packages/server/src/process-manager.ts:480-525` — current Windows piped-stdin path (loses durability on server restart; this change retires it in favor of the keeper).
-- `packages/server/src/__tests__/process-manager-keeper-spawn.test.ts` — the test file whose "flag-off keeps the legacy path" scenario this change deletes.
-- `CHANGELOG.md:11-22` — Phase 1 entry under `[Unreleased]`; confirms the gate condition above.
+- `packages/shared/src/config.ts:310` — `DEFAULT_CONFIG.useRpcKeeper = false` (the line this change flips, then deletes). Schema field at L250, loader parse line at L597.
+- `packages/server/src/process-manager.ts:478-481` — current Unix `tail -f /dev/null | pi --mode rpc` wrapper (the durability invariant source this change retires). Note: after `fix-rpc-keeper-pi-resolution` (archived 2026-05-27), the keeper branch also calls `resolvePiCommand()` and forwards via `PI_KEEPER_PI_CMD` env var. The legacy wrapper does the same `resolvePiCommand()` step; collapsing the branches means the resolution happens once, not twice.
+- `packages/server/src/process-manager.ts:589-…` — current `spawnHeadlessDetached` Windows piped-stdin function (loses durability on server restart; this change retires it in favor of the keeper). With no remaining callers after this change, the function itself is deleted.
+- `packages/extension/src/slash-dispatch.ts:130-135` — Path-D stopgap message currently advising users to set `"useRpcKeeper": true`; rewritten to drop the flag mention.
+- `packages/extension/src/__tests__/bridge-slash-command-routing.test.ts:108,196,311` — three assertions on the stopgap message text; updated.
+- `packages/server/src/__tests__/process-manager-keeper-spawn.test.ts` — the test file whose `_setUseRpcKeeperOverrideForTests`-based scaffolding this change collapses.
+- `CHANGELOG.md` `## [0.5.3] - 2026-05-11` entry — the Phase-1 ship date that opens the soak window; `## [0.5.4] - 2026-05-26` confirms a full release cycle without keeper regressions.
 
 ### Architectural references
 

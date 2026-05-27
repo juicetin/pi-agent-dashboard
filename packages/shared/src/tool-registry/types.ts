@@ -21,7 +21,8 @@ export type Source =
   | "managed"
   | "system"
   | "npm-global"
-  | "bare-import";
+  | "bare-import"
+  | "bundled";
 
 /** Result returned by a single strategy attempt. */
 export type StrategyResult =
@@ -83,6 +84,14 @@ export interface StrategyCtx {
   env?: {
     homedir?: string;
     cwd?: string;
+    /**
+     * Electron-only: absolute path to the packaged-app Resources/ dir
+     * (matches `process.resourcesPath`). Undefined outside Electron;
+     * strategies that probe bundled-with-app artifacts (e.g. the
+     * bundled Node runtime at `<resourcesPath>/node/`) fast-fail when
+     * unset. See change: fix-node-resolution-under-electron.
+     */
+    resourcesPath?: string;
   };
 }
 

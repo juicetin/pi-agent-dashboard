@@ -139,3 +139,31 @@ describe("ToolsSection row-derived UI state", () => {
     expect(tool.ok).toBe(false);
   });
 });
+
+describe("SourceBadge style mapping", () => {
+  // See change: fix-node-resolution-under-electron (task 5.3).
+  it("'bundled' source gets a sky-500 badge with the Electron-install tooltip", async () => {
+    const { sourceBadgeStyle } = await import("../components/ToolsSection.js");
+    const s = sourceBadgeStyle("bundled");
+    expect(s.className).toContain("sky");
+    expect(s.tooltip).toMatch(/Electron/i);
+  });
+
+  it("'system' badge has a tooltip pointing at PATH", async () => {
+    const { sourceBadgeStyle } = await import("../components/ToolsSection.js");
+    expect(sourceBadgeStyle("system").tooltip).toMatch(/PATH/i);
+  });
+
+  it("'override' badge is distinct from bundled / system / managed", async () => {
+    const { sourceBadgeStyle } = await import("../components/ToolsSection.js");
+    const classes = new Set([
+      sourceBadgeStyle("override").className,
+      sourceBadgeStyle("bundled").className,
+      sourceBadgeStyle("managed").className,
+      sourceBadgeStyle("system").className,
+      sourceBadgeStyle("npm-global").className,
+      sourceBadgeStyle("bare-import").className,
+    ]);
+    expect(classes.size).toBe(6);
+  });
+});

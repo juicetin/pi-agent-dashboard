@@ -53,6 +53,12 @@ function freshRegistry(opts: {
     exists: opts.exists ?? (() => false),
     which: opts.which ?? (() => null),
     npmRootGlobal: opts.npmRootGlobal ?? (() => ""),
+    // Bare-import resolver returns null so the test's filesystem-fake
+    // semantics are honoured; without this the new dir-walk fallback
+    // in `defaultResolveModule` finds the package in the repo's real
+    // node_modules and bypasses the managed/npm-global assertions.
+    // See change: fix-node-resolution-under-electron (follow-up).
+    resolveModule: () => null,
   });
   return r;
 }

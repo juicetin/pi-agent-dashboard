@@ -199,9 +199,7 @@ function ToolRow({ tool, busy, onRescan, onSetOverride, onClearOverride }: ToolR
         </button>
         <StatusBadge tool={tool} invalidOverride={invalidOverride} />
         <span className="font-mono font-medium flex-shrink-0 w-32 truncate">{tool.name}</span>
-        <span className="text-[var(--text-secondary)] flex-shrink-0 w-24 truncate">
-          {tool.source ?? "—"}
-        </span>
+        <SourceBadge source={tool.source} />
         <span className="font-mono text-[var(--text-secondary)] truncate flex-1" title={tool.path ?? "not found"}>
           {tool.path ?? "not found"}
         </span>
@@ -266,6 +264,51 @@ function ToolRow({ tool, busy, onRescan, onSetOverride, onClearOverride }: ToolR
       )}
     </div>
   );
+}
+
+/**
+ * Per-source colored pill for the tool row. `bundled` (Electron-bundled
+ * Node toolchain at <resourcesPath>/node/) is rendered as a neutral-blue
+ * badge to distinguish it from `system`, `managed`, `override`,
+ * `npm-global`, and `bare-import`.
+ * See change: fix-node-resolution-under-electron (task 5.1).
+ */
+export function SourceBadge({ source }: { source: Resolution["source"] }) {
+  if (!source) {
+    return (
+      <span className="text-[var(--text-secondary)] flex-shrink-0 w-24 truncate">—</span>
+    );
+  }
+  const style = sourceBadgeStyle(source);
+  return (
+    <span
+      className={`flex-shrink-0 w-24 truncate ${style.className}`}
+      title={style.tooltip}
+    >
+      {source}
+    </span>
+  );
+}
+
+export function sourceBadgeStyle(source: NonNullable<Resolution["source"]>): { className: string; tooltip: string } {
+  switch (source) {
+    case "bundled":
+      return {
+        className: "text-sky-500",
+        tooltip: "Shipped with this Electron install.",
+      };
+    case "override":
+      return { className: "text-purple-500", tooltip: "User-pinned override." };
+    case "managed":
+      return { className: "text-emerald-500", tooltip: "Installed under ~/.pi-dashboard/." };
+    case "npm-global":
+      return { className: "text-amber-500", tooltip: "Found in the global npm prefix." };
+    case "bare-import":
+      return { className: "text-cyan-500", tooltip: "Resolved via Node module resolution." };
+    case "system":
+    default:
+      return { className: "text-[var(--text-secondary)]", tooltip: "Found on PATH." };
+  }
 }
 
 function StatusBadge({ tool, invalidOverride }: { tool: Resolution; invalidOverride: boolean }) {

@@ -32,6 +32,14 @@ import { OverridesStore } from "./overrides.js";
 export interface PlatformEnv {
   homedir?: string;
   cwd?: string;
+  /**
+   * Electron-only: absolute path to the packaged-app Resources/ dir
+   * (matches `process.resourcesPath`). Production registries populate
+   * from `process.resourcesPath`; tests inject a fake to exercise the
+   * bundled-node strategy without a real Electron host.
+   * See change: fix-node-resolution-under-electron.
+   */
+  resourcesPath?: string;
 }
 
 export interface ToolRegistryDeps {
@@ -56,6 +64,8 @@ const DEFAULT_CLASSIFY = (strategyName: string): Source => {
       return "bare-import";
     case "npm-global":
       return "npm-global";
+    case "bundled-node":
+      return "bundled";
     default:
       return "system";
   }
@@ -76,7 +86,17 @@ export class ToolRegistry {
     this.platform = deps.platform ?? process.platform;
     this.importModule = deps.importModule ?? ((url) => import(/* @vite-ignore */ url));
     this.now = deps.now ?? (() => Date.now());
-    this.env = deps.env;
+    // Default `env.resourcesPath` to the live `process.resourcesPath`
+    // so the bundled-node strategy works under Electron without callers
+    // having to opt in. Tests pass an explicit `env` (possibly with
+    // `resourcesPath: undefined`) to override.
+    // See change: fix-node-resolution-under-electron.
+    if (deps.env) {
+      this.env = deps.env;
+    } else {
+      const live = (process as { resourcesPath?: string }).resourcesPath;
+      this.env = live ? { resourcesPath: live } : undefined;
+    }
   }
 
   /**

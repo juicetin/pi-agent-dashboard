@@ -20,6 +20,13 @@ function freshRegistry(opts: {
   npmRootGlobal?: () => string;
   overrides?: Record<string, string>;
   platform?: NodeJS.Platform;
+  /**
+   * Test-isolated module resolver. Defaults to null-returning so the
+   * production resolver (which walks the repo's real node_modules) does
+   * not leak into chain-order assertions. Tests that exercise the live
+   * resolver pass `resolveModule: undefined` and override it explicitly.
+   */
+  resolveModule?: ((id: string, from: string) => string | null) | null;
 }) {
   const store = new OverridesStore({
     filePath: path.join(os.tmpdir(), `tool-registry-test-${Math.random()}.json`),
@@ -35,6 +42,16 @@ function freshRegistry(opts: {
     exists: opts.exists ?? (() => false),
     which: opts.which ?? (() => null),
     npmRootGlobal: opts.npmRootGlobal ?? (() => ""),
+    // Default-null so bare-import strategies fail in test mode unless
+    // the test opts back in. Without this, the new dir-walk fallback in
+    // `defaultResolveModule` finds packages on the host's real disk and
+    // breaks chain-order assertions. See change:
+    // fix-node-resolution-under-electron (follow-up: bare-import
+    // exports-map fallback).
+    resolveModule:
+      opts.resolveModule === null
+        ? () => null
+        : (opts.resolveModule ?? (() => null)),
   });
   return r;
 }
@@ -227,11 +244,59 @@ describe("openspec binary definition", () => {
 });
 
 describe("registered tool set", () => {
-  it("registers pi, pi-coding-agent, openspec, npm, node, git, jj, zrok, wt", () => {
+  it("registers pi, pi-coding-agent, openspec, npm, npx, node, git, jj, zrok, wt", () => {
     const r = freshRegistry({});
-    for (const name of ["pi", "pi-coding-agent", "openspec", "npm", "node", "git", "jj", "zrok", "wt"]) {
+    for (const name of ["pi", "pi-coding-agent", "openspec", "npm", "npx", "node", "git", "jj", "zrok", "wt"]) {
       expect(r.has(name)).toBe(true);
     }
+  });
+
+  // Chain-order assertions for the bundled-node strategy. See change:
+  // fix-node-resolution-under-electron (task 4.3).
+  it("node chain: override → bundled-node → managed (runtime) → managed (bin) → where", () => {
+    const r = freshRegistry({ exists: () => false, which: () => null });
+    const trail = r.resolve("node").tried.map((t) => t.strategy);
+    expect(trail).toEqual([
+      "override",
+      "bundled-node",
+      "managed", // managedRuntimeStrategy
+      "managed", // managedBinStrategy
+      "where",
+    ]);
+  });
+
+  it("npm chain (Unix): override → bundled-node → managed → where", () => {
+    const r = freshRegistry({ exists: () => false, which: () => null, platform: "linux" });
+    const trail = r.resolve("npm").tried.map((t) => t.strategy);
+    expect(trail).toEqual([
+      "override",
+      "bundled-node",
+      "managed",
+      "where",
+    ]);
+  });
+
+  it("npm chain (Windows): override → bundled-node → managed (runtime) → managed (npm-cli-beside-node) → where", () => {
+    const r = freshRegistry({ exists: () => false, which: () => null, platform: "win32" });
+    const trail = r.resolve("npm").tried.map((t) => t.strategy);
+    expect(trail).toEqual([
+      "override",
+      "bundled-node",
+      "managed",
+      "managed",
+      "where",
+    ]);
+  });
+
+  it("npx chain: override → bundled-node → managed (bin) → where", () => {
+    const r = freshRegistry({ exists: () => false, which: () => null });
+    const trail = r.resolve("npx").tried.map((t) => t.strategy);
+    expect(trail).toEqual([
+      "override",
+      "bundled-node",
+      "managed",
+      "where",
+    ]);
   });
 
   it("jj resolves via where when found", () => {

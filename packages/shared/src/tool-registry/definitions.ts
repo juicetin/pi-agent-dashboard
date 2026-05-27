@@ -17,6 +17,7 @@ import type { ToolRegistry } from "./registry.js";
 import {
   type StrategyDeps,
   bareImportStrategy,
+  bundledNodeStrategy,
   managedBinStrategy,
   managedModuleStrategy,
   managedRuntimeStrategy,
@@ -34,6 +35,7 @@ function classify(strategyName: string): Source {
   if (strategyName === "managed") return "managed";
   if (strategyName === "npm-global") return "npm-global";
   if (strategyName === "bare-import") return "bare-import";
+  if (strategyName === "bundled-node") return "bundled";
   // `where` and anything else — resolved via PATH — classifies as system.
   return "system";
 }
@@ -41,13 +43,23 @@ function classify(strategyName: string): Source {
 // ── Binary definitions ──────────────────────────────────────────────────────
 
 function binaryDef(binaryName: string, deps?: StrategyDeps): ToolDefinition {
-  // The `node` binary gets the managed-Node runtime strategy prepended
-  // (after override) so the persistent <managedDir>/node/ install wins
-  // over PATH lookup. See change: embed-managed-node-runtime.
+  // The `node` binary gets two Node-specific strategies prepended after
+  // override:
+  //   1. `bundled-node` — Electron-packaged Node at <resourcesPath>/node/
+  //      (see change: fix-node-resolution-under-electron).
+  //   2. `managedRuntime` — persistent install under <managedDir>/node/
+  //      (see change: embed-managed-node-runtime).
+  // Both fast-fail when their root is absent, so non-Electron / non-managed
+  // callers fall straight through to PATH lookup without extra fs cost.
   const isNode = binaryName === "node";
   const strategies = [
     overrideStrategy(binaryName, deps),
-    ...(isNode ? [managedRuntimeStrategy("node", deps)] : []),
+    ...(isNode
+      ? [
+          bundledNodeStrategy("node", deps),
+          managedRuntimeStrategy("node", deps),
+        ]
+      : []),
     managedBinStrategy(binaryName, deps),
     whereStrategy(binaryName, deps),
   ];
@@ -57,6 +69,33 @@ function binaryDef(binaryName: string, deps?: StrategyDeps): ToolDefinition {
     strategies,
     classify,
   };
+}
+
+/**
+ * Definition for `npx` — registered as a binary, not an executor.
+ *
+ * Chain (per spec `tool-registry` requirement "npx strategy chain"):
+ *   override → bundled-node → managed-bin → where
+ *
+ * The bundled-node strategy hits the Electron-packaged npx at
+ * `<resourcesPath>/node/bin/npx` (Unix) or `<resourcesPath>\node\npx.cmd`
+ * (Windows). Managed-bin probes `~/.pi-dashboard/node_modules/.bin/npx`
+ * (a no-op post-`eliminate-electron-runtime-install` for clean Electron
+ * installs, but kept for standalone-CLI callers that may have one).
+ *
+ * See change: fix-node-resolution-under-electron (task 3.3). This
+ * registration is also referenced from the companion proposal
+ * `register-bash-and-tool-install-help`, which will layer `installHints`
+ * on top once it lands.
+ */
+function npxBinaryDef(deps?: StrategyDeps): ToolDefinition {
+  const strategies: Strategy[] = [
+    overrideStrategy("npx", deps),
+    bundledNodeStrategy("npx", deps),
+    managedBinStrategy("npx", deps),
+    whereStrategy("npx", deps),
+  ];
+  return { name: "npx", kind: "binary", strategies, classify };
 }
 
 // ── Module definitions ──────────────────────────────────────────────────────
@@ -69,7 +108,14 @@ function moduleDefWithAliases(
   deps?: StrategyDeps,
 ): ToolDefinition {
   const strategies = [overrideStrategy(canonicalName, deps)];
-  for (const pkg of pkgNames) strategies.push(bareImportStrategy(pkg));
+  // Pass deps so tests can inject a `resolveModule` that returns null
+  // (or a fake path) and keep chain-order assertions deterministic.
+  // Without this the production resolver — which now includes a
+  // dir-walk fallback over the host's real node_modules — would
+  // succeed against the live disk and bypass managed/npm-global probes.
+  // See change: fix-node-resolution-under-electron (follow-up:
+  // bare-import exports-map fallback).
+  for (const pkg of pkgNames) strategies.push(bareImportStrategy(pkg, undefined, deps));
   for (const pkg of pkgNames) strategies.push(managedModuleStrategy(pkg, entry, deps));
   for (const pkg of pkgNames) strategies.push(npmGlobalStrategy(pkg, entry, deps));
   return { name: canonicalName, kind: "module", strategies, classify };
@@ -368,12 +414,20 @@ function npmExecutorDef(deps?: StrategyDeps): ToolDefinition {
     },
   };
 
+  // Bundled npm under Electron at <resourcesPath>/node/bin/npm (Unix)
+  // or <resourcesPath>\node\npm.cmd (Windows). Runs BEFORE managedRuntime
+  // because installing the Electron app implicitly opts the user into
+  // its bundled Node toolchain.
+  // See change: fix-node-resolution-under-electron.
+  const bundledNpm = bundledNodeStrategy("npm", deps);
+
   // Managed-Node runtime: prefer <managedDir>/node/{npm.cmd,bin/npm}
   // when the runtime is installed. See change: embed-managed-node-runtime.
   const managedNpm = managedRuntimeStrategy("npm", deps);
 
   const winStrategies = [
     overrideStrategy("npm", deps),
+    bundledNpm,
     managedNpm,
     npmCliBesideNodeStrategy,
     whereStrategy("npm", deps),
@@ -381,6 +435,7 @@ function npmExecutorDef(deps?: StrategyDeps): ToolDefinition {
 
   const unixStrategies = [
     overrideStrategy("npm", deps),
+    bundledNpm,
     managedNpm,
     whereStrategy("npm", deps),
   ];
@@ -450,6 +505,10 @@ export function registerDefaultTools(registry: ToolRegistry, deps?: StrategyDeps
 
   // Native binaries — no interpreter needed.
   registry.register(binaryDef("node", deps));
+  // npx — registered as a binary with bundled-node prepended so the
+  // Electron-bundled npx is found on packaged installs.
+  // See change: fix-node-resolution-under-electron (task 3.3).
+  registry.register(npxBinaryDef(deps));
   registry.register(binaryDef("git", deps));
   registry.register(binaryDef("jj", deps));
   registry.register(binaryDef("zrok", deps));

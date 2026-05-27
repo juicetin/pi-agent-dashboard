@@ -22,6 +22,7 @@ import { extractTurnStats } from "@blackbelt-technology/pi-dashboard-shared/stat
 import { attachRenameTarget, isNameAutoSetFromAttachment } from "./proposal-attach-naming.js";
 import { handleDispatchExtensionCommand } from "./rpc-keeper/dispatch-router.js";
 import { keeperOptsFromSpawnResult } from "./headless-pid-registry.js";
+import { decideDashboardSource } from "./dashboard-source-decision.js";
 
 export interface EventWiringDeps {
   sessionManager: SessionManager;
@@ -536,12 +537,27 @@ export function wireEvents(deps: EventWiringDeps): void {
 
       const isNewSession = !knownSessionIds.has(sessionId);
       knownSessionIds.add(sessionId);
+      // Decision matrix delegated to `decideDashboardSource` — strong
+      // signal (`msg.dashboardSpawned`, sent on every register from
+      // bridges that have `PI_DASHBOARD_SPAWN_TOKEN`) wins, with the
+      // legacy `pendingDashboardSpawns` FIFO as fallback for older
+      // bridges. See change: fix-dashboard-source-mislabelling.
       const pendingCount = pendingDashboardSpawns.get(msg.cwd) ?? 0;
-      if (pendingCount > 0 && isNewSession) {
-        if (pendingCount <= 1) pendingDashboardSpawns.delete(msg.cwd);
-        else pendingDashboardSpawns.set(msg.cwd, pendingCount - 1);
-        sessionManager.update(sessionId, { source: "dashboard" });
-        browserGateway.broadcastSessionUpdated(sessionId, { source: "dashboard" });
+      const decision = decideDashboardSource({
+        dashboardSpawned: msg.dashboardSpawned,
+        pendingCount,
+        isNewSession,
+      });
+      if (decision.shouldStamp) {
+        if (decision.consumeLegacyCounter) {
+          if (pendingCount <= 1) pendingDashboardSpawns.delete(msg.cwd);
+          else pendingDashboardSpawns.set(msg.cwd, pendingCount - 1);
+        }
+        const currentSource = sessionManager.get(sessionId)?.source;
+        if (currentSource !== "dashboard") {
+          sessionManager.update(sessionId, { source: "dashboard" });
+          browserGateway.broadcastSessionUpdated(sessionId, { source: "dashboard" });
+        }
         if (msg.sessionFile) {
           try {
             // Merge, not overwrite, so any other fields already written

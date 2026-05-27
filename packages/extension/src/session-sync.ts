@@ -49,6 +49,15 @@ export function sendStateSync(
   // See change: spawn-correlation-token (Decision 3).
   const spawnToken = isFirstRegister ? process.env.PI_DASHBOARD_SPAWN_TOKEN : undefined;
 
+  // Strong, restart-survival flag: the dashboard injects
+  // `PI_DASHBOARD_SPAWN_TOKEN` into spawned pi processes' env. As long
+  // as this pi is alive, the env var is present and we know we were
+  // dashboard-spawned — even after the dashboard server restarts and
+  // its in-memory spawn counters / pid registry are gone. Sent on every
+  // register (unlike spawnToken which fires only on the first).
+  // See change: fix-dashboard-source-mislabelling (TBD followup).
+  const dashboardSpawned = !!process.env.PI_DASHBOARD_SPAWN_TOKEN;
+
   bc.connection.send({
     type: "session_register",
     sessionId: bc.sessionId,
@@ -64,6 +73,7 @@ export function sendStateSync(
     pid: process.pid,
     registerReason,
     ...(spawnToken ? { spawnToken } : {}),
+    ...(dashboardSpawned ? { dashboardSpawned: true } : {}),
   });
 
   bc.hasRegisteredOnce = true;
@@ -137,6 +147,7 @@ export function handleSessionChange(
   // handleSessionChange always mints a fresh sessionId (new/fork/resume),
   // so registerReason is unconditionally "spawn" — even after the bridge
   // has previously reattached. See change: reattach-move-to-front.
+  const dashboardSpawned = !!process.env.PI_DASHBOARD_SPAWN_TOKEN;
   bc.connection.send({
     type: "session_register",
     sessionId: bc.sessionId,
@@ -147,6 +158,7 @@ export function handleSessionChange(
     thinkingLevel: bc.lastThinkingLevel,
     sessionFile: bc.lastSessionFile,
     sessionDir: bc.lastSessionDir,
+    ...(dashboardSpawned ? { dashboardSpawned: true } : {}),
     firstMessage,
     eventCount,
     pid: process.pid,

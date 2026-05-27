@@ -44,6 +44,19 @@ export interface SessionRegisterMessage {
    */
   spawnToken?: string;
   /**
+   * Strong, restart-survival flag: true when the bridge process has
+   * `PI_DASHBOARD_SPAWN_TOKEN` in its env, which is set only by the
+   * dashboard server when it spawns a headless pi. Unlike `spawnToken`,
+   * this is sent on EVERY register (initial + every reattach), so the
+   * server can re-stamp `source: "dashboard"` after its in-memory
+   * `pendingDashboardSpawns` counter and `headlessPidRegistry` have
+   * been wiped by a restart. Optional for forward-compat with older
+   * bridges; absence is interpreted as "unknown" and the server falls
+   * back to its legacy FIFO heuristic.
+   * See change: fix-dashboard-source-mislabelling (TBD followup).
+   */
+  dashboardSpawned?: boolean;
+  /**
    * Why the bridge is registering this session. The bridge sets this to
    * `"spawn"` for the very first `session_register` after process boot
    * and for every register emitted by the new/fork/resume path

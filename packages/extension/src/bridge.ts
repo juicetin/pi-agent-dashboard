@@ -1564,6 +1564,9 @@ function initBridge(pi: ExtensionAPI) {
       if (entries) eventCount = entries.length;
     } catch { /* ignore */ }
 
+    // See change: fix-dashboard-source-mislabelling — sent on every
+    // register so server can re-stamp source after restart.
+    const dashboardSpawned = !!process.env.PI_DASHBOARD_SPAWN_TOKEN;
     connection.send({
       type: "session_register",
       sessionId,
@@ -1576,6 +1579,7 @@ function initBridge(pi: ExtensionAPI) {
       sessionDir,
       firstMessage,
       eventCount,
+      ...(dashboardSpawned ? { dashboardSpawned: true } : {}),
     });
 
     // Allow event forwarding now that session_register is buffered

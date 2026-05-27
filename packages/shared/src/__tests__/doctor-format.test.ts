@@ -27,7 +27,7 @@ describe("formatDoctorReportMarkdown", () => {
       { name: "Electron", section: "runtime", status: "ok", message: "v40" },
       { name: "zrok binary", section: "tunnel", status: "ok", message: "found" },
       {
-        name: "Managed install (~/.pi-dashboard)",
+        name: "Legacy install directory",
         section: "diagnostics",
         status: "ok",
         message: "fine",

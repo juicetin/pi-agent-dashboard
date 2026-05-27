@@ -43,6 +43,10 @@ function fakeDeps(overrides: Partial<SharedChecksDeps> = {}): SharedChecksDeps {
     detectOpenSpecOnPath: () => ({ found: false }),
     isApiKeyConfigured: () => true,
     probeServer: async () => ({ running: true, version: "0.4.6", mode: "production" }),
+    // Hermetic default for the legacy `~/.pi-dashboard/` advisory —
+    // ensures route tests don't depend on the runner's real $HOME.
+    // See change: fix-doctor-stale-managed-install-check.
+    detectLegacyManagedDir: () => ({ present: false }),
     ...overrides,
   };
 }
@@ -277,6 +281,35 @@ describe("/api/doctor", () => {
         expect(c.detail ?? "").toMatch(/bundled.*server\/node_modules/);
       }
     }
+  });
+
+  // Regression net for change: fix-doctor-stale-managed-install-check.
+  // The obsolete row was emitted unconditionally on every clean install.
+  it("never emits the obsolete `Managed install (~/.pi-dashboard)` row", async () => {
+    app = await makeApp(() => fakeDeps());
+    const res = await app.inject({ method: "GET", url: "/api/doctor" });
+    const body = res.json() as DoctorReport;
+    const stale = body.checks.find((c) => c.name === "Managed install (~/.pi-dashboard)");
+    expect(stale).toBeUndefined();
+  });
+
+  it("emits the legacy advisory row when the detector reports present", async () => {
+    app = await makeApp(() =>
+      fakeDeps({
+        detectLegacyManagedDir: () => ({
+          present: true,
+          path: "/fake/home/.pi-dashboard",
+          pkgCount: 3,
+          sizeMb: 17,
+        }),
+      }),
+    );
+    const res = await app.inject({ method: "GET", url: "/api/doctor" });
+    const body = res.json() as DoctorReport;
+    const legacy = body.checks.find((c) => c.name === "Legacy install directory");
+    expect(legacy).toBeDefined();
+    expect(legacy?.status).toBe("warning");
+    expect(legacy?.section).toBe("diagnostics");
   });
 
   it("returns 200 with a single fallback row when buildDeps throws", async () => {

@@ -387,7 +387,7 @@ export const SECTION_OF: Record<string, DoctorSection> = {
   "zrok API reachable": "tunnel",
   "tunnel runtime": "tunnel",
   // diagnostics
-  "Managed install (~/.pi-dashboard)": "diagnostics",
+  "Legacy install directory": "diagnostics",
 };
 
 /**
@@ -502,10 +502,6 @@ export const SUGGESTIONS: Record<string, SuggestionFn> = {
     status === "ok"
       ? undefined
       : "Sign in to a provider in **Settings → Providers** — either an OAuth subscription (Claude Pro/Max, ChatGPT Plus/Pro) or an API key. Pi sessions need at least one credential to use LLM providers.",
-  "Managed install (~/.pi-dashboard)": (status) =>
-    status === "ok"
-      ? undefined
-      : "Managed install incomplete. Run the setup wizard (**Help → Setup**) to finish first-run install.",
   "zrok binary": (status) =>
     status === "ok"
       ? undefined
@@ -522,6 +518,15 @@ export const SUGGESTIONS: Record<string, SuggestionFn> = {
     status === "ok"
       ? undefined
       : "Active tunnel is failing its periodic health probe. Click the 🌐 Tunnel button in the sidebar to recycle it, or check `~/.pi-dashboard/server.log` for the underlying error.",
+  // Defensive fallback only — the live emission path in `runSharedChecks`
+  // sets `suggestion` inline, so the stamping `!c.suggestion` guard means
+  // this factory never runs in production. Kept to satisfy the Decision-8
+  // lint (every `SECTION_OF` name must have a non-empty suggestion for
+  // non-ok statuses). See change: fix-doctor-stale-managed-install-check.
+  "Legacy install directory": (status) =>
+    status === "ok"
+      ? undefined
+      : "Left over from a previous version. Nothing reads or writes `~/.pi-dashboard/` under the immutable-bundle architecture. Delete the directory manually to reclaim disk space.",
 };
 
 // ─── dns helper (test seam) ─────────────────────────────────────────
@@ -612,6 +617,15 @@ export interface SharedChecksDeps {
    * fix-doctor-oauth-credential-detection.
    */
   inspectedCredentialFiles?: () => string[];
+  /**
+   * Test seam for the legacy `~/.pi-dashboard/` advisory. Defaults to
+   * the real shared detector. Tests inject a mock to exercise both
+   * present / absent branches hermetically.
+   * See change: fix-doctor-stale-managed-install-check.
+   */
+  detectLegacyManagedDir?: () =>
+    | { present: false }
+    | { present: true; path: string; pkgCount: number; sizeMb: number };
 }
 
 export async function runSharedChecks(deps: SharedChecksDeps): Promise<DoctorCheck[]> {
@@ -1053,25 +1067,31 @@ export async function runSharedChecks(deps: SharedChecksDeps): Promise<DoctorChe
     }),
   );
 
-  // Managed install
-  checks.push(
-    await safeCheck("Managed install (~/.pi-dashboard)", "diagnostics", () => {
-      const managedExists = existsSync(managedDir);
-      const managedModules = existsSync(path.join(managedDir, "node_modules"));
-      const okState = managedExists && managedModules;
-      return {
-        name: "Managed install (~/.pi-dashboard)",
+  // Legacy ~/.pi-dashboard advisory — emit ONLY when the directory
+  // exists. Under R3 (change: eliminate-electron-runtime-install)
+  // nothing reads or writes this directory. This row tells the user
+  // it is safe to delete. Clean installs see nothing.
+  // See change: fix-doctor-stale-managed-install-check.
+  try {
+    const detect =
+      deps.detectLegacyManagedDir ??
+      (await import("./legacy-managed-dir.js")).detectLegacyManagedDir;
+    const legacy = detect();
+    if (legacy.present) {
+      checks.push({
+        name: "Legacy install directory",
         section: "diagnostics",
-        status: okState ? "ok" : "warning",
-        message: managedExists
-          ? managedModules
-            ? `Exists with node_modules at ${managedDir}`
-            : "Exists but no node_modules — may need reinstall"
-          : "Not created yet — will be set up on first run",
-        detail: okState ? undefined : `Path: ${managedDir}`,
-      };
-    }),
-  );
+        status: "warning",
+        message: `Legacy directory at ${legacy.path} — no longer used. Safe to delete manually.`,
+        detail: `${legacy.pkgCount} packages, ~${legacy.sizeMb} MB.`,
+        suggestion:
+          "Left over from a previous version. Nothing reads or writes it under the immutable-bundle architecture. " +
+          `Delete it manually (e.g. \`rm -rf ${legacy.path}\`) to reclaim disk space.`,
+      });
+    }
+  } catch {
+    /* advisory only — never block doctor output */
+  }
 
   return checks;
 }

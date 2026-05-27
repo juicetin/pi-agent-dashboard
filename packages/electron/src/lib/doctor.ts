@@ -330,30 +330,10 @@ async function runDoctorInner(): Promise<DoctorReport> {
     await runServerLaunchTest(checks, { hasBundledServer, bundledServerCli, bundledNode });
   }
 
-  // ── Legacy `~/.pi-dashboard/` advisory ───────────────────────
-  // Under R3 nothing reads or writes this directory. Surface a
-  // single warning row so the user knows it's safe to delete.
-  // See change: eliminate-electron-runtime-install (Phase 7).
-  try {
-    const { detectLegacyManagedDir } = await import(
-      "@blackbelt-technology/pi-dashboard-shared/legacy-managed-dir.js"
-    );
-    const legacy = detectLegacyManagedDir();
-    if (legacy.present) {
-      checks.push({
-        name: "Legacy install directory",
-        section: "diagnostics",
-        status: "warning",
-        message: `Legacy directory at ${legacy.path} — no longer used. Safe to delete manually.`,
-        detail: `${legacy.pkgCount} packages, ~${legacy.sizeMb} MB.`,
-        suggestion:
-          "This directory is left over from a previous version. Nothing reads or writes it under the immutable-bundle architecture. " +
-          `Delete it manually (e.g. \`rm -rf ${legacy.path}\`) to reclaim disk space.`,
-      });
-    }
-  } catch {
-    /* advisory only — never block doctor output */
-  }
+  // Legacy `~/.pi-dashboard/` advisory moved into shared
+  // `runSharedChecks(...)` so both Electron Doctor and the server-side
+  // `/api/doctor` route emit the same single row. See change:
+  // fix-doctor-stale-managed-install-check.
 
   // ── Stamp section + suggestion ───────────────────────────────
   stampSectionsAndSuggestions(checks);

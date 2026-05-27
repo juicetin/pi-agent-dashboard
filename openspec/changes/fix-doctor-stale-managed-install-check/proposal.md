@@ -41,7 +41,7 @@ Net effect: clean installs ship with a perpetual yellow ⚠ that cannot be resol
 
 - Not sweeping every "Run the setup wizard (Help → Setup)" string elsewhere in `doctor-core.ts` (lines 437, 443, 460, 474, 500). Those suggestions guard different checks (bundled Node missing, pi library missing, etc.); whether they are still accurate is a separate question that deserves its own change. Surface it after this one lands.
 - Not removing `~/.pi-dashboard/mode.json` or `recommended.json` writes from `wizard-state.ts` — that file is already TODO'd for deletion under Phase C of `simplify-electron-bootstrap-derived-state`. Out of scope here.
-- No spec capability changes. The diagnostic UI is implementation detail; no `openspec/specs/` capability owns the row taxonomy.
+- Spec delta IS required: `openspec/specs/doctor-diagnostic/spec.md` owns the row taxonomy and currently carries a scenario explicitly naming the `Managed install (~/.pi-dashboard)` row. The delta REMOVES that scenario (now subsumed) and ADDS a `Legacy `~/.pi-dashboard/` advisory only when the directory exists` requirement. See `specs/doctor-diagnostic/spec.md` in this change.
 
 ## Impact
 

@@ -51,8 +51,3 @@ Under the immutable-bundle architecture (change: `eliminate-electron-runtime-ins
 - **THEN** the `DoctorReport` SHALL still be produced
 - **AND** the report SHALL contain no `Legacy install directory` row (best-effort: advisory absent on failure rather than report-blocking)
 
-## REMOVED Requirements
-
-### Requirement: Managed-install check is tagged diagnostics
-**Reason**: The `Managed install (~/.pi-dashboard)` Doctor row is removed by this change. Under the immutable-bundle architecture (`eliminate-electron-runtime-install`), nothing creates or writes `~/.pi-dashboard/node_modules/`, so checking for its presence produced a perpetual false-positive WARN on every clean install. The replacement row, `Legacy install directory`, is governed by the new "Legacy `~/.pi-dashboard/` advisory only when the directory exists" requirement above and only emits when the directory is actually present.
-**Migration**: None required. JSON consumers that key off the row name `"Managed install (~/.pi-dashboard)"` will no longer find it; a `Legacy install directory` row may appear in its place when the directory exists. No external API contract change (the row was advisory-only).

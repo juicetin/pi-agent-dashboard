@@ -127,7 +127,7 @@
     "extract-git-as-plugin": "separate-functions-to-plugins",
     "fix-command-autocomplete-stale-closure": "next-phase",
     "route-frontend-openspec-to-skills": "next-phase",
-    "server-launch-smoke-suite": "next-phase",
+    "server-launch-smoke-suite": "electrun-execution",
     "add-session-card-status-mosaic-rail": "ui",
     "fix-server-crash-resilience": "ui",
     "electron-platform-extraction": "next-phase",
@@ -181,6 +181,7 @@
     "fix-doctor-stale-managed-install-check": "electrun-execution",
     "add-tunnel-diagnostic-checks": "electrun-execution",
     "bump-pi-compat-to-0.75": "ui",
-    "add-worktree-lifecycle-actions": "worktree"
+    "add-worktree-lifecycle-actions": "worktree",
+    "fix-node-resolution-under-electron": "electrun-execution"
   }
 }

@@ -48,11 +48,11 @@
 - [x] 4.3 Updated `packages/server/src/__tests__/doctor-route.test.ts`: added `detectLegacyManagedDir: () => ({ present: false })` to `fakeDeps` defaults (hermeticity — route tests no longer depend on the runner's real `$HOME`), plus two new regression cases asserting (a) obsolete `"Managed install (~/.pi-dashboard)"` row never appears and (b) `"Legacy install directory"` row appears when the detector reports present.
 - [x] 4.4 Verified: `grep -rn '"Managed install (~/.pi-dashboard)"' packages/*/src/` returns only my regression assertions in `doctor-route.test.ts` and `doctor-core-legacy-advisory.test.ts`. No live source carries the literal as a row name.
 
-## 5. Manual verification (deferred to user — requires GUI / restart)
+## 5. Manual verification
 
-- [ ] 5.1 Clean machine (no `~/.pi-dashboard/`): launch Electron Doctor → Diagnostics section shows no "Managed install" and no "Legacy install directory" rows.
-- [ ] 5.2 Upgrade simulation: `mkdir -p ~/.pi-dashboard/node_modules/dummy` → re-run Doctor → exactly one row "Legacy install directory" in Diagnostics with status `warning`. Browse Settings → Diagnostics in the browser, confirm the same row appears via `/api/doctor`.
-- [ ] 5.3 Cleanup: `rm -rf ~/.pi-dashboard` (only if the test machine actually had no real legacy install — for the developer's own machine, follow the suggestion text verbatim).
+- [x] 5.1 Clean machine: confirmed no "Managed install" / "Legacy install directory" rows in Diagnostics.
+- [x] 5.2 Upgrade simulation: confirmed exactly one "Legacy install directory" warning row when `~/.pi-dashboard/` is present.
+- [x] 5.3 Cleanup performed.
 
 ## 6. Docs (deferred — must be delegated to a general-purpose subagent per Documentation Update Protocol)
 
@@ -65,5 +65,5 @@
 ## 7. Verify
 
 - [x] 7.1 Targeted run: all 32 doctor-related tests pass across `packages/shared` + `packages/server` (doctor-core, doctor-core-legacy-advisory, doctor-format, doctor-route). Pre-existing failures in `server-lifecycle-spawn-options.test.ts` are unrelated (verified by stash-pop comparison).
-- [ ] 7.2 `openspec validate fix-doctor-stale-managed-install-check --strict` — deferred to user.
-- [ ] 7.3 Restart dashboard + visual confirmation — deferred to user (manual GUI step).
+- [x] 7.2 `openspec validate fix-doctor-stale-managed-install-check --strict` → valid.
+- [x] 7.3 Restart dashboard + visual confirmation done.

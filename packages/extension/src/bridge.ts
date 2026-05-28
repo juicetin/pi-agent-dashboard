@@ -1629,11 +1629,15 @@ function initBridge(pi: ExtensionAPI) {
       } catch { /* modelRegistry not available */ }
     }
 
-    // Apply default model only on brand-new sessions (no prior entries on disk).
-    // Resume (--session) and fork (--fork) both load parent entries, so entryCount > 0
-    // and we keep their existing model. Mirrors pi's own !hasExistingSession gate.
-    // See change: fix-resume-keeps-session-model.
-    const entryCount = ctx.sessionManager.getEntries?.()?.length ?? 0;
+    // Apply default model only on brand-new sessions (no prior message history).
+    // Resume (--session) and fork (--fork) both load parent messages, so messageCount > 0
+    // and we keep their existing model. Mirrors pi's own !hasExistingSession gate
+    // (sdk.js:106 — `existingSession.messages.length > 0`). NOT the raw getEntries()
+    // count: pi's sdk.js auto-appends model_change + thinking_level_change setup
+    // entries to a brand-new session BEFORE emitting session_start, so getEntries()
+    // is ≥ 2 even for a session with no user history. Only message entries count.
+    // See changes: fix-resume-keeps-session-model, fix-default-model-new-session-entry-count.
+    const entryCount = ctx.sessionManager.buildSessionContext?.()?.messages?.length ?? 0;
     const freshConfig = loadConfig();
     if (shouldApplyDefaultModel({
       reason: _event?.reason,

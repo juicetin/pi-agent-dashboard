@@ -90,18 +90,18 @@
   regressed.
 - [x] 6.2 `npm run lint` (or the project's `tsc --noEmit`
   equivalent) — clean.
-- [ ] 6.3 Manual smoke A: dashboard Spawn → session card shows
+- [x] 6.3 Manual smoke A: dashboard Spawn → session card shows
   robot icon and `.meta.json` carries `source: "dashboard"`.
-- [ ] 6.4 Manual smoke B: dashboard Spawn for cwd X, then launch
+- [x] 6.4 Manual smoke B: dashboard Spawn for cwd X, then launch
   CLI pi from terminal in cwd X (legacy-bridge simulation: unset
   `PI_DASHBOARD_SPAWN_TOKEN` in the CLI's env). Verify the CLI
   card renders TUI icon, `.meta.json` has no `source` field, and
   the dashboard server log carries one
   `cwd-FIFO source-stamp fallback` line.
-- [ ] 6.5 Manual smoke C: same as B but with
+- [x] 6.5 Manual smoke C: same as B but with
   `STRICT_SPAWN_CORRELATION=1` set on the server. Verify no stamp
   in either UI or sidecar, and no fallback log.
-- [ ] 6.6 Run `node scripts/repair-meta-source.mjs` against a
+- [x] 6.6 Run `node scripts/repair-meta-source.mjs` against a
   test home seeded with one bad sidecar + one good sidecar.
   Confirm the summary matches and the second run reports
   `cleaned 0`.

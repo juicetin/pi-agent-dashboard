@@ -8,7 +8,19 @@
  * ~/.pi/agent/providers.json directly. No TUI commands.
  *
  * Event API:
- *   flow:resolve-model / flow:get-available-models
+ *   model:resolve            — primary universal resolver (capability
+ *                              `dashboard-model-resolution`). Handles
+ *                              `@role`, `provider/model[:thinking]`, and
+ *                              bare `model-id`. Cooperative early-return
+ *                              when `probe.model` is already set.
+ *   flow:resolve-model       — DEPRECATED. Legacy probe shape (`data.modelRef`,
+ *                              no `@role` handling). Kept one release as an
+ *                              alias; will be removed in the next major. New
+ *                              callers MUST use `model:resolve`.
+ *   flow:get-available-models — list models known to the registry.
+ *   flow:role-*              — owned by `role-manager.ts` (capability
+ *                              `dashboard-roles-ownership`); not registered
+ *                              here.
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -16,6 +28,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { ProviderInfo } from "@blackbelt-technology/pi-dashboard-shared/types.js";
+import { getModelRole, loadRoleConfig } from "./role-manager.js";
 
 // -- Types ----------------------------------------------------------------
 
@@ -425,12 +438,23 @@ export function onProviderChanged(callback: () => void): void {
 // -- Helper: get modelRegistry --------------------------------------------
 //
 // pi's ModelRegistry is passed as `ctx.modelRegistry` to every extension
-// event handler (see ExtensionContext in pi's types). We capture the first
-// reference we see in `session_start` and reuse it thereafter. This avoids
-// depending on pi-flows' `flow:get-spawn-context` event which is not
-// guaranteed to be present in every install.
+// event handler (see ExtensionContext in pi's types). We lazily capture the
+// first reference we see in `session_start` / `model_select` and reuse it
+// thereafter — that warm reference is preferred because it carries
+// session-bound provenance from event contexts.
+//
+// Cold-start rescue: if a `model:resolve` (or other) probe arrives BEFORE
+// either of those events has populated `modelRegistryRef`, fall back to
+// `pi.modelRegistry` reached via the module-level `piRef`. pi exposes the
+// registry directly on the extension API handle, so this gives the very
+// first probe a working registry without waiting on event ordering.
+//
+// The fallback does NOT mutate `modelRegistryRef`: canonical warm-up
+// remains the session/model_select capture path. `??` (nullish coalescing)
+// is used deliberately so a non-null falsy registry value is not
+// misinterpreted as missing. See change: fix-model-resolve-cold-start.
 function getModelRegistry(): any {
-  return modelRegistryRef;
+  return modelRegistryRef ?? (piRef as any)?.modelRegistry;
 }
 
 // -- Provider registration (with auto-discovery) --------------------------
@@ -548,6 +572,99 @@ export async function reloadProviders(
   return { added, removed, changed };
 }
 
+// -- model:resolve helper -------------------------------------------------
+//
+// Unified resolver invoked by both the new `model:resolve` event handler and
+// (potentially) other dashboard code paths. The single source of truth for
+// turning a frontmatter/CLI ref into a Model object + auth.
+//
+// Probe shape (matches @blackbelt-technology/pi-dashboard-subagents):
+//   { ref, resolved?, model?, thinkingLevel?, auth?, error?, available? }
+
+type ThinkingLevel = "minimal" | "low" | "medium" | "high" | "xhigh" | "off";
+const MODEL_RESOLVE_THINKING_LEVELS: readonly ThinkingLevel[] = [
+  "minimal", "low", "medium", "high", "xhigh", "off",
+];
+const MODEL_RESOLVE_AVAILABLE_CAP = 20;
+
+function splitThinkingSuffix(s: string): { base: string; thinking?: ThinkingLevel } {
+  const i = s.lastIndexOf(":");
+  if (i <= 0) return { base: s };
+  const suffix = s.slice(i + 1).toLowerCase() as ThinkingLevel;
+  if (MODEL_RESOLVE_THINKING_LEVELS.includes(suffix)) {
+    return { base: s.slice(0, i), thinking: suffix };
+  }
+  return { base: s };
+}
+
+async function resolveModelProbe(probe: any, ref: string): Promise<void> {
+  // 1) Role indirection — read providers.json#roles directly. Recurse with
+  //    the literal once resolved.
+  let literal = ref;
+  if (literal.startsWith("@")) {
+    const roleName = literal.slice(1);
+    if (!roleName) {
+      probe.error = `Invalid role alias "${ref}": empty role name.`;
+      return;
+    }
+    // Single source of truth for role reads: role-manager owns the
+    // providers.json#roles slice. See spec dashboard-roles-ownership,
+    // requirement "`model:resolve` SHALL consult the same role-manager.ts
+    // reader for `@role` lookups".
+    const mapped = getModelRole(roleName);
+    if (!mapped) {
+      probe.error = `Role "${ref}" is not assigned in ~/.pi/agent/providers.json#roles.`;
+      probe.available = { ...(probe.available ?? {}), roles: loadRoleConfig().roles };
+      return;
+    }
+    literal = mapped;
+  }
+
+  // 2) Parse :thinking suffix.
+  const { base, thinking } = splitThinkingSuffix(literal);
+  if (thinking) probe.thinkingLevel = thinking;
+
+  // 3) Resolve to a Model via registry.
+  const registry = getModelRegistry();
+  if (!registry) {
+    probe.error = `Model registry unavailable — cannot resolve "${ref}".`;
+    return;
+  }
+
+  let model: any | undefined;
+  if (base.includes("/")) {
+    const slash = base.indexOf("/");
+    const provider = base.slice(0, slash);
+    const id = base.slice(slash + 1);
+    model = registry.find(provider, id);
+  } else {
+    const all = registry.getAll?.() ?? [];
+    model = all.find((m: any) => m && m.id === base);
+  }
+
+  if (!model) {
+    probe.error = `No model matched "${ref}"${literal !== ref ? ` (resolved to "${literal}")` : ""}.`;
+    const all = registry.getAll?.() ?? [];
+    const ids = all
+      .map((m: any) => m && m.id)
+      .filter((s: any): s is string => typeof s === "string" && s.length > 0)
+      .slice(0, MODEL_RESOLVE_AVAILABLE_CAP);
+    if (ids.length > 0) {
+      probe.available = { ...(probe.available ?? {}), models: ids };
+    }
+    return;
+  }
+
+  // 4) Populate probe.
+  probe.model = model;
+  probe.resolved = `${model.provider ?? base.split("/")[0]}/${model.id ?? base}`;
+  try {
+    probe.auth = await registry.getApiKeyAndHeaders(model);
+  } catch {
+    probe.auth = { ok: false, error: "Auth resolution failed" };
+  }
+}
+
 // -- Extension entry point ------------------------------------------------
 
 export function activate(pi: ExtensionAPI) {
@@ -560,13 +677,31 @@ export function activate(pi: ExtensionAPI) {
   }
 
   // ── Event API: Model Resolution ─────────────────────────────────────
+  //
+  // Primary handler resolves any model reference — `@role`, literal
+  // `provider/model[:thinking]`, or bare `model-id` — against the registry
+  // and providers.json#roles. The legacy `flow:resolve-model` listener
+  // below is kept as a deprecated alias for one release (different probe
+  // shape: reads `data.modelRef`, ignores `@role`).
 
+  // Spec: dashboard-model-resolution — "One listener at activation",
+  // "Cooperative early-return", "Thinking suffix parsed before registry
+  // lookup". The :thinking suffix is parsed inside resolveModelProbe via
+  // splitThinkingSuffix() BEFORE the registry.find / registry.getAll call.
+  pi.events.on("model:resolve", async (probe: any) => {
+    if (!probe || probe.model) return; // cooperative early-return
+    const ref: unknown = probe.ref;
+    if (typeof ref !== "string" || ref.trim() === "") return;
+    await resolveModelProbe(probe, ref.trim());
+  });
+
+  // DEPRECATED: legacy event name + probe shape. Same behaviour as before
+  // (no @role handling). External extensions still emitting this name
+  // should migrate to `model:resolve`.
   pi.events.on("flow:resolve-model", async (data: any) => {
     const modelRef: string = data?.modelRef;
     if (!modelRef) return;
-
-    // Role aliases (@planning etc.) are handled by pi-flows role-manager.
-    if (modelRef.startsWith("@")) return;
+    if (modelRef.startsWith("@")) return; // legacy: roles handled elsewhere
 
     const registry = getModelRegistry();
     if (!registry) return;

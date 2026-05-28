@@ -31,6 +31,7 @@ import { DashboardDefaultAdapter } from "./dashboard-default-adapter.js";
 import { registerAskUserTool } from "./ask-user-tool.js";
 import { decodeMultiselectAnswer } from "./multiselect-decode.js";
 import { activate as activateProviderRegister, onProviderChanged, reloadProviders, buildProviderCatalogue } from "./provider-register.js";
+import { activate as activateRoleManager } from "./role-manager.js";
 import type { FlowInfo } from "@blackbelt-technology/pi-dashboard-shared/types.js";
 import { startMetricsMonitor, stopMetricsMonitor, collectMetrics } from "./process-metrics.js";
 import { scanChildProcesses } from "./process-scanner.js";
@@ -88,6 +89,11 @@ export default function (pi: ExtensionAPI) {
     // Activate provider management before bridge init so providers are
     // registered before session_start fires and models_list is sent.
     activateProviderRegister(pi);
+
+    // Activate role manager: registers `flow:role-*` handlers that back
+    // Settings → Roles. Relocated from pi-flows per OpenSpec change
+    // `adopt-model-resolve-handler-and-roles-ownership`.
+    activateRoleManager(pi);
 
     // Anthropic-messages payload transforms (system prompt rewrite + tool
     // filter/remap) are handled by the installed @benvargas/pi-claude-code-use

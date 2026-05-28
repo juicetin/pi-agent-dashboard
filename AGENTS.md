@@ -109,9 +109,12 @@ Rules:
 
 0. **AGENTS.md MUST NOT contain a per-file index.** No `Key Files` table, no per-file rows, no path → purpose lists. When you need a module's key files, read the matching `docs/file-index-<area>.md` split (delegate to a subagent per the Investigation Protocol). New files → row in the split, never here.
 
-1. **Pointers in AGENTS.md stay ≤ 200 characters** — one terse purpose, no change-history, no contracts, no "See change: …" parentheticals. Pointers only; no file enumeration.
+1. **Split rows are the canonical per-file record.** Schema = `| \`<path>\` | <purpose> |`, one row per file, path-alphabetical.
+   - Purpose field carries everything per-file: one-sentence summary, key exported symbols, contracts/invariants, and `See change: <change-id>` annotations for non-trivial history.
+   - Search the matching split for the path first; if a row exists, append/update its purpose in place; else add a new row in alphabetical order.
+   - Caveman style (Rule 6 below) applies to row purposes too.
 
-2. **Per-file detail goes into `docs/file-index-<area>.md`.** Search the matching split for the path; if a row exists, append/update; else add in path-alphabetical order.
+2. **AGENTS.md content beyond per-file rows** — anything that DOES belong here (architecture pointers, build commands, rules every agent needs) stays ≤ 200 chars per line where possible; never enumerate files inline.
 
 3. **If a split grows past ~50 KB**, sub-split it (e.g. `file-index-server-routes.md`) and update `docs/file-index.md`.
 

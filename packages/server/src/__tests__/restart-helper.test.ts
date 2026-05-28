@@ -49,10 +49,11 @@ describe("buildOrchestratorScript", () => {
     expect(script).toMatch(/"start"/);
   });
 
-  it("appends extra args (e.g. --dev) after 'start'", () => {
-    const script = buildOrchestratorScript({ ...baseParams, extraArgs: ["--dev"] });
-    // ARGS array should have "start" immediately followed by "--dev"
-    expect(script).toMatch(/"start","--dev"/);
+  it("appends extra args (e.g. --dev) after the structural 'start' + '--port <n>' sequence", () => {
+    // Since fix-restart-port-loss, '--port' + String(port) sits between
+    // 'start' and extraArgs. See change: fix-restart-port-loss.
+    const script = buildOrchestratorScript({ ...baseParams, port: 8000, extraArgs: ["--dev"] });
+    expect(script).toMatch(/"start","--port","8000","--dev"/);
   });
 
   it("wraps Windows cliPath as file:// URL when loader is jiti AND host is Windows (Node parses drive letters as URL schemes)", () => {
@@ -160,6 +161,63 @@ describe("buildOrchestratorScript", () => {
       expect(killIdx).toBeGreaterThan(-1);
       expect(portFreeIdx).toBeGreaterThan(-1);
       expect(killIdx).toBeLessThan(portFreeIdx);
+    });
+  });
+
+  /**
+   * Pin the argv shape that preserves the bound port across restart.
+   * See change: fix-restart-port-loss, spec server-restart — "Restart
+   * orchestrator preserves the bound port".
+   */
+  describe("--port preservation (fix-restart-port-loss)", () => {
+    /** Parses the `ARGS` array literal embedded in the orchestrator script. */
+    function extractArgsArray(script: string): string[] {
+      const m = script.match(/const ARGS = (\[[^\]]+\]);/);
+      expect(m).not.toBeNull();
+      // Safe: the array contains only JSON-serialized string literals.
+      return JSON.parse(m![1]);
+    }
+
+    it("loader branch: --port appears after 'start' and before extraArgs", () => {
+      const script = buildOrchestratorScript({ ...baseParams, port: 8001, extraArgs: ["--dev"] });
+      const args = extractArgsArray(script);
+      const startIdx = args.indexOf("start");
+      const portFlagIdx = args.indexOf("--port");
+      const portValIdx = portFlagIdx + 1;
+      const devIdx = args.indexOf("--dev");
+      expect(startIdx).toBeGreaterThanOrEqual(0);
+      expect(portFlagIdx).toBe(startIdx + 1);
+      expect(args[portValIdx]).toBe("8001");
+      expect(devIdx).toBe(portValIdx + 1);
+    });
+
+    it("bare-entry branch (loader=''): --port appears after 'start' and before extraArgs", () => {
+      const script = buildOrchestratorScript({ ...baseParams, loader: "", port: 8001, extraArgs: ["--dev"] });
+      const args = extractArgsArray(script);
+      const startIdx = args.indexOf("start");
+      const portFlagIdx = startIdx + 1;
+      expect(args[portFlagIdx]).toBe("--port");
+      expect(args[portFlagIdx + 1]).toBe("8001");
+      expect(args[portFlagIdx + 2]).toBe("--dev");
+    });
+
+    it("caller-supplied --port in extraArgs appears AFTER the structural --port (caller wins via parseArgs left-to-right)", () => {
+      const script = buildOrchestratorScript({ ...baseParams, loader: "", port: 8001, extraArgs: ["--port", "9000"] });
+      const args = extractArgsArray(script);
+      // First --port is structural (params.port=8001).
+      const firstPortIdx = args.indexOf("--port");
+      expect(args[firstPortIdx + 1]).toBe("8001");
+      // Second --port is the caller-supplied override (9000).
+      const secondPortIdx = args.indexOf("--port", firstPortIdx + 1);
+      expect(secondPortIdx).toBeGreaterThan(firstPortIdx);
+      expect(args[secondPortIdx + 1]).toBe("9000");
+    });
+
+    it("PORT constant stays equal to params.port (health-polling port matches bind port)", () => {
+      const script = buildOrchestratorScript({ ...baseParams, port: 8001 });
+      expect(script).toMatch(/const PORT = 8001/);
+      const args = extractArgsArray(script);
+      expect(args[args.indexOf("--port") + 1]).toBe("8001");
     });
   });
 });

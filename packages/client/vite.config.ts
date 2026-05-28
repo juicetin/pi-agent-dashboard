@@ -2,6 +2,8 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import path from "node:path";
+import fs from "node:fs";
+import os from "node:os";
 // Import via a relative workspace path so vite's esbuild config-loader bundles
 // the plugin (and its transitive .ts deps) into the temp config bundle. Using
 // the package specifier "@blackbelt-technology/dashboard-plugin-runtime"
@@ -9,6 +11,54 @@ import path from "node:path";
 // the runtime ships raw .ts (no compiled dist) and Node can't resolve
 // `.js`-extensioned internal imports back to `.ts` at runtime.
 import { viteDashboardPluginsPlugin } from "../dashboard-plugin-runtime/src/vite-plugin/index.js";
+
+/**
+ * Resolve the dashboard HTTP port for Vite proxy targets.
+ *
+ * Resolution order:
+ *   1. PI_DASHBOARD_PORT env var (if set and parseable as 1–65535)
+ *   2. /tmp/dash-dev-port marker file (dash-dev.sh writes this)
+ *   3. port field from ~/.pi/dashboard/config.json
+ *   4. Fallback: 8000
+ *
+ * Errors (missing config, bad JSON, invalid env) are silently swallowed;
+ * the dev server starts with the fallback port.
+ */
+function resolveDashboardPort(): number {
+  // 1. Env var
+  const envPort = process.env.PI_DASHBOARD_PORT;
+  if (envPort !== undefined) {
+    const parsed = parseInt(envPort, 10);
+    if (Number.isFinite(parsed) && parsed >= 1 && parsed <= 65535) {
+      return parsed;
+    }
+  }
+  // 2. dash-dev.sh marker file
+  try {
+    const raw = fs.readFileSync("/tmp/dash-dev-port", "utf-8").trim();
+    const parsed = parseInt(raw, 10);
+    if (Number.isFinite(parsed) && parsed >= 1 && parsed <= 65535) {
+      return parsed;
+    }
+  } catch {
+    // File missing or unreadable — fall through
+  }
+  // 3. Config file
+  try {
+    const configPath = path.join(os.homedir(), ".pi", "dashboard", "config.json");
+    const raw = fs.readFileSync(configPath, "utf-8");
+    const cfg = JSON.parse(raw);
+    if (typeof cfg.port === "number" && Number.isFinite(cfg.port) && cfg.port >= 1 && cfg.port <= 65535) {
+      return cfg.port;
+    }
+  } catch {
+    // Missing file, bad JSON, wrong shape — fall through
+  }
+  // 4. Fallback
+  return 8000;
+}
+
+const DASHBOARD_PORT = resolveDashboardPort();
 
 export default defineConfig({
   plugins: [
@@ -75,14 +125,13 @@ export default defineConfig({
   server: {
     port: 3000,
     hmr: {
-      // When served through the dashboard server (port 8000), HMR WebSocket
-      // must connect directly to Vite's port, not the dashboard's.
+      // HMR WebSocket must connect directly to Vite's port, not the dashboard's.
       clientPort: 3000,
     },
     proxy: {
-      "/api": "http://localhost:8000",
+      "/api": `http://localhost:${DASHBOARD_PORT}`,
       "/ws": {
-        target: "ws://localhost:8000",
+        target: `ws://localhost:${DASHBOARD_PORT}`,
         ws: true,
       },
     },

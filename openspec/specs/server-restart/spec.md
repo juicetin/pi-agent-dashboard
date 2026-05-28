@@ -3,9 +3,7 @@
 ## Purpose
 
 Defines the protocol and lifecycle invariants for restarting and shutting down the pi-dashboard server without racing connected pi bridges. Covers the `server_restarting` broadcast contract, bridge auto-start quiesce behaviour, CLI delegation to `/api/restart`, and the detached orchestrator's responsibility for terminating the previous daemon before spawning a new one.
-
 ## Requirements
-
 ### Requirement: Restart broadcast precedes process exit
 
 When the dashboard server is about to exit as part of a restart or shutdown initiated through `POST /api/restart` or `POST /api/shutdown`, the server SHALL broadcast a `server_restarting` message to every connected pi bridge before calling `process.exit(...)`. The message SHALL carry a `reason` (`"restart" | "shutdown"`) and a `quiesceMs` integer (default 5000) indicating how long bridges SHOULD pause auto-start.
@@ -69,3 +67,40 @@ The detached orchestrator spawned by `restart-helper.ts` SHALL read the dashboar
 - **WHEN** the orchestrator runs
 - **THEN** the orchestrator SHALL terminate the previous PID (SIGTERM, then SIGKILL after 3 s)
 - **AND** the orchestrator SHALL spawn the new server within 5 s of termination
+
+### Requirement: Restart orchestrator preserves the bound port
+
+The detached orchestrator built by `restart-helper.ts:buildOrchestratorScript` SHALL serialize the parent process's actually-bound HTTP port (received as `params.port`) into the new child's CLI args as `--port <n>`. The injection SHALL apply to BOTH argv-construction branches of `spawnArgs`:
+
+- The `--import` loader branch (`buildNodeImportArgvParts`).
+- The bare-entry branch (no loader).
+
+The `--port` flag SHALL be placed AFTER `"start"` and BEFORE any `...params.extraArgs` so that callers passing their own `--port` in `extraArgs` can override the structural value (left-to-right argv semantics in `cli.ts:parseArgs`).
+
+The orchestrator's `PORT` constant (used by `portFree` and `healthOk` polling) SHALL remain `params.port` so the port polled for health is identical to the port the new child is told to bind.
+
+#### Scenario: Loader branch — `--port` injected after `start` and before extraArgs
+
+- **WHEN** `buildOrchestratorScript({ cliPath, loader: "file:///loader.mjs", port: 8001, extraArgs: ["--dev"] })` is called
+- **THEN** the embedded spawn args SHALL include `"start"`, `"--port"`, `"8001"`, `"--dev"` in that relative order
+- **AND** the embedded `PORT` constant SHALL equal `8001`
+
+#### Scenario: Bare-entry branch — `--port` injected after `start` and before extraArgs
+
+- **WHEN** `buildOrchestratorScript({ cliPath, loader: "", port: 8001, extraArgs: ["--dev"] })` is called
+- **THEN** the embedded spawn args SHALL include `"start"`, `"--port"`, `"8001"`, `"--dev"` in that relative order
+
+#### Scenario: Caller-supplied --port in extraArgs overrides the structural port
+
+- **WHEN** `buildOrchestratorScript({ cliPath, loader: "", port: 8001, extraArgs: ["--port", "9000"] })` is called
+- **THEN** the embedded spawn args SHALL include `"--port"`, `"8001"`, `"--port"`, `"9000"` in that relative order
+- **AND** `cli.ts:parseArgs` left-to-right semantics SHALL cause the child to bind on `9000` (the last value wins)
+
+#### Scenario: Restarted server preserves non-default bind port end-to-end
+
+- **GIVEN** a dashboard server was started with `--port 8001` (`config.port === 8001`)
+- **AND** `~/.pi/dashboard/config.json` contains the default `port: 8000`
+- **WHEN** `POST :8001/api/restart` is invoked
+- **THEN** the replacement child SHALL bind on `8001` (not `8000`)
+- **AND** `/api/health` SHALL respond on `8001` after the orchestrator's health-polling window
+

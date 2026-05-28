@@ -64,16 +64,24 @@ export function buildOrchestratorScript(params: RestartParams): string {
   // helper `spawnNodeScript` calls. Keeps the `--import` argv shape
   // in exactly one place.
   // See change: unify-server-launch-ts-loader.
+  // Inject --port BEFORE extraArgs so the actually-bound port survives
+  // restart. Without this, the spawned child re-resolves port from CLI
+  // > env > file config, falling back to the file default (8000) and
+  // losing any `--port` / `PI_DASHBOARD_PORT` override the parent had.
+  // Placed BEFORE extraArgs so callers passing their own `--port` in
+  // extraArgs win via cli.ts:parseArgs left-to-right semantics (last
+  // occurrence wins). See spec server-restart — "Restart orchestrator
+  // preserves the bound port". See change: fix-restart-port-loss.
+  const startArgs = ["start", "--port", String(params.port), ...params.extraArgs];
   const spawnArgs: string[] = params.loader
     ? buildNodeImportArgvParts({
         loader: params.loader,
         entry: params.cliPath,
-        args: ["start", ...params.extraArgs],
+        args: startArgs,
       })
     : [
         shouldUrlWrapEntry(params.loader) ? toFileUrl(params.cliPath) : params.cliPath,
-        "start",
-        ...params.extraArgs,
+        ...startArgs,
       ];
 
   // The script runs in a fresh Node process. Keep it self-contained and use

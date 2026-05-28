@@ -35,8 +35,8 @@ const FAKE_MANIFEST: readonly RecommendedExtension[] = [
 		toolsRegistered: [],
 	},
 	{
-		id: "pi-dashboard-subagents",
-		source: "npm:pi-dashboard-subagents",
+		id: "@blackbelt-technology/pi-dashboard-subagents",
+		source: "npm:@blackbelt-technology/pi-dashboard-subagents",
 		displayName: "pi-dashboard-subagents",
 		fallbackDescription: "Sub-agents for pi.",
 		status: "optional",
@@ -70,8 +70,8 @@ describe("extractBasenameFromSource", () => {
 describe("matchRecommendedEntry", () => {
 	it("matches by exact source", () => {
 		expect(
-			matchRecommendedEntry("npm:pi-dashboard-subagents", FAKE_MANIFEST)?.id,
-		).toBe("pi-dashboard-subagents");
+			matchRecommendedEntry("npm:@blackbelt-technology/pi-dashboard-subagents", FAKE_MANIFEST)?.id,
+		).toBe("@blackbelt-technology/pi-dashboard-subagents");
 	});
 
 	it("matches git source regardless of trailing slash / case", () => {
@@ -115,7 +115,7 @@ describe("enrichInstalledRow", () => {
 
 	it("enriches a recommended npm row with displayName and description from manifest", () => {
 		const row: RawInstalledRow = {
-			source: "npm:pi-dashboard-subagents",
+			source: "npm:@blackbelt-technology/pi-dashboard-subagents",
 			scope: "user",
 			filtered: false,
 			installedPath: "/fake/path",
@@ -173,7 +173,7 @@ describe("enrichInstalledRow", () => {
 
 	it("handles missing installedPath silently", () => {
 		const row: RawInstalledRow = {
-			source: "npm:pi-dashboard-subagents",
+			source: "npm:@blackbelt-technology/pi-dashboard-subagents",
 			scope: "user",
 			filtered: false,
 		};

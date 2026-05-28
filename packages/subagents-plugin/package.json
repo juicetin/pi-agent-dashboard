@@ -33,7 +33,7 @@
     "id": "subagents",
     "displayName": "Subagent Inspector",
     "priority": 100,
-    "targetPackage": "pi-dashboard-subagents",
+    "targetPackage": "@blackbelt-technology/pi-dashboard-subagents",
     "client": "./src/client/index.tsx",
     "server": "./src/server/index.ts",
     "configSchema": "./src/configSchema.json",
@@ -52,7 +52,7 @@
     ],
     "requires": {
       "piExtensions": [
-        "pi-dashboard-subagents"
+        "@blackbelt-technology/pi-dashboard-subagents"
       ]
     },
     "dependsOn": [

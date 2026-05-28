@@ -46,7 +46,7 @@ function makeFetchMock() {
           success: true,
           data: [
             {
-              source: "https://github.com/BlackBeltTechnology/pi-dashboard-subagents.git",
+              source: "npm:@blackbelt-technology/pi-dashboard-subagents",
               scope: "user",
               displayName: "pi-dashboard-subagents",
               isRecommended: false,
@@ -62,7 +62,7 @@ function makeFetchMock() {
       return new Response(
         JSON.stringify({
           success: true,
-          data: [{ source: "https://github.com/BlackBeltTechnology/pi-dashboard-subagents.git", latest: "0.1.1" }],
+          data: [{ source: "npm:@blackbelt-technology/pi-dashboard-subagents", latest: "0.1.1" }],
         }),
         { status: 200, headers: { "Content-Type": "application/json" } },
       );

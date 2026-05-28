@@ -112,8 +112,8 @@ export const RECOMMENDED_EXTENSIONS: readonly RecommendedExtension[] = [
 		autowired: true,
 	},
 	{
-		id: "pi-dashboard-subagents",
-		source: "https://github.com/BlackBeltTechnology/pi-dashboard-subagents.git",
+		id: "@blackbelt-technology/pi-dashboard-subagents",
+		source: "npm:@blackbelt-technology/pi-dashboard-subagents",
 		displayName: "pi-dashboard-subagents",
 		fallbackDescription:
 			"Foreground in-memory subagents for pi with a streamed timeline " +
@@ -219,9 +219,13 @@ export const RECOMMENDED_EXTENSIONS: readonly RecommendedExtension[] = [
  */
 export const BUNDLED_EXTENSION_IDS: readonly string[] = [
 	"pi-anthropic-messages",
-	// Foreground subagent producer. Git source + MIT license = bundle eligible.
-	// See change: add-subagent-inspector §13.
-	"pi-dashboard-subagents",
+	// @blackbelt-technology/pi-dashboard-subagents was previously bundled via
+	// the git source. It now ships from npm under the @blackbelt-technology
+	// scope and is installed through the recommended-extensions UI (npm: prefix),
+	// not pre-bundled into the Electron installer. The bundling script
+	// (bundle-recommended-extensions.mjs) only handles git sources — npm
+	// sources don't need it. See pi-dashboard-subagents v0.2.0 release.
+	//
 	// "pi-flows" is intentionally NOT bundled until the upstream repo declares
 	// an SPDX-conformant license (`LICENSE` file or `package.json#license`).
 	// The bundle-recommended-extensions.mjs license allowlist enforcement

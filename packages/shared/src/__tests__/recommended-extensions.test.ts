@@ -14,7 +14,7 @@ describe("RECOMMENDED_EXTENSIONS manifest", () => {
 			[
 				"pi-anthropic-messages",
 				"pi-agent-browser",
-				"pi-dashboard-subagents",
+				"@blackbelt-technology/pi-dashboard-subagents",
 				"pi-flows",
 				"pi-memory-honcho",
 				"pi-web-access",
@@ -67,10 +67,10 @@ describe("RECOMMENDED_EXTENSIONS manifest", () => {
 
 	it("pi-dashboard-subagents registers Agent and pairs with the subagents plugin", () => {
 		// See change: add-subagent-inspector.
-		const entry = getRecommendedExtension("pi-dashboard-subagents");
+		const entry = getRecommendedExtension("@blackbelt-technology/pi-dashboard-subagents");
 		expect(entry).toBeDefined();
 		expect(entry?.source).toBe(
-			"https://github.com/BlackBeltTechnology/pi-dashboard-subagents.git",
+			"npm:@blackbelt-technology/pi-dashboard-subagents",
 		);
 		expect(entry?.toolsRegistered).toEqual(["Agent"]);
 		expect(entry?.dashboardPlugin).toBe("subagents");
@@ -84,6 +84,7 @@ describe("RECOMMENDED_EXTENSIONS manifest", () => {
 				"pi-agent-browser",
 				"pi-memory-honcho",
 				"pi-web-access",
+				"@blackbelt-technology/pi-dashboard-subagents",
 			].sort(),
 		);
 	});
@@ -96,7 +97,7 @@ describe("RECOMMENDED_EXTENSIONS manifest", () => {
 			expect(entry.source).toMatch(/^https:\/\/github\.com\/[^/]+\/[^/]+\.git$/);
 		}
 		expect(gitEntries.map((e) => e.id).sort()).toEqual(
-			["pi-anthropic-messages", "pi-dashboard-subagents", "pi-flows"].sort(),
+			["pi-anthropic-messages", "pi-flows"].sort(),
 		);
 	});
 });
@@ -128,7 +129,7 @@ describe("getRecommendedByStatus", () => {
 	it("filters by optional", () => {
 		const optional = getRecommendedByStatus("optional");
 		expect(optional.map((e) => e.id).sort()).toEqual(
-			["pi-agent-browser", "pi-dashboard-subagents", "pi-memory-honcho"].sort(),
+			["pi-agent-browser", "@blackbelt-technology/pi-dashboard-subagents", "pi-memory-honcho"].sort(),
 		);
 	});
 });
@@ -155,10 +156,12 @@ describe("BUNDLED_EXTENSION_IDS manifest", () => {
 		// blocking the bundle-recommended-extensions.mjs license check.
 		// Re-add when https://github.com/BlackBeltTechnology/pi-flows has
 		// a license declared.
-		// pi-dashboard-subagents added in add-subagent-inspector §13.6
-		// (git source + MIT license, both gates pass).
+		// @blackbelt-technology/pi-dashboard-subagents removed when it moved
+		// to an npm: source in v0.2.0 — the bundling script only handles git
+		// sources; npm-sourced extensions install via the recommended-extensions
+		// UI flow, not the pre-bundle path.
 		expect([...BUNDLED_EXTENSION_IDS].sort()).toEqual(
-			["pi-anthropic-messages", "pi-dashboard-subagents"].sort(),
+			["pi-anthropic-messages"].sort(),
 		);
 	});
 

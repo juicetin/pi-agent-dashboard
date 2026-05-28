@@ -121,7 +121,7 @@ describe("UnifiedPackagesSection", () => {
 		mockUseInstalledPackages.mockReturnValue({
 			packages: [
 				{
-					source: "https://github.com/BlackBeltTechnology/pi-dashboard-subagents.git",
+					source: "npm:@blackbelt-technology/pi-dashboard-subagents",
 					scope: "user",
 					filtered: false,
 					version: "0.1.1",

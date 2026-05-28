@@ -113,7 +113,7 @@ describe("package-routes", () => {
     it("matches a row to RECOMMENDED_EXTENSIONS by source", async () => {
       wrapper.listInstalled.mockReturnValueOnce([
         {
-          source: "https://github.com/BlackBeltTechnology/pi-dashboard-subagents.git",
+          source: "npm:@blackbelt-technology/pi-dashboard-subagents",
           scope: "user",
           filtered: false,
         },

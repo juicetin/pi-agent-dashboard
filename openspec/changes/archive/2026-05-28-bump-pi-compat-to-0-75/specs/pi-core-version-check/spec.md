@@ -2,22 +2,16 @@
 
 ### Requirement: piCompatibility block tracks current upstream pi-coding-agent
 
-The `packages/server/package.json` `piCompatibility` block SHALL declare a `recommended` version that is no more than one minor release behind the latest published `@earendil-works/pi-coding-agent` and a `minimum` version that matches the version actually exercised in the dashboard's tests and bundled offline cache.
+The `packages/server/package.json` `piCompatibility` block SHALL declare a `recommended` version that is no more than one minor release behind the latest published `@earendil-works/pi-coding-agent` and a `minimum` version that matches the version actually exercised in the dashboard's tests and the bundled-extensions peer-dep constraints in `packages/electron/resources/bundled-extensions/*/package.json`.
 
-When the bundled offline cache still pins the legacy `@mariozechner/pi-coding-agent` build (transitional state), the `minimum` SHALL match that legacy version; the `recommended` SHALL still track the earendil release stream so the upgrade-hint UI surfaces forward-progress.
+The legacy offline-cache (`packages/electron/offline-packages.json`) was removed under change `eliminate-electron-runtime-install`; bundled-extension peer-deps are now the sole pin surface that must move in lockstep with `piCompatibility.minimum`.
 
 #### Scenario: Recommended tracks earendil 0.75 line
 
 - **WHEN** the latest published `@earendil-works/pi-coding-agent` is `0.75.5`
-- **AND** the bundled offline cache also pins `@earendil-works/pi-coding-agent@0.75.0` or newer
+- **AND** every bundled-extension `package.json` declares peer-dep `@earendil-works/pi-coding-agent` at `>=0.75.0` (or `^0.75.0`)
 - **THEN** `piCompatibility.minimum` SHALL be `"0.75.0"`
 - **AND** `piCompatibility.recommended` SHALL be `"0.75.5"`
-
-#### Scenario: Recommended tracks earendil even when offline cache is legacy
-- **WHEN** the bundled offline cache pins `@mariozechner/pi-coding-agent@0.70.0`
-- **AND** the latest published `@earendil-works/pi-coding-agent` is `0.75.5`
-- **THEN** `piCompatibility.minimum` SHALL be `"0.70.0"` (matching the offline cache)
-- **AND** `piCompatibility.recommended` SHALL be no more than one minor behind `0.75.5` (e.g., `"0.74.0"` or `"0.75.5"`)
 
 #### Scenario: Recommended tracks earendil when both forks publish in lockstep
 - **WHEN** both `@earendil-works/pi-coding-agent` and `@mariozechner/pi-coding-agent` publish `0.75.5`
@@ -37,6 +31,14 @@ When the bundled offline cache still pins the legacy `@mariozechner/pi-coding-ag
 - **WHEN** `piCompatibility.minimum` is `"0.75.0"`
 - **AND** the running pi-coding-agent reports version `"0.74.1"`
 - **THEN** the bootstrap status SHALL render the red "below minimum" banner with a clear upgrade hint pointing at `0.75.5`
+
+## REMOVED Requirements
+
+### Requirement: Offline-cache pin matches recommended pi version
+
+**Reason**: `packages/electron/offline-packages.json` was deleted under change `eliminate-electron-runtime-install` (forge.config.ts no longer copies it; pi/openspec/tsx now ship as regular npm deps of the bundled server tree under `resources/server/node_modules/`). The lockstep invariant moves to bundled-extension peer-deps, covered by the modified "piCompatibility block tracks current upstream pi-coding-agent" requirement above.
+
+**Migration**: none. The file does not exist; references in code or docs were already removed.
 
 #### Scenario: Maximum is unbounded
 - **WHEN** `piCompatibility.maximum` is `null`

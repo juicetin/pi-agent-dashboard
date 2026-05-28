@@ -928,6 +928,25 @@ Cross-refs:
 - packages/shared/src/platform/spawn-mechanism.ts
 - packages/shared/src/platform/detached-spawn.ts
 
+## Why does my CLI session show the headless robot icon?
+
+Stale `source: "dashboard"` stamp in session sidecar. Dashboard cwd-FIFO fallback stamps `.meta.json` when CLI `pi` launches in cwd where dashboard recently spawned. Bridge then renders session as dashboard-spawned (headless robot icon) instead of TUI.
+
+Runtime fix in `packages/server/src/dashboard-source-decision.ts` (commit `5a31daa6`, change `fix-dashboard-spawn-correlation-by-token`) prevents new corruption:
+- Strong signal — `PI_DASHBOARD_SPAWN_TOKEN` env → bridge `msg.dashboardSpawned` — persists sidecar stamp.
+- Cwd-FIFO fallback updates in-memory session state only. Sidecar untouched. Logs `[event-wiring] cwd-FIFO source-stamp fallback`.
+
+Repair existing stale sidecars: `node scripts/repair-meta-source.mjs`.
+- Removes `source: "dashboard"` from every `.meta.json` under `~/.pi/agent/sessions/`.
+- Idempotent. Atomic tmp+rename. Prints `kept N / cleaned M / errors E`. Exit 0.
+
+Optional opt-in: `STRICT_SPAWN_CORRELATION=1` at server start suppresses cwd-FIFO fallback entirely.
+
+Cross-refs:
+- packages/server/src/dashboard-source-decision.ts
+- packages/server/src/event-wiring.ts
+- scripts/repair-meta-source.mjs
+
 ## How do I install pi-dashboard on Windows (Electron portable)?
 
 Path 1 — recommended for most users. Download installer or portable zip from GitHub Releases, run.

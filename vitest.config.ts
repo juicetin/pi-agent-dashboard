@@ -23,6 +23,7 @@ export default defineConfig({
       "packages/honcho-plugin",
       "packages/roles-plugin",
       "packages/subagents-plugin",
+      "scripts",
       // NOTE: packages/electron is intentionally NOT included here — it has
       // pre-existing orphaned tests that depend on ambient PATH/mocks never
       // wired up. Offline-packages tests are runnable via

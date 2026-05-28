@@ -132,6 +132,14 @@ export interface DashboardServer {
   httpPort(): number | null;
   /** Resolved pi gateway port after start(). Returns null if not listening. */
   piPort(): number | null;
+  /**
+   * Legacy cwd-FIFO counter map for in-process tests that need to
+   * exercise the source-stamp fallback path without spinning a real
+   * spawn. Not part of the public API — do not depend on this from
+   * production code.
+   * See change: fix-dashboard-spawn-correlation-by-token.
+   */
+  pendingDashboardSpawns: Map<string, number>;
 }
 
 export async function createServer(config: ServerConfig): Promise<DashboardServer> {
@@ -957,6 +965,7 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
     sessionManager,
     eventStore,
     browserGateway,
+    pendingDashboardSpawns,
 
     httpPort() {
       const addr = fastify.server.address();

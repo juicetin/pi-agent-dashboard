@@ -24,6 +24,17 @@ import { handleDispatchExtensionCommand } from "./rpc-keeper/dispatch-router.js"
 import { keeperOptsFromSpawnResult } from "./headless-pid-registry.js";
 import { decideDashboardSource } from "./dashboard-source-decision.js";
 
+/**
+ * Server-side opt-in flag (`STRICT_SPAWN_CORRELATION=1`) that suppresses
+ * the legacy cwd-FIFO source-stamp fallback. Read once at module init
+ * because env vars don't change at runtime in normal operation; tests
+ * that need to flip it should re-import or use vi.stubEnv before module
+ * load.
+ * See change: fix-dashboard-spawn-correlation-by-token.
+ */
+const STRICT_SPAWN_CORRELATION =
+  process.env.STRICT_SPAWN_CORRELATION === "1";
+
 export interface EventWiringDeps {
   sessionManager: SessionManager;
   eventStore: EventStore;
@@ -547,18 +558,32 @@ export function wireEvents(deps: EventWiringDeps): void {
         dashboardSpawned: msg.dashboardSpawned,
         pendingCount,
         isNewSession,
+        strictCorrelation: STRICT_SPAWN_CORRELATION,
       });
       if (decision.shouldStamp) {
         if (decision.consumeLegacyCounter) {
           if (pendingCount <= 1) pendingDashboardSpawns.delete(msg.cwd);
           else pendingDashboardSpawns.set(msg.cwd, pendingCount - 1);
+          // Single-line warning so we can observe how often the weak
+          // cwd-only signal still fires in the wild. Mirrors the
+          // existing fallback log in headlessPidRegistry.linkSession.
+          // See change: fix-dashboard-spawn-correlation-by-token.
+          console.log(
+            `[event-wiring] cwd-FIFO source-stamp fallback sessionId=${sessionId} cwd=${msg.cwd}`,
+          );
         }
         const currentSource = sessionManager.get(sessionId)?.source;
         if (currentSource !== "dashboard") {
           sessionManager.update(sessionId, { source: "dashboard" });
           browserGateway.broadcastSessionUpdated(sessionId, { source: "dashboard" });
         }
-        if (msg.sessionFile) {
+        // Only persist to the .meta.json sidecar on the strong-signal
+        // branch. The cwd-FIFO fallback is too weak to corrupt the
+        // on-disk record — a CLI register that races a recent
+        // dashboard spawn in the same cwd would otherwise persist
+        // the wrong tag across restarts.
+        // See change: fix-dashboard-spawn-correlation-by-token.
+        if (decision.persistMeta && msg.sessionFile) {
           try {
             // Merge, not overwrite, so any other fields already written
             // synchronously by sibling onSessionRegistered handlers

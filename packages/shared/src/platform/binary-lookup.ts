@@ -598,7 +598,7 @@ function whichSync(cmd: string): string | null {
 function whichViaLoginShell(cmd: string): string | null {
   const shell = process.env.SHELL || "/bin/zsh";
   try {
-    const raw = execSync(`${shell} -ilc "which ${cmd}"`, {
+    const raw = execSync(`${shell} -lc "which ${cmd}"`, {
       encoding: "utf-8",
       stdio: ["pipe", "pipe", "pipe"],
       timeout: 5000,

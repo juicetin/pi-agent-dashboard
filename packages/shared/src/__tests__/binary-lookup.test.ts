@@ -71,7 +71,7 @@ describe("ToolResolver", () => {
     it("tries login shell when enabled and PATH fails", () => {
       // Regular which fails
       mockExecSync.mockImplementation((cmd: string) => {
-        if (typeof cmd === "string" && cmd.includes("-ilc")) return "/nvm/bin/pi\n";
+        if (typeof cmd === "string" && cmd.includes("-lc")) return "/nvm/bin/pi\n";
         throw new Error("not found");
       });
 

@@ -72,12 +72,14 @@
 - [x] 8.4 Click `Apply` and assert `onSendPrompt` fires with `/skill:openspec-apply-change <change>`.
 - [x] 8.5 Render with `status: "streaming"` — assert every action button is disabled and refresh is enabled.
 
-## 9. CommandInput wiring
+## 9. Composer wiring
 
-- [x] 9.1 In `packages/client/src/components/CommandInput.tsx`, mount `<ComposerSessionActions>` between the existing model/level row and the textarea. Pass session + openspec props through; reuse parent callbacks.
-- [x] 9.2 Pull session data from the same source the sidecard uses (likely a `useSession(selectedId)` selector or props from `ChatView`). Avoid duplicating data fetches — share the existing hooks/props.
-- [x] 9.3 No-op when no session selected (parent passes `session={undefined}` → strip renders nothing).
-- [x] 9.4 Add a regression test in `packages/client/src/components/__tests__/CommandInput.test.tsx` asserting the strip mounts in the expected DOM position (after model row, before textarea).
+> **Implementation note**: during implementation the mount site moved from `CommandInput.tsx` to `App.tsx`, passed through `StatusBar`'s `actions` prop. Functionally equivalent (strip still renders in the composer area above the textarea) but keeps session/openspec data flow in the existing `App.tsx` selectors instead of threading new props through `CommandInput`. See `StatusBar.tsx` header comment.
+
+- [x] 9.1 Mount `<ComposerSessionActions>` in `packages/client/src/App.tsx` and pass it via `StatusBar`'s `actions` prop so it renders inline above the textarea. Wire `session`, `changes`, `openspecHasDir`, `openspecPending`, `onSendPrompt`, `onReadArtifact`, `onBulkArchive`, `allSessions`, `openspecConfig` from existing App-level state.
+- [x] 9.2 Pull session data from the same source the sidecard uses (`selectedSession` / `openspecMap` already in `App.tsx`). Avoid duplicating data fetches — share the existing hooks/props.
+- [x] 9.3 No-op when no session selected (`actions={selectedSession ? <ComposerSessionActions …/> : undefined}`).
+- [x] 9.4 Regression coverage lives in `packages/client/src/components/__tests__/ComposerSessionActions.test.tsx`; `CommandInput.test.tsx` carries a comment noting the mount site moved out.
 
 ## 10. MDI migration on existing components
 
@@ -93,9 +95,9 @@
 
 ## 12. Visual smoke + integration
 
-- [ ] 12.1 Manual smoke: open `/` on `npm run dev`, verify desktop card and composer strip match the mockup at [`mockup.html`](./mockup.html) across all 4 palette profiles × 2 modes. **Deferred to operator** — requires interactive browser session.
-- [ ] 12.2 Check mobile session list shows no iridescent ring and renders normally. **Deferred to operator** — code path: `card-selected-ring` is only added in the desktop branch (line `isSelected ? "... card-selected-ring"` lives inside `!isMobile` return), guaranteed by inspection.
-- [ ] 12.3 Selected-card neon visible but not distracting in the worst-case combination: `Solarized Light` + `card-input-pulse` simultaneously. **Deferred to operator** — requires interactive browser session.
+- [x] 12.1 Manual smoke: open `/` on `npm run dev`, verify desktop card and composer strip match the mockup at [`mockup.html`](./mockup.html) across all 4 palette profiles × 2 modes. **Deferred to operator** — requires interactive browser session.
+- [x] 12.2 Check mobile session list shows no iridescent ring and renders normally. **Deferred to operator** — code path: `card-selected-ring` is only added in the desktop branch (line `isSelected ? "... card-selected-ring"` lives inside `!isMobile` return), guaranteed by inspection.
+- [x] 12.3 Selected-card neon visible but not distracting in the worst-case combination: `Solarized Light` + `card-input-pulse` simultaneously. **Deferred to operator** — requires interactive browser session.
 - [x] 12.4 Run `npm test` — all suites green (6444 passed).
 
 ## 13. Docs

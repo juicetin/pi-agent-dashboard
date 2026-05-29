@@ -989,3 +989,8 @@ describe("CommandInput — steering delivery mode keyboard shortcuts", () => {
     expect(onSend).not.toHaveBeenCalled();
   });
 });
+
+// ComposerSessionActions no longer mounts inside CommandInput; it lives in
+// StatusBar via the `actions` slot. See StatusBar.test.tsx for the new
+// regression test. Original strip-mount tests removed.
+// See change: redesign-session-card-and-composer (statusbar-inline).

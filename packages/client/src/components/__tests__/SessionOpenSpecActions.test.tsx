@@ -168,9 +168,10 @@ describe("SessionOpenSpecActions", () => {
     expect(screen.queryByTestId("new-change-btn")).toBeNull();
   });
 
-  // --- PDST single button ---
+  // --- Stepper-node click replaces the PDST button ---
+  // See change: redesign-session-card-and-composer (stepper-click-to-open).
 
-  it("shows PDST as a single button in attached state", () => {
+  it("PDST button removed in attached state — stepper nodes carry that role", () => {
     render(
       <SessionOpenSpecActions
         session={makeSession({ attachedProposal: "add-auth" })}
@@ -178,14 +179,19 @@ describe("SessionOpenSpecActions", () => {
         {...defaultProps}
       />,
     );
-    const btn = screen.getByTestId("artifact-letters-btn");
-    expect(btn.tagName).toBe("BUTTON");
-    expect(btn.textContent).toBe("PD");
+    expect(screen.queryByTestId("artifact-letters-btn")).toBeNull();
+    // The stepper P/D/S nodes render in place.
+    expect(screen.getByTestId("stepper-node-proposal")).toBeTruthy();
+    expect(screen.getByTestId("stepper-node-design")).toBeTruthy();
+    expect(screen.getByTestId("stepper-node-specs")).toBeTruthy();
   });
 
-  // --- PLANNING state: Continue, FF, Explore ---
+  // --- PLANNING state: Continue, FF, disabled Explore + Archive ---
+  // See change: redesign-session-card-and-composer (4.1 + 4.2).
+  // Explore is always-rendered-but-disabled when attached. Archive is
+  // always-rendered-but-disabled when state !== COMPLETE.
 
-  it("shows Explore, Continue, FF for PLANNING state", () => {
+  it("shows disabled Explore, Continue, FF, disabled Archive for PLANNING state", () => {
     render(
       <SessionOpenSpecActions
         session={makeSession({ attachedProposal: "add-auth", status: "active" })}
@@ -195,18 +201,21 @@ describe("SessionOpenSpecActions", () => {
     );
     expect(screen.getByTestId("attached-badge").textContent).toContain("add-auth");
     expect(screen.getByTestId("explore-btn")).toBeTruthy();
+    expect((screen.getByTestId("explore-btn") as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByTestId("continue-btn")).toBeTruthy();
     expect(screen.getByTestId("ff-btn")).toBeTruthy();
+    expect(screen.getByTestId("archive-btn")).toBeTruthy();
+    expect((screen.getByTestId("archive-btn") as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByTestId("archive-btn").getAttribute("title")).toBe("Complete tasks first");
     expect(screen.getByTestId("detach-btn")).toBeTruthy();
     expect(screen.queryByTestId("read-btn")).toBeNull();
     expect(screen.queryByTestId("apply-btn")).toBeNull();
     expect(screen.queryByTestId("verify-btn")).toBeNull();
-    expect(screen.queryByTestId("archive-btn")).toBeNull();
   });
 
   // --- READY state: Apply, Explore, Read ---
 
-  it("shows Explore, Apply for READY state", () => {
+  it("shows disabled Explore, Apply, disabled Archive for READY state", () => {
     render(
       <SessionOpenSpecActions
         session={makeSession({ attachedProposal: "ready-change", status: "active" })}
@@ -214,19 +223,18 @@ describe("SessionOpenSpecActions", () => {
         {...defaultProps}
       />,
     );
-    expect(screen.getByTestId("explore-btn")).toBeTruthy();
+    expect((screen.getByTestId("explore-btn") as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByTestId("apply-btn")).toBeTruthy();
+    expect((screen.getByTestId("archive-btn") as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByTestId("detach-btn")).toBeTruthy();
-    expect(screen.queryByTestId("read-btn")).toBeNull();
     expect(screen.queryByTestId("continue-btn")).toBeNull();
     expect(screen.queryByTestId("ff-btn")).toBeNull();
     expect(screen.queryByTestId("verify-btn")).toBeNull();
-    expect(screen.queryByTestId("archive-btn")).toBeNull();
   });
 
   // --- IMPLEMENTING state: Apply, Explore, Read ---
 
-  it("shows Explore, Apply for IMPLEMENTING state", () => {
+  it("shows disabled Explore, Apply, disabled Archive for IMPLEMENTING state", () => {
     render(
       <SessionOpenSpecActions
         session={makeSession({ attachedProposal: "impl-change", status: "active" })}
@@ -234,19 +242,18 @@ describe("SessionOpenSpecActions", () => {
         {...defaultProps}
       />,
     );
-    expect(screen.getByTestId("explore-btn")).toBeTruthy();
+    expect((screen.getByTestId("explore-btn") as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByTestId("apply-btn")).toBeTruthy();
+    expect((screen.getByTestId("archive-btn") as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByTestId("detach-btn")).toBeTruthy();
-    expect(screen.queryByTestId("read-btn")).toBeNull();
     expect(screen.queryByTestId("continue-btn")).toBeNull();
     expect(screen.queryByTestId("ff-btn")).toBeNull();
     expect(screen.queryByTestId("verify-btn")).toBeNull();
-    expect(screen.queryByTestId("archive-btn")).toBeNull();
   });
 
   // --- COMPLETE state: Verify, Archive, Explore, Read ---
 
-  it("shows Explore, Verify, Archive for COMPLETE state", () => {
+  it("shows disabled Explore, Verify, enabled Archive for COMPLETE state", () => {
     render(
       <SessionOpenSpecActions
         session={makeSession({ attachedProposal: "fix-bug", status: "active" })}
@@ -254,9 +261,10 @@ describe("SessionOpenSpecActions", () => {
         {...defaultProps}
       />,
     );
-    expect(screen.getByTestId("explore-btn")).toBeTruthy();
+    expect((screen.getByTestId("explore-btn") as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByTestId("verify-btn")).toBeTruthy();
     expect(screen.getByTestId("archive-btn")).toBeTruthy();
+    expect((screen.getByTestId("archive-btn") as HTMLButtonElement).disabled).toBe(false);
     expect(screen.getByTestId("detach-btn")).toBeTruthy();
     expect(screen.queryByTestId("read-btn")).toBeNull();
     expect(screen.queryByTestId("continue-btn")).toBeNull();
@@ -355,9 +363,9 @@ describe("SessionOpenSpecActions", () => {
     expect(screen.getByTestId("detach-btn")).toBeTruthy();
   });
 
-  // --- PDST button calls onReadArtifact ---
+  // --- Stepper Proposal-node click calls onReadArtifact ---
 
-  it("calls onReadArtifact with proposal when PDST button clicked", () => {
+  it("calls onReadArtifact with proposal when the stepper Proposal node is clicked", () => {
     const onReadArtifact = vi.fn();
     render(
       <SessionOpenSpecActions
@@ -367,13 +375,13 @@ describe("SessionOpenSpecActions", () => {
         onReadArtifact={onReadArtifact}
       />,
     );
-    fireEvent.click(screen.getByTestId("artifact-letters-btn"));
+    fireEvent.click(screen.getByTestId("stepper-node-proposal"));
     expect(onReadArtifact).toHaveBeenCalledWith("add-auth", "proposal");
   });
 
   // --- Disabled when not active ---
 
-  it("enables action buttons when session is idle", () => {
+  it("keeps Explore disabled (attached) but enables other buttons when session is idle", () => {
     render(
       <SessionOpenSpecActions
         session={makeSession({ attachedProposal: "add-auth", status: "idle" })}
@@ -381,7 +389,8 @@ describe("SessionOpenSpecActions", () => {
         {...defaultProps}
       />,
     );
-    expect((screen.getByTestId("explore-btn") as HTMLButtonElement).disabled).toBe(false);
+    // Explore stays disabled because a proposal is attached (4.1).
+    expect((screen.getByTestId("explore-btn") as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByTestId("continue-btn") as HTMLButtonElement).disabled).toBe(false);
     expect((screen.getByTestId("ff-btn") as HTMLButtonElement).disabled).toBe(false);
   });
@@ -398,7 +407,7 @@ describe("SessionOpenSpecActions", () => {
     expect((screen.getByTestId("continue-btn") as HTMLButtonElement).disabled).toBe(true);
   });
 
-  it("enables action buttons when session is active", () => {
+  it("keeps Explore disabled (attached) but enables Continue when session is active", () => {
     render(
       <SessionOpenSpecActions
         session={makeSession({ attachedProposal: "add-auth", status: "active" })}
@@ -406,7 +415,7 @@ describe("SessionOpenSpecActions", () => {
         {...defaultProps}
       />,
     );
-    expect((screen.getByTestId("explore-btn") as HTMLButtonElement).disabled).toBe(false);
+    expect((screen.getByTestId("explore-btn") as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByTestId("continue-btn") as HTMLButtonElement).disabled).toBe(false);
   });
 
@@ -452,7 +461,10 @@ describe("SessionOpenSpecActions", () => {
       ],
     };
 
-    it("shows Bulk Archive button when completed changes exist (unattached)", () => {
+    // Bulk Archive hidden in unattached branch per user feedback
+    // ("archive and bulk archive is meaningless when no openspec attached").
+    // See change: redesign-session-card-and-composer (cleanup-pass).
+    it("hides Bulk Archive in the unattached branch even with completed changes", () => {
       render(
         <SessionOpenSpecActions
           session={makeSession()}
@@ -463,7 +475,7 @@ describe("SessionOpenSpecActions", () => {
           onBulkArchive={vi.fn()}
         />,
       );
-      expect(screen.getByTestId("bulk-archive-btn")).toBeTruthy();
+      expect(screen.queryByTestId("bulk-archive-btn")).toBeNull();
     });
 
     it("hides Bulk Archive button when no completed changes", () => {
@@ -480,38 +492,10 @@ describe("SessionOpenSpecActions", () => {
       expect(screen.queryByTestId("bulk-archive-btn")).toBeNull();
     });
 
-    it("shows confirmation dialog and calls onBulkArchive", () => {
-      const onBulkArchive = vi.fn();
-      render(
-        <SessionOpenSpecActions
-          session={makeSession()}
-          changes={[completedChange]}
-          onAttach={vi.fn()}
-          onDetach={vi.fn()}
-          onSendPrompt={vi.fn()}
-          onBulkArchive={onBulkArchive}
-        />,
-      );
-      fireEvent.click(screen.getByTestId("bulk-archive-btn"));
-      expect(screen.getByText("Bulk archive all completed changes?")).toBeTruthy();
-      fireEvent.click(screen.getByTestId("confirm-ok"));
-      expect(onBulkArchive).toHaveBeenCalledOnce();
-    });
-
-    it("disables Bulk Archive when streaming", () => {
-      render(
-        <SessionOpenSpecActions
-          session={makeSession({ status: "streaming" })}
-          changes={[completedChange]}
-          onAttach={vi.fn()}
-          onDetach={vi.fn()}
-          onSendPrompt={vi.fn()}
-          onBulkArchive={vi.fn()}
-        />,
-      );
-      const btn = screen.getByTestId("bulk-archive-btn");
-      expect(btn.hasAttribute("disabled")).toBe(true);
-    });
+    // Bulk-archive confirmation + streaming-disabled paths are now
+    // exercised through the folder-level UI (FolderOpenSpecSection) since
+    // the per-session card no longer surfaces Bulk Archive at all.
+    // See change: redesign-session-card-and-composer (cleanup-pass).
 
     it("hides Bulk Archive on attached session with completed changes", () => {
       render(
@@ -527,7 +511,7 @@ describe("SessionOpenSpecActions", () => {
       expect(screen.queryByTestId("bulk-archive-btn")).toBeNull();
     });
 
-    it("shows Bulk Archive on unattached session with same sibling completed change", () => {
+    it.skip("shows Bulk Archive on unattached session with same sibling completed change (REMOVED — unattached now has no archive surface)", () => {
       render(
         <SessionOpenSpecActions
           session={makeSession()}
@@ -581,15 +565,17 @@ describe("SessionOpenSpecActions", () => {
     });
   });
 
-  // --- Archive-anyway overflow ---
+  // --- Archive-anyway as a plain button ---
+  // Was an overflow menu with a single item — now a direct button.
+  // See change: redesign-session-card-and-composer (cleanup-pass).
 
-  describe("archive-anyway overflow", () => {
+  describe("archive-anyway button", () => {
     const implementingCompleteChange: OpenSpecChange = {
       ...implementingChange,
       isComplete: true,
     };
 
-    it("shows overflow with Archive anyway when IMPLEMENTING + isComplete + all artifacts done", () => {
+    it("renders Archive anyway button when IMPLEMENTING + isComplete + all artifacts done", () => {
       render(
         <SessionOpenSpecActions
           session={makeSession({ attachedProposal: "impl-change", status: "active" })}
@@ -597,12 +583,11 @@ describe("SessionOpenSpecActions", () => {
           {...defaultProps}
         />,
       );
-      expect(screen.getByTestId("overflow-btn")).toBeTruthy();
-      fireEvent.click(screen.getByTestId("overflow-btn"));
+      expect(screen.queryByTestId("overflow-btn")).toBeNull();
       expect(screen.getByTestId("archive-anyway-btn")).toBeTruthy();
     });
 
-    it("hides overflow when isComplete is false", () => {
+    it("hides Archive anyway when isComplete is false", () => {
       render(
         <SessionOpenSpecActions
           session={makeSession({ attachedProposal: "impl-change", status: "active" })}
@@ -610,10 +595,10 @@ describe("SessionOpenSpecActions", () => {
           {...defaultProps}
         />,
       );
-      expect(screen.queryByTestId("overflow-btn")).toBeNull();
+      expect(screen.queryByTestId("archive-anyway-btn")).toBeNull();
     });
 
-    it("hides overflow when isComplete is undefined", () => {
+    it("hides Archive anyway when isComplete is undefined", () => {
       render(
         <SessionOpenSpecActions
           session={makeSession({ attachedProposal: "impl-change", status: "active" })}
@@ -621,10 +606,10 @@ describe("SessionOpenSpecActions", () => {
           {...defaultProps}
         />,
       );
-      expect(screen.queryByTestId("overflow-btn")).toBeNull();
+      expect(screen.queryByTestId("archive-anyway-btn")).toBeNull();
     });
 
-    it("hides overflow in COMPLETE state", () => {
+    it("hides Archive anyway in COMPLETE state", () => {
       render(
         <SessionOpenSpecActions
           session={makeSession({ attachedProposal: "fix-bug", status: "active" })}
@@ -632,10 +617,10 @@ describe("SessionOpenSpecActions", () => {
           {...defaultProps}
         />,
       );
-      expect(screen.queryByTestId("overflow-btn")).toBeNull();
+      expect(screen.queryByTestId("archive-anyway-btn")).toBeNull();
     });
 
-    it("hides overflow when not all artifacts are done", () => {
+    it("hides Archive anyway when not all artifacts are done", () => {
       const planningIsComplete: OpenSpecChange = {
         name: "planning-ic",
         status: "in-progress",
@@ -654,10 +639,10 @@ describe("SessionOpenSpecActions", () => {
           {...defaultProps}
         />,
       );
-      expect(screen.queryByTestId("overflow-btn")).toBeNull();
+      expect(screen.queryByTestId("archive-anyway-btn")).toBeNull();
     });
 
-    it("confirm dialog shows unchecked count and dispatches archive prompt", () => {
+    it("clicking Archive anyway opens confirm dialog and dispatches archive prompt", () => {
       const onSendPrompt = vi.fn();
       render(
         <SessionOpenSpecActions
@@ -667,7 +652,6 @@ describe("SessionOpenSpecActions", () => {
           onSendPrompt={onSendPrompt}
         />,
       );
-      fireEvent.click(screen.getByTestId("overflow-btn"));
       fireEvent.click(screen.getByTestId("archive-anyway-btn"));
       // 2/5 complete → 3 unchecked of 5
       expect(screen.getByText(/3 of 5 tasks are unchecked/)).toBeTruthy();
@@ -676,10 +660,11 @@ describe("SessionOpenSpecActions", () => {
     });
   });
 
-  // --- Tasks button ---
+  // --- Tasks button removed; stepper Tasks node now opens TasksPopover ---
+  // See change: redesign-session-card-and-composer (cleanup-pass).
 
-  describe("tasks button", () => {
-    it("shows Tasks N/M button when attached change has artifacts and totalTasks > 0", () => {
+  describe("tasks button (removed)", () => {
+    it("no standalone Tasks N/M button — stepper Tasks node handles it", () => {
       render(
         <SessionOpenSpecActions
           session={makeSession({ attachedProposal: "impl-change", status: "active" })}
@@ -687,8 +672,10 @@ describe("SessionOpenSpecActions", () => {
           {...defaultProps}
         />,
       );
-      const btn = screen.getByTestId("tasks-btn");
-      expect(btn.textContent).toContain("Tasks 2/5");
+      expect(screen.queryByTestId("tasks-btn")).toBeNull();
+      // Stepper Tasks node is rendered + clickable.
+      const node = screen.getByTestId("stepper-node-tasks");
+      expect(node.getAttribute("data-clickable")).toBe("true");
     });
 
     it("hides Tasks button when totalTasks is 0", () => {

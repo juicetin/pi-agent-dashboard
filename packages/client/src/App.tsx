@@ -37,6 +37,10 @@ import { QueuePanel } from "./components/QueuePanel.js";
 import { readAllDrafts, writeDraft, deleteDraft } from "./lib/draft-storage.js";
 import { extractUserPromptHistory } from "./lib/message-history.js";
 import { StatusBar } from "./components/StatusBar.js";
+import { ComposerSessionActions } from "./components/ComposerSessionActions.js";
+import { Icon } from "@mdi/react";
+import { mdiRefresh } from "@mdi/js";
+import { useOpenSpecConfig } from "./lib/openspec-config-api.js";
 import { LandingPage } from "./components/LandingPage.js";
 import { SettingsPanel } from "./components/SettingsPanel.js";
 import { ZrokInstallGuide } from "./components/ZrokInstallGuide.js";
@@ -713,6 +717,9 @@ export default function App() {
   // change: pluginize-flows-via-registry.
 
   const selectedSession = selectedId ? sessions.get(selectedId) : undefined;
+  // Per-cwd OpenSpec workflow config — drives which action buttons render.
+  // See change: redesign-session-card-and-composer (config-driven-workflow).
+  const openspecConfig = useOpenSpecConfig(selectedSession?.cwd);
   const folderTitleCwd = folderEditorCwd ?? folderTermCwd
     ?? openspecPreviewCwd ?? archiveCwd ?? specsCwd
     ?? readmeCwd ?? piResourcesCwd ?? null;
@@ -1174,6 +1181,23 @@ export default function App() {
             status={selectedState.status}
             currentTool={selectedState.currentTool}
             streamingText={selectedState.streamingText || undefined}
+            leading={selectedSession && selectedCwd ? (
+              <StatusBarRefreshButton cwd={selectedCwd} onRefresh={handleOpenSpecRefresh} />
+            ) : undefined}
+            actions={selectedSession ? (
+              <ComposerSessionActions
+                session={selectedSession}
+                changes={selectedCwd ? openspecMap.get(selectedCwd)?.changes : undefined}
+                openspecHasDir={selectedCwd ? openspecMap.get(selectedCwd)?.hasOpenspecDir : undefined}
+                openspecPending={selectedCwd ? openspecMap.get(selectedCwd)?.pending : undefined}
+                onSendPrompt={(text, images) => wrappedHandleSend(text, images)}
+                onReadArtifact={selectedCwd ? (changeName, artifactId) => handleReadArtifact(selectedCwd, changeName, artifactId) : undefined}
+                onBulkArchive={selectedCwd ? () => handleBulkArchive(selectedCwd) : undefined}
+                allSessions={Array.from(sessions.values())}
+                showGitInfo={true}
+                openspecConfig={openspecConfig}
+              />
+            ) : undefined}
             onSelectModel={(modelStr) => {
               const slashIdx = modelStr.indexOf("/");
               if (slashIdx > 0) {
@@ -1595,5 +1619,31 @@ export default function App() {
         </DialogPortal>
       )}
     </div>
+  );
+}
+
+/**
+ * StatusBar refresh button — local state for a brief spinner so the user
+ * gets visual confirmation that the click registered. The actual refetch
+ * is fire-and-forget over the websocket; the spin timeout is purely UX
+ * affordance.
+ * See change: redesign-session-card-and-composer (refresh-before-model).
+ */
+function StatusBarRefreshButton({ cwd, onRefresh }: { cwd: string; onRefresh: (cwd: string) => void }) {
+  const [spinning, setSpinning] = useState(false);
+  return (
+    <button
+      onClick={(e) => {
+        e.stopPropagation();
+        onRefresh(cwd);
+        setSpinning(true);
+        setTimeout(() => setSpinning(false), 600);
+      }}
+      title="Refresh OpenSpec data"
+      data-testid="statusbar-refresh-btn"
+      className="text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] p-0.5"
+    >
+      <Icon path={mdiRefresh} size={0.55} spin={spinning} />
+    </button>
   );
 }

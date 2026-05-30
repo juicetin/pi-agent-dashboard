@@ -214,15 +214,19 @@ const brainSrc = `${import.meta.env.BASE_URL}/kraken-brain.png`.replace(/\/{2,}/
       };
     }
 
-    /** Convert PNG → grayscale-keyed canvas (alpha = max channel). */
+    /** Convert PNG → grayscale-keyed canvas (alpha = max channel). If the
+     *  canvas is tainted (CORS) and getImageData throws, fall back to a
+     *  plain raw-image canvas — the buildBrain() source-in recolor still
+     *  works because the PNG already carries its own alpha. */
     function buildKeyed(img) {
       const c = document.createElement("canvas");
       c.width = img.naturalWidth || img.width;
       c.height = img.naturalHeight || img.height;
-      const g = c.getContext("2d");
+      const g = c.getContext("2d", { willReadFrequently: true });
       g.drawImage(img, 0, 0);
       let data;
-      try { data = g.getImageData(0, 0, c.width, c.height); } catch { return null; }
+      try { data = g.getImageData(0, 0, c.width, c.height); }
+      catch { return c; /* tainted — return raw image canvas as fallback */ }
       const d = data.data;
       for (let i = 0; i < d.length; i += 4) {
         const lum = Math.max(d[i], d[i+1], d[i+2]);
@@ -231,19 +235,26 @@ const brainSrc = `${import.meta.env.BASE_URL}/kraken-brain.png`.replace(/\/{2,}/
       g.putImageData(data, 0, 0);
       return c;
     }
-    function loadBrain() {
+    function loadBrain(retries = 2) {
       return new Promise((resolve) => {
-        const img = new Image();
-        img.crossOrigin = "anonymous";
-        img.onload = () => resolve(buildKeyed(img));
-        img.onerror = () => resolve(null);
-        img.src = brainSrc;
+        const attempt = (left) => {
+          const img = new Image();
+          img.crossOrigin = "anonymous";
+          img.onload = () => resolve(buildKeyed(img));
+          img.onerror = () => {
+            if (left > 0) setTimeout(() => attempt(left - 1), 400);
+            else resolve(null);
+          };
+          // Cache-bust on retries to dodge a poisoned negative cache entry.
+          img.src = left < retries ? `${brainSrc}?r=${retries - left}` : brainSrc;
+        };
+        attempt(retries);
       });
     }
 
     /** Sample the keyed brain to find the silhouette edge along an angle. */
     function makeEdgeFinder(keyed) {
-      const g = keyed.getContext("2d");
+      const g = keyed.getContext("2d", { willReadFrequently: true });
       const w = keyed.width, h = keyed.height;
       let data;
       try { data = g.getImageData(0, 0, w, h).data; } catch { return () => 0.5; }
@@ -407,9 +418,13 @@ const brainSrc = `${import.meta.env.BASE_URL}/kraken-brain.png`.replace(/\/{2,}/
           const s = sparks[i];
           const age = now - s.born;
           if (age > s.life) { sparks.splice(i, 1); continue; }
-          const u = age / s.life;
+          // Clamp u to [0,1] — rAF's `now` can lag `performance.now()` by a
+          // few ms, so a spark spawned earlier in the same frame can produce
+          // a tiny negative age, which would push radius below 0 and throw
+          // IndexSizeError out of createRadialGradient.
+          const u = Math.max(0, Math.min(1, age / s.life));
           const fade = 1 - u;
-          const radius = (4 + 16 * u) * scale;
+          const radius = Math.max(0.01, (4 + 16 * u) * scale);
 
           // Outer glow halo
           const grd = ctx.createRadialGradient(s.x, s.y, 0, s.x, s.y, radius);

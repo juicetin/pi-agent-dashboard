@@ -28,6 +28,58 @@ export function isAffectedNode(version: string): boolean {
   return false;
 }
 
+/**
+ * Returns true when Node is OUTSIDE the engines cap declared in
+ * `package.json#engines.node` (`>=22.19.0 <26`). Covers:
+ *
+ *   - Too old: major < 22, OR major 22 with minor < 19 (overlaps with
+ *     isAffectedNode on the 22.x edge — both catch the below-floor case;
+ *     the engines guard names the floor explicitly).
+ *   - Too new: major >= 26 (speculative cap; future Node 26 work is its
+ *     own change).
+ *
+ * History: cap was briefly `<25` in change `openspec-worktree-spawn-button`
+ * commit 63a8d531, on the theory that subprocess `npm ci` (worktree-spawn
+ * bootstrap) would EBADENGINE on Node 25 under the old `engines.node <25`.
+ * CI smoke matrices had been running Node 25 cleanly the whole time
+ * (because they pass `--engine-strict=false`); the dev-reported
+ * EBADENGINE was almost certainly an nvm subprocess-PATH artifact, not a
+ * real engines failure. Bumping engines to `<26` removes the npm-side
+ * trigger at the source and restores Node 25 as a first-class target.
+ *
+ * Keep this in lockstep with `package.json#engines.node`.
+ *
+ * See change: openspec-worktree-spawn-button.
+ */
+export function isOutOfEnginesRange(version: string): boolean {
+  const m = version.match(/^v?(\d+)\.(\d+)\.(\d+)/);
+  if (!m) return false;
+  const major = Number(m[1]);
+  const minor = Number(m[2]);
+  if (major < 22) return true;
+  if (major === 22 && minor < 19) return true;
+  if (major >= 26) return true;
+  return false;
+}
+
+export function buildEnginesRangeMessage(version: string): string {
+  return [
+    ``,
+    `❌  pi-dashboard cannot start on Node ${version}.`,
+    ``,
+    `    Required: >=22.19.0 <26 (see package.json#engines.node).`,
+    ``,
+    `    Below the floor: npm refuses with EBADENGINE and pi 0.75+ assumes`,
+    `    22.19 APIs. At/above the cap: untested; raise the cap when ready.`,
+    ``,
+    `    Fix:`,
+    `      nvm:    nvm install 24 && nvm use 24`,
+    `      bundled: PATH="$HOME/.pi-dashboard/node/bin:$PATH" pi-dashboard start`,
+    `      brew:   brew install node@24`,
+    ``,
+  ].join("\n");
+}
+
 export function buildNodeUpgradeMessage(version: string): string {
   return [
     ``,
@@ -53,6 +105,10 @@ export function buildNodeUpgradeMessage(version: string): string {
 export function assertNodeVersionSupported(): void {
   if (isAffectedNode(process.version)) {
     console.error(buildNodeUpgradeMessage(process.version));
+    process.exit(1);
+  }
+  if (isOutOfEnginesRange(process.version)) {
+    console.error(buildEnginesRangeMessage(process.version));
     process.exit(1);
   }
 }

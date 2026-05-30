@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { buildNodeUpgradeMessage, isAffectedNode } from "../node-guard.js";
+import {
+  buildEnginesRangeMessage,
+  buildNodeUpgradeMessage,
+  isAffectedNode,
+  isOutOfEnginesRange,
+} from "../node-guard.js";
 
 describe("isAffectedNode", () => {
   it("returns true for v22.0.0 (lower bound of 22.x affected)", () => {
@@ -89,5 +94,70 @@ describe("buildNodeUpgradeMessage", () => {
     expect(msg).toMatch(/nvm/);
     expect(msg).toMatch(/brew/);
     expect(msg).toMatch(/nodejs\.org/);
+  });
+});
+
+
+describe("isOutOfEnginesRange", () => {
+  it("returns true for major < 22 (too old)", () => {
+    expect(isOutOfEnginesRange("v20.15.0")).toBe(true);
+    expect(isOutOfEnginesRange("v18.0.0")).toBe(true);
+  });
+
+  it("returns true for v22.x below 22.19 (below engines floor)", () => {
+    expect(isOutOfEnginesRange("v22.0.0")).toBe(true);
+    expect(isOutOfEnginesRange("v22.18.0")).toBe(true);
+    expect(isOutOfEnginesRange("v22.18.999")).toBe(true);
+  });
+
+  it("returns false for v22.19.0 (engines floor exactly)", () => {
+    expect(isOutOfEnginesRange("v22.19.0")).toBe(false);
+  });
+
+  it("returns false for v22.22.x, v23.x, v24.x, v25.x within range", () => {
+    expect(isOutOfEnginesRange("v22.22.2")).toBe(false);
+    expect(isOutOfEnginesRange("v23.5.0")).toBe(false);
+    expect(isOutOfEnginesRange("v24.15.0")).toBe(false);
+    expect(isOutOfEnginesRange("v25.0.0")).toBe(false);
+    expect(isOutOfEnginesRange("v25.9.0")).toBe(false);
+  });
+
+  it("returns true for v26.x and above (engines cap)", () => {
+    expect(isOutOfEnginesRange("v26.0.0")).toBe(true);
+    expect(isOutOfEnginesRange("v26.8.1")).toBe(true);
+    expect(isOutOfEnginesRange("v27.0.0")).toBe(true);
+  });
+
+  it("accepts versions without the v prefix", () => {
+    expect(isOutOfEnginesRange("26.0.0")).toBe(true);
+    expect(isOutOfEnginesRange("22.19.0")).toBe(false);
+    expect(isOutOfEnginesRange("25.0.0")).toBe(false);
+  });
+
+  it("returns false for malformed input rather than throwing", () => {
+    expect(isOutOfEnginesRange("")).toBe(false);
+    expect(isOutOfEnginesRange("not-a-version")).toBe(false);
+    expect(isOutOfEnginesRange("v22")).toBe(false);
+  });
+});
+
+describe("buildEnginesRangeMessage", () => {
+  it("interpolates the running version", () => {
+    expect(buildEnginesRangeMessage("v26.0.0")).toContain("v26.0.0");
+  });
+
+  it("names the engines range", () => {
+    expect(buildEnginesRangeMessage("v26.0.0")).toMatch(/>=22\.19\.0 <26/);
+  });
+
+  it("explains the EBADENGINE / floor link", () => {
+    const msg = buildEnginesRangeMessage("v26.0.0");
+    expect(msg).toMatch(/EBADENGINE/);
+    expect(msg).toMatch(/floor/);
+  });
+
+  it("suggests bundled-node escape hatch", () => {
+    const msg = buildEnginesRangeMessage("v26.0.0");
+    expect(msg).toMatch(/\.pi-dashboard\/node\/bin/);
   });
 });

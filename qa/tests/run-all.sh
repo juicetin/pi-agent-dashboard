@@ -15,6 +15,7 @@ TESTS=(
   "04-terminal.sh"
   "05-git-ops.sh"
   "08-electron-real-launch.sh"  # skips when AppImage absent. See change: expand-electron-qa-coverage.
+  "09-image-fit-extension.sh"   # @blackbelt-technology/pi-image-fit install + dep-tree sanity. See change: pi-image-fit-extension.
 )
 
 PASSED=0

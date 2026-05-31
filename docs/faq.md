@@ -629,6 +629,26 @@ Cross-refs:
 - .github/workflows/_electron-build.yml
 - See change: add-ci-electron-on-demand-build
 
+## Why didn't my PR run the install smoke matrix?
+
+Change `gate-publish-on-smoke-and-tests` removed `standalone-install-smoke-{linux,windows}` from `push` / `pull_request`.
+PR runs only `ci` job: lint + test + build, Node 22, ~3 min.
+
+Smoke matrix lives in reusable `.github/workflows/_smoke.yml`.
+7 legs: Linux × 6 (Node 22/24/25 × bookworm-slim/alpine) + Windows × 1 (Node 22).
+Two consumers:
+
+1. **`ci-smoke.yml`** — `workflow_dispatch` only. Dispatch against any branch when change touches installer surface (lockfile, `scripts/bundle-*.mjs`, native deps, `preload-fastify.cjs`).
+2. **`publish.yml` release gate** — fans out `ci-checks` + `smoke` in parallel after `resolve`, before `tag-and-push`. Gate failure on `workflow_dispatch` aborts cleanly: no commit, no tag, no npm artifact.
+
+Operators dispatch `ci-smoke.yml` against `develop` before cutting tag.
+
+Cross-refs:
+- .github/workflows/_smoke.yml
+- .github/workflows/ci-smoke.yml
+- .github/workflows/publish.yml
+- See change: gate-publish-on-smoke-and-tests
+
 ## What is the npm Trusted Publishers setup for releases?
 
 OIDC token exchange replaces `NPM_TOKEN`. Per-package one-time configuration on npmjs.com.

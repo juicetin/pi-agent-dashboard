@@ -54,15 +54,15 @@
 ## 6. Build + integration verification
 
 - [x] 6.1 From repo root: `npm run build` — succeeds without touching the new package (it ships TS sources directly per `files: ["src/"]`)
-- [ ] 6.2 Manual end-to-end: in a scratch pi session with the new package linked, Read a known-oversize image (e.g. a 5 MB PNG); confirm telemetry line, confirm temp `.webp` exists under `os.tmpdir()/pi-image-fit/`, confirm pi's Read attaches the smaller image
-- [ ] 6.3 Manual: with `PI_IMAGE_FIT_DISABLE=1`, repeat 6.2 and confirm no telemetry, no temp file, original image bytes attached
-- [ ] 6.4 Manual: Read a small (<100 KB) image; confirm no telemetry, no temp file, no `event.input.path` mutation
-- [ ] 6.5 Manual: Read the same oversize image twice in one session; confirm second read hits the cache (no second jimp invocation; same temp path) — use the resize telemetry line count as the observable
-- [ ] 6.6 Test in dashboard context: install the new package, start dashboard server (`pi-dashboard start`), spawn a pi session, Read an oversize image, confirm the bridge forwards the (mutated) tool_call/tool_result events to the dashboard normally and the dashboard renders the resized image preview
+- [x] 6.2 Manual end-to-end: in a scratch pi session with the new package linked, Read a known-oversize image (e.g. a 5 MB PNG); confirm telemetry line, confirm temp `.webp` exists under `os.tmpdir()/pi-image-fit/`, confirm pi's Read attaches the smaller image
+- [x] 6.3 Manual: with `PI_IMAGE_FIT_DISABLE=1`, repeat 6.2 and confirm no telemetry, no temp file, original image bytes attached
+- [x] 6.4 Manual: Read a small (<100 KB) image; confirm no telemetry, no temp file, no `event.input.path` mutation
+- [x] 6.5 Manual: Read the same oversize image twice in one session; confirm second read hits the cache (no second jimp invocation; same temp path) — use the resize telemetry line count as the observable
+- [x] 6.6 Test in dashboard context: install the new package, start dashboard server (`pi-dashboard start`), spawn a pi session, Read an oversize image, confirm the bridge forwards the (mutated) tool_call/tool_result events to the dashboard normally and the dashboard renders the resized image preview
 
 ## 7. QA matrix coverage
 
-- [ ] 7.1 Add a `qa/tests/` case that installs the new package, runs a pi session that Reads an oversize image fixture (commit a ~5 MB PNG fixture under `qa/fixtures/`), and asserts the telemetry line + temp-file presence
+- [x] 7.1 Add a `qa/tests/` case that installs the new package, runs a pi session that Reads an oversize image fixture (commit a ~5 MB PNG fixture under `qa/fixtures/`), and asserts the telemetry line + temp-file presence
 - [ ] 7.2 Run `make test-linux-x86` from `qa/` — passes
 - [ ] 7.3 Optional but recommended: run macOS + Windows QA matrix targets if available locally; otherwise rely on CI to catch platform issues
 

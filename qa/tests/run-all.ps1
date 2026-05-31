@@ -7,7 +7,8 @@ $tests = @(
     "03-websocket.ps1",
     "04-terminal.ps1",
     "05-git-ops.ps1",
-    "07-electron-bootstrap-v2.ps1"  # skips when ZIP artifact absent
+    "07-electron-bootstrap-v2.ps1",  # skips when ZIP artifact absent
+    "09-image-fit-extension.ps1"   # @blackbelt-technology/pi-image-fit install + dep-tree sanity. See change: pi-image-fit-extension.
 )
 
 $passed = 0

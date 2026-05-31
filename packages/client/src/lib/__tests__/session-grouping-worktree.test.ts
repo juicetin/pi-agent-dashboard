@@ -177,3 +177,41 @@ describe("groupSessionsByDirectory — worktree clustering", () => {
     expect(unpinned[0]!.cwd).toBe("/some/path");
   });
 });
+
+// Cold-start parity: a session restored from .meta.json (status "ended", no
+// live bridge) carries the persisted parentage that the scanner reconstructs.
+// Grouping must collapse it under its parent exactly as a live session would,
+// and — because it lands in the parent group's `sessions` — its attachedProposal
+// re-links to the parent repo's OpenSpec change row.
+// See change: fix-cold-start-worktree-session-grouping.
+describe("cold-start worktree parity + OpenSpec linked-session", () => {
+  it("restored ended worktree session collapses under pinned parent", () => {
+    const main = { ...mk("main", "/repo", 100), status: "ended" } as DashboardSession;
+    const wt = {
+      ...mk("wt", "/repo/.worktrees/feat-x", 200, {
+        gitWorktree: { mainPath: "/repo", name: "feat-x" },
+      }),
+      status: "ended",
+    } as DashboardSession;
+    const { pinned } = groupSessionsByDirectory([main, wt], undefined, ["/repo"], "linux");
+    expect(pinned).toHaveLength(1);
+    expect(pinned[0]!.cwd).toBe("/repo");
+    expect(pinned[0]!.sessions.map((s) => s.id).sort()).toEqual(["main", "wt"]);
+  });
+
+  it("attachedProposal of a restored worktree session links under the parent group", () => {
+    const wt = {
+      ...mk("wt", "/repo/.worktrees/feat-x", 200, {
+        gitWorktree: { mainPath: "/repo", name: "feat-x" },
+      }),
+      status: "ended",
+      attachedProposal: "add-foo",
+    } as DashboardSession;
+    const { pinned } = groupSessionsByDirectory([wt], undefined, ["/repo"], "linux");
+    const repoGroup = pinned.find((g) => g.cwd === "/repo")!;
+    // Mirror FolderOpenSpecSection's linkedSessions filter (it runs over
+    // group.sessions for the parent repo's OpenSpec data).
+    const linked = repoGroup.sessions.filter((s) => s.attachedProposal === "add-foo");
+    expect(linked.map((s) => s.id)).toEqual(["wt"]);
+  });
+});

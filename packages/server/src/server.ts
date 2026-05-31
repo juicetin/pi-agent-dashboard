@@ -229,6 +229,17 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
       // when a session was spawned via the dashboard's worktree dialog.
       // See change: add-worktree-spawn-dialog.
       gitWorktreeBase: session.gitWorktreeBase,
+      // Persist the grouping-relevant worktree/jj parentage so a rebooted
+      // (bridge-less) scan can collapse this session under its parent repo.
+      // Only the subset `resolveSessionGroupPath` needs is stored; volatile
+      // probe state (jj bookmarks/lastError, worktree base) is excluded.
+      // See change: fix-cold-start-worktree-session-grouping.
+      gitWorktree: session.gitWorktree
+        ? { mainPath: session.gitWorktree.mainPath, name: session.gitWorktree.name }
+        : undefined,
+      jjState: session.jjState
+        ? { workspaceRoot: session.jjState.workspaceRoot, workspaceName: session.jjState.workspaceName }
+        : undefined,
       cachedAt: Date.now(),
     });
     // When a session ends, drop its id from the persisted drag-reorder list

@@ -259,6 +259,51 @@ describe("session-scanner", () => {
     expect(result.sessions[0].contextWindow).toBe(200_000);
   });
 
+  it("reconstructs gitWorktree from persisted mainPath + name", () => {
+    const dir = createSessionDir("--test-cwd--");
+    const sf = createJsonl(dir, "2026-03-30T21-39-43-034Z_wt-id.jsonl", { id: "wt-id", cwd: "/repo/.worktrees/feat-x" });
+    writeSessionMeta(sf, {
+      cwd: "/repo/.worktrees/feat-x",
+      status: "ended",
+      gitWorktree: { mainPath: "/repo", name: "feat-x" },
+      cachedAt: Date.now() + 10000,
+    });
+
+    const result = scanAllSessions(tmpDir);
+    expect(result.sessions[0].gitWorktree?.mainPath).toBe("/repo");
+    expect(result.sessions[0].gitWorktree?.name).toBe("feat-x");
+  });
+
+  it("reconstructs jjState from persisted workspaceRoot + workspaceName", () => {
+    const dir = createSessionDir("--test-cwd--");
+    const sf = createJsonl(dir, "2026-03-30T21-39-43-034Z_jj-id.jsonl", { id: "jj-id", cwd: "/repo/.shadow/feat-x" });
+    writeSessionMeta(sf, {
+      cwd: "/repo/.shadow/feat-x",
+      status: "ended",
+      jjState: { workspaceRoot: "/repo", workspaceName: "feat-x" },
+      cachedAt: Date.now() + 10000,
+    });
+
+    const result = scanAllSessions(tmpDir);
+    expect(result.sessions[0].jjState?.workspaceRoot).toBe("/repo");
+    expect(result.sessions[0].jjState?.workspaceName).toBe("feat-x");
+    expect(result.sessions[0].jjState?.isJjRepo).toBe(true);
+  });
+
+  it("leaves gitWorktree/jjState undefined for a legacy sidecar lacking parentage", () => {
+    const dir = createSessionDir("--test-cwd--");
+    const sf = createJsonl(dir, "2026-03-30T21-39-43-034Z_legacy-id.jsonl", { id: "legacy-id", cwd: "/legacy" });
+    writeSessionMeta(sf, {
+      cwd: "/legacy",
+      status: "ended",
+      cachedAt: Date.now() + 10000,
+    });
+
+    const result = scanAllSessions(tmpDir);
+    expect(result.sessions[0].gitWorktree).toBeUndefined();
+    expect(result.sessions[0].jjState).toBeUndefined();
+  });
+
   it("should set hidden from meta", () => {
     const dir = createSessionDir("--test-cwd--");
     const sf = createJsonl(dir, "2026-03-30T21-39-43-034Z_hidden-id.jsonl", { id: "hidden-id", cwd: "/test" });

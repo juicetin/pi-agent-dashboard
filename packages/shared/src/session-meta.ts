@@ -55,6 +55,30 @@ export interface SessionMeta {
   gitWorktreeBase?: string;
 
   /**
+   * Worktree parentage persisted for cold-start session grouping. Mirrors
+   * the grouping-relevant subset of `DashboardSession.gitWorktree`
+   * (`mainPath` collapses the session under its parent repo via
+   * `resolveSessionGroupPath`; `name` drives the worktree cluster key).
+   * `base` is intentionally omitted here — it persists separately as
+   * `gitWorktreeBase`. Absent for plain checkouts. Without this, a
+   * rebooted worktree session falls back to its own cwd group, becomes an
+   * all-ended unpinned group, and is hidden.
+   * See change: fix-cold-start-worktree-session-grouping.
+   */
+  gitWorktree?: { mainPath?: string; name?: string };
+
+  /**
+   * jj-workspace parentage persisted for cold-start session grouping.
+   * Only the grouping-relevant subset of `DashboardSession.jjState` is
+   * stored (`workspaceRoot` collapses `.shadow/<name>/` sessions under
+   * their parent repo; `workspaceName` drives the cluster key). Volatile
+   * probe state (`bookmarks`, `isColocated`, `lastError`) is NOT persisted
+   * — a live bridge overwrites the full `jjState` on attach.
+   * See change: fix-cold-start-worktree-session-grouping.
+   */
+  jjState?: { workspaceRoot?: string; workspaceName?: string };
+
+  /**
    * Sparse per-session override for chat-view display preferences.
    * Deep-merged onto the global `DisplayPrefs` from `preferences.json`.
    * `undefined` (field absent) means "no override — use global".

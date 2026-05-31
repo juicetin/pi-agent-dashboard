@@ -95,6 +95,25 @@ function sessionFromMeta(
     // gitWorktree.base is the merged value, not this raw cache).
     // See change: add-worktree-spawn-dialog.
     gitWorktreeBase: meta.gitWorktreeBase,
+    // Reconstruct worktree/jj parentage from the persisted grouping subset so
+    // cold-start grouping (no live bridge) collapses this session under its
+    // parent repo via `resolveSessionGroupPath`, matching live-bridge grouping.
+    // `base` is omitted here — it composes separately from `gitWorktreeBase`.
+    // The `jjState` shape is a partial cold-start seed (isJjRepo:true honest
+    // because we only persist workspaceRoot for real jj workspaces); a live
+    // bridge overwrites the full object on attach.
+    // See change: fix-cold-start-worktree-session-grouping.
+    gitWorktree: meta.gitWorktree?.mainPath
+      ? { mainPath: meta.gitWorktree.mainPath, name: meta.gitWorktree.name ?? "" }
+      : undefined,
+    jjState: meta.jjState?.workspaceRoot
+      ? {
+          isJjRepo: true,
+          isColocated: false,
+          workspaceRoot: meta.jjState.workspaceRoot,
+          workspaceName: meta.jjState.workspaceName,
+        }
+      : undefined,
     // Probe whether the session's cwd still exists on disk. Cheap stat,
     // runs once per ended session at scan time. Avoids the dashboard
     // showing a stale resume button on a session whose dir was removed.

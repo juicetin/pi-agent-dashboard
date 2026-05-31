@@ -59,7 +59,7 @@ The extension SHALL resize an image when EITHER its byte size exceeds the config
 
 ### Requirement: Resize implementation
 
-When the resize policy triggers, the extension SHALL re-encode the image as webp at quality 85 (configurable via `PI_IMAGE_FIT_QUALITY`), with the long edge scaled to the configured maximum (default 1568 px) preserving aspect ratio. The extension SHALL use the `jimp` library and MUST NOT depend on `sharp`, `@napi-rs/image`, or any other native-binary image processor.
+When the resize policy triggers, the extension SHALL re-encode the image with the long edge scaled to the configured maximum (default 1568 px) preserving aspect ratio. Output format SHALL be chosen adaptively from the source: PNG input produces PNG output (lossless); all other input formats (`.jpg`, `.jpeg`, `.webp`, `.gif`) produce JPEG output at the configured quality (default 85, configurable via `PI_IMAGE_FIT_QUALITY`). The extension SHALL use the `jimp` library and MUST NOT depend on `sharp`, `@napi-rs/image`, or any other native-binary image processor.
 
 #### Scenario: Long-edge scaling preserves aspect ratio
 
@@ -71,10 +71,15 @@ When the resize policy triggers, the extension SHALL re-encode the image as webp
 - **WHEN** a 3024×4032 portrait image is resized with a 1568 px long-edge target
 - **THEN** the output dimensions are 1176×1568
 
-#### Scenario: Output format is webp
+#### Scenario: PNG input produces PNG output
 
-- **WHEN** any image type in the allowlist is resized
-- **THEN** the temp file is written as `.webp` regardless of source format
+- **WHEN** the source path ends in `.png` (case-insensitive) and a resize fires
+- **THEN** the temp file is written as `.png` (lossless re-encoding)
+
+#### Scenario: Non-PNG input produces JPEG output
+
+- **WHEN** the source path ends in `.jpg`, `.jpeg`, `.webp`, or `.gif` and a resize fires
+- **THEN** the temp file is written as `.jpg` at the configured quality (default 85)
 
 #### Scenario: No native dependency
 
@@ -83,7 +88,7 @@ When the resize policy triggers, the extension SHALL re-encode the image as webp
 
 ### Requirement: Temp-file cache
 
-The extension SHALL cache resized output keyed by a SHA-256 hash of `${absolutePath}|${mtime}|${maxEdge}|${maxBytes}|${quality}`. Cache files SHALL live in a session-scoped subdirectory under `os.tmpdir()/pi-image-fit/`. On the `session_shutdown` event the extension MUST remove its session-scoped cache directory.
+The extension SHALL cache resized output keyed by a SHA-256 hash of `${absolutePath}|${mtime}|${maxEdge}|${maxBytes}|${quality}`. Cache files SHALL live in a session-scoped subdirectory under `os.tmpdir()/pi-image-fit/`. Cache file extension SHALL match the output format chosen per the Resize implementation requirement (`.png` for PNG-in, `.jpg` for other inputs). On the `session_shutdown` event the extension MUST remove its session-scoped cache directory.
 
 #### Scenario: Cache hit on repeat read
 

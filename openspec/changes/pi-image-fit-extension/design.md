@@ -60,18 +60,25 @@ Stakeholders:
 - `@napi-rs/image`: similar tradeoffs to sharp.
 - Shell out to `sips` / `magick` / `ffmpeg`: zero install size, but unportable. macOS-only or system-dep coupling. Rejected.
 
-### D3 — Output format: webp at quality 85
+### D3 — Output format: format-adaptive (PNG-in → PNG-out, else JPEG@85)
 
-**Choice**: Always re-encode to webp at quality 85 when a resize fires.
+**Choice**: Format-adaptive output:
+- PNG input → PNG output (lossless, preserves text/screenshot fidelity).
+- All other inputs (`.jpg`, `.jpeg`, `.webp`, `.gif`) → JPEG quality 85.
+
+Quality 85 applies only to the lossy JPEG path.
 
 **Why**:
-- webp compresses tighter than jpeg at equivalent perceptual quality; the byte ceiling is the primary problem we're solving.
-- All three target providers accept webp inline.
-- Quality 85 is the well-known "sweet spot" — visible at >95, savings plateau under 80.
+- Honest about input intent: PNGs in agent workflows are almost always screenshots / diagrams / code captures where lossy re-encoding destroys readable text; cameras and the web ship JPEGs where lossy is the original choice.
+- Stays within `jimp`'s native encoder set — no second image dep, no native binary.
+- The 4 MiB byte ceiling still drives the *decision* to resize; the format choice just shapes the *encoded output*. PNG-out for a downscaled image is much smaller than the original even at lossless settings (1568 px long edge × lossless > 4 MiB is rare).
+- All target providers accept both PNG and JPEG inline; webp's marginal compression advantage was never worth a second dep.
 
 **Alternatives considered**:
-- Match input format (png → png, jpg → jpg): preserves user intent but png-out can easily fail the byte ceiling even after dimension shrinking (lossless re-encoding of complex images barely compresses). Rejected.
-- Adaptive (lossless webp for screenshots, lossy webp for photos): clever but requires content classification we don't have. Defer.
+- Always webp at quality 85 (original D3): rejected after implementation discovered `jimp@1.6.1` ships no webp encoder. Supported output mimes per `node_modules/jimp/dist/esm/index.d.ts:266`: `bmp`, `gif`, `jpeg`, `png`, `tiff`. Adding `@jsquash/webp` (wasm) would buy ~20–30% size savings at the cost of a second image dep and a wasm load step — not worth it for a feature whose job is "fit under 5 MB," not "minimize bytes."
+- Always JPEG quality 85: simpler but visibly degrades code-screenshot text. Rejected.
+- Switch to `sharp` for webp: overturns D2 and reintroduces the native-binary install problem. Rejected.
+- Lossless webp for screenshots, lossy webp for photos: same content-classification problem, same wasm dep cost. The PNG-vs-not split is a cheap, sound proxy for the same intent.
 
 ### D4 — Threshold: 1568 px long edge, 4 MB bytes
 
@@ -168,7 +175,8 @@ Stakeholders:
 - **[Silent quality loss]** Agent reads a 4K screenshot of code, image-fit squashes it to 1568 px, agent can't read fine text. Failure is invisible — agent just guesses wrong. → **Mitigation**: console log per resize gives users a trail; opt-out env var; document the failure mode in the package README and in a skill-author note in `docs/`.
 - **[Hook breaks user's Read]** Bug in jimp or our wrapper throws and corrupts `event.input.path`. → **Mitigation**: D9 try/catch with fall-through. Tests for each error path (unreadable file, malformed image, oversize-after-shrink edge case, EISDIR, ENOENT).
 - **[Tmp file disk litter]** Cache files accumulate if `session_shutdown` doesn't fire (crash, kill -9). → **Mitigation**: session-scoped tmp dir; on extension load, sweep `os.tmpdir()/pi-image-fit/` for dirs older than 24h.
-- **[Re-encoding lossy formats]** Re-encoding a jpeg through jimp → webp re-decodes and re-encodes — double-lossy. → **Mitigation**: only resize if a threshold is actually exceeded; high quality (85); acceptable for the visual fidelity range models can use.
+- **[Re-encoding lossy formats]** Re-encoding a JPEG through jimp → JPEG re-decodes and re-encodes — double-lossy at quality 85. → **Mitigation**: only resize if a threshold is actually exceeded; quality 85 is the well-known sweet spot; acceptable for the visual fidelity range models can use.
+- **[PNG-out failing the byte ceiling]** Lossless PNG re-encoding of a complex 1568 px image could theoretically still exceed `maxBytes`. → **Mitigation**: rare in practice for screenshots (which compress well even lossless); if it shows up in user reports, add a configurable PNG-byte fallback to JPEG. v1 ships PNG-out unconditionally for PNG inputs.
 - **[Cross-platform install]** jimp pure JS but still has transitive deps. → **Mitigation**: extend `qa/tests/` with an install-and-Read-a-large-image test that runs on the existing Packer VM matrix.
 - **[Animated GIF flattening]** First-frame extraction loses motion. → **Mitigation**: documented behavior; rare in agent workflows.
 - **[Lockstep version inflation]** v1.0.0 of image-fit at release time will actually be 0.5.5 (or whatever the monorepo is at) because of the `npm version --workspaces` bump. Semantic version → meaningless. → **Mitigation**: accept it; monorepo norm.

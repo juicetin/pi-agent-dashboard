@@ -1,4 +1,4 @@
-## MODIFIED Requirements
+## ADDED Requirements
 
 > Ground-truth update: the strong-signal path
 > (`PI_DASHBOARD_SPAWN_TOKEN` env → bridge sends `dashboardSpawned: true`

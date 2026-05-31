@@ -1,5 +1,8 @@
-## MODIFIED Requirements
+# worktree-spawn-dialog Specification
 
+## Purpose
+TBD - created by archiving change auto-fill-branch-from-proposal-in-worktree-dialog. Update Purpose after archive.
+## Requirements
 ### Requirement: `attachProposal` prop drives branch input reactively
 
 The `WorktreeSpawnDialog` accepts an optional `attachProposal?: string` prop. The dialog SHALL react to changes of this prop at runtime (not only at mount) by updating the branch input, subject to a dirty-flag guard:
@@ -35,3 +38,4 @@ The path preview (`derivedPath`) SHALL update automatically through the existing
 #### Scenario: Backward-compat — initialBranch alone unchanged
 - **WHEN** the dialog mounts with `initialBranch="os/preset"` and no `attachProposal`
 - **THEN** the branch input SHALL render `os/preset` on first paint (preserving the existing per-change `⑂+` flow)
+

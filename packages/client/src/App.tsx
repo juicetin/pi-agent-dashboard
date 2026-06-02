@@ -92,7 +92,7 @@ import type { EditorInstanceStatus } from "@blackbelt-technology/pi-dashboard-sh
 import { ErrorBoundary } from "./components/ErrorBoundary.js";
 import type { ServerToBrowserMessage } from "@blackbelt-technology/pi-dashboard-shared/browser-protocol.js";
 import type { ToolContext } from "./components/tool-renderers/index.js";
-import type { ContextUsageInfo } from "./components/SessionList.js";
+import { buildContextUsageMap } from "./lib/context-usage.js";
 import { ApiContext, deriveApiBase, VITE_API_URL, setGlobalApiBase } from "./lib/api-context.js";
 import { DisplayPrefsProvider } from "./lib/DisplayPrefsContext.js";
 import { FirstLaunchDisplayModal } from "./components/FirstLaunchDisplayModal.js";
@@ -845,22 +845,17 @@ export default function App() {
     session: selectedId ? sessionStates.get(selectedId) : undefined,
   }), [selectedCwd, editorMap, selectedId, sessionStates]);
 
-  const contextUsageMap = useMemo(() => {
-    const map = new Map<string, ContextUsageInfo>();
-    // First: populate from event-reduced state (live sessions)
-    for (const [id, state] of sessionStates) {
-      if (state.contextUsage) {
-        map.set(id, state.contextUsage);
-      }
-    }
-    // Second: fill in from server-persisted session data (covers all sessions)
-    for (const [id, session] of sessions) {
-      if (!map.has(id) && session.contextWindow && session.contextTokens !== undefined) {
-        map.set(id, { tokens: session.contextTokens ?? null, contextWindow: session.contextWindow });
-      }
-    }
-    return map;
-  }, [sessionStates, sessions]);
+  const contextUsageMap = useMemo(
+    () => buildContextUsageMap(sessionStates, sessions),
+    [sessionStates, sessions],
+  );
+
+  // Header context-usage value derived the same way the session card does:
+  // shared two-tier map (live event-reducer value, else persisted fallback),
+  // falling back to raw live state only if the map has no entry.
+  // See change: align-content-header-context-usage.
+  const selectedContextUsage =
+    (selectedId ? contextUsageMap.get(selectedId) : undefined) ?? selectedState.contextUsage;
 
   const sessionActions = useSessionActions({
     selectedId, send, navigate, setMobileOpen,
@@ -1200,19 +1195,19 @@ export default function App() {
             <span className="flex-1" />
             {selectedState.cost > 0 && <span>${selectedState.cost.toFixed(2)}</span>}
           </div>
-          {selectedState.contextUsage && selectedState.contextUsage.contextWindow > 0 && (
+          {selectedContextUsage && selectedContextUsage.contextWindow > 0 && (
             <div className="mt-1">
               <div className="flex items-center gap-2 text-[10px]">
-                <span>{selectedState.contextUsage.tokens != null ? `${Math.round((selectedState.contextUsage.tokens / 1000))}k` : "—"}</span>
+                <span>{selectedContextUsage.tokens != null ? `${Math.round((selectedContextUsage.tokens / 1000))}k` : "—"}</span>
                 <div className="flex-1 h-1.5 bg-[var(--bg-tertiary)] rounded-full overflow-hidden">
-                  {selectedState.contextUsage.tokens != null && (
+                  {selectedContextUsage.tokens != null && (
                     <div
                       className="h-full bg-blue-500 rounded-full"
-                      style={{ width: `${Math.min((selectedState.contextUsage.tokens / selectedState.contextUsage.contextWindow) * 100, 100)}%` }}
+                      style={{ width: `${Math.min((selectedContextUsage.tokens / selectedContextUsage.contextWindow) * 100, 100)}%` }}
                     />
                   )}
                 </div>
-                <span>{Math.round(selectedState.contextUsage.contextWindow / 1000)}k</span>
+                <span>{Math.round(selectedContextUsage.contextWindow / 1000)}k</span>
               </div>
             </div>
           )}
@@ -1227,7 +1222,7 @@ export default function App() {
       })() && (
         <TokenStatsBar
           turnStats={selectedState.turnStats}
-          contextUsage={selectedState.contextUsage}
+          contextUsage={selectedContextUsage}
           tokensIn={selectedState.tokensIn}
           tokensOut={selectedState.tokensOut}
           cacheRead={selectedState.cacheRead}

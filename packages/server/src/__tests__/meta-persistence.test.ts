@@ -116,6 +116,24 @@ describe("meta-persistence", () => {
     mp.dispose();
   });
 
+  it("setProcessDrawerCollapsed round-trips and preserves sibling fields", () => {
+    const mp = createMetaPersistence();
+    const sf = sessionFile("drawer");
+    mp.save(sf, { source: "dashboard", name: "keepme" });
+    mp.flushAll();
+
+    mp.setProcessDrawerCollapsed(sf, false);
+    const expanded = readSessionMeta(sf);
+    expect(expanded?.processDrawerCollapsed).toBe(false);
+    expect(expanded?.name).toBe("keepme");
+
+    mp.setProcessDrawerCollapsed(sf, true);
+    const collapsed = readSessionMeta(sf);
+    expect(collapsed?.processDrawerCollapsed).toBe(true);
+    expect(collapsed?.name).toBe("keepme");
+    mp.dispose();
+  });
+
   it("persists gitWorktree parentage (mainPath + name) round-trip", () => {
     const mp = createMetaPersistence();
     const sf = sessionFile("wt");

@@ -45,6 +45,17 @@ export interface SetSessionDisplayPrefsBrowserMessage {
   override: PartialDisplayPrefs | null;
 }
 
+/**
+ * Browser → server: persist the per-session collapse state of the
+ * PROCESS subcard's background-processes drawer.
+ * See change: persist-process-drawer-collapse.
+ */
+export interface SetSessionProcessDrawerBrowserMessage {
+  type: "set_session_process_drawer";
+  sessionId: string;
+  collapsed: boolean;
+}
+
 // ── Server → Browser ────────────────────────────────────────────────
 
 export interface SessionAddedMessage {
@@ -1247,6 +1258,7 @@ export type BrowserToServerMessage =
   | WorktreeBootstrapSubscribeMessage
   | WorktreeBootstrapUnsubscribeMessage
   | SetSessionDisplayPrefsBrowserMessage
+  | SetSessionProcessDrawerBrowserMessage
   | InjectViewMessageBrowserMessage;
 
 /**

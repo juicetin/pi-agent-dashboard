@@ -119,6 +119,30 @@ export function handleSetSessionDisplayPrefs(
   }
 }
 
+/**
+ * Browser → server: persist the per-session collapse state of the PROCESS
+ * subcard's background-processes drawer. Updates the in-memory session so
+ * `server.ts` onChange + broadcast pick it up, writes synchronously to
+ * `.meta.json`, and broadcasts `session_updated` so all browsers re-render.
+ * See change: persist-process-drawer-collapse.
+ */
+export function handleSetSessionProcessDrawer(
+  msg: Extract<BrowserToServerMessage, { type: "set_session_process_drawer" }>,
+  ctx: BrowserHandlerContext,
+): void {
+  const { sessionManager, broadcast, metaPersistence } = ctx;
+  const session = sessionManager.get(msg.sessionId);
+  if (!session) return;
+
+  const updates = { processDrawerCollapsed: msg.collapsed };
+  sessionManager.update(msg.sessionId, updates);
+  broadcast({ type: "session_updated", sessionId: msg.sessionId, updates });
+
+  if (session.sessionFile && metaPersistence) {
+    metaPersistence.setProcessDrawerCollapsed(session.sessionFile, msg.collapsed);
+  }
+}
+
 export function handleFetchContent(
   msg: Extract<BrowserToServerMessage, { type: "fetch_content" }>,
   ctx: BrowserHandlerContext,

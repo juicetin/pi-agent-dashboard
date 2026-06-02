@@ -1067,6 +1067,7 @@ export default function App() {
       onCollapseSidebar={sidebar.toggleCollapse}
       commandsMap={sessionCommands}
       onKillProcess={handleKillProcess}
+      onSetProcessDrawer={(sessionId, collapsed) => send({ type: "set_session_process_drawer", sessionId, collapsed })}
       inflightBashMap={inflightBashMap}
       onAbortTool={handleAbortTool}
       onOpenTerminals={(cwd) => navigate(`/folder/${encodeFolderPath(cwd)}/terminals`)}
@@ -1214,23 +1215,30 @@ export default function App() {
         </div>
       )}
       {!isMobile && (() => {
-        // Effective tokenStatsBar = override ?? global ?? true (default visible
-        // while prefs load). See change: configurable-chat-display.
-        const override = selectedSession?.displayPrefsOverride?.tokenStatsBar;
-        if (override !== undefined) return override;
-        return displayPrefs?.tokenStatsBar ?? true;
-      })() && (
-        <TokenStatsBar
-          turnStats={selectedState.turnStats}
-          contextUsage={selectedContextUsage}
-          tokensIn={selectedState.tokensIn}
-          tokensOut={selectedState.tokensOut}
-          cacheRead={selectedState.cacheRead}
-          cacheWrite={selectedState.cacheWrite}
-          cost={selectedState.cost}
-          onTurnClick={(turnIndex) => chatViewRef.current?.scrollToTurn(turnIndex)}
-        />
-      )}
+        // Effective pref = override ?? global ?? true (default visible while
+        // prefs load). "Token stats bar" gates the butterfly chart + stats;
+        // "Context usage bar" independently gates the progress bar.
+        // See change: configurable-chat-display.
+        const statsOverride = selectedSession?.displayPrefsOverride?.tokenStatsBar;
+        const showStats = statsOverride ?? displayPrefs?.tokenStatsBar ?? true;
+        const ctxOverride = selectedSession?.displayPrefsOverride?.contextUsageBar;
+        const showContextBar = ctxOverride ?? displayPrefs?.contextUsageBar ?? true;
+        if (!showStats && !showContextBar) return null;
+        return (
+          <TokenStatsBar
+            turnStats={selectedState.turnStats}
+            contextUsage={selectedContextUsage}
+            tokensIn={selectedState.tokensIn}
+            tokensOut={selectedState.tokensOut}
+            cacheRead={selectedState.cacheRead}
+            cacheWrite={selectedState.cacheWrite}
+            cost={selectedState.cost}
+            onTurnClick={(turnIndex) => chatViewRef.current?.scrollToTurn(turnIndex)}
+            showStats={showStats}
+            showContextBar={showContextBar}
+          />
+        );
+      })()}
       {archiveMatch && archiveCwd ? (
         <ArchiveBrowserView cwd={archiveCwd} onBack={goBack} />
       ) : specsMatch && specsCwd ? (

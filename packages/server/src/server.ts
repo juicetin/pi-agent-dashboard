@@ -206,6 +206,7 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
       name: session.name,
       attachedProposal: session.attachedProposal,
       displayPrefsOverride: session.displayPrefsOverride,
+      processDrawerCollapsed: session.processDrawerCollapsed,
       hidden: session.hidden,
       cwd: session.cwd,
       status: session.status,

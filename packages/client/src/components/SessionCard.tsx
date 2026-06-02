@@ -346,6 +346,7 @@ export function SessionCard({
   commands,
   processes,
   onKillProcess,
+  onSetProcessDrawerCollapsed,
   inflightBashTools,
   onAbortTool,
   hasError,
@@ -419,6 +420,11 @@ export function SessionCard({
    * (design.md Q2 path b). See change: redesign-process-list-activity-bar.
    */
   onAbortTool?: (toolCallId: string) => void;
+  /**
+   * Persist the per-session background-processes drawer collapse toggle.
+   * See change: persist-process-drawer-collapse.
+   */
+  onSetProcessDrawerCollapsed?: (collapsed: boolean) => void;
   hasError?: boolean;
   /** True iff a synthesized provider retry is in flight (retryState set, no error yet). */
   isRetrying?: boolean;
@@ -812,6 +818,8 @@ export function SessionCard({
         onKill={onKillProcess}
         onAbortTool={onAbortTool}
         now={now}
+        collapsed={session.processDrawerCollapsed}
+        onSetCollapsed={onSetProcessDrawerCollapsed}
       />
 
       {/* FLOWS subcard — plugin slot only.
@@ -840,23 +848,33 @@ const EMPTY_BASH_TOOLS: readonly InflightBashTool[] = [];
 const EMPTY_PROCESSES: readonly ProcessEntry[] = [];
 
 /**
- * useDrawerExpansion — owns the per-session drawer toggle override.
+ * useDrawerExpansion — resolves the background-processes drawer's
+ * expanded state from the per-session persisted `processDrawerCollapsed`
+ * value (absent ⇒ collapsed by default). A user toggle flips local state
+ * optimistically and persists server-side via `onSetCollapsed`; the next
+ * `session_updated` broadcast reconciles `persistedCollapsed`.
  *
- * Contextual default: `expanded` when the activity bar is empty AND the
- * drawer is non-empty ("pure-orphan" state — only signal in the card).
- * User toggles flip an explicit override that wins over the default and
- * persists for the lifetime of this component instance (one session card).
- *
- * See change: redesign-process-list-activity-bar (Decision 4).
+ * See change: persist-process-drawer-collapse (supersedes Decision 4 of
+ * redesign-process-list-activity-bar).
  */
-function useDrawerExpansion(activityEmpty: boolean, drawerNonEmpty: boolean) {
-  const [override, setOverride] = useState<boolean | null>(null);
-  const contextualDefault = activityEmpty && drawerNonEmpty;
-  const expanded = override ?? contextualDefault;
+function useDrawerExpansion(
+  persistedCollapsed: boolean | undefined,
+  onSetCollapsed?: (collapsed: boolean) => void,
+) {
+  const [collapsed, setCollapsed] = useState(persistedCollapsed ?? true);
+  // Reconcile with the authoritative server value when it changes
+  // (another client toggled, or our optimistic write echoed back).
+  useEffect(() => {
+    if (persistedCollapsed !== undefined) setCollapsed(persistedCollapsed);
+  }, [persistedCollapsed]);
   const onToggle = useCallback(() => {
-    setOverride((prev) => !(prev ?? contextualDefault));
-  }, [contextualDefault]);
-  return { expanded, onToggle };
+    setCollapsed((prev) => {
+      const next = !prev;
+      onSetCollapsed?.(next);
+      return next;
+    });
+  }, [onSetCollapsed]);
+  return { expanded: !collapsed, onToggle };
 }
 
 interface ProcessSubcardProps {
@@ -865,6 +883,10 @@ interface ProcessSubcardProps {
   onKill?: (pgid: number) => void;
   onAbortTool?: (toolCallId: string) => void;
   now: number;
+  /** Per-session persisted drawer collapse state (absent ⇒ collapsed). */
+  collapsed?: boolean;
+  /** Persist the user's collapse toggle server-side. */
+  onSetCollapsed?: (collapsed: boolean) => void;
 }
 
 /**
@@ -872,10 +894,10 @@ interface ProcessSubcardProps {
  * BackgroundProcessesDrawer (ProcessList). Subcard hides only when BOTH
  * surfaces have nothing to render.
  */
-function ProcessSubcard({ activity, processes, onKill, onAbortTool, now }: ProcessSubcardProps) {
+function ProcessSubcard({ activity, processes, onKill, onAbortTool, now, collapsed, onSetCollapsed }: ProcessSubcardProps) {
   const hasActivity = activity.length > 0;
   const hasProcesses = processes.length > 0;
-  const { expanded, onToggle } = useDrawerExpansion(!hasActivity, hasProcesses);
+  const { expanded, onToggle } = useDrawerExpansion(collapsed, onSetCollapsed);
   if (!hasActivity && !hasProcesses) return null;
   return (
     <SessionSubcard title="PROCESS">

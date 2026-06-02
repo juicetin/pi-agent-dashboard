@@ -566,7 +566,7 @@ describe("SessionCard subcard structure", () => {
       expect(queryByTestId("background-drawer-summary")).toBeNull();
     });
 
-    it("OrphansOnly: drawer visible AND expanded by default (pure-orphan)", () => {
+    it("OrphansOnly: drawer visible AND collapsed by default (no stored choice)", () => {
       const session = makeSession();
       const { getByTestId, queryByTestId } = render(
         <SessionCard
@@ -580,7 +580,38 @@ describe("SessionCard subcard structure", () => {
       );
       expect(screen.getByText("PROCESS")).toBeTruthy();
       expect(queryByTestId("session-activity-bar")).toBeNull();
+      // See change: persist-process-drawer-collapse — default is collapsed.
+      expect(getByTestId("background-drawer-summary").getAttribute("aria-expanded")).toBe("false");
+    });
+
+    it("stored processDrawerCollapsed=false renders the drawer expanded", () => {
+      const session = makeSession({ processDrawerCollapsed: false });
+      const { getByTestId } = render(
+        <SessionCard
+          session={session}
+          {...defaultProps}
+          processes={[proc]}
+          onKillProcess={() => {}}
+          inflightBashTools={[]}
+          onAbortTool={() => {}}
+        />,
+      );
       expect(getByTestId("background-drawer-summary").getAttribute("aria-expanded")).toBe("true");
+    });
+
+    it("stored processDrawerCollapsed=true renders the drawer collapsed", () => {
+      const session = makeSession({ processDrawerCollapsed: true });
+      const { getByTestId } = render(
+        <SessionCard
+          session={session}
+          {...defaultProps}
+          processes={[proc]}
+          onKillProcess={() => {}}
+          inflightBashTools={[]}
+          onAbortTool={() => {}}
+        />,
+      );
+      expect(getByTestId("background-drawer-summary").getAttribute("aria-expanded")).toBe("false");
     });
 
     it("Both: activity bar visible AND drawer collapsed by default", () => {
@@ -600,9 +631,31 @@ describe("SessionCard subcard structure", () => {
       expect(getByTestId("background-drawer-summary").getAttribute("aria-expanded")).toBe("false");
     });
 
-    it("user toggle persists across activity-bar transitions", () => {
-      const session = makeSession();
-      // Start in OrphansOnly (drawer default = expanded), user collapses it.
+    it("toggle flips optimistically AND persists via onSetProcessDrawerCollapsed", () => {
+      const onSetProcessDrawerCollapsed = vi.fn();
+      // Stored expanded (collapsed=false); user clicks to collapse.
+      const session = makeSession({ processDrawerCollapsed: false });
+      const { getByTestId } = render(
+        <SessionCard
+          session={session}
+          {...defaultProps}
+          processes={[proc]}
+          onKillProcess={() => {}}
+          onSetProcessDrawerCollapsed={onSetProcessDrawerCollapsed}
+          inflightBashTools={[]}
+          onAbortTool={() => {}}
+        />,
+      );
+      expect(getByTestId("background-drawer-summary").getAttribute("aria-expanded")).toBe("true");
+      fireEvent.click(getByTestId("background-drawer-summary"));
+      // Optimistic local flip: now collapsed.
+      expect(getByTestId("background-drawer-summary").getAttribute("aria-expanded")).toBe("false");
+      // Persisted the new collapsed value server-side.
+      expect(onSetProcessDrawerCollapsed).toHaveBeenCalledWith(true);
+    });
+
+    it("reconciles when the authoritative processDrawerCollapsed changes (other client)", () => {
+      const session = makeSession({ processDrawerCollapsed: true });
       const { getByTestId, rerender } = render(
         <SessionCard
           session={session}
@@ -613,24 +666,11 @@ describe("SessionCard subcard structure", () => {
           onAbortTool={() => {}}
         />,
       );
-      expect(getByTestId("background-drawer-summary").getAttribute("aria-expanded")).toBe("true");
-      fireEvent.click(getByTestId("background-drawer-summary"));
       expect(getByTestId("background-drawer-summary").getAttribute("aria-expanded")).toBe("false");
-      // Activity bar gains a tool, then loses it — drawer must remember
-      // the user's collapse.
+      // A broadcast from another client flips it to expanded.
       rerender(
         <SessionCard
-          session={session}
-          {...defaultProps}
-          processes={[proc]}
-          onKillProcess={() => {}}
-          inflightBashTools={[bashTool]}
-          onAbortTool={() => {}}
-        />,
-      );
-      rerender(
-        <SessionCard
-          session={session}
+          session={makeSession({ processDrawerCollapsed: false })}
           {...defaultProps}
           processes={[proc]}
           onKillProcess={() => {}}
@@ -638,7 +678,7 @@ describe("SessionCard subcard structure", () => {
           onAbortTool={() => {}}
         />,
       );
-      expect(getByTestId("background-drawer-summary").getAttribute("aria-expanded")).toBe("false");
+      expect(getByTestId("background-drawer-summary").getAttribute("aria-expanded")).toBe("true");
     });
 
     it("activity bar stop button invokes onAbortTool with toolCallId", () => {

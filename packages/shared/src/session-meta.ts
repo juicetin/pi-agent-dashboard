@@ -86,6 +86,14 @@ export interface SessionMeta {
    */
   displayPrefsOverride?: PartialDisplayPrefs;
 
+  /**
+   * Per-session collapse state for the PROCESS subcard's background-
+   * processes drawer. `undefined` (field absent) means "no stored
+   * choice" — the drawer renders collapsed by default.
+   * See change: persist-process-drawer-collapse.
+   */
+  processDrawerCollapsed?: boolean;
+
   // Cache freshness — compared against .jsonl mtime
   cachedAt?: number;
 }

@@ -148,6 +148,13 @@ export interface DashboardSession {
    * See change: configurable-chat-display.
    */
   displayPrefsOverride?: import("./display-prefs.js").PartialDisplayPrefs;
+  /**
+   * Per-session collapse state for the PROCESS subcard's background-
+   * processes drawer. Mirror of `SessionMeta.processDrawerCollapsed`.
+   * `undefined` (field absent) means "no stored choice" — the drawer
+   * renders collapsed by default. See change: persist-process-drawer-collapse.
+   */
+  processDrawerCollapsed?: boolean;
   contextTokens?: number | null;
   contextWindow?: number;
   sessionFile?: string;

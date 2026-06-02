@@ -19,6 +19,12 @@ export interface MetaPersistence {
    * See change: configurable-chat-display.
    */
   setDisplayPrefsOverride(sessionFile: string, override: PartialDisplayPrefs | null): void;
+  /**
+   * Synchronously write the per-session `processDrawerCollapsed` field in
+   * `.meta.json`, bypassing the debounce queue. See change:
+   * persist-process-drawer-collapse.
+   */
+  setProcessDrawerCollapsed(sessionFile: string, collapsed: boolean): void;
   /** Flush all pending writes immediately. */
   flushAll(): void;
   /** Stop all debounce timers. */
@@ -53,6 +59,10 @@ export function createMetaPersistence(): MetaPersistence {
       } else {
         mergeSessionMeta(sessionFile, { displayPrefsOverride: override });
       }
+    },
+
+    setProcessDrawerCollapsed(sessionFile: string, collapsed: boolean): void {
+      mergeSessionMeta(sessionFile, { processDrawerCollapsed: collapsed });
     },
 
     save(sessionFile: string, meta: SessionMeta): void {

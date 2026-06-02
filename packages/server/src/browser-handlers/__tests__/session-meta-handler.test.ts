@@ -3,7 +3,7 @@
  * See change: fix-mobile-attach-proposal-display.
  */
 import { describe, it, expect, beforeEach } from "vitest";
-import { handleAttachProposal, handleDetachProposal } from "../session-meta-handler.js";
+import { handleAttachProposal, handleDetachProposal, handleSetSessionProcessDrawer } from "../session-meta-handler.js";
 import { createMemorySessionManager, type SessionManager } from "../../memory-session-manager.js";
 import type { BrowserHandlerContext } from "../handler-context.js";
 
@@ -110,6 +110,54 @@ describe("handleAttachProposal — decision matrix", () => {
     expect(s.attachedProposal).toBe("bar");
     expect(piSends).toEqual([]);
     expect(broadcasts[0].updates).toEqual({ attachedProposal: "bar" });
+  });
+});
+
+describe("handleSetSessionProcessDrawer", () => {
+  let mgr: SessionManager;
+  beforeEach(() => {
+    mgr = createMemorySessionManager();
+  });
+
+  function makeDrawerCtx(sessionManager: SessionManager) {
+    const broadcasts: Broadcast[] = [];
+    const metaCalls: Array<{ sessionFile: string; collapsed: boolean }> = [];
+    const ctx = {
+      sessionManager,
+      broadcast(msg: any) { broadcasts.push(msg); },
+      metaPersistence: {
+        setProcessDrawerCollapsed(sessionFile: string, collapsed: boolean) {
+          metaCalls.push({ sessionFile, collapsed });
+        },
+      },
+    } as unknown as BrowserHandlerContext;
+    return { ctx, broadcasts, metaCalls };
+  }
+
+  it("persists collapse toggle to session + meta and broadcasts session_updated", () => {
+    registerSession(mgr, "s1", { sessionFile: "/tmp/test/s1.jsonl" });
+    const { ctx, broadcasts, metaCalls } = makeDrawerCtx(mgr);
+
+    handleSetSessionProcessDrawer(
+      { type: "set_session_process_drawer", sessionId: "s1", collapsed: false } as any,
+      ctx,
+    );
+
+    expect(mgr.get("s1")!.processDrawerCollapsed).toBe(false);
+    expect(broadcasts).toEqual([
+      { type: "session_updated", sessionId: "s1", updates: { processDrawerCollapsed: false } },
+    ]);
+    expect(metaCalls).toEqual([{ sessionFile: "/tmp/test/s1.jsonl", collapsed: false }]);
+  });
+
+  it("no-ops for an unknown session", () => {
+    const { ctx, broadcasts, metaCalls } = makeDrawerCtx(mgr);
+    handleSetSessionProcessDrawer(
+      { type: "set_session_process_drawer", sessionId: "ghost", collapsed: true } as any,
+      ctx,
+    );
+    expect(broadcasts).toEqual([]);
+    expect(metaCalls).toEqual([]);
   });
 });
 

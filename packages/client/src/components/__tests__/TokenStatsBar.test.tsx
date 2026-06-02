@@ -183,4 +183,48 @@ describe("TokenStatsBar", () => {
     const bar = chart?.firstElementChild;
     expect(bar?.className).not.toContain("cursor-pointer");
   });
+
+  it("hides stats sections when showStats is false", () => {
+    const { container } = render(
+      <TokenStatsBar
+        turnStats={[makeTurn()]}
+        contextUsage={{ tokens: 50000, contextWindow: 200000 }}
+        {...defaultProps}
+        showStats={false}
+      />
+    );
+    expect(container.querySelector('[data-testid="butterfly-chart"]')).toBeNull();
+    expect(container.querySelector('[data-testid="stats-panel"]')).toBeNull();
+    // context bar still present
+    expect(container.querySelector('[data-testid="context-bar"]')).not.toBeNull();
+  });
+
+  it("hides context bar when showContextBar is false", () => {
+    const { container } = render(
+      <TokenStatsBar
+        turnStats={[makeTurn()]}
+        contextUsage={{ tokens: 50000, contextWindow: 200000 }}
+        {...defaultProps}
+        showContextBar={false}
+      />
+    );
+    expect(container.querySelector('[data-testid="context-bar"]')).toBeNull();
+    // stats still present
+    expect(container.querySelector('[data-testid="butterfly-chart"]')).not.toBeNull();
+  });
+
+  it("renders only the context bar when showStats is false but showContextBar is true", () => {
+    const { container } = render(
+      <TokenStatsBar
+        turnStats={[makeTurn()]}
+        contextUsage={{ tokens: 50000, contextWindow: 200000 }}
+        {...defaultProps}
+        showStats={false}
+        showContextBar={true}
+      />
+    );
+    expect(container.querySelector('[data-testid="butterfly-chart"]')).toBeNull();
+    expect(container.querySelector('[data-testid="stats-panel"]')).toBeNull();
+    expect(container.querySelector('[data-testid="context-bar"]')).not.toBeNull();
+  });
 });

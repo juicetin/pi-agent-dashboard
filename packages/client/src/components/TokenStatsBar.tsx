@@ -11,6 +11,10 @@ interface Props {
   cacheWrite: number;
   cost: number;
   onTurnClick?: (turnIndex: number) => void;
+  /** Gate butterfly chart + token stats (default true). */
+  showStats?: boolean;
+  /** Gate context-window progress bar (default true). */
+  showContextBar?: boolean;
 }
 
 function formatTokens(n: number): string {
@@ -19,7 +23,7 @@ function formatTokens(n: number): string {
   return String(n);
 }
 
-export function TokenStatsBar({ turnStats, contextUsage, tokensIn, tokensOut, cacheRead, cacheWrite, cost, onTurnClick }: Props) {
+export function TokenStatsBar({ turnStats, contextUsage, tokensIn, tokensOut, cacheRead, cacheWrite, cost, onTurnClick, showStats = true, showContextBar = true }: Props) {
   // Independent normalization per half
   const maxInput = turnStats.reduce(
     (max, t) => Math.max(max, t.input + t.cacheRead),
@@ -46,7 +50,7 @@ export function TokenStatsBar({ turnStats, contextUsage, tokensIn, tokensOut, ca
   return (
     <div className="px-3 py-1.5 border-b border-[var(--border-primary)] space-y-1">
       {/* Main row: chart left, stats right */}
-      {turnStats.length > 0 && (
+      {showStats && turnStats.length > 0 && (
         <div className="flex gap-3">
           {/* Stats panel on the left */}
           <div className="flex flex-col justify-center text-[9px] text-[var(--text-tertiary)] leading-tight whitespace-nowrap" data-testid="stats-panel">
@@ -112,7 +116,7 @@ export function TokenStatsBar({ turnStats, contextUsage, tokensIn, tokensOut, ca
       )}
 
       {/* Fallback stats when no turns */}
-      {turnStats.length === 0 && (tokensIn > 0 || tokensOut > 0 || cost > 0) && (
+      {showStats && turnStats.length === 0 && (tokensIn > 0 || tokensOut > 0 || cost > 0) && (
         <div className="flex items-center gap-3 text-[10px] text-[var(--text-tertiary)]">
           <span>↓{formatTokens(tokensIn + cacheRead)}</span>
           <span>↑{formatTokens(tokensOut)}</span>
@@ -123,7 +127,7 @@ export function TokenStatsBar({ turnStats, contextUsage, tokensIn, tokensOut, ca
       )}
 
       {/* Context window stacked progress bar */}
-      {contextUsage && contextUsage.contextWindow > 0 && (
+      {showContextBar && contextUsage && contextUsage.contextWindow > 0 && (
         <div className="flex items-center gap-2 text-[9px] text-[var(--text-tertiary)]">
           <span>{contextUsage.tokens != null ? formatTokens(contextUsage.tokens) : "—"}</span>
           <div className="flex-1 h-1.5 bg-[var(--bg-tertiary)] rounded-full overflow-hidden flex" data-testid="context-bar">

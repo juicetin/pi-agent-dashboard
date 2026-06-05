@@ -144,14 +144,17 @@ describe("POST /api/git/worktree", () => {
     expect(res.json()).toMatchObject({ success: false, code: "cwd_invalid" });
   });
 
-  it("returns 400 + code:cwd_invalid when newBranch is missing", async () => {
+  it("checks out an existing branch when newBranch is omitted (checkout mode)", async () => {
+    // newBranch is now optional: `{cwd, base}` checks out `base` directly.
+    // See change: worktree-checkout-existing-branch.
+    git("branch stale-feature", repo);
     const res = await app.inject({
       method: "POST",
       url: `/api/git/worktree`,
-      payload: { cwd: repo, base: "main" },
+      payload: { cwd: repo, base: "stale-feature" },
     });
-    expect(res.statusCode).toBe(400);
-    expect(res.json()).toMatchObject({ success: false, code: "cwd_invalid" });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ success: true, data: { branch: "stale-feature" } });
   });
 
   it("returns 400 + code:base_not_found when base ref does not exist", async () => {

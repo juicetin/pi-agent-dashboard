@@ -136,7 +136,12 @@ export async function fetchWorktrees(cwd: string): Promise<WorktreeEntry[]> {
 export async function createWorktree(params: {
   cwd: string;
   base: string;
-  newBranch: string;
+  /**
+   * Fork mode: new branch name to create. Omit for checkout mode — the
+   * server checks out the existing `base` ref without `-b`.
+   * See change: worktree-checkout-existing-branch.
+   */
+  newBranch?: string;
   path?: string;
   force?: boolean;
 }): Promise<CreateWorktreeResult> {

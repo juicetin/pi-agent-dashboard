@@ -24,6 +24,7 @@ import {
 } from "../lib/git-api.js";
 import type { PullRequestInfo } from "@blackbelt-technology/pi-dashboard-shared/rest-api.js";
 import {
+  localNameOf,
   resolveDefaultBase,
   slugifyBranch,
 } from "@blackbelt-technology/pi-dashboard-shared/git-worktree-helpers.js";
@@ -31,7 +32,13 @@ import type { GitBranchEntry } from "@blackbelt-technology/pi-dashboard-shared/r
 import { BranchCombobox } from "./BranchCombobox.js";
 import { PrCombobox } from "./PrCombobox.js";
 
-type SourceMode = "branch" | "pr";
+// Ternary source toggle (change: worktree-checkout-existing-branch),
+// widening the binary "branch"/"pr" toggle introduced by
+// add-worktree-from-pull-request:
+//   fork     — fork a new branch off a base ref (`git worktree add -b`).
+//   checkout — check out an existing branch ref (no `-b`).
+//   pr       — check out an open pull request.
+type SourceMode = "fork" | "checkout" | "pr";
 
 interface Props {
   /** Cwd to scope the dialog to (folder header's path). */
@@ -85,7 +92,15 @@ export function WorktreeSpawnDialog({ cwd, onSpawn, onCancel, initialBranch, att
   const [branchDirty, setBranchDirty] = useState(false);
   const [base, setBase] = useState("");
   const [pathOverride, setPathOverride] = useState<string | null>(null);
-  const [sourceMode, setSourceMode] = useState<SourceMode>("branch");
+  // Default mode (change: worktree-checkout-existing-branch):
+  //   attachProposal set   → "fork"     (proposal-driven ⊕+ flow).
+  //   attachProposal unset → "checkout" (plain +Worktree).
+  // "pr" is never the auto-pick (preserves the lazy-load contract). The
+  // initializer runs once; later attachProposal changes do NOT re-flip
+  // the mode — the user stays in control after first paint.
+  const [sourceMode, setSourceMode] = useState<SourceMode>(
+    () => (attachProposal && attachProposal.length > 0 ? "fork" : "checkout"),
+  );
   const [selectedPr, setSelectedPr] = useState<PullRequestInfo | null>(null);
   const [ghUnavailable, setGhUnavailable] = useState<"gh_not_found" | "gh_not_authed" | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -136,7 +151,14 @@ export function WorktreeSpawnDialog({ cwd, onSpawn, onCancel, initialBranch, att
   }, [cwd]);
 
   // ── derived state ───────────────────────────────────────
-  const slug = useMemo(() => slugifyBranch(newBranch), [newBranch]);
+  // Path slug source depends on mode: fork slugs the new branch name;
+  // checkout slugs the LOCAL name of the picked branch ref so `origin/foo`
+  // previews as `.worktrees/foo` (not `origin-foo`).
+  // See change: worktree-checkout-existing-branch.
+  const slug = useMemo(() => {
+    if (sourceMode === "checkout") return slugifyBranch(localNameOf(base));
+    return slugifyBranch(newBranch);
+  }, [sourceMode, newBranch, base]);
   const derivedPath = useMemo(() => {
     if (!data || !slug) return "";
     // Path preview: <repo>/.worktrees/<slug>. The repo root is the main
@@ -154,24 +176,33 @@ export function WorktreeSpawnDialog({ cwd, onSpawn, onCancel, initialBranch, att
     return joinPath(main.path, ".worktrees", `pr-${selectedPr.number}`);
   }, [data, selectedPr]);
   const effectivePath = pathOverride ?? (sourceMode === "pr" ? prDerivedPath : derivedPath);
+  const checkoutMode = sourceMode === "checkout";
   const allBranches = useMemo<GitBranchEntry[]>(() => {
     if (!data) return [];
     return [...data.localBranches, ...data.remoteBranches];
   }, [data]);
 
-  const canSubmitBranch =
+  // Fork needs a new branch name + base; checkout needs only a branch
+  // ref. See change: worktree-checkout-existing-branch.
+  const canSubmitFork =
     !!data &&
     !submitting &&
     newBranch.trim().length > 0 &&
     base.trim().length > 0 &&
     slug.length > 0;
 
+  const canSubmitCheckout =
+    !!data &&
+    !submitting &&
+    base.trim().length > 0;
+
   const canSubmitPr =
     !!data &&
     !submitting &&
     selectedPr !== null;
 
-  const canSubmit = sourceMode === "pr" ? canSubmitPr : canSubmitBranch;
+  const canSubmit =
+    sourceMode === "pr" ? canSubmitPr : checkoutMode ? canSubmitCheckout : canSubmitFork;
 
   // ── handlers ───────────────────────────────────────────────────────────
   // Always include attachProposal in opts when the prop was supplied;
@@ -204,10 +235,13 @@ export function WorktreeSpawnDialog({ cwd, onSpawn, onCancel, initialBranch, att
           ...(pathOverride ? { path: pathOverride } : {}),
         });
       } else {
+        // Checkout mode omits `newBranch` entirely so the server runs
+        // `git worktree add <path> <base>` without `-b`. Fork mode sends
+        // it. See change: worktree-checkout-existing-branch.
         res = await createWorktree({
           cwd,
           base,
-          newBranch,
+          ...(checkoutMode ? {} : { newBranch }),
           ...(pathOverride ? { path: pathOverride } : {}),
         });
       }
@@ -226,9 +260,10 @@ export function WorktreeSpawnDialog({ cwd, onSpawn, onCancel, initialBranch, att
       setSubmitError(res);
       return;
     }
-    // Worktree created clean; spawn the session.
-    onSpawn(res.path, buildOpts(sourceMode === "branch" ? base : undefined));
-  }, [data, cwd, base, newBranch, sourceMode, selectedPr, pathOverride, onSpawn, buildOpts]);
+    // Worktree created clean; spawn the session. Both branch modes carry
+    // the base through as gitWorktreeBase; PR mode does not.
+    onSpawn(res.path, buildOpts(sourceMode === "pr" ? undefined : base));
+  }, [data, cwd, base, newBranch, sourceMode, checkoutMode, selectedPr, pathOverride, onSpawn, buildOpts]);
 
   // Clean-up the orphan path then optionally auto-retry submit.
   const handleCleanOrphan = useCallback(async (autoResubmit: boolean) => {
@@ -368,19 +403,32 @@ export function WorktreeSpawnDialog({ cwd, onSpawn, onCancel, initialBranch, att
           Create a new worktree
         </h4>
 
-        {/* Source mode toggle (change: add-worktree-from-pull-request) */}
+        {/* Source mode toggle. Ternary (change: worktree-checkout-existing-branch)
+            widening the binary toggle from add-worktree-from-pull-request. */}
         <div className="flex gap-2 mb-3" data-testid="worktree-source-toggle">
           <button
             type="button"
-            onClick={() => setSourceMode("branch")}
-            data-testid="worktree-source-branch"
+            onClick={() => setSourceMode("fork")}
+            data-testid="worktree-source-fork"
             className={`px-2 py-0.5 text-[11px] rounded border ${
-              sourceMode === "branch"
+              sourceMode === "fork"
                 ? "border-blue-500 text-blue-400 bg-blue-500/10"
                 : "border-[var(--border-subtle)] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
             }`}
           >
-            From a branch
+            Fork to new branch
+          </button>
+          <button
+            type="button"
+            onClick={() => setSourceMode("checkout")}
+            data-testid="worktree-source-checkout"
+            className={`px-2 py-0.5 text-[11px] rounded border ${
+              sourceMode === "checkout"
+                ? "border-blue-500 text-blue-400 bg-blue-500/10"
+                : "border-[var(--border-subtle)] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+            }`}
+          >
+            Check out existing branch
           </button>
           <button
             type="button"
@@ -407,10 +455,16 @@ export function WorktreeSpawnDialog({ cwd, onSpawn, onCancel, initialBranch, att
         </div>
 
         <div className="space-y-2">
-          {sourceMode === "branch" ? (
+          {sourceMode !== "pr" ? (
             <>
               <label className="block">
-                <span className="text-[11px] text-[var(--text-tertiary)]">Base branch</span>
+                {/* Label reads "Branch" in checkout mode (the picker selects
+                    the branch to check out), "Base branch" in fork mode
+                    (the picker selects the fork base).
+                    See change: worktree-checkout-existing-branch. */}
+                <span className="text-[11px] text-[var(--text-tertiary)]">
+                  {checkoutMode ? "Branch" : "Base branch"}
+                </span>
                 <BranchCombobox
                   data-testid="worktree-base-combobox"
                   branches={allBranches}
@@ -420,16 +474,20 @@ export function WorktreeSpawnDialog({ cwd, onSpawn, onCancel, initialBranch, att
                 />
               </label>
 
-              <label className="block">
-                <span className="text-[11px] text-[var(--text-tertiary)]">New branch name</span>
-                <input
-                  data-testid="worktree-new-branch-input"
-                  value={newBranch}
-                  onChange={(e) => { setNewBranch(e.target.value); setBranchDirty(true); }}
-                  placeholder="feat/dark-mode"
-                  className="w-full mt-0.5 px-2 py-1 text-sm rounded border border-[var(--border-subtle)] bg-[var(--bg-tertiary)] font-mono"
-                />
-              </label>
+              {/* New-branch input renders ONLY in fork mode (checkout reuses
+                  the existing branch). See change: worktree-checkout-existing-branch. */}
+              {!checkoutMode && (
+                <label className="block">
+                  <span className="text-[11px] text-[var(--text-tertiary)]">New branch name</span>
+                  <input
+                    data-testid="worktree-new-branch-input"
+                    value={newBranch}
+                    onChange={(e) => { setNewBranch(e.target.value); setBranchDirty(true); }}
+                    placeholder="feat/dark-mode"
+                    className="w-full mt-0.5 px-2 py-1 text-sm rounded border border-[var(--border-subtle)] bg-[var(--bg-tertiary)] font-mono"
+                  />
+                </label>
+              )}
             </>
           ) : (
             <label className="block">
@@ -440,7 +498,8 @@ export function WorktreeSpawnDialog({ cwd, onSpawn, onCancel, initialBranch, att
                 onChange={setSelectedPr}
                 onGhUnavailable={(code) => {
                   setGhUnavailable(code);
-                  setSourceMode("branch");
+                  // Fall back out of PR mode when gh is unavailable.
+                  setSourceMode("checkout");
                 }}
                 data-testid="worktree-pr-combobox"
               />
@@ -456,7 +515,9 @@ export function WorktreeSpawnDialog({ cwd, onSpawn, onCancel, initialBranch, att
               placeholder={
                 sourceMode === "pr"
                   ? prDerivedPath || "(select a PR to derive)"
-                  : derivedPath || "(enter a branch name to derive)"
+                  : checkoutMode
+                    ? derivedPath || "(pick a branch to derive)"
+                    : derivedPath || "(enter a branch name to derive)"
               }
               className="w-full mt-0.5 px-2 py-1 text-sm rounded border border-[var(--border-subtle)] bg-[var(--bg-tertiary)] font-mono text-[var(--text-tertiary)]"
             />

@@ -31,6 +31,31 @@ export function slugifyBranch(branch: string): string {
     .slice(0, 64);
 }
 
+/**
+ * Strip a remote prefix from a branch ref to get the local branch name
+ * git would DWIM-create.
+ *
+ *   localNameOf("origin/foo") === "foo"
+ *   localNameOf("foo")        === "foo"
+ *   localNameOf("upstream/x")  === "x"
+ *
+ * Only the first path segment is treated as the remote. Branch names
+ * that legitimately contain slashes (`feat/bar`) keep everything after
+ * the first segment when that first segment looks like a remote — we
+ * can't distinguish `origin/feat/bar` from a local `feat/bar` purely
+ * lexically, so the rule is: drop the first segment iff the ref is of
+ * the shape `<remote>/<rest>` AND has no other interpretation here.
+ * Callers only pass either a bare local name or an `origin/<x>`-shaped
+ * remote ref, so first-segment stripping is safe for this feature.
+ *
+ * See change: worktree-checkout-existing-branch.
+ */
+export function localNameOf(ref: string): string {
+  const slash = ref.indexOf("/");
+  if (slash <= 0) return ref;
+  return ref.slice(slash + 1);
+}
+
 export interface ResolveDefaultBaseInput {
   /** Current HEAD branch in the parent repo, or `null` if detached. */
   currentBranch: string | null;

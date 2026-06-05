@@ -66,6 +66,13 @@ const toolSummaries: Record<string, (args?: Record<string, unknown>) => string> 
   Agent: (args) => `${args?.subagent_type ?? "Agent"}: ${String(args?.description ?? "")}`,
   get_subagent_result: (args) => `Get result: ${String(args?.agent_id ?? "")}`,
   steer_subagent: (args) => `Steer: ${String(args?.agent_id ?? "")}`,
+  ctx_execute: (args) => `ctx_execute ${String(args?.language ?? "")}`.trim(),
+  ctx_execute_file: (args) => `ctx_execute_file ${String(args?.path ?? "")}`.trim(),
+  ctx_batch_execute: (args) => `ctx_batch_execute ${Array.isArray(args?.commands) ? `${args.commands.length} cmds` : ""}`.trim(),
+  ctx_search: (args) => `ctx_search ${Array.isArray(args?.queries) ? `${args.queries.length} queries` : ""}`.trim(),
+  ctx_index: (args) => `ctx_index ${String(args?.source ?? args?.path ?? "")}`.trim(),
+  ctx_fetch_and_index: (args) => `ctx_fetch_and_index ${String(args?.url ?? args?.source ?? "")}`.trim(),
+  ctx_insight: () => `ctx_insight`,
 };
 
 function getSummary(toolName: string, args?: Record<string, unknown>): string {

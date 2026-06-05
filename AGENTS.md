@@ -216,6 +216,28 @@ Do **not**:
 - Read a whole split file into the main agent's context — delegate.
 - Trust the AGENTS.md "Key Files" backbone as exhaustive; it is a subset.
 
+## Subagent Routing
+
+Delegate specialist work to the matching subagent instead of doing it inline. Subagents run in isolated context — keeps main-agent budget free.
+
+| Subagent | Use for |
+|---|---|
+| `Explore` | Read-only codebase search, file-index harvesting, "where is X" questions. Default for investigation. |
+| `react-expert` | React component refactors, hooks, state-management, render perf in `src/client/` and `packages/web/`. |
+| `typescript-expert` | Type-system work, generics, strict-mode fixes, async/Promise typing, `.d.ts` authoring. |
+| `nodejs-expert` | Server-side async, streams, perf, Node API usage in `src/server/`, `packages/server/`, Electron main process. |
+| `tailwind-expert` | Utility-class refactors, responsive breakpoints, design-token audits, dark-mode plumbing. |
+
+Rules:
+- One specialist per task. Don't chain react-expert → typescript-expert if a single pass covers it.
+- Skip for trivial edits (one-line fix, rename, import tweak). Delegation overhead > benefit.
+- Skills (`.pi/skills/`) auto-load by NL trigger — no manual invocation needed. Subagents (`.pi/agents/`) require explicit `Agent` tool call with `subagent_type`.
+
+Context inheritance (this repo ships `pi-dashboard-subagents` producer, NOT pi's stock subagent):
+- Default `inheritContext: true` → child receives a **compressed snapshot** of the parent conversation (last N turns + bounded tool output, capped by `maxChars`). Configurable at Settings → general → "Fork parent context into every subagent" or `~/.pi/agent/extensions/pi-dashboard-subagents/config.json`.
+- Still pass exact file paths + question in the `task:` string. Compression can drop the specific snippets a specialist needs (`maxChars` cap), and the toggle may be off.
+- If file locations are unknown, use `Explore` first — don't rely on the child to re-discover them from compressed history.
+
 ## Key Files
 
 The **architectural backbone** lived inline here; that 270-row table was an index, not an instruction. Per-file detail (including change-history annotations) now lives in the split files under `docs/file-index-<area>.md`.

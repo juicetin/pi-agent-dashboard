@@ -74,7 +74,7 @@
 
 ## Verification
 
-- [ ] **14. Manual smoke** (automated unit + component tests cover all five scenarios; live browser smoke pending)
+- [x] **14. Manual smoke** — isolated server (built client, ports 8088/9988, isolated HOME) + browser: plain +Worktree defaults to **checkout** (picker "Branch", no new-branch input, path `.worktrees/develop`); fork toggle reveals new-branch input + "Base branch" label; remote-prefix path rule covered by server DWIM + client component tests
   - Plain `+Worktree` (no proposal) → defaults to **Check out existing branch**; picker lists branches; submit creates a worktree without a new branch.
   - OpenSpec `⑂+` (proposal attached) → defaults to **Fork to new branch**; current flow unchanged.
   - PR mode toggle still works exactly as `add-worktree-from-pull-request` specified (regression check).

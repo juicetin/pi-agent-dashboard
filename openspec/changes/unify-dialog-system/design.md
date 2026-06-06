@@ -1,25 +1,38 @@
 ## Context
 
+> Revised 2026-06-06 — see proposal.md header.
+
 The dashboard's React client has accumulated three generations of dialog code
-(see `proposal.md`):
+(full chrome audit in `proposal.md`):
 
-- **Era 1** — `ConfirmDialog`: minimal, no portal, no scroll-lock, no `Esc`,
-  always-red confirm button. Cloned by `JjForgetConfirmDialog`,
-  `JjFoldBackDialog`, and `FlowLaunchDialog`'s confirm step.
-- **Era 2** — Bespoke stepper dialogs (`BranchSwitchDialog`,
-  `NewChangeDialog`, `PinDirectoryDialog`, `SearchableSelectDialog`,
-  `ExploreDialog`): use `DialogPortal`, but `bg-black/50` overlay, blue
-  confirm button, no `Esc`, internal multi-step state.
+- **Era 1** — `ConfirmDialog` (now in `packages/client-utils`): minimal, no
+  portal, no scroll-lock, no `Esc`, always-red confirm button. Cloned by
+  `JjForgetConfirmDialog`, `JjFoldBackDialog`, and `FlowLaunchDialog`'s confirm
+  step.
+- **Era 2** — Bespoke stepper/search dialogs (`BranchSwitchDialog`,
+  `GroupedAttachDialog`, `NewChangeDialog`, `PinDirectoryDialog`,
+  `ExploreDialog`, `NewWorkspaceDialog`, `WorktreeSpawnDialog`,
+  `CloseWorktreeDialog`, `MergeConfirmDialog`, `SearchableSelectDialog`):
+  mixed `bg-black/50`/`var(--bg-overlay)` overlays, blue/accent confirm
+  buttons, inconsistent `Esc`, internal multi-step state.
 - **Era 3** — "Modern" dialogs (`PackageInstallConfirmDialog`,
-  `PackageReadmeDialog`, `QrCodeDialog`): use `DialogPortal`, `bg-black/60`
-  overlay, `Esc` handler, accent-coloured confirm.
+  `PackageReadmeDialog`, `QrCodeDialog`, `WhatsNewDialog`): use `DialogPortal`,
+  `bg-black/60` overlay, `Esc` handler, accent-coloured confirm.
 
-`DialogPortal` (existing, spec: `dialog-portal`) already owns the portal +
-body scroll lock. None of the eras own focus management or ARIA. Plugins
-(`packages/jj-plugin`, `packages/flows-plugin`) currently import
-`ConfirmDialog` from `packages/client` directly via relative path —
-that import boundary already exists and is not being introduced by this
-change.
+`DialogPortal` (existing, spec: `dialog-portal`, now in `packages/client-utils`)
+already owns the portal + body scroll lock. None of the eras own focus
+management or ARIA.
+
+**Plugin boundary changed since the original draft.** Plugins no longer import
+client dialog code by relative path. They resolve host components at runtime
+through the UI-primitive registry
+(`packages/shared/src/dashboard-plugin/ui-primitives.ts`):
+`const ConfirmDialog = useUiPrimitive(UI_PRIMITIVE_KEYS.confirmDialog)`. The
+registered implementation is wired in `packages/client/src/main.tsx`. The
+contract `UiConfirmDialogProps = { message, confirmLabel?, onConfirm, onCancel }`
+is the stable public API plugins depend on; per the registry's own rules,
+adding optional props is non-breaking but renaming/removing required props is
+breaking.
 
 ## Goals / Non-Goals
 
@@ -55,23 +68,41 @@ change.
 
 ## Decisions
 
-### D1. Location: `packages/client/src/components/Dialog.tsx`
+### D1. Location: `packages/client-utils/src/Dialog.tsx` + registry integration
 
-The primitive lives next to `DialogPortal` in `packages/client`. Plugins
-(`packages/jj-plugin`, `packages/flows-plugin`) import via the relative
-path they already use today.
+The primitive lives next to `DialogPortal` in `packages/client-utils` (the
+shared client-UI package that already hosts `ConfirmDialog`, `DialogPortal`,
+`SearchableSelectDialog`, `Popover`, etc.). `Confirm` lives there too. The
+original draft chose `packages/client` and rejected a shared package "until a
+third UI consumer appears" — that consumer (`client-utils`) now exists, so this
+revision targets it.
+
+**Plugin contract — preserve, don't break.** Plugins consume confirmations via
+`useUiPrimitive(UI_PRIMITIVE_KEYS.confirmDialog)` with the narrow contract
+`{ message, confirmLabel?, onConfirm, onCancel }`. We do NOT change that
+contract. Instead:
+
+- The registered `ui:confirm-dialog` implementation in `main.tsx` becomes a
+  thin adapter that maps `onCancel → onClose` and supplies no title, rendering
+  the new `Confirm`/`Dialog` internally. Plugins get the unified look-and-feel
+  with **zero edits**.
+- The rich `Confirm` API (`title`, `intent`, `body`, `onClose`) is host-facing
+  via the `client-utils` export; host call sites import it directly.
+- A new additive registry key `ui:dialog` (contract `UiDialogProps`) exposes
+  the shell so plugins like `FlowLaunchDialog` can adopt it instead of
+  hand-wiring `ui:dialog-portal`. Adding a key is non-breaking; plugin
+  adoption is optional follow-up.
 
 **Alternatives considered:**
 
-- *New `packages/client-ui` shared package.* Cleaner boundary, but pulls in
-  build/test/publish overhead for one or two components and forces every
-  plugin's package.json to gain a new workspace dependency. Not worth it
-  for v1.
-- *`packages/shared/ui`.* `packages/shared` is currently
-  framework-agnostic (protocol, types, platform helpers); adding React
-  components muddles its purpose.
-
-We can lift to a shared package later if a third UI consumer appears.
+- *Widen/replace `ui:confirm-dialog` to the rich `Confirm` shape
+  (`onClose`, required `title`).* Breaking change for installed plugins;
+  requires a deprecation cycle (register both keys for one minor, warn, then
+  remove). Rejected for v1 — the adapter delivers the visual unification
+  without the breakage.
+- *Keep the primitive in `packages/client`.* Plugins can't import client
+  internals anymore; the registry is the only sanctioned boundary, and
+  `client-utils` is where the sibling primitives already live.
 
 ### D2. Visual baseline: Era-3 wins
 
@@ -185,9 +216,14 @@ Era 1 → Era 3 → Era 2.
    careful per-step layout work; we do these once the primitive has
    shaken out.
 
-Each migration is a small, independently-testable PR. The old
-`ConfirmDialog` stays in place until all its callers are migrated, then
-is deleted in a single cleanup commit.
+Each migration is a small, independently-testable PR. The registered
+`ui:confirm-dialog` adapter is re-skinned first (so plugins flip look
+immediately); the `client-utils` `ConfirmDialog` source is folded into
+`Confirm` and the `packages/client/src/components/ConfirmDialog.tsx` shim is
+deleted only after all host callers migrate, in a single cleanup commit.
+Era-2's new members (`GroupedAttachDialog`, `NewWorkspaceDialog`,
+`WorktreeSpawnDialog`, `CloseWorktreeDialog`, `MergeConfirmDialog`) ride the
+same shell migration as the original Era-2 set.
 
 ### D9. Existing `dialog-portal` spec is unchanged
 
@@ -204,10 +240,13 @@ the portal.
   asserting the new chrome (overlay class, confirm button colour class,
   ARIA role) is present. Manual visual sweep noted in tasks.
 
-- **[Plugin import boundary]** → Plugins keep importing client internals
-  via relative path, as today. No new boundary is introduced; if a
-  future change extracts a shared UI package, plugins migrate then. Not
-  blocking.
+- **[Plugin registry contract]** → `ui:confirm-dialog` keeps its narrow
+  contract; the registered implementation is re-skinned via an adapter over
+  the new `Confirm`. Installed plugins (`flows-plugin/SessionFlowActions`,
+  `flows-plugin/FlowsCommandRoutes`) get the new look with no source edits.
+  The rich API ships as the additive `ui:dialog` key + the `client-utils`
+  export. Verify the adapter satisfies `UiConfirmDialogProps` exactly
+  (`onCancel`, no required `title`) so the registry type-check stays green.
 
 - **[Focus-trap edge cases in jsdom]** → `useFocusTrap` is the most
   likely source of test flakiness (jsdom focus is quirky). Mitigation:
@@ -238,30 +277,34 @@ the portal.
 This is a client-only refactor. No deploy / rollback machinery beyond
 the usual `npm run build` + `/api/restart`.
 
-1. Add `Dialog` + `Confirm` (D1, D2, D4-D7) with full unit tests. Old
-   dialogs untouched.
-2. Migrate Era-1 callers + delete `ConfirmDialog`,
-   `JjForgetConfirmDialog`, `JjFoldBackDialog`,
-   `FlowLaunchDialog`'s confirm step.
-3. Migrate Era-3 (`PackageInstallConfirmDialog`, `PackageReadmeDialog`,
-   `QrCodeDialog`) to use `Dialog` shell.
-4. Migrate Era-2 (`BranchSwitchDialog`, `NewChangeDialog`,
-   `PinDirectoryDialog`, `SearchableSelectDialog`, `ExploreDialog`).
-5. Manual visual sweep across every migrated dialog (mobile + desktop,
+1. Add `Dialog` + `Confirm` + `useFocusTrap` in `packages/client-utils`
+   (D1, D2, D4-D7) with full unit tests. Old dialogs untouched.
+2. Re-skin the registered `ui:confirm-dialog` adapter + register additive
+   `ui:dialog` key. Plugins inherit the new look, no plugin edits.
+3. Migrate Era-1 host callers + delete `JjForgetConfirmDialog`,
+   `JjFoldBackDialog`, `FlowLaunchDialog`'s confirm step, and the
+   `packages/client/src/components/ConfirmDialog.tsx` shim.
+4. Migrate Era-3 (`PackageInstallConfirmDialog`, `PackageReadmeDialog`,
+   `QrCodeDialog`, `WhatsNewDialog`) to use `Dialog` shell.
+5. Migrate Era-2 (`BranchSwitchDialog`, `GroupedAttachDialog`,
+   `NewChangeDialog`, `PinDirectoryDialog`, `ExploreDialog`,
+   `NewWorkspaceDialog`, `WorktreeSpawnDialog`, `CloseWorktreeDialog`,
+   `MergeConfirmDialog`, `SearchableSelectDialog`).
+6. Manual visual sweep across every migrated dialog (mobile + desktop,
    light + dark theme).
-6. Update docs/architecture.md "client core" section with the new
-   primitive.
+7. Update docs/architecture.md "client core" section with the new primitive.
 
 Rollback: each step is a self-contained commit; revert the offending
-commit and restart. The old `ConfirmDialog` only disappears at the end
-of step 2, so steps 1-2 can ship independently.
+commit and restart. Step 2 (adapter re-skin) is non-breaking and shippable
+on its own; the shim only disappears at the end of step 3.
 
 ## Open Questions
 
 None blocking implementation. All questions raised in `proposal.md` are
 resolved above:
 
-- D1 resolves "where does the primitive live?"
+- D1 resolves "where does the primitive live?" (`client-utils`) and "plugin
+  contract" (preserve `ui:confirm-dialog`, add `ui:dialog`).
 - D2 resolves "Era-1 vs Era-3 visual direction".
 - D4 resolves "a11y scope for v1".
 - D3 resolves "stacked dialogs".

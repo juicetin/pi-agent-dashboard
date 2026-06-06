@@ -121,11 +121,16 @@ strings, defaulting to "Confirm" and "Cancel" respectively.
 
 ### Requirement: Confirm replaces legacy ConfirmDialog
 
-The change SHALL remove the legacy ConfirmDialog component, the legacy
-plugin clones JjForgetConfirmDialog and JjFoldBackDialog, and SHALL
-migrate all of their call sites to the new Confirm component.
+The change SHALL fold the legacy `ConfirmDialog` component into `Confirm`,
+remove the `packages/client/src/components/ConfirmDialog.tsx` re-export shim
+and the legacy plugin clones `JjForgetConfirmDialog` and `JjFoldBackDialog`,
+and SHALL migrate all host call sites to the new `Confirm` component. The
+registered `ui:confirm-dialog` primitive SHALL be preserved with its existing
+contract (`{ message, confirmLabel?, onConfirm, onCancel }`), re-skinned via an
+adapter that renders `Confirm`/`Dialog`, so plugins consuming it through
+`useUiPrimitive` require no source edits.
 
-#### Scenario: Legacy file removed
+#### Scenario: Shim file removed
 
 - **WHEN** the change is complete
 - **THEN** `packages/client/src/components/ConfirmDialog.tsx` SHALL NOT
@@ -137,11 +142,20 @@ migrate all of their call sites to the new Confirm component.
 - **THEN** `packages/jj-plugin/src/client/JjForgetConfirmDialog.tsx` and
   `packages/jj-plugin/src/client/JjFoldBackDialog.tsx` SHALL NOT exist
 
-#### Scenario: No legacy imports remain
+#### Scenario: No legacy relative imports remain
 
 - **WHEN** the change is complete
 - **THEN** no source file under `packages/` SHALL import from
-  `./ConfirmDialog`, `JjForgetConfirmDialog`, or `JjFoldBackDialog`
+  `./ConfirmDialog`, `../ConfirmDialog`, `JjForgetConfirmDialog`, or
+  `JjFoldBackDialog`
+
+#### Scenario: Registry contract preserved
+
+- **WHEN** the change is complete
+- **THEN** `UI_PRIMITIVE_KEYS.confirmDialog` SHALL remain registered and its
+  contract `UiConfirmDialogProps` SHALL keep `onCancel` and a non-required
+  `title`, and plugin call sites resolving it via `useUiPrimitive` SHALL
+  remain unchanged
 
 ### Requirement: Confirm testId hooks
 

@@ -297,14 +297,17 @@ export function registerGitRoutes(fastify: FastifyInstance, deps: GitRoutesDeps)
         reply.code(400);
         return { success: false, code: "cwd_invalid", error: "base required" } satisfies ApiResponse;
       }
-      if (!body.newBranch || typeof body.newBranch !== "string") {
+      // `newBranch` is optional. When present it must be a string (fork
+      // mode); when absent the server checks out the existing `base` ref
+      // (checkout mode). See change: worktree-checkout-existing-branch.
+      if (body.newBranch !== undefined && typeof body.newBranch !== "string") {
         reply.code(400);
-        return { success: false, code: "cwd_invalid", error: "newBranch required" } satisfies ApiResponse;
+        return { success: false, code: "cwd_invalid", error: "newBranch must be a string" } satisfies ApiResponse;
       }
       const result = addWorktree({
         cwd: validated.cwd,
         base: body.base,
-        newBranch: body.newBranch,
+        ...(body.newBranch !== undefined ? { newBranch: body.newBranch } : {}),
         path: body.path,
         force: body.force === true,
       });

@@ -57,6 +57,8 @@ When the server returns `branch_in_use` for a `"checkout"`-mode submit, the dial
 - **THEN** the base-branch combobox SHALL retain `"main"` as the selected base
 - **AND** the new-branch input SHALL render empty (or with the `attachProposal`-derived value if applicable)
 
+## ADDED Requirements
+
 ### Requirement: Default mode derived from attachProposal
 
 When `WorktreeSpawnDialog` mounts, it SHALL pick the initial `mode` based on the `attachProposal` prop, refining the original default introduced by `add-worktree-from-pull-request`:

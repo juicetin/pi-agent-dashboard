@@ -12,12 +12,23 @@
 import { describe, it, expect } from "vitest";
 import {
   slugifyBranch,
+  localNameOf,
   parsePorcelainWorktrees,
   resolveDefaultBase,
   ensureWorktreeExcludeLine,
   isOrphanWorktreePath,
   isSameWorktreePath,
 } from "../git-worktree.js";
+
+describe("localNameOf", () => {
+  it("strips a remote prefix", () => {
+    expect(localNameOf("origin/foo")).toBe("foo");
+    expect(localNameOf("upstream/feature")).toBe("feature");
+  });
+  it("returns a bare local name unchanged", () => {
+    expect(localNameOf("foo")).toBe("foo");
+  });
+});
 
 describe("slugifyBranch", () => {
   it("lower-cases ASCII letters", () => {

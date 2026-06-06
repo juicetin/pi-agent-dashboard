@@ -199,3 +199,65 @@ describe("addWorktree", () => {
     expect(readdirSync(join(repo, ".worktrees")).sort()).toEqual(["feat-first", "feat-second"]);
   });
 });
+
+// Checkout mode = addWorktree without `newBranch`. Checks out an existing
+// branch ref directly (DWIM-creating a tracking branch for remote-only
+// refs). See change: worktree-checkout-existing-branch.
+describe("addWorktree — checkout mode", () => {
+  let repo: string;
+  beforeEach(() => { repo = makeRepo(); });
+  afterEach(() => rmSync(repo, { recursive: true, force: true }));
+
+  it("checks out an existing local branch (no -b)", () => {
+    git("branch stale-feature", repo);
+    const res = addWorktree({ cwd: repo, base: "stale-feature" });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.path).toBe(join(repo, ".worktrees", "stale-feature"));
+    expect(res.branch).toBe("stale-feature");
+    // The worktree HEAD is the existing branch, not a fork.
+    const head = git("rev-parse --abbrev-ref HEAD", res.path);
+    expect(head).toBe("stale-feature");
+  });
+
+  it("DWIM-creates a local branch for a remote-only ref, slug drops the remote prefix", () => {
+    git("branch old-experiment", repo);
+    const clone = mkdtempSync(join(tmpdir(), "wt-clone-"));
+    rmSync(clone, { recursive: true, force: true });
+    try {
+      execSync(`git clone '${repo}' '${clone}'`, { stdio: "pipe" });
+      git("config user.email test@test.com", clone);
+      git("config user.name Test", clone);
+      // Clone's default branch is checked out; `origin/old-experiment`
+      // exists as a remote-tracking ref with no local branch.
+      const res = addWorktree({ cwd: clone, base: "origin/old-experiment" });
+      expect(res.ok).toBe(true);
+      if (!res.ok) return;
+      // Path slug is the LOCAL name, not `origin-old-experiment`.
+      expect(res.path).toBe(join(clone, ".worktrees", "old-experiment"));
+      expect(res.branch).toBe("old-experiment");
+      // git DWIM-created local `old-experiment` tracking origin.
+      const head = git("rev-parse --abbrev-ref HEAD", res.path);
+      expect(head).toBe("old-experiment");
+    } finally {
+      rmSync(clone, { recursive: true, force: true });
+    }
+  });
+
+  it("branch_in_use message includes the holding-worktree path", () => {
+    git("branch foo", repo);
+    const first = addWorktree({ cwd: repo, base: "foo" });
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+    // Second checkout of the SAME branch at an explicit distinct path so
+    // the pre-flight path check doesn't preempt git's branch_in_use.
+    const altPath = mkdtempSync(join(tmpdir(), "wt-alt-"));
+    rmSync(altPath, { recursive: true, force: true });
+    const res = addWorktree({ cwd: repo, base: "foo", path: altPath });
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.error).toBe("branch_in_use");
+    // Message names the worktree currently holding `foo`.
+    expect(res.message).toContain(first.path);
+  });
+});

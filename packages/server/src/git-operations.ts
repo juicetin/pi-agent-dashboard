@@ -10,6 +10,7 @@ import {
   isOrphanWorktreePath,
   parsePorcelainWorktrees,
   slugifyBranch,
+  localNameOf,
   type WorktreeEntry,
 } from "./git-worktree.js";
 
@@ -269,10 +270,16 @@ export interface AddWorktreeFailure {
 export interface AddWorktreeOptions {
   /** Cwd inside the parent repo (any worktree's path resolves to the same parent). */
   cwd: string;
-  /** Base ref to fork from (local or `origin/<x>`). */
+  /** Base ref to fork from (local or `origin/<x>`). In checkout mode (no
+   *  `newBranch`) this is the existing branch ref to check out. */
   base: string;
-  /** New branch name to create at the worktree's HEAD. */
-  newBranch: string;
+  /**
+   * New branch name to create at the worktree's HEAD (fork mode). When
+   * omitted the server runs `git worktree add <path> <base>` (checkout
+   * mode) — `base` carries the existing branch ref.
+   * See change: worktree-checkout-existing-branch.
+   */
+  newBranch?: string;
   /** Optional explicit path; derived from slug when absent. */
   path?: string;
   /** Pass `--force` to `git worktree add` (defaults to false). */
@@ -288,9 +295,29 @@ export interface AddWorktreeOptions {
  */
 export function addWorktree(opts: AddWorktreeOptions): AddWorktreeSuccess | AddWorktreeFailure {
   const { cwd, base, newBranch, force } = opts;
+  // Checkout mode = no newBranch. `base` is the existing branch ref to
+  // check out. See change: worktree-checkout-existing-branch.
+  const checkoutMode = newBranch === undefined;
   if (!isGitRepo(cwd)) {
     return { ok: false, error: "not_a_repo", message: "not a git repository" };
   }
+  // Resolve the local branch name + commit-ish for checkout mode.
+  //  - `base` is a local branch (`refs/heads/<base>` exists) → check it out
+  //    directly; the branch keeps its full name (e.g. `feat/bar`).
+  //  - otherwise `base` is a remote-tracking ref (`origin/foo`) → pass the
+  //    BARE local name (`foo`) so git DWIM-creates a tracking branch.
+  //    Passing `origin/foo` verbatim would yield a DETACHED HEAD, not a
+  //    tracking branch, so the bare name is required to get the intended
+  //    checkout. See change: worktree-checkout-existing-branch.
+  const baseIsLocalBranch =
+    checkoutMode && tryRun(`git show-ref --verify ${shellEscape(`refs/heads/${base}`)}`, cwd) !== undefined;
+  const resolvedBranch = checkoutMode
+    ? (baseIsLocalBranch ? base : localNameOf(base))
+    : newBranch;
+  // In checkout mode the commit-ish handed to git is the resolved local
+  // branch name (bare name triggers DWIM for remote-only refs); fork mode
+  // forks from `base`.
+  const checkoutCommitish = resolvedBranch;
   // Resolve to the parent repo root (works whether cwd is the main checkout
   // or any sibling worktree). `git rev-parse --show-toplevel` from a
   // worktree returns the worktree's own root, NOT the main repo. We want
@@ -305,15 +332,17 @@ export function addWorktree(opts: AddWorktreeOptions): AddWorktreeSuccess | AddW
     : path.resolve(cwd, commonDirRaw);
   const repoRoot = path.dirname(commonDirAbs);
 
-  // Derive worktree path when not supplied.
+  // Derive worktree path when not supplied. Fork mode slugs the new
+  // branch name; checkout mode slugs the local name of the base ref so
+  // `origin/foo` lands at `.worktrees/foo`, not `.worktrees/origin-foo`.
   let worktreePath = opts.path;
   if (!worktreePath) {
-    const slug = slugifyBranch(newBranch);
+    const slug = slugifyBranch(resolvedBranch);
     if (!slug) {
       return {
         ok: false,
         error: "git_failed",
-        message: `cannot derive a filesystem-safe slug from branch name "${newBranch}"`,
+        message: `cannot derive a filesystem-safe slug from branch name "${resolvedBranch}"`,
       };
     }
     worktreePath = path.join(repoRoot, ".worktrees", slug);
@@ -335,11 +364,13 @@ export function addWorktree(opts: AddWorktreeOptions): AddWorktreeSuccess | AddW
     }
   }
 
-  // Run `git worktree add -b <newBranch> <path> <base>` (+ optional --force).
+  // Fork mode:     git worktree add -b <newBranch> <path> <base>
+  // Checkout mode: git worktree add <path> <commit-ish>   (no -b)
   // Args are quoted via single-shell-arg escaping below.
   const args = ["git", "worktree", "add"];
   if (force) args.push("--force");
-  args.push("-b", newBranch, worktreePath, base);
+  if (!checkoutMode) args.push("-b", newBranch);
+  args.push(worktreePath, checkoutMode ? checkoutCommitish : base);
   const cmd = args.map(shellEscape).join(" ");
   try {
     execSync(cmd, {
@@ -353,10 +384,17 @@ export function addWorktree(opts: AddWorktreeOptions): AddWorktreeSuccess | AddW
     // Map common stderr patterns onto stable error codes. The exact
     // wording varies by git version; we match generously.
     if (/already used by worktree at|is already checked out at/i.test(stderr)) {
-      return { ok: false, error: "branch_in_use", message: "branch is already checked out in another worktree", stderr };
+      // Enrich with the holding-worktree path when git exposes it, so the
+      // UI can render a clear inline error pointing at the conflict.
+      // See change: worktree-checkout-existing-branch.
+      const held = stderr.match(/already used by worktree at '([^']+)'/i)?.[1];
+      const message = held
+        ? `branch is already checked out in another worktree at '${held}'`
+        : "branch is already checked out in another worktree";
+      return { ok: false, error: "branch_in_use", message, stderr };
     }
     if (/A branch named.*already exists|branch '.*' already exists/i.test(stderr)) {
-      return { ok: false, error: "branch_exists", message: `branch "${newBranch}" already exists`, stderr };
+      return { ok: false, error: "branch_exists", message: `branch "${resolvedBranch}" already exists`, stderr };
     }
     if (/invalid reference|unknown revision|not a valid object name/i.test(stderr)) {
       return { ok: false, error: "base_not_found", message: `base ref not found: ${base}`, stderr };
@@ -397,7 +435,7 @@ export function addWorktree(opts: AddWorktreeOptions): AddWorktreeSuccess | AddW
   // See change: add-worktree-spawn-dialog.
   rewriteWorktreePiSettings(worktreePath, repoRoot);
 
-  return { ok: true, path: worktreePath, branch: newBranch, excludeAppended };
+  return { ok: true, path: worktreePath, branch: resolvedBranch, excludeAppended };
 }
 
 /**

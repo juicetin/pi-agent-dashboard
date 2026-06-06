@@ -14,6 +14,7 @@
 // without churn (`import { slugifyBranch } from "./git-worktree.js"`).
 export {
   slugifyBranch,
+  localNameOf,
   resolveDefaultBase,
   type ResolveDefaultBaseInput,
   type ResolveDefaultBaseResult,

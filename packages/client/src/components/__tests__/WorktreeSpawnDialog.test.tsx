@@ -10,6 +10,11 @@
  *  - Error responses render inline with the stable code, and stderr is
  *    rendered in a collapsed <details>.
  *  - Cancel button calls onCancel; Escape key does too.
+ *
+ * Ternary source toggle (change: worktree-checkout-existing-branch):
+ *  - Default mode is "checkout" when attachProposal is absent, "fork" when
+ *    it is set. Fork-mode tests below explicitly select fork mode via the
+ *    `worktree-source-fork` toggle (see `enterFork`).
  */
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -81,6 +86,15 @@ beforeEach(() => {
   cleanupOrphanWorktreePath.mockResolvedValue({ ok: true });
 });
 
+// Wait for the create section to load, then select fork mode. The toggle
+// only renders after the parallel fetches resolve, so this implicitly
+// waits for load. Use in fork-mode tests that don't pass `attachProposal`
+// (default mode is now "checkout"). See change: worktree-checkout-existing-branch.
+async function enterFork() {
+  await waitFor(() => screen.getByTestId("worktree-source-fork"));
+  fireEvent.click(screen.getByTestId("worktree-source-fork"));
+}
+
 describe("WorktreeSpawnDialog — loading + existing worktrees", () => {
   it("shows a loading placeholder until all three fetches resolve", async () => {
     defaultMocks();
@@ -124,6 +138,99 @@ describe("WorktreeSpawnDialog — loading + existing worktrees", () => {
   });
 });
 
+// ── Ternary source toggle + default-mode (change: worktree-checkout-existing-branch) ──
+describe("WorktreeSpawnDialog — source toggle + default mode", () => {
+  it("renders a three-way toggle in the create section", async () => {
+    defaultMocks();
+    render(<WorktreeSpawnDialog cwd="/repo" onSpawn={() => {}} onCancel={() => {}} />);
+    await waitFor(() => screen.getByTestId("worktree-dialog-existing"));
+    expect(screen.getByTestId("worktree-source-fork").textContent).toContain("Fork to new branch");
+    expect(screen.getByTestId("worktree-source-checkout").textContent).toContain("Check out existing branch");
+    expect(screen.getByTestId("worktree-source-pr").textContent).toContain("From a pull request");
+  });
+
+  it("defaults to checkout mode when attachProposal is undefined", async () => {
+    defaultMocks();
+    render(<WorktreeSpawnDialog cwd="/repo" onSpawn={() => {}} onCancel={() => {}} />);
+    await waitFor(() => screen.getByTestId("worktree-dialog-existing"));
+    // Checkout mode: picker labelled "Branch", no new-branch input.
+    expect(screen.getByText("Branch")).toBeTruthy();
+    expect(screen.queryByTestId("worktree-new-branch-input")).toBeNull();
+  });
+
+  it("defaults to fork mode when attachProposal is provided", async () => {
+    defaultMocks();
+    render(
+      <WorktreeSpawnDialog
+        cwd="/repo"
+        attachProposal="add-foo"
+        onSpawn={() => {}}
+        onCancel={() => {}}
+      />,
+    );
+    await waitFor(() => screen.getByTestId("worktree-dialog-existing"));
+    // Fork mode: new-branch input present, seeded from attachProposal.
+    const input = screen.getByTestId("worktree-new-branch-input") as HTMLInputElement;
+    expect(input.value).toBe("os/add-foo");
+  });
+
+  it("checkout mode submit calls createWorktree with no newBranch field", async () => {
+    defaultMocks();
+    createWorktree.mockResolvedValue({
+      ok: true,
+      path: "/repo/.worktrees/stale-feature",
+      branch: "stale-feature",
+      excludeAppended: true,
+    });
+    const onSpawn = vi.fn();
+    render(<WorktreeSpawnDialog cwd="/repo" onSpawn={onSpawn} onCancel={() => {}} />);
+    await waitFor(() => screen.getByTestId("worktree-dialog-existing"));
+    // Default checkout mode; base defaults to "main" via the resolver.
+    fireEvent.click(screen.getByTestId("worktree-dialog-create-submit"));
+    await waitFor(() => expect(onSpawn).toHaveBeenCalled());
+    const payload = createWorktree.mock.calls[0]![0];
+    expect(payload).not.toHaveProperty("newBranch");
+    expect(payload).toMatchObject({ cwd: "/repo", base: "main" });
+    expect(onSpawn).toHaveBeenCalledWith("/repo/.worktrees/stale-feature", { gitWorktreeBase: "main" });
+  });
+
+  it("checkout mode renders branch_in_use with the holding-worktree path inline", async () => {
+    defaultMocks();
+    createWorktree.mockResolvedValue({
+      ok: false,
+      code: "branch_in_use",
+      error: "branch is already checked out in another worktree at '/repo/.worktrees/bar'",
+      stderr: "fatal: 'main' is already used by worktree at '/repo/.worktrees/bar'",
+    });
+    render(<WorktreeSpawnDialog cwd="/repo" onSpawn={() => {}} onCancel={() => {}} />);
+    await waitFor(() => screen.getByTestId("worktree-dialog-existing"));
+    fireEvent.click(screen.getByTestId("worktree-dialog-create-submit"));
+    const errEl = await waitFor(() => screen.getByTestId("worktree-dialog-error"));
+    expect(errEl.textContent).toContain("branch_in_use");
+    expect(errEl.textContent).toContain("/repo/.worktrees/bar");
+  });
+
+  it("checkout mode path preview drops the remote prefix (origin/foo → foo)", async () => {
+    defaultMocks({
+      head: { branch: "main", detached: false, sha: "x" },
+      localBranches: ["main"],
+      remoteBranches: ["origin/old-experiment"],
+    });
+    render(<WorktreeSpawnDialog cwd="/repo" onSpawn={() => {}} onCancel={() => {}} />);
+    await waitFor(() => screen.getByTestId("worktree-dialog-existing"));
+    // Pick the remote-only branch. BranchCombobox renders an input we can
+    // drive via the combobox trigger; simplest is to set base through the
+    // path preview after selecting — instead assert the slug rule directly
+    // by typing into the combobox value via fireEvent on its trigger text.
+    // The combobox is a custom control; drive base by selecting the option.
+    fireEvent.click(screen.getByTestId("worktree-base-combobox"));
+    const option = await waitFor(() => screen.getByText("origin/old-experiment"));
+    fireEvent.click(option);
+    const pathInput = screen.getByTestId("worktree-path-input") as HTMLInputElement;
+    expect(pathInput.value).toBe("/repo/.worktrees/old-experiment");
+  });
+});
+
 describe("WorktreeSpawnDialog — initialBranch + attachProposal props", () => {
   it("prefills the new-branch input from initialBranch on first paint", async () => {
     defaultMocks();
@@ -135,7 +242,7 @@ describe("WorktreeSpawnDialog — initialBranch + attachProposal props", () => {
         initialBranch="os/add-dark-mode"
       />,
     );
-    await waitFor(() => screen.getByTestId("worktree-dialog-existing"));
+    await enterFork();
     const input = screen.getByTestId("worktree-new-branch-input") as HTMLInputElement;
     expect(input.value).toBe("os/add-dark-mode");
     // Path preview reflects the slugified initial branch immediately.
@@ -206,7 +313,7 @@ describe("WorktreeSpawnDialog — initialBranch + attachProposal props", () => {
     });
     const onSpawn = vi.fn();
     render(<WorktreeSpawnDialog cwd="/repo" onSpawn={onSpawn} onCancel={() => {}} />);
-    await waitFor(() => screen.getByTestId("worktree-dialog-existing"));
+    await enterFork();
     fireEvent.change(screen.getByTestId("worktree-new-branch-input"), {
       target: { value: "feat/y" },
     });
@@ -244,7 +351,7 @@ describe("WorktreeSpawnDialog — create form", () => {
   it("path preview updates live as user types newBranch (slugified)", async () => {
     defaultMocks();
     render(<WorktreeSpawnDialog cwd="/repo" onSpawn={() => {}} onCancel={() => {}} />);
-    await waitFor(() => screen.getByTestId("worktree-dialog-existing"));
+    await enterFork();
     const input = screen.getByTestId("worktree-new-branch-input") as HTMLInputElement;
     fireEvent.change(input, { target: { value: "feat/Dark Mode!" } });
     const pathInput = screen.getByTestId("worktree-path-input") as HTMLInputElement;
@@ -261,7 +368,7 @@ describe("WorktreeSpawnDialog — create form", () => {
     });
     const onSpawn = vi.fn();
     render(<WorktreeSpawnDialog cwd="/repo" onSpawn={onSpawn} onCancel={() => {}} />);
-    await waitFor(() => screen.getByTestId("worktree-dialog-existing"));
+    await enterFork();
 
     fireEvent.change(screen.getByTestId("worktree-new-branch-input"), {
       target: { value: "feat/x" },
@@ -279,10 +386,10 @@ describe("WorktreeSpawnDialog — create form", () => {
     expect(onSpawn).toHaveBeenCalledWith("/repo/.worktrees/feat-x", { gitWorktreeBase: "main" });
   });
 
-  it("submit disabled when newBranch is empty", async () => {
+  it("submit disabled when newBranch is empty (fork mode)", async () => {
     defaultMocks();
     render(<WorktreeSpawnDialog cwd="/repo" onSpawn={() => {}} onCancel={() => {}} />);
-    await waitFor(() => screen.getByTestId("worktree-dialog-existing"));
+    await enterFork();
     const submitBtn = screen.getByTestId("worktree-dialog-create-submit") as HTMLButtonElement;
     expect(submitBtn.disabled).toBe(true);
   });
@@ -296,7 +403,7 @@ describe("WorktreeSpawnDialog — create form", () => {
       stderr: "fatal: 'feat/x' is already checked out at '/repo'",
     });
     render(<WorktreeSpawnDialog cwd="/repo" onSpawn={() => {}} onCancel={() => {}} />);
-    await waitFor(() => screen.getByTestId("worktree-dialog-existing"));
+    await enterFork();
 
     fireEvent.change(screen.getByTestId("worktree-new-branch-input"), {
       target: { value: "feat/x" },
@@ -315,7 +422,7 @@ describe("WorktreeSpawnDialog — create form", () => {
     defaultMocks();
     createWorktree.mockResolvedValue({ ok: false, code: "git_failed", error: "boom" });
     render(<WorktreeSpawnDialog cwd="/repo" onSpawn={() => {}} onCancel={() => {}} />);
-    await waitFor(() => screen.getByTestId("worktree-dialog-existing"));
+    await enterFork();
     fireEvent.change(screen.getByTestId("worktree-new-branch-input"), {
       target: { value: "feat/x" },
     });
@@ -361,7 +468,7 @@ describe("WorktreeSpawnDialog — orphan-path detection + cleanup", () => {
     defaultMocks();
     probePathExists.mockResolvedValue(true);
     render(<WorktreeSpawnDialog cwd="/repo" onSpawn={() => {}} onCancel={() => {}} initialBranch="feat/x" />);
-    await waitFor(() => screen.getByTestId("worktree-dialog-existing"));
+    await enterFork();
     await waitFor(() => screen.getByTestId("worktree-dialog-orphan-warning"));
     expect(screen.getByTestId("worktree-dialog-orphan-cleanup")).toBeTruthy();
     // Submit button disabled while orphan blocks the path.
@@ -374,6 +481,7 @@ describe("WorktreeSpawnDialog — orphan-path detection + cleanup", () => {
     probePathExists.mockResolvedValue(true);
     cleanupOrphanWorktreePath.mockResolvedValue({ ok: true });
     render(<WorktreeSpawnDialog cwd="/repo" onSpawn={() => {}} onCancel={() => {}} initialBranch="feat/x" />);
+    await enterFork();
     await waitFor(() => screen.getByTestId("worktree-dialog-orphan-warning"));
     // Make subsequent probes return false (the dir is now gone).
     probePathExists.mockResolvedValue(false);
@@ -395,7 +503,7 @@ describe("WorktreeSpawnDialog — orphan-path detection + cleanup", () => {
       orphanLikely: true,
     });
     render(<WorktreeSpawnDialog cwd="/repo" onSpawn={() => {}} onCancel={() => {}} />);
-    await waitFor(() => screen.getByTestId("worktree-dialog-existing"));
+    await enterFork();
     fireEvent.change(screen.getByTestId("worktree-new-branch-input"), { target: { value: "feat/x" } });
     fireEvent.click(screen.getByTestId("worktree-dialog-create-submit"));
     await waitFor(() => screen.getByTestId("worktree-dialog-error"));
@@ -414,7 +522,7 @@ describe("WorktreeSpawnDialog — orphan-path detection + cleanup", () => {
       orphanLikely: false,
     });
     render(<WorktreeSpawnDialog cwd="/repo" onSpawn={() => {}} onCancel={() => {}} />);
-    await waitFor(() => screen.getByTestId("worktree-dialog-existing"));
+    await enterFork();
     fireEvent.change(screen.getByTestId("worktree-new-branch-input"), { target: { value: "feat/x" } });
     fireEvent.click(screen.getByTestId("worktree-dialog-create-submit"));
     await waitFor(() => screen.getByTestId("worktree-dialog-error"));
@@ -431,6 +539,7 @@ describe("WorktreeSpawnDialog — orphan-path detection + cleanup", () => {
       error: "directory contains a .git entry; refuse to delete",
     });
     render(<WorktreeSpawnDialog cwd="/repo" onSpawn={() => {}} onCancel={() => {}} initialBranch="feat/x" />);
+    await enterFork();
     await waitFor(() => screen.getByTestId("worktree-dialog-orphan-warning"));
     fireEvent.click(screen.getByTestId("worktree-dialog-orphan-cleanup"));
     const orphanErr = await waitFor(() => screen.getByTestId("worktree-dialog-orphan-error"));
@@ -438,8 +547,8 @@ describe("WorktreeSpawnDialog — orphan-path detection + cleanup", () => {
   });
 });
 
-describe("WorktreeSpawnDialog — initialBranch + attachProposal props", () => {
-  it("prefills the new-branch input from initialBranch on first paint", async () => {
+describe("WorktreeSpawnDialog — initialBranch + attachProposal props (variant)", () => {
+  it("prefills the new-branch input from initialBranch (fork-selected)", async () => {
     defaultMocks();
     render(
       <WorktreeSpawnDialog
@@ -449,7 +558,7 @@ describe("WorktreeSpawnDialog — initialBranch + attachProposal props", () => {
         onCancel={() => {}}
       />,
     );
-    await waitFor(() => screen.getByTestId("worktree-dialog-existing"));
+    await enterFork();
     const input = screen.getByTestId("worktree-new-branch-input") as HTMLInputElement;
     expect(input.value).toBe("os/add-dark-mode");
   });
@@ -517,7 +626,7 @@ describe("WorktreeSpawnDialog — initialBranch + attachProposal props", () => {
     });
     const onSpawn = vi.fn();
     render(<WorktreeSpawnDialog cwd="/repo" onSpawn={onSpawn} onCancel={() => {}} />);
-    await waitFor(() => screen.getByTestId("worktree-dialog-existing"));
+    await enterFork();
     fireEvent.change(screen.getByTestId("worktree-new-branch-input"), {
       target: { value: "feat/x" },
     });
@@ -551,14 +660,14 @@ describe("WorktreeSpawnDialog — reactive attachProposal", () => {
     expect(pathInput.value).toBe("/repo/.worktrees/os-add-foo");
   });
 
-  it("attachProposal arriving after mount updates branch when pristine", async () => {
+  it("attachProposal arriving after mount does not flip mode, but seeds branch (visible after flip to fork)", async () => {
     defaultMocks();
     const { rerender } = render(
       <WorktreeSpawnDialog cwd="/repo" onSpawn={() => {}} onCancel={() => {}} />,
     );
     await waitFor(() => screen.getByTestId("worktree-dialog-existing"));
-    const input = screen.getByTestId("worktree-new-branch-input") as HTMLInputElement;
-    expect(input.value).toBe("");
+    // Default checkout mode: no new-branch input.
+    expect(screen.queryByTestId("worktree-new-branch-input")).toBeNull();
     rerender(
       <WorktreeSpawnDialog
         cwd="/repo"
@@ -567,6 +676,10 @@ describe("WorktreeSpawnDialog — reactive attachProposal", () => {
         onCancel={() => {}}
       />,
     );
+    // Mode does NOT auto-flip: still checkout, still no input.
+    expect(screen.queryByTestId("worktree-new-branch-input")).toBeNull();
+    // The reactive branch seeding still applies once the user flips to fork.
+    fireEvent.click(screen.getByTestId("worktree-source-fork"));
     expect((screen.getByTestId("worktree-new-branch-input") as HTMLInputElement).value).toBe("os/add-foo");
   });
 
@@ -575,7 +688,7 @@ describe("WorktreeSpawnDialog — reactive attachProposal", () => {
     const { rerender } = render(
       <WorktreeSpawnDialog cwd="/repo" onSpawn={() => {}} onCancel={() => {}} />,
     );
-    await waitFor(() => screen.getByTestId("worktree-dialog-existing"));
+    await enterFork();
     fireEvent.change(screen.getByTestId("worktree-new-branch-input"), {
       target: { value: "feature/x" },
     });
@@ -633,7 +746,7 @@ describe("WorktreeSpawnDialog — reactive attachProposal", () => {
     expect((screen.getByTestId("worktree-new-branch-input") as HTMLInputElement).value).toBe("os/other");
   });
 
-  it("backward-compat: initialBranch alone unchanged when attachProposal omitted", async () => {
+  it("backward-compat: initialBranch alone unchanged when attachProposal omitted (fork-selected)", async () => {
     defaultMocks();
     render(
       <WorktreeSpawnDialog
@@ -643,7 +756,7 @@ describe("WorktreeSpawnDialog — reactive attachProposal", () => {
         onCancel={() => {}}
       />,
     );
-    await waitFor(() => screen.getByTestId("worktree-dialog-existing"));
+    await enterFork();
     expect((screen.getByTestId("worktree-new-branch-input") as HTMLInputElement).value).toBe("os/preset");
   });
 });

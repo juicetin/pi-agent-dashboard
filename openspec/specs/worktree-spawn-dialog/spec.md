@@ -117,59 +117,89 @@ The component SHALL implement the WAI-ARIA combobox pattern: the trigger SHALL c
 
 ### Requirement: From-a-pull-request creation mode
 
-The "Create a new worktree" section of `WorktreeSpawnDialog` SHALL offer a source toggle with two modes: **From a branch** (the existing base-branch + new-branch-name + path fields) and **From a pull request**. The dialog SHALL default to **From a branch**, preserving existing behaviour.
+The "Create a new worktree" section of `WorktreeSpawnDialog` SHALL offer a **ternary** source toggle with three modes: **Fork to new branch**, **Check out existing branch**, and **From a pull request**. Each mode reveals its own field set; switching modes preserves picker selections where the underlying ref shape is compatible.
 
-In **From a pull request** mode, the dialog SHALL render a `PrCombobox` typeahead listing the repository's open pull requests (via `GET /api/git/pull-requests`). Selecting a PR SHALL derive a worktree path (default `<repo>/.worktrees/pr-<number>`, editable via the existing Path input) and, on submit, SHALL call `POST /api/git/worktree/from-pr` with `{ cwd, prNumber, path }`.
+The three modes SHALL behave as follows:
 
-The **From a pull request** toggle SHALL degrade gracefully when `gh` is unavailable: the dialog SHALL NOT eagerly probe `gh` at mount; on first activation of the PR mode the `PrCombobox` SHALL fetch the PR list, and if the server returns `gh_not_found` or `gh_not_authed`, the toggle SHALL be disabled with an inline hint rather than presented as a working but dead control.
+1. **Fork to new branch** (`mode === "fork"`) — the existing fork form. Picker selects a base ref; the user types a new branch name; submit calls `createWorktree({cwd, base, newBranch, path?})`. Path is derived from `slugifyBranch(newBranch)`.
 
-The PR list fetch SHALL surface loading, error, empty, and gh-unavailable states (PR data is a network round-trip, unlike the local branch list).
+2. **Check out existing branch** (`mode === "checkout"`) — picker selects a branch ref directly; no new-branch input is rendered; submit calls `createWorktree({cwd, base, path?})` with `newBranch` omitted (the server runs `git worktree add <path> <base>` without `-b`). Path is derived from `slugifyBranch(localNameOf(base))` where `localNameOf("origin/foo") === "foo"`. The picker label SHALL read **Branch** (not **Base branch**) in this mode. `canSubmit` SHALL require only `base.trim().length > 0`.
 
-#### Scenario: Default mode is From a branch
+3. **From a pull request** (`mode === "from-pr"`) — the PR-change form. `PrCombobox` selects an open PR; submit calls `POST /api/git/worktree/from-pr` with `{cwd, prNumber, path}`. Lazy-load and gh-unavailable behaviour is unchanged from the original PR-change requirement.
 
-- **WHEN** the dialog opens
-- **THEN** the source toggle SHALL be set to "From a branch"
-- **AND** the existing base-branch, new-branch-name, and path fields SHALL render
+The new-branch input (`data-testid="worktree-new-branch-input"`) SHALL be present in the DOM only when `mode === "fork"`. The `PrCombobox` SHALL be present only when `mode === "from-pr"`.
+
+When the server returns `branch_in_use` for a `"checkout"`-mode submit, the dialog SHALL render the full server `message` (which includes the path of the worktree currently holding the branch) inline below the picker.
+
+#### Scenario: Three-way toggle renders in create section
+
+- **WHEN** the dialog opens and finishes loading branches
+- **THEN** a radio group with three options "Fork to new branch", "Check out existing branch", and "From a pull request" SHALL be visible inside the "Create a new worktree" section
+
+#### Scenario: Fork mode field set
+
+- **WHEN** `mode === "fork"`
+- **THEN** the base-branch combobox, the new-branch input, and the derived-path preview SHALL render
+- **AND** the new-branch input (`data-testid="worktree-new-branch-input"`) SHALL be present in the DOM
+- **AND** submit SHALL call `POST /api/git/worktree` with `{cwd, base, newBranch, path?}`
+
+#### Scenario: Checkout mode field set
+
+- **WHEN** `mode === "checkout"`
+- **THEN** the picker SHALL render with the label "Branch"
+- **AND** the new-branch input SHALL NOT be present in the DOM
+- **AND** the path preview SHALL render `<repo>/.worktrees/<slug(localNameOf(base))>`
+- **AND** submit SHALL call `POST /api/git/worktree` with `{cwd, base, path?}` and no `newBranch` field
+
+#### Scenario: Checkout mode renders branch_in_use with holding-worktree path
+
+- **WHEN** `mode === "checkout"` AND the server returns `{success: false, error: "branch_in_use", message: "...at '/repo/.worktrees/bar'..."}`
+- **THEN** the dialog SHALL render the full server `message` (including the path `/repo/.worktrees/bar`) inline below the picker
+
+#### Scenario: PR mode unchanged
+
+- **WHEN** `mode === "from-pr"`
+- **THEN** the `PrCombobox`, gh-unavailable degradation, lazy-load on first activation, and `POST /api/git/worktree/from-pr` submit path SHALL behave exactly as specified by the `add-worktree-from-pull-request` change before this widening
+- **AND** the binary-toggle scenarios from that change SHALL continue to hold with the option key renamed (`"from-branch"` → `"fork"`)
+
+#### Scenario: Mode flip preserves compatible selections
+
+- **WHEN** the user picks `base = "main"` in `"checkout"` mode AND flips to `"fork"` mode
+- **THEN** the base-branch combobox SHALL retain `"main"` as the selected base
+- **AND** the new-branch input SHALL render empty (or with the `attachProposal`-derived value if applicable)
+
+### Requirement: Default mode derived from attachProposal
+
+When `WorktreeSpawnDialog` mounts, it SHALL pick the initial `mode` based on the `attachProposal` prop, refining the original default introduced by `add-worktree-from-pull-request`:
+
+- `attachProposal` is a non-empty string → initial `mode === "fork"`.
+- `attachProposal` is `undefined` or empty → initial `mode === "checkout"`.
+- `mode === "from-pr"` SHALL never be the auto-picked default (preserving the lazy-load contract from `add-worktree-from-pull-request`).
+
+Subsequent runtime changes to `attachProposal` SHALL NOT flip the mode automatically; the user remains in control after first paint via the radio toggle.
+
+#### Scenario: Plain +Worktree defaults to checkout
+
+- **WHEN** the dialog mounts with `attachProposal` undefined
+- **THEN** the mode selector SHALL show "Check out existing branch" as selected on first paint
+- **AND** the new-branch input SHALL NOT be present in the DOM
 - **AND** no PR list fetch SHALL be issued
 
-#### Scenario: Switching to PR mode loads PRs
+#### Scenario: Proposal-driven +Worktree defaults to fork
 
-- **WHEN** the user activates "From a pull request" for the first time
-- **THEN** the `PrCombobox` SHALL fetch `GET /api/git/pull-requests?cwd=…`
-- **AND** SHALL show a loading state until the response resolves
-- **AND** on success SHALL list open PRs with number, title, author, and a CI/draft badge
+- **WHEN** the dialog mounts with `attachProposal = "add-foo"`
+- **THEN** the mode selector SHALL show "Fork to new branch" as selected on first paint
+- **AND** the new-branch input SHALL be present with value `os/add-foo` (existing `attachProposal` behaviour from `auto-fill-branch-from-proposal-in-worktree-dialog`)
 
-#### Scenario: Selecting a PR derives the path
+#### Scenario: User can flip mode after auto-pick
 
-- **WHEN** the user selects PR #142 in PR mode
-- **THEN** the path field SHALL derive to `<repo>/.worktrees/pr-142`
-- **AND** the path SHALL remain editable
+- **WHEN** the dialog mounted in `"checkout"` mode AND the user clicks the "Fork to new branch" radio
+- **THEN** `mode` SHALL become `"fork"` AND the new-branch input SHALL appear
+- **AND** the `base` selection SHALL be preserved across the flip
 
-#### Scenario: PR-mode submit posts from-pr
+#### Scenario: attachProposal change after mount does not flip mode
 
-- **WHEN** the user has selected a PR and submits in PR mode
-- **THEN** the dialog SHALL call `POST /api/git/worktree/from-pr` with `{ cwd, prNumber, path }`
-- **AND** SHALL NOT call the branch-based `POST /api/git/worktree`
-
-#### Scenario: gh unavailable disables the PR toggle
-
-- **WHEN** activating PR mode and the PR fetch returns `gh_not_found` or `gh_not_authed`
-- **THEN** the "From a pull request" toggle SHALL become disabled
-- **AND** an inline hint SHALL explain that `gh` must be installed/authenticated to checkout PRs
-- **AND** the dialog SHALL remain usable in "From a branch" mode
-
-#### Scenario: Typeahead filtering of PRs
-
-- **WHEN** the `PrCombobox` is open and the user types
-- **THEN** the list SHALL filter to PRs whose number, title, or head branch contains the typed text (case-insensitive)
-
-#### Scenario: Keyboard selection in PR mode
-
-- **WHEN** the `PrCombobox` popover is open
-- **THEN** ArrowUp/ArrowDown SHALL move the highlight, Enter SHALL select the highlighted PR, and Escape SHALL close the popover without closing the dialog
-
-#### Scenario: Branch mode unchanged
-
-- **WHEN** the dialog is in "From a branch" mode
-- **THEN** the base-branch + new-branch-name + path fields and the `POST /api/git/worktree` submit path SHALL behave exactly as before this change
+- **WHEN** the dialog mounted with `attachProposal = undefined` (mode = `"checkout"`) AND the parent re-renders with `attachProposal = "add-foo"`
+- **THEN** `mode` SHALL remain `"checkout"` (user-controlled after first paint)
+- **AND** the existing `attachProposal`-reactivity on the branch input SHALL still apply if the user later flips to `"fork"` mode
 

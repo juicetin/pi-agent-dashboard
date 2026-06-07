@@ -604,7 +604,11 @@ export function SessionList({ sessions, selectedId, onSelect, contextUsageMap, o
             onToggle={() => handleToggleCollapse(group.cwd)}
           />
           <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-1.5">
+          <div
+            className="flex items-center gap-1.5 cursor-pointer"
+            onClick={() => handleToggleCollapse(group.cwd)}
+            title={isCollapsed ? "Expand folder" : "Collapse folder"}
+          >
             <span className="text-xs font-medium text-[var(--text-secondary)] truncate flex items-center gap-1">
               <Icon path={isCollapsed ? mdiFolder : mdiFolderOpen} size={0.5} className="shrink-0" /> {dirName}
             </span>

@@ -747,7 +747,7 @@ export function SessionCard({
           <button
             onClick={(e) => { e.stopPropagation(); onSpawnSibling(session); }}
             disabled={!!session.cwdMissing}
-            className="text-[9px] px-1 py-px rounded border border-purple-500/30 text-purple-400 hover:bg-purple-500/10 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="text-[9px] px-1 py-px rounded border border-green-500/30 text-green-400 hover:bg-green-500/10 disabled:opacity-50 disabled:cursor-not-allowed"
             title={session.cwdMissing ? "session's directory no longer exists" : "+Session clean sibling in same folder"}
             data-testid="session-card-spawn-sibling"
           >

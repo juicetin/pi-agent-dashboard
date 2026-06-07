@@ -392,6 +392,8 @@ The button SHALL be `disabled` when `session.cwdMissing === true`, with tooltip 
 
 The button SHALL NOT carry `gitWorktreeBase` or any worktree-related metadata. Worktree-sibling spawning is covered by separate surfaces (folder `+Worktree`, per-change `⑂+`).
 
+The `+Session` button SHALL use the green session-spawn palette (`border-green-500/30 text-green-400 hover:bg-green-500/10`), consistent with every other session-spawn control (`FolderSpawnButtons` `+ New Session`, folder-section `spawn-attached`). Session-spawn actions SHALL NOT use the purple `accent` palette, which is reserved for OpenSpec actions (Attach / Archive).
+
 #### Scenario: Visible on live session
 - **WHEN** a session card is rendered for a session with `status === "running"` (or any non-ended status)
 - **THEN** the `+Session` button SHALL render

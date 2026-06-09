@@ -7,6 +7,15 @@ vi.mock("wouter", () => ({
   useLocation: () => ["/settings", vi.fn()],
 }));
 
+// Mock model-proxy-api (called by ModelProxySection when proxy is enabled)
+vi.mock("../../lib/model-proxy-api.js", () => ({
+  listApiKeys: vi.fn().mockResolvedValue({ keys: [], revoked: [] }),
+  createApiKey: vi.fn(),
+  revokeApiKey: vi.fn().mockResolvedValue(undefined),
+  deleteApiKey: vi.fn().mockResolvedValue(undefined),
+  refreshRegistry: vi.fn().mockResolvedValue(undefined),
+}));
+
 const mockConfig = {
   port: 8000,
   piPort: 9999,
@@ -269,5 +278,85 @@ describe("SettingsPanel", () => {
     await waitFor(() => {
       expect(screen.getByText(/require.*restart/i)).toBeTruthy();
     });
+  });
+
+  it("should include modelProxy in save payload when changed", async () => {
+    const configWithModelProxy = {
+      ...mockConfig,
+      modelProxy: { enabled: true, defaultModel: "openai/gpt-4o" },
+    };
+    let savedBody: any;
+    global.fetch = vi.fn().mockImplementation((url: string, options?: any) => {
+      if (url === "/api/config" && options?.method === "PUT") {
+        savedBody = JSON.parse(options.body);
+        return Promise.resolve({ json: () => Promise.resolve({ success: true }) });
+      }
+      if (url === "/api/config") {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ success: true, data: configWithModelProxy }) });
+      }
+      if (url === "/api/providers") {
+        return Promise.resolve({ ok: false, json: () => Promise.resolve(null) });
+      }
+      if (url === "/api/provider-auth/status") {
+        return Promise.resolve({ json: () => Promise.resolve([]) });
+      }
+      return Promise.resolve({ ok: false, json: () => Promise.resolve(null) });
+    });
+
+    render(<SettingsPanel />);
+    await waitFor(() => screen.getByText("Settings"));
+
+    // Navigate to Providers tab where ModelProxySection is rendered
+    fireEvent.click(screen.getByText("Providers"));
+
+    // Change the default model input
+    await waitFor(() => screen.getByTestId("default-model-input"));
+    const input = screen.getByTestId("default-model-input");
+    fireEvent.change(input, { target: { value: "anthropic/claude-3-5-sonnet" } });
+
+    // Save
+    fireEvent.click(screen.getAllByTestId("save-btn")[0]);
+
+    await waitFor(() => {
+      expect(savedBody).toBeTruthy();
+      expect(savedBody.modelProxy).toBeTruthy();
+      expect(savedBody.modelProxy.defaultModel).toBe("anthropic/claude-3-5-sonnet");
+      expect(savedBody.modelProxy.enabled).toBe(true);
+    });
+  });
+
+  it("should NOT include modelProxy in save payload when unchanged", async () => {
+    const configWithModelProxy = {
+      ...mockConfig,
+      modelProxy: { enabled: true },
+    };
+    let savedBody: any = null;
+    let putCalled = false;
+    global.fetch = vi.fn().mockImplementation((url: string, options?: any) => {
+      if (url === "/api/config" && options?.method === "PUT") {
+        putCalled = true;
+        savedBody = JSON.parse(options.body);
+        return Promise.resolve({ json: () => Promise.resolve({ success: true }) });
+      }
+      if (url === "/api/config") {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ success: true, data: configWithModelProxy }) });
+      }
+      if (url === "/api/providers") {
+        return Promise.resolve({ ok: false, json: () => Promise.resolve(null) });
+      }
+      return Promise.resolve({ ok: false, json: () => Promise.resolve(null) });
+    });
+
+    render(<SettingsPanel />);
+    await waitFor(() => screen.getAllByTestId("save-btn"));
+
+    // Save without changing anything
+    fireEvent.click(screen.getAllByTestId("save-btn")[0]);
+
+    await waitFor(() => {
+      expect(screen.getByText("No changes to save")).toBeTruthy();
+    });
+    // No PUT request should have been sent
+    expect(putCalled).toBe(false);
   });
 });

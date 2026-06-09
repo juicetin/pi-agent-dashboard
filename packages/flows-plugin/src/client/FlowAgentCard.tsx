@@ -250,11 +250,12 @@ export function FlowAgentCard({
               onDismiss={() => setDetailOpen(false)}
             >
               <div
-                // `h-[70vh]` (not max-h) gives MinimalChatView's `h-full`
-                // popout mode a concrete height to fill, so its inner body
+                // `h-[70vh] flex flex-col` gives MinimalChatView's `h-full`
+                // popout mode a concrete height to fill and a flex parent that
+                // properly constrains the flex-1 body, so the inner body
                 // scrolls instead of overflowing the popover.
-                // See change: fix-flows-plugin-polish (scrollbar fix).
-                className="w-[640px] max-w-[90vw] h-[70vh] overflow-hidden bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-md shadow-xl"
+                // See change: fix-flows-plugin-polish, fix-popout-scroll-height.
+                className="w-[640px] max-w-[90vw] h-[70vh] overflow-hidden flex flex-col bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-md shadow-xl"
                 onClick={(e) => e.stopPropagation()}
               >
                 <FlowAgentDetail

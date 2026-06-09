@@ -248,6 +248,11 @@ export function SettingsPanel({ availableModels }: { availableModels?: Array<{ p
       partial.auth = config.auth || null;
     }
 
+    // Model proxy diff
+    if (JSON.stringify(config.modelProxy) !== JSON.stringify(original.modelProxy)) {
+      partial.modelProxy = config.modelProxy;
+    }
+
     // Check if LLM providers changed
     const llmChanged = JSON.stringify(llmProviders) !== JSON.stringify(originalLlmProviders);
 

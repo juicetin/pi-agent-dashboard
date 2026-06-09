@@ -83,6 +83,18 @@ top-level `ClaimEntry` fields. Falling back to `config.path` /
 - **WHEN** the URL is `/session/sess_1/flow/my%20pipe/agent/agent_3` and a claim's `path` is `/session/:sid/flow/:flowId/agent/:agentId`
 - **THEN** the claim's component SHALL receive `params.flowId === "my pipe"` (URL-decoded by wouter)
 
+#### Scenario: Height propagation wrapper is present when a claim matches
+
+- **GIVEN** the shell's desktop content area is a `flex-1 flex flex-col` container inside `h-screen`
+- **WHEN** any `shell-overlay-route` claim matches the current URL
+- **THEN** the rendered claim output SHALL be wrapped in a `flex-1 min-h-0 overflow-hidden` container
+- **AND** the claimed component's root `h-full` element SHALL resolve to the shell layout's available height
+
+#### Scenario: Height wrapper is absent when no claim matches
+
+- **WHEN** no `shell-overlay-route` claim matches the current URL
+- **THEN** the slot consumer SHALL render `null` (no wrapper element emitted)
+
 ### Requirement: `useShellOverlayRouteMatched` hook for aggregate gating
 
 The dashboard-plugin-runtime SHALL export `useShellOverlayRouteMatched(): boolean`, returning `true` when any `shell-overlay-route` claim's path matches the current URL. The shell SHALL use this hook instead of hand-maintaining a `||`-chain of `useRoute` flags for plugin-owned routes.

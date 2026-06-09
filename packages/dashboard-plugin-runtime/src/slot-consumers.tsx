@@ -624,11 +624,13 @@ function ShellOverlayRouteSwitch({
   return (
     <>
       {probes}
-      <ShellOverlayRouteRender
-        claim={claim}
-        params={matchedParams}
-        onBack={onBack}
-      />
+      <div className="flex-1 min-h-0 relative">
+        <ShellOverlayRouteRender
+          claim={claim}
+          params={matchedParams}
+          onBack={onBack}
+        />
+      </div>
     </>
   );
 }
@@ -666,9 +668,13 @@ function ShellOverlayRouteRender({
   const sessionParam = overlaySessionParam(claim);
   const sessionId = params[sessionParam];
   const session = useShellSessionOrNull(sessionId ?? "");
-  return renderClaim(claim as Parameters<typeof renderClaim>[0], "shell-overlay-route", {
-    params,
-    session,
-    onBack,
-  });
+  return (
+    <div className="absolute inset-0 flex flex-col overflow-hidden">
+      {renderClaim(claim as Parameters<typeof renderClaim>[0], "shell-overlay-route", {
+        params,
+        session,
+        onBack,
+      })}
+    </div>
+  );
 }

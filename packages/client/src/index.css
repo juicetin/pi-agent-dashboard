@@ -1,5 +1,17 @@
 @import "tailwindcss";
 
+/* Plugin packages that ship client-side React components with Tailwind
+   utility classes. Without these @source directives, Tailwind v4 only
+   scans the vite root (packages/client/src/) and purges every class
+   that only appears in plugin source (e.g. h-[70vh] in FlowAgentCard).
+   See change: fix-popout-scroll-height (Tailwind purge). */
+@source "../../client-utils/src";
+@source "../../dashboard-plugin-runtime/src";
+@source "../../flows-plugin/src/client";
+@source "../../subagents-plugin/src/client";
+@source "../../jj-plugin/src/client";
+@source "../../honcho-plugin/src/client";
+
 /* Shared font-size for code/diff payload inside tool-call renderers.
    See change: unify-tool-renderer-code-font-size. Keeps Read/Write/Edit/
    Bash/Generic payload at one size; non-payload chrome stays text-xs. */

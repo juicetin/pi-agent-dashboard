@@ -636,10 +636,11 @@ export function FlowArchitect({
                 anchorEl={detailButtonRef.current}
                 onDismiss={() => setDetailOpen(false)}
               >
-                {/* `overflow-hidden` on the wrapper + the inner MinimalChatView's
-                    `overflow-y-auto` body produces an inner scrollbar (not an
-                    outer one). See change: fix-flows-plugin-polish (scrollbar fix). */}
-                <div className="w-[640px] max-w-[90vw] h-[70vh] overflow-hidden bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-md shadow-xl">
+                {/* `overflow-hidden` + `flex flex-col` on the wrapper gives
+                    MinimalChatView's `h-full` a concrete height + flex parent
+                    so the inner `overflow-y-auto` body scrolls (not the popover).
+                    See change: fix-flows-plugin-polish, fix-popout-scroll-height. */}
+                <div className="w-[640px] max-w-[90vw] h-[70vh] overflow-hidden flex flex-col bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-md shadow-xl">
                   <FlowArchitectDetail
                     state={state}
                     onBack={() => setDetailOpen(false)}

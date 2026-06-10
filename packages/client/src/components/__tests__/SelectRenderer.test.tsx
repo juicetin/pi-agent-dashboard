@@ -52,6 +52,26 @@ describe("SelectRenderer", () => {
       expect(onCancel).toHaveBeenCalled();
     });
 
+
+    it("offers a free-form custom answer when enabled", () => {
+      const onRespond = vi.fn();
+      render(
+        <SelectRenderer
+          {...baseProps}
+          params={{ ...baseProps.params, allowCustomAnswer: true }}
+          status="pending"
+          onRespond={onRespond}
+          onCancel={vi.fn()}
+        />,
+      );
+
+      fireEvent.click(screen.getByText("Other / custom response"));
+      fireEvent.change(screen.getByPlaceholderText("Type custom answer…"), { target: { value: "Rust" } });
+      fireEvent.click(screen.getByText("Use custom answer"));
+
+      expect(onRespond).toHaveBeenCalledWith({ value: "Rust" });
+    });
+
     it("inline Cancel option calls onCancel (not onRespond) and suppresses synthetic Cancel row", () => {
       const onRespond = vi.fn();
       const onCancel = vi.fn();
@@ -88,6 +108,22 @@ describe("SelectRenderer", () => {
       expect(screen.getByText("TypeScript")).toBeTruthy();
       expect(screen.getByText("Python")).toBeTruthy();
       expect(screen.getByText("Go")).toBeTruthy();
+    });
+
+
+    it("shows a resolved custom answer even when it is not in the original option list", () => {
+      render(
+        <SelectRenderer
+          {...baseProps}
+          status="resolved"
+          result={{ value: "Rust" }}
+          onRespond={vi.fn()}
+          onCancel={vi.fn()}
+        />,
+      );
+
+      expect(screen.getByText("Rust")).toBeTruthy();
+      expect(screen.getByText("Custom response")).toBeTruthy();
     });
 
     it("renders all options with no +N more for a 10-option list", () => {

@@ -271,8 +271,8 @@ export interface CorsConfig {
 
 const VALID_SPAWN_STRATEGIES: SpawnStrategy[] = ["tmux", "headless"];
 
-/** Default ask_user prompt timeout: 300 seconds (5 minutes). */
-export const DEFAULT_ASK_USER_PROMPT_TIMEOUT_SECONDS = 300;
+/** Default ask_user prompt timeout: disabled; prompts wait indefinitely. */
+export const DEFAULT_ASK_USER_PROMPT_TIMEOUT_SECONDS = -1;
 
 /** Default + clamp for spawnRegisterTimeoutMs. See change: spawn-failure-diagnostics. */
 export const DEFAULT_SPAWN_REGISTER_TIMEOUT_MS = 30000;

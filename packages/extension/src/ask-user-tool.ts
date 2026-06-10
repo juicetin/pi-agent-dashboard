@@ -153,7 +153,7 @@ export function registerAskUserTool(pi: ExtensionAPI): void {
     name: "ask_user",
     label: "Ask User",
     description:
-      "Ask the user a question interactively. Use this when you need clarification, confirmation, or a choice from the user before proceeding. UI provides a Select all toggle; do not add one.",
+      "Ask the user a question interactively. Use this when you need clarification, confirmation, or a choice from the user before proceeding. UI provides a Select all toggle and custom free-form option; do not add those yourself.",
     promptSnippet:
       "Ask the user interactive questions (confirm, select, multiselect, input, or batch — multiple related questions at once)",
     promptGuidelines: [
@@ -161,6 +161,7 @@ export function registerAskUserTool(pi: ExtensionAPI): void {
       "Use method 'confirm' for yes/no questions, 'select' when offering specific choices, 'multiselect' when the user should pick multiple items from a list, and 'input' for open-ended questions.",
       "Use method 'batch' with a `questions` array to ask multiple related questions in one call (e.g. project setup: name + language + init git). Prefer single-method calls for standalone questions.",
       "Do not nest batches. Send `options` as a plain string[] — not [{label, value}].",
+      "For select and multiselect prompts, the UI automatically adds a free-form custom answer option. Do not add your own Other/Custom option.",
       "This applies to all workflows including OpenSpec, planning, and any situation where you need user input before proceeding.",
     ],
     // Flat object schema (root: type=object) for OpenAI strict-mode
@@ -359,7 +360,7 @@ export function registerAskUserTool(pi: ExtensionAPI): void {
         const answers: Array<any> | undefined = await (ctx.ui as any).batch(
           params.title || "Questions",
           questions,
-          withTcid(params.message ? { message: params.message } : undefined),
+          withTcid({ ...(params.message ? { message: params.message } : {}), allowCustomAnswer: true }),
         );
 
         const cancelled = answers === undefined;
@@ -413,6 +414,7 @@ export function registerAskUserTool(pi: ExtensionAPI): void {
       // ── Single-question branches (unchanged behavior) ────────────────
       let result: unknown;
       const msgOpts = withTcid(params.message ? { message: params.message } : undefined);
+      const customAnswerOpts = withTcid({ ...(params.message ? { message: params.message } : {}), allowCustomAnswer: true });
       const title = params.title || params.message || "Question";
 
       const options: string[] = Array.isArray(params.options)
@@ -434,10 +436,10 @@ export function registerAskUserTool(pi: ExtensionAPI): void {
           result = await ctx.ui.confirm(title, params.message ?? "", withTcid(undefined));
           break;
         case "select":
-          result = await ctx.ui.select(title, options, msgOpts);
+          result = await ctx.ui.select(title, options, customAnswerOpts);
           break;
         case "multiselect":
-          result = await polyfillMultiselect(ctx, title, options, msgOpts);
+          result = await polyfillMultiselect(ctx, title, options, customAnswerOpts as any);
           break;
         case "input":
           // Prefer the bridge-patched inputWithImages (dashboard sessions) so

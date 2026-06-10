@@ -194,7 +194,7 @@ export function SettingsPanel({ availableModels }: { availableModels?: Array<{ p
       partial.reattachPlacement = config.reattachPlacement ?? "always";
     }
     if (config.askUserPromptTimeoutSeconds !== original.askUserPromptTimeoutSeconds) {
-      partial.askUserPromptTimeoutSeconds = config.askUserPromptTimeoutSeconds ?? 300;
+      partial.askUserPromptTimeoutSeconds = config.askUserPromptTimeoutSeconds ?? -1;
     }
     if (config.spawnRegisterTimeoutMs !== original.spawnRegisterTimeoutMs) {
       partial.spawnRegisterTimeoutMs = config.spawnRegisterTimeoutMs ?? 30000;
@@ -485,11 +485,11 @@ export function SettingsPanel({ availableModels }: { availableModels?: Array<{ p
                 <div>
                   <NumberField
                     label="ask_user Prompt Timeout (seconds)"
-                    value={config.askUserPromptTimeoutSeconds ?? 300}
+                    value={config.askUserPromptTimeoutSeconds ?? -1}
                     onChange={(v) => update((c) => { c.askUserPromptTimeoutSeconds = v; })}
                   />
                   <p className="mt-1 text-xs text-[var(--text-tertiary)]">
-                    How long an interactive ask_user prompt waits for an answer before auto-cancelling. Use <code>-1</code> (or <code>0</code>) to wait forever. Default: 300 (5&nbsp;min).
+                    Interactive ask_user prompts wait forever by default. Set a positive value to auto-cancel after that many seconds; use <code>-1</code> (or <code>0</code>) for no timeout.
                   </p>
                 </div>
                 <div>

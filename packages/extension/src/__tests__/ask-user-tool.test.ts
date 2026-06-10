@@ -44,11 +44,12 @@ describe("registerAskUserTool", () => {
     expect(tool.promptGuidelines.length).toBeGreaterThan(0);
   });
 
-  it("description instructs agents not to add a Select all option", () => {
+  it("description instructs agents not to add synthetic UI options", () => {
     const pi = createMockPi();
     registerAskUserTool(pi as any);
     const tool = pi.registerTool.mock.calls[0][0];
     expect(tool.description).toMatch(/UI provides a Select all/i);
+    expect(tool.description).toMatch(/custom free-form option/i);
   });
 
   describe("message passthrough", () => {
@@ -96,7 +97,7 @@ describe("registerAskUserTool", () => {
       expect(ctx.ui.select).toHaveBeenCalledWith(
         "Pick",
         ["A", "B"],
-        expect.objectContaining({ message: "Context", toolCallId: "id" }),
+        expect.objectContaining({ message: "Context", toolCallId: "id", allowCustomAnswer: true }),
       );
     });
 
@@ -151,11 +152,11 @@ describe("registerAskUserTool", () => {
     it("parses options from JSON string", async () => {
       const { tool, ctx } = getToolAndMockCtx();
       await tool.execute("id", { method: "select", title: "Pick", options: '["A", "B"]' }, undefined, undefined, ctx);
-      // No message, no other opts — only toolCallId.
+      // No message — select still opts into the UI-provided custom answer row.
       expect(ctx.ui.select).toHaveBeenCalledWith(
         "Pick",
         ["A", "B"],
-        expect.objectContaining({ toolCallId: "id" }),
+        expect.objectContaining({ toolCallId: "id", allowCustomAnswer: true }),
       );
     });
 
@@ -482,6 +483,8 @@ describe("registerAskUserTool", () => {
       expect(ctx.ui.confirm).not.toHaveBeenCalled();
       // questions[] passed through to the single request.
       const passedQuestions = ctx.ui.batch.mock.calls[0][1];
+      const passedOptions = ctx.ui.batch.mock.calls[0][2];
+      expect(passedOptions).toEqual(expect.objectContaining({ toolCallId: "id", allowCustomAnswer: true }));
       expect(passedQuestions).toHaveLength(3);
       expect(passedQuestions[1]).toMatchObject({ method: "select", options: ["TS", "Py"] });
       // Answers mapped index-aligned to the legacy result shape.

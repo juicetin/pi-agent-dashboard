@@ -87,6 +87,26 @@ describe("BatchRenderer", () => {
     });
   });
 
+
+  it("allows custom select and multiselect answers", () => {
+    const { onRespond } = renderPending();
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "pi-plugin" } });
+    fireEvent.click(screen.getByText("Next →"));
+
+    fireEvent.change(screen.getByPlaceholderText("Type custom answer…"), { target: { value: "Rust" } });
+    fireEvent.click(screen.getByText("Use"));
+    fireEvent.click(screen.getByText("Next →"));
+
+    fireEvent.change(screen.getByPlaceholderText("Type custom answer…"), { target: { value: "Biome" } });
+    fireEvent.click(screen.getByText("Add"));
+    fireEvent.click(screen.getByText("Next →"));
+    fireEvent.click(screen.getByText(/Submit all 3/));
+
+    expect(onRespond).toHaveBeenCalledWith({
+      answers: [{ value: "pi-plugin" }, { value: "Rust" }, { values: ["Biome"] }],
+    });
+  });
+
   it("Cancel on the first step calls onCancel", () => {
     const { onCancel } = renderPending();
     fireEvent.click(screen.getByText("Cancel"));

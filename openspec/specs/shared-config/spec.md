@@ -140,17 +140,17 @@ The shared config module SHALL include a configurable timeout that governs how l
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `askUserPromptTimeoutSeconds` | number | 300 | Seconds to wait for an answer before auto-cancelling. Any value `<= 0` (canonically `-1`) SHALL disable the timeout entirely so prompts wait indefinitely. |
+| `askUserPromptTimeoutSeconds` | number | -1 | Seconds to wait for an answer before auto-cancelling. Any value `<= 0` (default `-1`) SHALL disable the timeout entirely so prompts wait indefinitely. |
 
-The shared config module SHALL also export a `DEFAULT_ASK_USER_PROMPT_TIMEOUT_SECONDS` constant equal to `300` so consumers (CLI, electron, tests) reference the same value rather than re-hard-coding it.
+The shared config module SHALL also export a `DEFAULT_ASK_USER_PROMPT_TIMEOUT_SECONDS` constant equal to `-1` so consumers (CLI, electron, tests) reference the same value rather than re-hard-coding it.
 
-Non-numeric values (string, boolean, null, arrays, objects) SHALL fall back to the default `300`.
+Non-numeric values (string, boolean, null, arrays, objects) SHALL fall back to the default `-1`.
 
 `ensureConfig()` SHALL NOT include `askUserPromptTimeoutSeconds` in the written defaults — the loader's default-coalescing handles missing values, keeping the on-disk file minimal.
 
 #### Scenario: Config with default timeout
 - **WHEN** `~/.pi/dashboard/config.json` does not include `askUserPromptTimeoutSeconds`
-- **THEN** `loadConfig()` SHALL return `askUserPromptTimeoutSeconds: 300`
+- **THEN** `loadConfig()` SHALL return `askUserPromptTimeoutSeconds: -1`
 
 #### Scenario: Config with custom positive timeout
 - **WHEN** `~/.pi/dashboard/config.json` contains `{ "askUserPromptTimeoutSeconds": 60 }`
@@ -166,7 +166,7 @@ Non-numeric values (string, boolean, null, arrays, objects) SHALL fall back to t
 
 #### Scenario: Non-numeric value falls back to default
 - **WHEN** `~/.pi/dashboard/config.json` contains `{ "askUserPromptTimeoutSeconds": "forever" }` (or `null`, or an object/array)
-- **THEN** `loadConfig()` SHALL return `askUserPromptTimeoutSeconds: 300`
+- **THEN** `loadConfig()` SHALL return `askUserPromptTimeoutSeconds: -1`
 
 #### Scenario: ensureConfig excludes askUserPromptTimeoutSeconds
 - **WHEN** `ensureConfig()` creates a new config file

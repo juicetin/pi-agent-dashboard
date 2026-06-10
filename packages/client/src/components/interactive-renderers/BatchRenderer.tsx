@@ -30,6 +30,8 @@ type Answer =
   | { value: string; images?: ImageContent[] }
   | { values: string[] };
 
+const CUSTOM_OPTION_TITLE = "Other / custom response";
+
 function initialAnswer(q: SubQuestion): Answer | undefined {
   if (q.method === "input") return { value: "" };
   if (q.method === "multiselect") return { values: [] };
@@ -266,6 +268,8 @@ function StepBody({
   answer: Answer | undefined;
   onChange: (a: Answer) => void;
 }) {
+  const [customValue, setCustomValue] = useState("");
+
   return (
     <div>
       <div className="text-sm font-medium text-[var(--text-primary)] mb-1">{question.title}</div>
@@ -327,6 +331,34 @@ function StepBody({
               </button>
             );
           })}
+          <form
+            className="flex flex-col gap-2 px-3 py-2 rounded-lg border border-blue-500/30 bg-blue-500/5"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const trimmed = customValue.trim();
+              if (trimmed) onChange({ value: trimmed });
+            }}
+          >
+            <label className="text-xs font-medium text-[var(--text-primary)]" htmlFor="batch-select-custom-answer">
+              {CUSTOM_OPTION_TITLE}
+            </label>
+            <div className="flex gap-2">
+              <input
+                id="batch-select-custom-answer"
+                value={customValue}
+                onChange={(event) => setCustomValue(event.currentTarget.value)}
+                className="min-w-0 flex-1 px-2 py-1 rounded bg-[var(--bg-primary)] border border-[var(--border-secondary)] text-xs text-[var(--text-primary)]"
+                placeholder="Type custom answer…"
+              />
+              <button
+                type="submit"
+                disabled={customValue.trim().length === 0}
+                className="px-3 py-1 text-xs rounded bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-colors"
+              >
+                Use
+              </button>
+            </div>
+          </form>
         </div>
       )}
       {question.method === "multiselect" && (
@@ -349,9 +381,21 @@ function MultiselectStep({
   values: string[];
   onChange: (values: string[]) => void;
 }) {
+  const [customValue, setCustomValue] = useState("");
+
   function toggle(option: string) {
     onChange(values.includes(option) ? values.filter((v) => v !== option) : [...values, option]);
   }
+
+  function addCustomValue() {
+    const trimmed = customValue.trim();
+    if (!trimmed) return;
+    onChange(values.includes(trimmed) ? values : [...values, trimmed]);
+    setCustomValue("");
+  }
+
+  const customValues = values.filter((value) => !options.includes(value));
+
   return (
     <div className="flex flex-col gap-1">
       {options.map((option) => {
@@ -370,6 +414,43 @@ function MultiselectStep({
           </label>
         );
       })}
+      <form
+        className="flex flex-col gap-2 mt-1 px-3 py-2 rounded-lg border border-blue-500/30 bg-blue-500/5"
+        onSubmit={(event) => {
+          event.preventDefault();
+          addCustomValue();
+        }}
+      >
+        <label className="text-xs font-medium text-[var(--text-primary)]" htmlFor="batch-multiselect-custom-answer">
+          {CUSTOM_OPTION_TITLE}
+        </label>
+        <div className="flex gap-2">
+          <input
+            id="batch-multiselect-custom-answer"
+            value={customValue}
+            onChange={(event) => setCustomValue(event.currentTarget.value)}
+            className="min-w-0 flex-1 px-2 py-1 rounded bg-[var(--bg-primary)] border border-[var(--border-secondary)] text-xs text-[var(--text-primary)]"
+            placeholder="Type custom answer…"
+          />
+          <button
+            type="submit"
+            disabled={customValue.trim().length === 0}
+            className="px-3 py-1 text-xs rounded bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-colors"
+          >
+            Add
+          </button>
+        </div>
+      </form>
+      {customValues.map((value) => (
+        <label
+          key={value}
+          className="flex items-center gap-2.5 px-3 py-2 rounded-lg border border-blue-500/40 bg-blue-500/10 text-[var(--text-primary)] text-xs cursor-pointer"
+        >
+          <input type="checkbox" checked onChange={() => toggle(value)} className="accent-blue-500" />
+          <span>{value}</span>
+          <span className="text-[10px] text-[var(--text-tertiary)]">Custom</span>
+        </label>
+      ))}
     </div>
   );
 }

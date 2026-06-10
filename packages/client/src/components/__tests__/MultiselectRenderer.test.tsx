@@ -68,6 +68,26 @@ describe("MultiselectRenderer", () => {
       expect(onRespond).toHaveBeenCalledWith({ values: ["a.ts", "c.ts"] });
     });
 
+
+    it("adds a free-form custom answer when enabled", () => {
+      const onRespond = vi.fn();
+      render(
+        <MultiselectRenderer
+          {...baseProps}
+          params={{ ...baseProps.params, allowCustomAnswer: true }}
+          status="pending"
+          onRespond={onRespond}
+          onCancel={vi.fn()}
+        />,
+      );
+
+      fireEvent.change(screen.getByPlaceholderText("Type custom answer…"), { target: { value: "d.ts" } });
+      fireEvent.click(screen.getByText("Add"));
+      fireEvent.click(screen.getByText("Submit (1)"));
+
+      expect(onRespond).toHaveBeenCalledWith({ values: ["d.ts"] });
+    });
+
     it("submits empty array when nothing selected", () => {
       const onRespond = vi.fn();
       render(
@@ -121,6 +141,23 @@ describe("MultiselectRenderer", () => {
       expect(screen.getByText("c.ts")).toBeTruthy();
       // Count summary present.
       expect(screen.getByText(/2 of 3/)).toBeTruthy();
+    });
+
+
+    it("shows resolved custom answers and counts them", () => {
+      render(
+        <MultiselectRenderer
+          {...baseProps}
+          status="resolved"
+          result={{ values: ["a.ts", "d.ts"] }}
+          onRespond={vi.fn()}
+          onCancel={vi.fn()}
+        />,
+      );
+
+      expect(screen.getByText("d.ts")).toBeTruthy();
+      expect(screen.getByText("Custom response")).toBeTruthy();
+      expect(screen.getByText(/2 of 4/)).toBeTruthy();
     });
 
     it("shows a 0 of N count when nothing selected", () => {

@@ -223,9 +223,9 @@ When LLM providers are saved via the Settings panel, the server SHALL broadcast 
 - **AND** no server restart is required
 
 ### Requirement: ask_user prompt timeout field in Sessions section
-The Settings panel's General → Sessions section SHALL include a numeric input bound to `config.askUserPromptTimeoutSeconds`. The field SHALL accept negative integers so users can enter `-1` to disable the timeout. The control SHALL display a hint text immediately below it explaining: (a) the value is in seconds, (b) `-1` (or `0`) means “wait forever”, and (c) the default is 300 (5 minutes).
+The Settings panel's General → Sessions section SHALL include a numeric input bound to `config.askUserPromptTimeoutSeconds`. The field SHALL accept negative integers so users can enter `-1` to disable the timeout. The control SHALL display a hint text immediately below it explaining: (a) the value is in seconds, (b) `-1` (or `0`) means “wait forever”, and (c) the default is no timeout.
 
-When the user changes this field, the Settings panel SHALL include `askUserPromptTimeoutSeconds` in the partial sent to `PUT /api/config`. If the user clears the field (the resulting input value is undefined / NaN), the partial SHALL fall back to the default `300` rather than silently writing `0`.
+When the user changes this field, the Settings panel SHALL include `askUserPromptTimeoutSeconds` in the partial sent to `PUT /api/config`. If the user clears the field (the resulting input value is undefined / NaN), the partial SHALL fall back to the default `-1` rather than silently writing `0`.
 
 The server's `writeConfigPartial` SHALL persist the value verbatim through its existing top-level scalar merge (`{ ...existing, ...partial }`); no auth-section-style special handling is required. A subsequent `GET /api/config` SHALL return the persisted value with no redaction.
 

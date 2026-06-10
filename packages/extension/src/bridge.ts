@@ -1591,6 +1591,8 @@ function initBridge(pi: ExtensionAPI) {
       // substrings (the captured original binding and the TUI arm match).
     };
 
+    const CUSTOM_ANSWER_OPTION = "Other / custom response…";
+
     // Register TUI adapter — presents prompts in the terminal using original
     // (unpatched) ctx.ui methods. Must be registered BEFORE patching ctx.ui.
     if (ctx.hasUI) {
@@ -1609,7 +1611,14 @@ function initBridge(pi: ExtensionAPI) {
               let answer: string | boolean | undefined;
 
               if (prompt.type === "select" && prompt.options && originals.select) {
-                answer = await originals.select(prompt.question, prompt.options, { signal: ac.signal });
+                const allowCustomAnswer = prompt.metadata?.allowCustomAnswer === true;
+                const options = allowCustomAnswer && !prompt.options.includes(CUSTOM_ANSWER_OPTION)
+                  ? [...prompt.options, CUSTOM_ANSWER_OPTION]
+                  : prompt.options;
+                answer = await originals.select(prompt.question, options, { signal: ac.signal });
+                if (allowCustomAnswer && answer === CUSTOM_ANSWER_OPTION && originals.input) {
+                  answer = await originals.input("Custom response", "", { signal: ac.signal });
+                }
               } else if (prompt.type === "input" && originals.input) {
                 answer = await originals.input(prompt.question, prompt.defaultValue || "", { signal: ac.signal });
               } else if (prompt.type === "confirm" && originals.confirm) {
@@ -1686,10 +1695,12 @@ function initBridge(pi: ExtensionAPI) {
       ): Record<string, unknown> | undefined => {
         const message = explicitMessage ?? opts?.message;
         const toolCallId = opts?.toolCallId;
-        if (!message && !toolCallId) return undefined;
+        const allowCustomAnswer = opts?.allowCustomAnswer === true;
+        if (!message && !toolCallId && !allowCustomAnswer) return undefined;
         const meta: Record<string, unknown> = {};
         if (message) meta.message = message;
         if (toolCallId) meta.toolCallId = toolCallId;
+        if (allowCustomAnswer) meta.allowCustomAnswer = true;
         return meta;
       };
 
@@ -1779,7 +1790,7 @@ function initBridge(pi: ExtensionAPI) {
           type: "multiselect",
           question: title,
           options,
-          metadata: opts?.message ? { message: opts.message } : undefined,
+          metadata: buildMeta(opts),
         }).then(decodeMultiselectAnswer);
 
       // ── Batch ────────────────────────────────────────────────────

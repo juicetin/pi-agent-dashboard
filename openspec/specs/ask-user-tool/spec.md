@@ -237,10 +237,10 @@ The PromptBus implementation SHALL NOT call `setTimeout(...)` when the resolved 
 
 This applies uniformly to every PromptBus-routed prompt method (`select`, `input`, `confirm`, `multiselect`, `editor`), not just `ask_user`. The `ask_user` tool itself does not branch on the config — it simply calls the bridge-patched `ctx.ui.*` wrappers, which inherit the bus-level timeout configured at `session_start`.
 
-#### Scenario: Default timeout fires after 300 s
-- **GIVEN** `config.askUserPromptTimeoutSeconds` is 300 (default) and an `ask_user` prompt is dispatched
-- **WHEN** 300 s elapse without any adapter responding
-- **THEN** the PromptBus SHALL invoke its cancellation path, every adapter's `dismiss(id)` SHALL be called, and the awaiting `request(...)` promise SHALL resolve with `{ cancelled: true }`
+#### Scenario: Default timeout is disabled
+- **GIVEN** `config.askUserPromptTimeoutSeconds` is -1 (default) and an `ask_user` prompt is dispatched
+- **WHEN** time elapses without any adapter responding
+- **THEN** the PromptBus SHALL keep the request pending until a user response, session end, or explicit cross-adapter dismissal arrives
 
 #### Scenario: Custom positive timeout is honored
 - **GIVEN** `config.askUserPromptTimeoutSeconds = 60` at session start

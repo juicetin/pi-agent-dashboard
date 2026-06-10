@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import { Icon } from "@mdi/react";
 import { mdiFormatListBulleted } from "@mdi/js";
 import type { InteractiveRendererProps } from "./types.js";
@@ -7,11 +7,16 @@ import { MarkdownContent } from "../MarkdownContent.js";
 import { AnsweredOption } from "./AnsweredOption.js";
 import { parseOption, isCancelOption } from "./parseOption.js";
 
+const CUSTOM_OPTION_TITLE = "Other / custom response";
+
 export function SelectRenderer({ params, status, result, onRespond, onCancel }: InteractiveRendererProps) {
   const title = params.title as string;
   const message = params.message as string | undefined;
   const options = (params.options as string[]) ?? [];
   const selectedValue = (result as any)?.value as string | undefined;
+  const allowCustomAnswer = params.allowCustomAnswer === true;
+  const [customOpen, setCustomOpen] = useState(false);
+  const [customValue, setCustomValue] = useState("");
 
   if (status === "cancelled" || status === "dismissed") {
     return (
@@ -26,6 +31,7 @@ export function SelectRenderer({ params, status, result, onRespond, onCancel }: 
   }
 
   if (status === "resolved") {
+    const customSelected = selectedValue !== undefined && !options.includes(selectedValue);
     return (
       <div className="mx-4 my-1 p-3 bg-[var(--bg-hover)] rounded-lg text-xs">
         <div className="flex items-center gap-2 mb-2">
@@ -44,6 +50,13 @@ export function SelectRenderer({ params, status, result, onRespond, onCancel }: 
               />
             );
           })}
+          {customSelected && (
+            <AnsweredOption
+              title={selectedValue}
+              description="Custom response"
+              picked
+            />
+          )}
         </div>
       </div>
     );
@@ -74,6 +87,18 @@ export function SelectRenderer({ params, status, result, onRespond, onCancel }: 
             />
           );
         })}
+        {allowCustomAnswer && (
+          <CustomSelectRow
+            open={customOpen}
+            value={customValue}
+            onOpen={() => setCustomOpen(true)}
+            onChange={setCustomValue}
+            onSubmit={() => {
+              const trimmed = customValue.trim();
+              if (trimmed) onRespond({ value: trimmed });
+            }}
+          />
+        )}
         {!hasCancelOption && (
           <OptionRow title="Cancel" cancel onClick={onCancel} />
         )}
@@ -109,5 +134,59 @@ function OptionRow({
         )}
       </span>
     </button>
+  );
+}
+
+function CustomSelectRow({
+  open,
+  value,
+  onOpen,
+  onChange,
+  onSubmit,
+}: {
+  open: boolean;
+  value: string;
+  onOpen: () => void;
+  onChange: (value: string) => void;
+  onSubmit: () => void;
+}) {
+  if (!open) {
+    return (
+      <OptionRow
+        title={CUSTOM_OPTION_TITLE}
+        description="Type a free-form answer instead of choosing above."
+        onClick={onOpen}
+      />
+    );
+  }
+
+  const disabled = value.trim().length === 0;
+  return (
+    <form
+      className="flex flex-col gap-2 px-3 py-2 rounded-lg border border-blue-500/40 bg-blue-500/10"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (!disabled) onSubmit();
+      }}
+    >
+      <label className="text-xs font-medium text-[var(--text-primary)]" htmlFor="select-custom-answer">
+        {CUSTOM_OPTION_TITLE}
+      </label>
+      <input
+        id="select-custom-answer"
+        value={value}
+        onChange={(event) => onChange(event.currentTarget.value)}
+        className="w-full px-2 py-1 rounded bg-[var(--bg-primary)] border border-[var(--border-secondary)] text-xs text-[var(--text-primary)]"
+        placeholder="Type custom answer…"
+        autoFocus
+      />
+      <button
+        type="submit"
+        disabled={disabled}
+        className="self-start px-3 py-1 text-xs rounded bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-colors"
+      >
+        Use custom answer
+      </button>
+    </form>
   );
 }

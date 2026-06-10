@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { loadConfig, ensureConfig, type DashboardConfig } from "../config.js";
+import { loadConfig, ensureConfig, DEFAULT_ASK_USER_PROMPT_TIMEOUT_SECONDS, type DashboardConfig } from "../config.js";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
@@ -30,6 +30,15 @@ describe("loadConfig", () => {
     expect(config.autoShutdown).toBe(false);
     expect(config.lastServer).toBeUndefined();
     expect(config.shutdownIdleSeconds).toBe(300);
+    expect(config.askUserPromptTimeoutSeconds).toBe(DEFAULT_ASK_USER_PROMPT_TIMEOUT_SECONDS);
+    expect(config.askUserPromptTimeoutSeconds).toBe(-1);
+  });
+
+  it("should preserve explicit ask_user prompt timeout config", () => {
+    fs.writeFileSync(configFile, JSON.stringify({ askUserPromptTimeoutSeconds: 60 }));
+
+    const config = loadConfig();
+    expect(config.askUserPromptTimeoutSeconds).toBe(60);
   });
 
   it("should return values from config when all fields present", () => {

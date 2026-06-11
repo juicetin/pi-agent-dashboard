@@ -8,6 +8,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import { pathToFileURL } from "node:url";
 import {
   findChangelogPath,
   readPackageJson,
@@ -78,8 +79,67 @@ describe("findChangelogPath", () => {
       resolveBareImport: () => {
         throw new Error("nope");
       },
+      moduleUrl: pathToFileURL(path.join(tmpRoot, "empty", "changelog-fs.ts")).href,
     });
     expect(out).toBeNull();
+  });
+});
+
+/**
+ * Regression: real-world failure where the installed pi-coding-agent
+ * ships an `exports` field that exposes only `"."` (import-only) and
+ * omits `"./package.json"`. CJS `require.resolve("<pkg>/package.json")`
+ * THROWS, so Strategy 2 (bare-import) cannot find the CHANGELOG — even
+ * though the file sits in `node_modules/<pkg>/CHANGELOG.md`, reachable
+ * by walking up from the server module's own location.
+ *
+ * This block isolates that scenario: managed dir absent + bare-import
+ * throws. findChangelogPath must still locate the file via a
+ * filesystem walk up node_modules from `moduleUrl`.
+ */
+describe("findChangelogPath — exports-wall fallback (Strategy 3)", () => {
+  let tmpRoot: string;
+
+  beforeEach(() => {
+    tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "pi-cl-wall-"));
+  });
+  afterEach(() => {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  });
+
+  /** Mimics the real exports wall: any subpath resolve throws. */
+  const exportsWallResolver = (): string => {
+    throw new Error('Package subpath "./package.json" is not defined by "exports"');
+  };
+
+  it("walks up node_modules from the module location when bare-import throws", () => {
+    // Package physically present at repo-root node_modules, with an
+    // exports field that blocks subpath resolution (faithful to pi).
+    const pkgDir = path.join(tmpRoot, "node_modules", "@earendil-works", "pi-coding-agent");
+    fs.mkdirSync(pkgDir, { recursive: true });
+    fs.writeFileSync(path.join(pkgDir, "CHANGELOG.md"), "# Changelog\n\n## [0.78.1]\n");
+    fs.writeFileSync(
+      path.join(pkgDir, "package.json"),
+      JSON.stringify({
+        name: "@earendil-works/pi-coding-agent",
+        exports: { ".": { import: "./dist/index.js" } },
+      }),
+    );
+
+    // Server module lives deep under the same root, mirroring
+    // packages/server/src/changelog-fs.ts in the monorepo.
+    const moduleFile = path.join(tmpRoot, "packages", "server", "src", "changelog-fs.ts");
+    fs.mkdirSync(path.dirname(moduleFile), { recursive: true });
+
+    const out = findChangelogPath("@earendil-works/pi-coding-agent", {
+      managedDir: path.join(tmpRoot, "no-managed-dir"), // Strategy 1 fails
+      resolveBareImport: exportsWallResolver, // Strategy 2 fails
+      moduleUrl: pathToFileURL(moduleFile).href, // Strategy 3 start point
+    });
+
+    expect(out).not.toBeNull();
+    expect(out!.changelogPath).toBe(path.join(pkgDir, "CHANGELOG.md"));
+    expect(out!.packageDir).toBe(pkgDir);
   });
 });
 

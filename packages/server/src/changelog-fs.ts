@@ -20,6 +20,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { createRequire } from "node:module";
+import { fileURLToPath } from "node:url";
 
 /** Default managed install root. Test seam: caller may override. */
 function defaultManagedDir(): string {
@@ -54,6 +55,12 @@ export interface FindOptions {
    * uses `createRequire(import.meta.url).resolve`.
    */
   resolveBareImport?: (pkgJsonSpec: string) => string;
+  /**
+   * Override the module URL used as the walk start point for the
+   * filesystem fallback (Strategy 3). Defaults to `import.meta.url`.
+   * Tests point this at a tmp tree.
+   */
+  moduleUrl?: string;
 }
 
 export function findChangelogPath(
@@ -81,6 +88,28 @@ export function findChangelogPath(
     }
   } catch {
     /* not resolvable — fall through */
+  }
+
+  // Strategy 3: filesystem walk up node_modules from this module's
+  // location. Required because pi-coding-agent ships an `exports`
+  // field that exposes only `"."` (import-only) and omits
+  // `"./package.json"`, so Strategy 2's CJS `require.resolve` throws
+  // even though `node_modules/<pkg>/CHANGELOG.md` exists on disk.
+  const moduleUrl = opts.moduleUrl ?? import.meta.url;
+  let walkDir: string;
+  try {
+    walkDir = path.dirname(fileURLToPath(moduleUrl));
+  } catch {
+    return null;
+  }
+  while (true) {
+    const cl = path.join(walkDir, "node_modules", pkg, "CHANGELOG.md");
+    if (fs.existsSync(cl)) {
+      return { changelogPath: cl, packageDir: path.dirname(cl) };
+    }
+    const parent = path.dirname(walkDir);
+    if (parent === walkDir) break; // reached filesystem root
+    walkDir = parent;
   }
 
   return null;

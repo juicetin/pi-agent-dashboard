@@ -22,7 +22,7 @@
 | `.pi/skills/spec-coherence-check/references/proposal-queue-schema.md` | JSON schema for `.pi/proposal-queue.json` |
 | `.pi/skills/spec-coherence-check/SKILL.md` | Skill: sweep proposals for staleness, conflicts, obsolescence |
 | `public/manifest.json` | PWA web app manifest for installability |
-| `public/sw.js` | Minimal service worker for PWA installability |
+| `public/sw.js` | Minimal service worker for PWA installability. Passes `/api/*` requests through to network (returns without `respondWith`); only non-`/api/` requests get synthetic `503 "Offline"` fallback. See change: fix-openspec-profile-load-race. |
 | `scripts/fix-pty-permissions.cjs` | Postinstall: fix node-pty spawn-helper execute permissions |
 | `scripts/reload-all.sh` | Build bridge + reload all pi sessions |
 | `scripts/repair-meta-source.mjs` | Removes `source: "dashboard"` from every `~/.pi/agent/sessions/**/*.meta.json`. Atomic tmp+rename. Idempotent. Prints `kept N / cleaned M / errors E`. Exit 0. See change: fix-dashboard-spawn-correlation-by-token. |

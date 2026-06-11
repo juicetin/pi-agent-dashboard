@@ -37,10 +37,55 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("OpenSpecProfileSection", () => {
-  it("defaults to core and the workflow multiselect is disabled", () => {
+  it("shows a loading state with no profile pre-selected, then reflects the saved core profile", async () => {
     render(<OpenSpecProfileSection />);
-    expect(screen.getByTestId("profile-option-core").dataset.selected).toBe("true");
+    // Before the config resolves: loading shown, no radio authoritatively selected.
+    expect(screen.getByTestId("profile-loading")).toBeTruthy();
+    expect(screen.getByTestId("profile-option-core").dataset.selected).toBe("false");
+    // After resolve (default mock = core), the core radio reflects the saved value.
+    await waitFor(() =>
+      expect(screen.getByTestId("profile-option-core").dataset.selected).toBe("true"),
+    );
     expect(screen.getByTestId("workflow-multiselect").className).toContain("pointer-events-none");
+  });
+
+  it("reflects the saved expanded profile after load", async () => {
+    api.fetchGlobalOpenSpecConfig.mockResolvedValueOnce({
+      profile: "expanded", delivery: "both",
+      workflows: ["propose", "explore", "new", "continue", "ff", "apply", "verify", "sync", "archive", "bulk-archive", "onboard"],
+    });
+    render(<OpenSpecProfileSection />);
+    await waitFor(() =>
+      expect(screen.getByTestId("profile-option-expanded").dataset.selected).toBe("true"),
+    );
+    expect(screen.getByTestId("wf-chip-verify").dataset.on).toBe("true");
+  });
+
+  it("retries a transient failure, then shows the saved profile", async () => {
+    api.fetchGlobalOpenSpecConfig
+      .mockRejectedValueOnce(new Error("HTTP 503"))
+      .mockResolvedValueOnce({
+        profile: "expanded", delivery: "both",
+        workflows: ["propose", "explore", "new", "continue", "ff", "apply", "verify", "sync", "archive", "bulk-archive", "onboard"],
+      });
+    render(<OpenSpecProfileSection />);
+    await waitFor(() =>
+      expect(screen.getByTestId("profile-option-expanded").dataset.selected).toBe("true"),
+    );
+    // First attempt failed, retry succeeded.
+    expect(api.fetchGlobalOpenSpecConfig).toHaveBeenCalledTimes(2);
+    expect(screen.queryByTestId("profile-error")).toBeNull();
+  });
+
+  it("surfaces an error (never a hardcoded core) when the load keeps failing", async () => {
+    api.fetchGlobalOpenSpecConfig.mockRejectedValue(new Error("HTTP 503"));
+    render(<OpenSpecProfileSection />);
+    await waitFor(() => expect(screen.getByTestId("profile-error")).toBeTruthy());
+    // No profile is presented as the saved value after a persistent failure.
+    expect(screen.getByTestId("profile-option-core").dataset.selected).toBe("false");
+    expect(screen.getByTestId("profile-option-expanded").dataset.selected).toBe("false");
+    expect(screen.getByTestId("profile-option-custom").dataset.selected).toBe("false");
+    expect(screen.getByTestId("profile-load-retry")).toBeTruthy();
   });
 
   it("initializes from the current global config (custom) on mount", async () => {

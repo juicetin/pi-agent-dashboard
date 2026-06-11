@@ -9,7 +9,7 @@
  *
  * See change: platform-command-executor.
  */
-import { run, unwrap, type Recipe, type Result } from "./runner.js";
+import { run, runAsync, unwrap, type Recipe, type Result } from "./runner.js";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -132,6 +132,23 @@ export function configList(input: WithCwd): Result<unknown | null> {
 
 export function configListOr(input: WithCwd, fallback: unknown | null = null): unknown | null {
   return unwrap(configList(input), fallback);
+}
+
+/**
+ * Async sibling of `configList`. Runs `openspec config list --json` via the
+ * non-blocking spawn path so a cold read (the CLI takes ~1s) does not block
+ * the event loop and stall concurrent HTTP requests.
+ * See change: fix-openspec-profile-load-race.
+ */
+export function configListAsync(input: WithCwd): Promise<Result<unknown | null>> {
+  return runAsync(OPENSPEC_CONFIG_LIST, input, { cwd: input.cwd });
+}
+
+export async function configListOrAsync(
+  input: WithCwd,
+  fallback: unknown | null = null,
+): Promise<unknown | null> {
+  return unwrap(await configListAsync(input), fallback);
 }
 
 /** Run `openspec config profile <preset>`. Returns raw stdout on success. */

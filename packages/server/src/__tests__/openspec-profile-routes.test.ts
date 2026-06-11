@@ -20,7 +20,16 @@ const mock = {
   update: vi.fn(),
   writeOpenSpecConfigFile: vi.fn(),
   globalWorkflows: ["propose", "explore", "apply", "archive"] as string[],
+  globalProfile: "core" as string | undefined,
+  // null => simulate a failed/unparseable `openspec config list`.
+  configListResult: undefined as Record<string, unknown> | null | undefined,
+  configListAsyncCalls: 0,
 };
+
+function currentConfigListValue(): Record<string, unknown> | null {
+  if (mock.configListResult !== undefined) return mock.configListResult;
+  return { profile: mock.globalProfile, workflows: mock.globalWorkflows };
+}
 
 // `openspec init` gate: only cwds whose openspec/ dir "exists" are projects.
 // Test treats any cwd in `openspecRoots` as initialized.
@@ -31,6 +40,10 @@ vi.mock("../directory-service.js", () => ({
 
 vi.mock("@blackbelt-technology/pi-dashboard-shared/platform/openspec.js", () => ({
   configListOr: () => ({ workflows: mock.globalWorkflows }),
+  configListOrAsync: async () => {
+    mock.configListAsyncCalls += 1;
+    return currentConfigListValue();
+  },
   configProfile: (...a: any[]) => mock.configProfile(...a),
   update: (...a: any[]) => mock.update(...a),
   writeOpenSpecConfigFile: (...a: any[]) => mock.writeOpenSpecConfigFile(...a),
@@ -58,6 +71,9 @@ describe("openspec profile-config REST routes", () => {
     mock.update.mockReset().mockReturnValue({ ok: true, value: "" });
     mock.writeOpenSpecConfigFile.mockReset().mockReturnValue({ success: true });
     mock.globalWorkflows = ["propose", "explore", "apply", "archive"];
+    mock.globalProfile = "core";
+    mock.configListResult = undefined;
+    mock.configListAsyncCalls = 0;
     signatures = {};
     sessionCwds = ["/proj/a"];
     pinnedDirs = ["/proj/b"];
@@ -220,6 +236,20 @@ describe("openspec profile-config REST routes", () => {
     expect(byCwd["/proj/never"]).toBe("unknown");
   });
 
+  it("update-status computes the global signature once, not once per cwd", async () => {
+    // Many projects must NOT trigger one (blocking) CLI read each — the profile
+    // is global, so a single async read drives the whole response.
+    sessionCwds = ["/proj/a", "/proj/b", "/proj/c", "/proj/d"];
+    pinnedDirs = [];
+    openspecRoots.clear();
+    for (const c of sessionCwds) openspecRoots.add(c);
+    await setup();
+    const res = await fastify.inject({ method: "GET", url: "/api/openspec/update-status" });
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.payload).data.statuses).toHaveLength(4);
+    expect(mock.configListAsyncCalls).toBe(1);
+  });
+
   it("update-status excludes cwds where openspec init has not run", async () => {
     sessionCwds = ["/proj/initialized", "/home", "/tmp"];
     pinnedDirs = [];
@@ -242,6 +272,39 @@ describe("openspec profile-config REST routes", () => {
     const body = JSON.parse(res.payload);
     expect(body.success).toBe(true);
     expect(body.data.workflows).toEqual(["propose", "explore", "apply", "archive"]);
+  });
+
+  it("GET config (cold read) reflects the saved profile via the async path", async () => {
+    mock.globalProfile = "expanded";
+    mock.globalWorkflows = ["propose", "explore", "new", "continue", "ff", "apply", "verify", "sync", "archive", "bulk-archive", "onboard"];
+    await setup();
+    const res = await fastify.inject({ method: "GET", url: "/api/openspec/config?cwd=/proj/a" });
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.payload);
+    expect(body.data.profile).toBe("expanded");
+    expect(body.data.workflows).toHaveLength(11);
+    // Async (non-blocking) read path was used.
+    expect(mock.configListAsyncCalls).toBe(1);
+  });
+
+  it("GET config warm read is served from cache without spawning again", async () => {
+    mock.globalProfile = "expanded";
+    await setup();
+    await fastify.inject({ method: "GET", url: "/api/openspec/config?cwd=/proj/a" });
+    await fastify.inject({ method: "GET", url: "/api/openspec/config?cwd=/proj/a" });
+    // Second request hit the 30s cache; the CLI ran only once.
+    expect(mock.configListAsyncCalls).toBe(1);
+  });
+
+  it("GET config returns safe defaults when the CLI read fails", async () => {
+    mock.configListResult = null; // simulate failed/unparseable `openspec config list`
+    await setup();
+    const res = await fastify.inject({ method: "GET", url: "/api/openspec/config?cwd=/proj/a" });
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.payload);
+    expect(body.data.profile).toBe("custom");
+    expect(body.data.delivery).toBe("both");
+    expect(body.data.workflows).toEqual([]);
   });
 
   it("excludes the global config dir's parent (~/.config) even though it has openspec/", async () => {

@@ -7,7 +7,7 @@ import type { PreferencesStore } from "../preferences-store.js";
 import { hasOpenSpecRoot, type DirectoryService } from "../directory-service.js";
 import type { ApiResponse, OpenSpecConfig } from "@blackbelt-technology/pi-dashboard-shared/types.js";
 import {
-  configListOr,
+  configListOrAsync,
   configProfile,
   update as openspecUpdate,
   writeOpenSpecConfigFile,
@@ -64,7 +64,9 @@ export function registerOpenSpecRoutes(
       if (cached && now - cached.ts < CONFIG_TTL_MS) {
         return { success: true, data: cached.data } satisfies ApiResponse;
       }
-      const raw = configListOr({ cwd }, null) as Partial<OpenSpecConfig> | null;
+      // Async spawn so a cold read (openspec CLI ~1s) never blocks the event
+      // loop / stalls concurrent requests. See change: fix-openspec-profile-load-race.
+      const raw = (await configListOrAsync({ cwd }, null)) as Partial<OpenSpecConfig> | null;
       // Defensive normalisation: missing fields fall back to safe defaults
       // so the client always receives a well-formed OpenSpecConfig shape.
       const data: OpenSpecConfig = {
@@ -101,9 +103,15 @@ export function registerOpenSpecRoutes(
     );
   }
 
-  /** Current global workflow-set signature (drives staleness comparison). */
-  function currentGlobalSignature(cwd: string): string {
-    const raw = configListOr({ cwd }, null) as { workflows?: string[] } | null;
+  /**
+   * Current global workflow-set signature (drives staleness comparison).
+   * Async (non-blocking spawn): the profile is machine-global, so the signature
+   * is identical for every cwd — callers compute it ONCE per request rather than
+   * spawning the CLI per project (which blocked the event loop ~1s×N and stalled
+   * concurrent reads). See change: fix-openspec-profile-load-race.
+   */
+  async function currentGlobalSignature(cwd: string): Promise<string> {
+    const raw = (await configListOrAsync({ cwd }, null)) as { workflows?: string[] } | null;
     return workflowSetSignature(Array.isArray(raw?.workflows) ? raw!.workflows! : []);
   }
 
@@ -158,11 +166,13 @@ export function registerOpenSpecRoutes(
         reply.code(400);
         return { success: false, error: "cwd or all required" } satisfies ApiResponse;
       }
+      // Profile is global — the post-update signature is the same for every cwd.
+      const sig = await currentGlobalSignature(targets[0] ?? process.cwd());
       const results: Array<{ cwd: string; success: boolean; error?: string }> = [];
       for (const cwd of targets) {
         const res = openspecUpdate({ cwd });
         if (res.ok) {
-          preferencesStore.setOpenSpecUpdateSignature(cwd, currentGlobalSignature(cwd));
+          preferencesStore.setOpenSpecUpdateSignature(cwd, sig);
           results.push({ cwd, success: true });
         } else {
           results.push({ cwd, success: false, error: "openspec update failed" });
@@ -178,10 +188,12 @@ export function registerOpenSpecRoutes(
     { preHandler: networkGuard },
     async () => {
       const cwds = knownCwds();
+      // One async spawn for the whole request: the signature is global, so it is
+      // identical for every cwd. See change: fix-openspec-profile-load-race.
+      const current = await currentGlobalSignature(cwds[0] ?? process.cwd());
       const statuses = cwds.map((cwd) => {
         const recorded = preferencesStore.getOpenSpecUpdateSignature(cwd);
         if (!recorded) return { cwd, status: "unknown" as const };
-        const current = currentGlobalSignature(cwd);
         return { cwd, status: recorded === current ? ("up-to-date" as const) : ("needs-update" as const) };
       });
       return { success: true, data: { statuses } } satisfies ApiResponse;

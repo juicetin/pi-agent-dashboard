@@ -9,7 +9,7 @@
  *
  * See change: add-openspec-profile-settings.
  */
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   CORE_WORKFLOWS,
   EXPANDED_WORKFLOWS,
@@ -24,8 +24,12 @@ import {
 } from "../lib/openspec-config-api.js";
 
 type Profile = OpenSpecConfig["profile"];
+type LoadStatus = "loading" | "ready" | "error";
 
 const ALL_WORKFLOWS = [...EXPANDED_WORKFLOWS];
+/** Transient-failure retry budget + backoff for the initial config load. */
+const LOAD_MAX_ATTEMPTS = 2;
+const LOAD_RETRY_DELAY_MS = 300;
 
 const STATUS_LABEL: Record<CwdUpdateStatus["status"], string> = {
   "up-to-date": "up to date",
@@ -34,8 +38,14 @@ const STATUS_LABEL: Record<CwdUpdateStatus["status"], string> = {
 };
 
 export function OpenSpecProfileSection() {
-  const [profile, setProfile] = useState<Profile>("core");
+  // No concrete profile is "selected" until the real global config resolves —
+  // a hardcoded default would strand the UI on the wrong profile when the load
+  // fails. See change: fix-openspec-profile-load-race.
+  const [profile, setProfile] = useState<Profile | null>(null);
   const [workflows, setWorkflows] = useState<string[]>([...CORE_WORKFLOWS]);
+  const [loadStatus, setLoadStatus] = useState<LoadStatus>("loading");
+  // Once the user picks a profile, a late-arriving load must not clobber it.
+  const userTouched = useRef(false);
   const [saving, setSaving] = useState(false);
   const [savedMsg, setSavedMsg] = useState<string | null>(null);
   const [statuses, setStatuses] = useState<CwdUpdateStatus[]>([]);
@@ -55,24 +65,46 @@ export function OpenSpecProfileSection() {
   }, [refreshStatus]);
 
   // Initialize controls from the CURRENT global config so the section reflects
-  // the saved profile (not a hardcoded default).
-  // See change: add-openspec-profile-settings.
-  useEffect(() => {
-    const ac = new AbortController();
-    fetchGlobalOpenSpecConfig(ac.signal)
-      .then((cfg) => {
-        if (cfg.profile === "core" || cfg.profile === "expanded" || cfg.profile === "custom") {
-          setProfile(cfg.profile);
+  // the saved profile (not a hardcoded default). A transient failure is retried
+  // and, if it ultimately fails, surfaced as an error with a manual retry —
+  // never silently swallowed into a hardcoded `core`.
+  // See change: fix-openspec-profile-load-race.
+  const loadConfig = useCallback(async () => {
+    // No early-return guards: every path commits a terminal state (ready/error)
+    // so a transient failure or a fast remount can never strand the UI on
+    // "loading". A late setState on an unmounted instance is a harmless no-op in
+    // React 18; the userTouched ref alone protects an in-progress user choice.
+    setLoadStatus("loading");
+    for (let attempt = 1; attempt <= LOAD_MAX_ATTEMPTS; attempt++) {
+      try {
+        const cfg = await fetchGlobalOpenSpecConfig();
+        if (!userTouched.current) {
+          if (cfg.profile === "core" || cfg.profile === "expanded" || cfg.profile === "custom") {
+            setProfile(cfg.profile);
+          }
+          if (Array.isArray(cfg.workflows) && cfg.workflows.length > 0) {
+            setWorkflows(cfg.workflows);
+          }
         }
-        if (Array.isArray(cfg.workflows) && cfg.workflows.length > 0) {
-          setWorkflows(cfg.workflows);
+        setLoadStatus("ready");
+        return;
+      } catch {
+        if (attempt < LOAD_MAX_ATTEMPTS) {
+          await new Promise((r) => setTimeout(r, LOAD_RETRY_DELAY_MS));
+          continue;
         }
-      })
-      .catch(() => { /* keep defaults on failure */ });
-    return () => ac.abort();
+        setLoadStatus("error");
+        return;
+      }
+    }
   }, []);
 
+  useEffect(() => {
+    loadConfig();
+  }, [loadConfig]);
+
   function selectProfile(p: Profile) {
+    userTouched.current = true;
     setProfile(p);
     if (p === "core") setWorkflows([...CORE_WORKFLOWS]);
     else if (p === "expanded") setWorkflows([...EXPANDED_WORKFLOWS]);
@@ -81,10 +113,12 @@ export function OpenSpecProfileSection() {
 
   function toggleWorkflow(wf: string) {
     if (profile !== "custom") return;
+    userTouched.current = true;
     setWorkflows((prev) => (prev.includes(wf) ? prev.filter((w) => w !== wf) : [...prev, wf]));
   }
 
   async function handleSave() {
+    if (profile === null) return; // not yet loaded — nothing authoritative to save
     setSaving(true);
     setSavedMsg(null);
     try {
@@ -121,6 +155,29 @@ export function OpenSpecProfileSection() {
       <p className="text-xs text-[var(--text-tertiary)] mb-3">
         Controls which <code>/opsx:</code> workflow buttons appear on session cards and the composer.
       </p>
+
+      {loadStatus === "loading" && (
+        <p className="text-[11px] text-[var(--text-muted)] mb-2" data-testid="profile-loading">
+          Loading current profile…
+        </p>
+      )}
+      {loadStatus === "error" && (
+        <div
+          className="mb-2 flex items-center gap-2 p-2.5 rounded border border-red-500/30 bg-red-500/[0.06] text-[11px] text-red-400"
+          data-testid="profile-error"
+        >
+          <span aria-hidden="true">⚠️</span>
+          <span className="flex-1">Couldn’t load the current profile.</span>
+          <button
+            type="button"
+            data-testid="profile-load-retry"
+            onClick={() => loadConfig()}
+            className="px-2 py-1 rounded border border-red-500/40 text-red-300"
+          >
+            Retry
+          </button>
+        </div>
+      )}
 
       {/* Profile radios */}
       <div className="space-y-2" data-testid="profile-options">
@@ -181,7 +238,7 @@ export function OpenSpecProfileSection() {
         <button
           type="button"
           data-testid="save-profile-btn"
-          disabled={saving}
+          disabled={saving || profile === null}
           onClick={handleSave}
           className="text-xs px-3 py-1.5 rounded bg-blue-500 text-white border border-blue-500 disabled:opacity-50"
         >

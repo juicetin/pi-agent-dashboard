@@ -232,6 +232,18 @@ describe("openspec profile-config REST routes", () => {
     expect(cwds).toEqual(["/proj/initialized"]);
   });
 
+  // ── GET /api/openspec/config (cwd optional) ───────────────────────
+
+  it("GET config without cwd returns the global config", async () => {
+    mock.globalWorkflows = ["propose", "explore", "apply", "archive"];
+    await setup();
+    const res = await fastify.inject({ method: "GET", url: "/api/openspec/config" });
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.payload);
+    expect(body.success).toBe(true);
+    expect(body.data.workflows).toEqual(["propose", "explore", "apply", "archive"]);
+  });
+
   it("excludes the global config dir's parent (~/.config) even though it has openspec/", async () => {
     // /fake-home/.config has an openspec/ child (the CLI global config dir),
     // so hasOpenSpecRoot is true — but it is NOT a project.

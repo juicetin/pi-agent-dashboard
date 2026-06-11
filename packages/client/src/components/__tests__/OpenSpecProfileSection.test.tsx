@@ -12,12 +12,18 @@ const api = {
     { cwd: "/proj/stale", status: "needs-update" },
     { cwd: "/proj/fresh", status: "up-to-date" },
   ]),
+  // Default: global config is core. Individual tests override before render.
+  fetchGlobalOpenSpecConfig: vi.fn<(...a: any[]) => Promise<any>>(async () => ({
+    profile: "core", delivery: "both",
+    workflows: ["propose", "explore", "apply", "archive"],
+  })),
 };
 
 vi.mock("../../lib/openspec-config-api.js", () => ({
   saveOpenSpecConfig: (...a: any[]) => api.saveOpenSpecConfig(...a),
   runOpenSpecUpdate: (...a: any[]) => api.runOpenSpecUpdate(...a),
   fetchUpdateStatus: (...a: any[]) => api.fetchUpdateStatus(...a),
+  fetchGlobalOpenSpecConfig: (...a: any[]) => api.fetchGlobalOpenSpecConfig(...a),
 }));
 
 import { OpenSpecProfileSection } from "../OpenSpecProfileSection.js";
@@ -26,6 +32,7 @@ beforeEach(() => {
   api.saveOpenSpecConfig.mockClear();
   api.runOpenSpecUpdate.mockClear();
   api.fetchUpdateStatus.mockClear();
+  api.fetchGlobalOpenSpecConfig.mockClear();
 });
 afterEach(cleanup);
 
@@ -34,6 +41,21 @@ describe("OpenSpecProfileSection", () => {
     render(<OpenSpecProfileSection />);
     expect(screen.getByTestId("profile-option-core").dataset.selected).toBe("true");
     expect(screen.getByTestId("workflow-multiselect").className).toContain("pointer-events-none");
+  });
+
+  it("initializes from the current global config (custom) on mount", async () => {
+    api.fetchGlobalOpenSpecConfig.mockResolvedValueOnce({
+      profile: "custom", delivery: "both",
+      workflows: ["propose", "apply"],
+    });
+    render(<OpenSpecProfileSection />);
+    await waitFor(() =>
+      expect(screen.getByTestId("profile-option-custom").dataset.selected).toBe("true"),
+    );
+    // Reflects fetched workflows: propose+apply on, others off.
+    expect(screen.getByTestId("wf-chip-propose").dataset.on).toBe("true");
+    expect(screen.getByTestId("wf-chip-apply").dataset.on).toBe("true");
+    expect(screen.getByTestId("wf-chip-explore").dataset.on).toBe("false");
   });
 
   it("selecting Custom enables the multiselect", () => {

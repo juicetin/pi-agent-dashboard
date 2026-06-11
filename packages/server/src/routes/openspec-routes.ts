@@ -54,11 +54,11 @@ export function registerOpenSpecRoutes(
     "/api/openspec/config",
     { preHandler: networkGuard },
     async (request, reply) => {
-      const cwd = request.query.cwd;
-      if (!cwd) {
-        reply.code(400);
-        return { success: false, error: "Missing cwd" } satisfies ApiResponse;
-      }
+      // Profile/workflows are a single global value, so cwd is optional: when
+      // omitted, run `openspec config list` in any known project (or process
+      // cwd) so the Settings section can read the global config without a cwd.
+      // See change: add-openspec-profile-settings.
+      const cwd = request.query.cwd ?? knownCwds()[0] ?? process.cwd();
       const now = Date.now();
       const cached = configCache.get(cwd);
       if (cached && now - cached.ts < CONFIG_TTL_MS) {

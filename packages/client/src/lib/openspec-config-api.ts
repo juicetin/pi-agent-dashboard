@@ -26,6 +26,33 @@ export async function fetchOpenSpecConfig(cwd: string, signal?: AbortSignal): Pr
   return body.data as OpenSpecConfig;
 }
 
+/**
+ * Fetch the GLOBAL OpenSpec config (no cwd). The profile/workflows are a
+ * single machine-global value, so the Settings section reads it this way to
+ * initialize its controls. See change: add-openspec-profile-settings.
+ */
+export async function fetchGlobalOpenSpecConfig(signal?: AbortSignal): Promise<OpenSpecConfig> {
+  const res = await fetch(`${getApiBase()}/api/openspec/config`, { signal });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const body = await res.json();
+  if (!body?.success) throw new Error(body?.error ?? "config fetch failed");
+  return body.data as OpenSpecConfig;
+}
+
+// Pub/sub so every mounted useOpenSpecConfig refetches after a save. Without
+// this, already-mounted session cards keep stale buttons until remount.
+// See change: add-openspec-profile-settings.
+const configChangeListeners = new Set<() => void>();
+export function subscribeOpenSpecConfigChange(fn: () => void): () => void {
+  configChangeListeners.add(fn);
+  return () => { configChangeListeners.delete(fn); };
+}
+function notifyOpenSpecConfigChanged(): void {
+  for (const fn of configChangeListeners) {
+    try { fn(); } catch { /* listener errors must not break the loop */ }
+  }
+}
+
 // ── add-openspec-profile-settings ─────────────────────────────────────
 
 /** Per-cwd staleness of generated /opsx: skill files vs the current profile. */
@@ -51,7 +78,9 @@ export async function saveOpenSpecConfig(
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const body = await res.json();
   if (!body?.success) throw new Error(body?.error ?? "config save failed");
+  // Clear cache AND notify mounted hooks so session-card buttons re-render now.
   __resetOpenSpecConfigCache();
+  notifyOpenSpecConfigChanged();
 }
 
 /** Run `openspec update` for a single cwd or for all known cwds. */
@@ -115,6 +144,23 @@ export function useOpenSpecConfig(cwd: string | undefined): OpenSpecConfig {
         // Keep DEFAULT_OPENSPEC_CONFIG / last cached value on failure.
       });
     return () => ac.abort();
+  }, [cwd]);
+
+  // Refetch when the profile is saved elsewhere (Settings). The save path
+  // clears the cache and notifies; we re-pull for this cwd and update buttons.
+  // See change: add-openspec-profile-settings.
+  useEffect(() => {
+    if (!cwd) return;
+    const ac = new AbortController();
+    const unsub = subscribeOpenSpecConfigChange(() => {
+      fetchOpenSpecConfig(cwd, ac.signal)
+        .then((data) => {
+          configCache.set(cwd, data);
+          setConfig(data);
+        })
+        .catch(() => { /* keep last value */ });
+    });
+    return () => { unsub(); ac.abort(); };
   }, [cwd]);
 
   return config;

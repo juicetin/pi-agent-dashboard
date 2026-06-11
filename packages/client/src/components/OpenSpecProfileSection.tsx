@@ -19,6 +19,7 @@ import {
   saveOpenSpecConfig,
   runOpenSpecUpdate,
   fetchUpdateStatus,
+  fetchGlobalOpenSpecConfig,
   type CwdUpdateStatus,
 } from "../lib/openspec-config-api.js";
 
@@ -52,6 +53,24 @@ export function OpenSpecProfileSection() {
   useEffect(() => {
     refreshStatus();
   }, [refreshStatus]);
+
+  // Initialize controls from the CURRENT global config so the section reflects
+  // the saved profile (not a hardcoded default).
+  // See change: add-openspec-profile-settings.
+  useEffect(() => {
+    const ac = new AbortController();
+    fetchGlobalOpenSpecConfig(ac.signal)
+      .then((cfg) => {
+        if (cfg.profile === "core" || cfg.profile === "expanded" || cfg.profile === "custom") {
+          setProfile(cfg.profile);
+        }
+        if (Array.isArray(cfg.workflows) && cfg.workflows.length > 0) {
+          setWorkflows(cfg.workflows);
+        }
+      })
+      .catch(() => { /* keep defaults on failure */ });
+    return () => ac.abort();
+  }, []);
 
   function selectProfile(p: Profile) {
     setProfile(p);

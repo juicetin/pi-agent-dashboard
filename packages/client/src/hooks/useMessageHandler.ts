@@ -59,6 +59,8 @@ export interface MessageHandlerSetters {
   setSpawnResult: React.Dispatch<React.SetStateAction<{ success: boolean; message: string } | null>>;
   setSessionOrderMap: React.Dispatch<React.SetStateAction<Map<string, string[]>>>;
   setPinnedDirectories: React.Dispatch<React.SetStateAction<string[]>>;
+  /** Favorite model labels, synced via `favorite_models_updated`. See change: enrich-model-selector-capabilities-favorites. */
+  setFavoriteModels: React.Dispatch<React.SetStateAction<string[]>>;
   /** folder-workspaces: full workspace list, kept in sync via `workspaces_updated`. */
   setWorkspaces: React.Dispatch<React.SetStateAction<import("@blackbelt-technology/pi-dashboard-shared/browser-protocol.js").Workspace[]>>;
   setTerminals: React.Dispatch<React.SetStateAction<Map<string, TerminalSession>>>;
@@ -113,7 +115,7 @@ export function useMessageHandler(
   const {
     setSessions, setSessionStates, setSessionCommands,
     setFileResults, setOpenspecMap, setOpenspecGroupsMap, setModelsMap, setRolesMap, setSpawnResult,
-    setSessionOrderMap, setPinnedDirectories, setWorkspaces, setTerminals, setEditorStatuses,
+    setSessionOrderMap, setPinnedDirectories, setFavoriteModels, setWorkspaces, setTerminals, setEditorStatuses,
     setDiscoveredServers, setSpawnErrors, setResumeErrors,
     setDisplayPrefs, setViewMessagesMap,
   } = setters;
@@ -571,6 +573,10 @@ export function useMessageHandler(
         setPinnedDirectories(msg.paths);
         break;
 
+      case "favorite_models_updated":
+        setFavoriteModels(msg.labels);
+        break;
+
       case "workspaces_updated":
         // folder-workspaces: server sends full snapshot on subscribe and
         // after every mutation. Replace, do not merge.
@@ -822,5 +828,5 @@ export function useMessageHandler(
         break;
       }
     }
-  }, [send, clearSpawningCwd, navigate, setSessions, setSessionStates, setSessionCommands, setFileResults, setOpenspecMap, setModelsMap, setRolesMap, setSpawnResult, setSessionOrderMap, setPinnedDirectories, setWorkspaces, setTerminals, setEditorStatuses, setDiscoveredServers, spawningCwdsRef, subscribedRef, pendingTerminalCwdRef, maxSeqMapRef, selectedSessionIdRef]);
+  }, [send, clearSpawningCwd, navigate, setSessions, setSessionStates, setSessionCommands, setFileResults, setOpenspecMap, setModelsMap, setRolesMap, setSpawnResult, setSessionOrderMap, setPinnedDirectories, setFavoriteModels, setWorkspaces, setTerminals, setEditorStatuses, setDiscoveredServers, spawningCwdsRef, subscribedRef, pendingTerminalCwdRef, maxSeqMapRef, selectedSessionIdRef]);
 }

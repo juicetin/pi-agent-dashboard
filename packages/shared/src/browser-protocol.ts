@@ -324,6 +324,16 @@ export interface PinnedDirsUpdatedMessage {
   paths: string[];
 }
 
+/**
+ * Server → browser broadcast of the full favorite-model label list after any
+ * favorite/unfavorite mutation. Labels are `"provider/id"` strings. Mirrors
+ * `pinned_dirs_updated`. See change: enrich-model-selector-capabilities-favorites.
+ */
+export interface FavoriteModelsUpdatedMessage {
+  type: "favorite_models_updated";
+  labels: string[];
+}
+
 // ── Workspaces (folder-workspaces) ───────────────────────────────────
 
 /**
@@ -662,6 +672,7 @@ export type ServerToBrowserMessage =
   | SessionsReorderedMessage
   | SessionsSnapshotMessage
   | PinnedDirsUpdatedMessage
+  | FavoriteModelsUpdatedMessage
   | WorkspacesUpdatedMessage
   | TerminalAddedMessage
   | TerminalRemovedMessage
@@ -1011,6 +1022,21 @@ export interface UnpinDirectoryMessage {
   path: string;
 }
 
+/**
+ * Browser → server: add a model to favorites. Label = `"provider/id"`.
+ * See change: enrich-model-selector-capabilities-favorites.
+ */
+export interface FavoriteModelMessage {
+  type: "favorite_model";
+  label: string;
+}
+
+/** Browser → server: remove a model from favorites. */
+export interface UnfavoriteModelMessage {
+  type: "unfavorite_model";
+  label: string;
+}
+
 export interface ReorderPinnedDirsMessage {
   type: "reorder_pinned_dirs";
   paths: string[];
@@ -1262,6 +1288,8 @@ export type BrowserToServerMessage =
   | ReorderSessionsBrowserMessage
   | PinDirectoryMessage
   | UnpinDirectoryMessage
+  | FavoriteModelMessage
+  | UnfavoriteModelMessage
   | ReorderPinnedDirsMessage
   | CreateWorkspaceMessage
   | RenameWorkspaceMessage

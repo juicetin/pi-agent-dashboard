@@ -1,12 +1,29 @@
-import React, { useState, useRef, useEffect, useCallback } from "react";
+import React, { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { Icon } from "@mdi/react";
-import { mdiChevronDown, mdiLoading } from "@mdi/js";
+import { mdiChevronDown, mdiLoading, mdiStar, mdiStarOutline, mdiBrain, mdiEye } from "@mdi/js";
 import type { ModelInfo, RoleInfo } from "@blackbelt-technology/pi-dashboard-shared/types.js";
+
+// Per-browser view-state persistence (NOT favorites — those persist server-side).
+// See change: enrich-model-selector-capabilities-favorites.
+const PROVIDER_FILTER_KEY = "modelselector.providerFilter";
+const FAV_ONLY_KEY = "modelselector.favOnly";
+
+function readLS(key: string): string {
+  try { return localStorage.getItem(key) ?? ""; } catch { return ""; }
+}
+function writeLS(key: string, value: string): void {
+  try { localStorage.setItem(key, value); } catch { /* private mode / quota */ }
+}
 
 interface Props {
   current?: string;
   models?: ModelInfo[];
   onSelect: (model: string) => void;
+
+  /** Favorite model labels (`"provider/id"`), server-persisted, hydrated by App. */
+  favorites?: string[];
+  /** Toggle a model's favorite state. `makeFavorite` true = add, false = remove. */
+  onToggleFavorite?: (label: string, makeFavorite: boolean) => void;
 
   /**
    * @deprecated Roles UI moved to a `settings-section` plugin contribution
@@ -26,17 +43,65 @@ interface Props {
   onPresetDelete?: (presetName: string) => void;
 }
 
-export function ModelSelector({ current, models, onSelect }: Props) {
+const labelOf = (m: ModelInfo) => `${m.provider}/${m.id}`;
+const ctxFmt = (n: number) => (n >= 1_000_000 ? `${n / 1_000_000}M` : `${Math.round(n / 1000)}k`);
+
+/**
+ * One capability icon (MDI) with optional uncertainty `?` overlay.
+ * Uses real MDI glyphs (not emoji) so it renders consistently across browsers.
+ */
+function CapIcon({ path, color, uncertain, title }: { path: string; color: string; uncertain?: boolean; title: string }) {
+  return (
+    <span className="relative inline-flex items-center" title={title} style={{ color }}>
+      <Icon path={path} size={0.6} />
+      {uncertain && <b className="text-amber-400 text-[10px] leading-none -ml-0.5 -mt-1">?</b>}
+    </span>
+  );
+}
+
+/**
+ * Capability icons with honest confidence:
+ *   - reasoning:true  → brain icon (purple)
+ *   - vision:true     → eye icon (green)
+ *   - metadataSource "fallback" → muted eye? + brain? (assumed; provider gave no signal)
+ *   - no capability fields → nothing rendered
+ */
+function CapBadges({ m }: { m: ModelInfo }) {
+  if (m.metadataSource === "fallback") {
+    // Provider reported nothing: vision force-assumed, reasoning unknown.
+    return (
+      <>
+        <CapIcon path={mdiEye} color="var(--text-tertiary)" uncertain title="Vision assumed — provider reported no capabilities; image input defaulted on" />
+        <CapIcon path={mdiBrain} color="var(--text-tertiary)" uncertain title="Reasoning unknown — provider reported none" />
+      </>
+    );
+  }
+  return (
+    <>
+      {m.reasoning && <CapIcon path={mdiBrain} color="rgb(192 132 252)" title="Reasoning (confirmed)" />}
+      {m.vision && <CapIcon path={mdiEye} color="rgb(74 222 128)" title="Vision-capable (confirmed)" />}
+    </>
+  );
+}
+
+export function ModelSelector({ current, models, onSelect, favorites, onToggleFavorite }: Props) {
   const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [pendingModel, setPendingModel] = useState<string | null>(null);
-  const [providerFilter, setProviderFilter] = useState("");
+  // Persistent per-browser view state (restored from localStorage on mount).
+  const [providerFilter, setProviderFilter] = useState<string>(() => readLS(PROVIDER_FILTER_KEY));
+  const [favOnly, setFavOnly] = useState<boolean>(() => readLS(FAV_ONLY_KEY) === "1");
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
-  const hasModels = models && models.length > 0;
+  const hasModels = !!models && models.length > 0;
+  const favSet = useMemo(() => new Set(favorites ?? []), [favorites]);
+
+  // Persist view state on change.
+  useEffect(() => { writeLS(PROVIDER_FILTER_KEY, providerFilter); }, [providerFilter]);
+  useEffect(() => { writeLS(FAV_ONLY_KEY, favOnly ? "1" : "0"); }, [favOnly]);
 
   // Clear pending state when current model updates to match
   useEffect(() => {
@@ -50,24 +115,39 @@ export function ModelSelector({ current, models, onSelect }: Props) {
     return () => clearTimeout(timer);
   }, [pendingModel]);
 
-  const uniqueProviders = hasModels
-    ? [...new Set(models.map((m) => m.provider))].sort()
-    : [];
+  const uniqueProviders = useMemo(
+    () => (hasModels ? [...new Set(models!.map((m) => m.provider))].sort() : []),
+    [hasModels, models],
+  );
 
-  const filtered = hasModels
-    ? models.filter((m) => {
-        if (providerFilter && m.provider !== providerFilter) return false;
-        const full = `${m.provider}/${m.id}`.toLowerCase();
-        const tokens = filter.trim().toLowerCase().split(/\s+/).filter(Boolean);
-        return tokens.length === 0 || tokens.every((token) => full.includes(token));
-      })
-    : [];
+  // Models passing provider + text + favs-only filters.
+  const visible = useMemo(() => {
+    if (!hasModels) return [] as ModelInfo[];
+    const tokens = filter.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    return models!.filter((m) => {
+      if (providerFilter && m.provider !== providerFilter) return false;
+      if (favOnly && !favSet.has(labelOf(m))) return false;
+      const full = labelOf(m).toLowerCase();
+      return tokens.length === 0 || tokens.every((t) => full.includes(t));
+    });
+  }, [hasModels, models, providerFilter, favOnly, filter, favSet]);
 
-  // Reset filter and index when opening
+  // Group by provider only. No separate favorites group — the ★ Favs filter
+  // (persisted in localStorage) is the favorites surface; the per-row star
+  // toggles which models are favorites. When favs-only is on, `visible`
+  // already contains only favorites.
+  const { providerGroups, flat } = useMemo(() => {
+    const groups = uniqueProviders
+      .map((p) => ({ provider: p, items: visible.filter((m) => m.provider === p) }))
+      .filter((g) => g.items.length > 0);
+    return { providerGroups: groups, flat: groups.flatMap((g) => g.items) };
+  }, [visible, uniqueProviders]);
+
+  // Reset transient state when opening. Provider filter + favs-only PERSIST
+  // (they're sticky view modes); only the text filter clears.
   useEffect(() => {
     if (open) {
       setFilter("");
-      setProviderFilter("");
       setSelectedIndex(0);
       requestAnimationFrame(() => inputRef.current?.focus());
     }
@@ -77,9 +157,7 @@ export function ModelSelector({ current, models, onSelect }: Props) {
   useEffect(() => {
     if (!open) return;
     const handler = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) setOpen(false);
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
@@ -94,7 +172,7 @@ export function ModelSelector({ current, models, onSelect }: Props) {
 
   const handleSelect = useCallback(
     (m: ModelInfo) => {
-      const label = `${m.provider}/${m.id}`;
+      const label = labelOf(m);
       setPendingModel(label);
       onSelect(label);
       setOpen(false);
@@ -105,17 +183,60 @@ export function ModelSelector({ current, models, onSelect }: Props) {
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "ArrowDown") {
       e.preventDefault();
-      setSelectedIndex((i) => Math.min(i + 1, filtered.length - 1));
+      setSelectedIndex((i) => Math.min(i + 1, flat.length - 1));
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
       setSelectedIndex((i) => Math.max(i - 1, 0));
     } else if (e.key === "Enter") {
       e.preventDefault();
-      if (filtered[selectedIndex]) handleSelect(filtered[selectedIndex]);
+      if (flat[selectedIndex]) handleSelect(flat[selectedIndex]);
     } else if (e.key === "Escape") {
       setOpen(false);
     }
   };
+
+  // Renders one model row. `flatIdx` is the keyboard-nav index into `flat`.
+  const renderRow = (m: ModelInfo, flatIdx: number) => {
+    const label = labelOf(m);
+    const isCurrent = label === current;
+    const isFav = favSet.has(label);
+    return (
+      <div
+        key={label}
+        data-model-item
+        data-testid="model-row"
+        onClick={() => handleSelect(m)}
+        className={`w-full pl-2 pr-3 py-1 min-h-[44px] md:min-h-0 text-left text-xs flex items-center gap-2 cursor-pointer ${
+          flatIdx === selectedIndex ? "bg-[var(--bg-tertiary)]" : "hover:bg-[var(--bg-hover)]"
+        } ${isCurrent ? "text-[var(--accent-blue)]" : "text-[var(--text-secondary)]"}`}
+      >
+        <button
+          type="button"
+          data-testid="model-fav-toggle"
+          aria-label={isFav ? "Unfavorite" : "Favorite"}
+          aria-pressed={isFav}
+          onClick={(e) => { e.stopPropagation(); onToggleFavorite?.(label, !isFav); }}
+          className={`flex-shrink-0 ${isFav ? "text-amber-400" : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]"}`}
+        >
+          <Icon path={isFav ? mdiStar : mdiStarOutline} size={0.6} />
+        </button>
+        <div className="flex-1 min-w-0">
+          <div className="font-mono truncate">{m.name ?? label}</div>
+          {m.name && <div className="font-mono text-[10px] text-[var(--text-muted)] truncate">{label}</div>}
+        </div>
+        <div className="flex items-center gap-1 flex-shrink-0 text-[11px] leading-none">
+          <CapBadges m={m} />
+          {typeof m.contextWindow === "number" && (
+            <span className="px-1 rounded bg-[var(--bg-tertiary)] text-[var(--text-muted)]">{ctxFmt(m.contextWindow)}</span>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  // Running flat index so grouped rows map to the same order as `flat`.
+  let cursor = -1;
+  const nextIdx = () => (cursor += 1);
 
   return (
     <div ref={containerRef} className="relative" data-testid="model-selector">
@@ -144,36 +265,43 @@ export function ModelSelector({ current, models, onSelect }: Props) {
       {open && (
         <div
           className="absolute bottom-full left-0 mb-1 bg-[var(--bg-secondary)] border border-[var(--border-secondary)] rounded-lg shadow-lg z-50 overflow-hidden"
-          style={{ width: "18rem" }}
+          style={{ width: "20rem" }}
           data-testid="model-dropdown"
         >
-          {/* ── Filter input ── */}
+          {/* ── Filters ── */}
           <div className="p-1.5 pb-1 space-y-1">
-            {uniqueProviders.length > 1 && (
-              <select
-                value={providerFilter}
-                onChange={(e) => {
-                  setProviderFilter(e.target.value);
-                  setSelectedIndex(0);
-                }}
-                className="w-full px-2 py-1 text-xs bg-[var(--bg-tertiary)] border border-[var(--border-primary)] rounded text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent-blue)]"
-                data-testid="provider-filter"
+            <div className="flex gap-1">
+              {uniqueProviders.length > 1 && (
+                <select
+                  value={providerFilter}
+                  onChange={(e) => { setProviderFilter(e.target.value); setSelectedIndex(0); }}
+                  className="flex-1 min-w-0 px-2 py-1 text-xs bg-[var(--bg-tertiary)] border border-[var(--border-primary)] rounded text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent-blue)]"
+                  data-testid="provider-filter"
+                >
+                  <option value="">All Providers</option>
+                  {uniqueProviders.map((p) => (
+                    <option key={p} value={p}>{p}</option>
+                  ))}
+                </select>
+              )}
+              <button
+                type="button"
+                data-testid="favs-only-toggle"
+                aria-pressed={favOnly}
+                onClick={() => { setFavOnly((v) => !v); setSelectedIndex(0); }}
+                className={`flex items-center gap-1 px-2 py-1 text-xs rounded border whitespace-nowrap ${
+                  favOnly
+                    ? "text-amber-400 border-amber-400"
+                    : "text-[var(--text-secondary)] border-[var(--border-primary)] bg-[var(--bg-tertiary)]"
+                }`}
               >
-                <option value="">All Providers</option>
-                {uniqueProviders.map((p) => (
-                  <option key={p} value={p}>
-                    {p}
-                  </option>
-                ))}
-              </select>
-            )}
+                <Icon path={favOnly ? mdiStar : mdiStarOutline} size={0.55} /> Favs
+              </button>
+            </div>
             <input
               ref={inputRef}
               value={filter}
-              onChange={(e) => {
-                setFilter(e.target.value);
-                setSelectedIndex(0);
-              }}
+              onChange={(e) => { setFilter(e.target.value); setSelectedIndex(0); }}
               onKeyDown={handleKeyDown}
               placeholder="Filter models…"
               className="w-full px-2 py-1 text-xs bg-[var(--bg-tertiary)] border border-[var(--border-primary)] rounded text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:border-[var(--accent-blue)]"
@@ -181,27 +309,19 @@ export function ModelSelector({ current, models, onSelect }: Props) {
             />
           </div>
 
-          {/* ── Model list ── */}
-          <div ref={listRef} className="max-h-48 overflow-y-auto">
-            {filtered.length === 0 ? (
+          {/* ── Grouped list ── */}
+          <div ref={listRef} className="max-h-64 overflow-y-auto">
+            {flat.length === 0 ? (
               <div className="px-3 py-2 text-xs text-[var(--text-muted)]">No models match</div>
             ) : (
-              filtered.map((m, i) => {
-                const label = `${m.provider}/${m.id}`;
-                const isCurrent = label === current;
-                return (
-                  <button
-                    key={label}
-                    data-model-item
-                    onClick={() => handleSelect(m)}
-                    className={`w-full px-3 py-1 min-h-[44px] md:min-h-0 md:py-1 text-left text-xs font-mono flex items-center gap-2 ${
-                      i === selectedIndex ? "bg-[var(--bg-tertiary)]" : "hover:bg-[var(--bg-hover)]"
-                    } ${isCurrent ? "text-[var(--accent-blue)]" : "text-[var(--text-secondary)]"}`}
-                  >
-                    <span className="truncate">{label}</span>
-                  </button>
-                );
-              })
+              <>
+                {providerGroups.map((g) => (
+                  <React.Fragment key={g.provider}>
+                    <div className="px-3 py-1 text-[10px] uppercase tracking-wider text-[var(--text-tertiary)] bg-[var(--bg-primary)] sticky top-0" data-testid="group-provider">{g.provider}</div>
+                    {g.items.map((m) => renderRow(m, nextIdx()))}
+                  </React.Fragment>
+                ))}
+              </>
             )}
           </div>
         </div>

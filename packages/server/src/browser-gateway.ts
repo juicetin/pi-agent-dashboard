@@ -70,7 +70,7 @@ import { ViewMessageStore } from "./view-message-store.js";
 import { handleSendPrompt, handleResumeSession, handleSpawnSession, handleShutdown, handleAbort, handleFlowControl, handleForceKill, handleKillProcess, handleClearFollowupEntries, handleEditFollowupEntry, handleRemoveFollowupEntry, handlePromoteFollowupEntry } from "./browser-handlers/session-action-handler.js";
 import { handleRenameSession, handleHideSession, handleUnhideSession, handleAttachProposal, handleDetachProposal, handleFetchContent, handleListSessions, handleSetSessionDisplayPrefs, handleSetSessionProcessDrawer } from "./browser-handlers/session-meta-handler.js";
 import { handleCreateTerminal, handleKillTerminal, handleRenameTerminal, handleOpenInlineTerminal, handleCloseInlineTerminal } from "./browser-handlers/terminal-handler.js";
-import { handlePinDirectory, handleUnpinDirectory, handleReorderPinnedDirs, handleReorderSessions, handleOpenSpecRefresh, handleOpenSpecBulkArchive, handleExtensionUiResponse, handlePiGatewayForward, handleCreateWorkspace, handleRenameWorkspace, handleDeleteWorkspace, handleSetWorkspaceCollapsed, handleAddFolderToWorkspace, handleRemoveFolderFromWorkspace, handleReorderWorkspaceFolders, handleReorderWorkspaces } from "./browser-handlers/directory-handler.js";
+import { handlePinDirectory, handleUnpinDirectory, handleReorderPinnedDirs, handleFavoriteModel, handleUnfavoriteModel, handleReorderSessions, handleOpenSpecRefresh, handleOpenSpecBulkArchive, handleExtensionUiResponse, handlePiGatewayForward, handleCreateWorkspace, handleRenameWorkspace, handleDeleteWorkspace, handleSetWorkspaceCollapsed, handleAddFolderToWorkspace, handleRemoveFolderFromWorkspace, handleReorderWorkspaceFolders, handleReorderWorkspaces } from "./browser-handlers/directory-handler.js";
 
 
 
@@ -297,6 +297,12 @@ export function createBrowserGateway(
     // Send pinned directories on connect
     if (preferencesStore) {
       sendTo(ws, { type: "pinned_dirs_updated", paths: preferencesStore.getPinnedDirectories() });
+      // Send favorite models snapshot on connect. Guarded with `typeof` so
+      // old PreferencesStore stubs in tests don't crash.
+      // See change: enrich-model-selector-capabilities-favorites.
+      if (typeof preferencesStore.getFavoriteModels === "function") {
+        sendTo(ws, { type: "favorite_models_updated", labels: preferencesStore.getFavoriteModels() });
+      }
       // Send current workspaces snapshot. See change: folder-workspaces.
       // Guarded with `typeof` so old PreferencesStore stubs in tests that
       // predate workspaces still work — they simply get no workspace snapshot.
@@ -465,6 +471,12 @@ export function createBrowserGateway(
             break;
           case "reorder_pinned_dirs":
             handleReorderPinnedDirs(msg, ctx);
+            break;
+          case "favorite_model":
+            handleFavoriteModel(msg, ctx);
+            break;
+          case "unfavorite_model":
+            handleUnfavoriteModel(msg, ctx);
             break;
           case "create_workspace":
             handleCreateWorkspace(msg, ctx);

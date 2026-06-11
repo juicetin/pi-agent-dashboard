@@ -46,7 +46,7 @@ function setup() {
     setRolesMap: vi.fn(),
     setSpawnResult: vi.fn(),
     setSessionOrderMap: vi.fn(),
-    setPinnedDirectories: vi.fn(),
+    setPinnedDirectories: vi.fn(), setFavoriteModels: vi.fn(),
     setTerminals: vi.fn(),
     setEditorStatuses: vi.fn(),
     setDiscoveredServers: vi.fn(),

@@ -419,4 +419,34 @@ describe("preferences-store", () => {
       store2.dispose();
     });
   });
+
+  // See change: enrich-model-selector-capabilities-favorites.
+  describe("favorite models", () => {
+    it("add/remove/dedupe and persist across reload", () => {
+      const store = createPreferencesStore(filePath);
+      store.addFavoriteModel("anthropic/claude-opus-4-7");
+      store.addFavoriteModel("anthropic/claude-opus-4-7"); // dedupe no-op
+      store.addFavoriteModel("proxy/cc/claude-opus-4-7");
+      expect(store.getFavoriteModels()).toEqual([
+        "anthropic/claude-opus-4-7",
+        "proxy/cc/claude-opus-4-7",
+      ]);
+      store.removeFavoriteModel("anthropic/claude-opus-4-7");
+      store.removeFavoriteModel("not-present"); // no-op
+      expect(store.getFavoriteModels()).toEqual(["proxy/cc/claude-opus-4-7"]);
+      vi.advanceTimersByTime(1100);
+      store.dispose();
+
+      const reloaded = createPreferencesStore(filePath);
+      expect(reloaded.getFavoriteModels()).toEqual(["proxy/cc/claude-opus-4-7"]);
+      reloaded.dispose();
+    });
+
+    it("defaults to [] for a legacy file with no favoriteModels key", () => {
+      fs.writeFileSync(filePath, JSON.stringify({ pinnedDirectories: [], sessionOrder: {} }));
+      const store = createPreferencesStore(filePath);
+      expect(store.getFavoriteModels()).toEqual([]);
+      store.dispose();
+    });
+  });
 });

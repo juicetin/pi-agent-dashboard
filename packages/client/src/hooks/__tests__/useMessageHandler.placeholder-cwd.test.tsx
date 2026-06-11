@@ -39,7 +39,7 @@ function setup(pending: Map<string, { cwd: string; kind: "spawn" | "resume"; pla
     setRolesMap: vi.fn(),
     setSpawnResult: vi.fn(),
     setSessionOrderMap: vi.fn(),
-    setPinnedDirectories: vi.fn(),
+    setPinnedDirectories: vi.fn(), setFavoriteModels: vi.fn(),
     setWorkspaces: vi.fn(),
     setTerminals: vi.fn(),
     setEditorStatuses: vi.fn(),

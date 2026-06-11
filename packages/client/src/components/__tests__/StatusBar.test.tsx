@@ -80,18 +80,18 @@ describe("ModelSelector", () => {
     const input = screen.getByTestId("model-filter");
     fireEvent.change(input, { target: { value: "gpt" } });
     // Should show gpt-4.1 but not claude-4
-    const buttons = screen.getByTestId("model-dropdown").querySelectorAll("button");
-    expect(buttons.length).toBe(1);
-    expect(buttons[0].textContent).toContain("gpt-4.1");
+    const rows = screen.getAllByTestId("model-row");
+    expect(rows.length).toBe(1);
+    expect(rows[0].textContent).toContain("gpt-4.1");
   });
 
   it("calls onSelectModel when model clicked", () => {
     const onSelect = vi.fn();
     render(<StatusBar model="anthropic/claude-4" models={models} status="idle" onSelectModel={onSelect} onSelectThinkingLevel={() => {}} />);
     fireEvent.click(screen.getByTestId("model-selector-button"));
-    const buttons = screen.getByTestId("model-dropdown").querySelectorAll("button");
-    // Click second model (openai/gpt-4.1)
-    fireEvent.click(buttons[1]);
+    // Click the gpt-4.1 row (rows are data-testid="model-row"; star toggle is nested)
+    const row = screen.getAllByTestId("model-row").find((r) => r.textContent?.includes("gpt-4.1"));
+    fireEvent.click(row!);
     expect(onSelect).toHaveBeenCalledWith("openai/gpt-4.1");
   });
 

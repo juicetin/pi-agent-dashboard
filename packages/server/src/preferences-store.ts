@@ -26,6 +26,12 @@ const NAME_MAX = 80;
 interface PreferencesData {
   sessionOrder: Record<string, string[]>;
   pinnedDirectories: string[];
+  /**
+   * User-curated favorite model labels (`"provider/id"`). Insertion-ordered,
+   * deduped. Absent in legacy files → defaults to `[]`.
+   * See change: enrich-model-selector-capabilities-favorites.
+   */
+  favoriteModels?: string[];
   workspaces?: Workspace[];
   /**
    * Global chat-display preferences. `undefined` means "never seeded" —
@@ -43,6 +49,13 @@ export interface PreferencesStore {
   pinDirectory(dirPath: string): void;
   unpinDirectory(dirPath: string): void;
   reorderPinnedDirs(dirs: string[]): void;
+  // ── favorite models (enrich-model-selector-capabilities-favorites) ──
+  getFavoriteModels(): string[];
+  setFavoriteModels(labels: string[]): void;
+  /** Append label if absent (dedupe). No-op when already present. */
+  addFavoriteModel(label: string): void;
+  /** Remove label if present. No-op when absent. */
+  removeFavoriteModel(label: string): void;
   // ── folder-workspaces ────────────────────────────────────────────
   getWorkspaces(): Workspace[];
   /** Returns the created workspace, or null on invalid name. */
@@ -142,6 +155,10 @@ export function createPreferencesStore(filePath: string = PREFERENCES_FILE): Pre
   const rawWorkspaces = Array.isArray(data.workspaces) ? data.workspaces : [];
   let workspaces: Workspace[] = rawWorkspaces.map(normalizeWorkspaceOnLoad);
   let displayPrefs: DisplayPrefs | undefined = data.displayPrefs;
+  // Favorite model labels — deduped, insertion-ordered. Default [] for legacy files.
+  let favoriteModels: string[] = dedupePreserveOrder(
+    Array.isArray(data.favoriteModels) ? data.favoriteModels.filter((l) => typeof l === "string") : [],
+  );
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
   let dirty =
     pinnedDirectories.length !== rawPinned.length ||
@@ -161,7 +178,7 @@ export function createPreferencesStore(filePath: string = PREFERENCES_FILE): Pre
       debounceTimer = null;
       if (dirty) {
         dirty = false;
-        writeJsonFile(filePath, { sessionOrder, pinnedDirectories, workspaces, displayPrefs } satisfies PreferencesData);
+        writeJsonFile(filePath, { sessionOrder, pinnedDirectories, favoriteModels, workspaces, displayPrefs } satisfies PreferencesData);
       }
     }, DEBOUNCE_MS);
   }
@@ -173,7 +190,7 @@ export function createPreferencesStore(filePath: string = PREFERENCES_FILE): Pre
     }
     if (dirty) {
       dirty = false;
-      writeJsonFile(filePath, { sessionOrder, pinnedDirectories, workspaces, displayPrefs } satisfies PreferencesData);
+      writeJsonFile(filePath, { sessionOrder, pinnedDirectories, favoriteModels, workspaces, displayPrefs } satisfies PreferencesData);
     }
   }
 
@@ -217,6 +234,30 @@ export function createPreferencesStore(filePath: string = PREFERENCES_FILE): Pre
 
     reorderPinnedDirs(dirs: string[]): void {
       pinnedDirectories = [...dirs];
+      scheduleSave();
+    },
+
+    // ── favorite models ─────────────────────────────────────
+
+    getFavoriteModels(): string[] {
+      return [...favoriteModels];
+    },
+
+    setFavoriteModels(labels: string[]): void {
+      favoriteModels = dedupePreserveOrder(labels);
+      scheduleSave();
+    },
+
+    addFavoriteModel(label: string): void {
+      if (favoriteModels.includes(label)) return;
+      favoriteModels.push(label);
+      scheduleSave();
+    },
+
+    removeFavoriteModel(label: string): void {
+      const idx = favoriteModels.indexOf(label);
+      if (idx === -1) return;
+      favoriteModels.splice(idx, 1);
       scheduleSave();
     },
 

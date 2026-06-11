@@ -1,0 +1,48 @@
+{
+  "name": "@blackbelt-technology/pi-dashboard-harness-plugin",
+  "version": "0.6.0",
+  "private": true,
+  "description": "Local Harness status plugin for pi-dashboard session cards.",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/client/index.tsx",
+      "default": "./src/client/index.tsx"
+    },
+    "./client": {
+      "types": "./src/client/index.tsx",
+      "default": "./src/client/index.tsx"
+    }
+  },
+  "files": [
+    "src/"
+  ],
+  "pi-dashboard-plugin": {
+    "id": "harness",
+    "displayName": "Harness Status",
+    "priority": 90,
+    "client": "./src/client/index.tsx",
+    "claims": [
+      {
+        "slot": "session-card-badge",
+        "component": "HarnessStatusBadge",
+        "predicate": "hasHarnessStatus"
+      }
+    ]
+  },
+  "peerDependencies": {
+    "react": ">=18.0.0",
+    "react-dom": ">=18.0.0"
+  },
+  "dependencies": {
+    "@blackbelt-technology/pi-dashboard-shared": "^0.6.0",
+    "@mdi/js": "^7.4.47",
+    "@mdi/react": "^1.6.1"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  }
+}

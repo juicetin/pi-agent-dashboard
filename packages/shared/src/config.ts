@@ -105,6 +105,21 @@ export const DEFAULT_OPENSPEC_POLL: OpenSpecPollConfig = {
   jitterSeconds: 5,
 };
 
+export interface KeeperLogConfig {
+  /**
+   * When `true`, per-session keepers archive pi's stdout/stderr (including full
+   * model API frames) into `keeper-<sessionId>.log`. When `false` (the default),
+   * pi's stdout/stderr are discarded; the keeper still writes its own lifecycle
+   * log lines. Debug-only — capture grows unbounded on disk.
+   * See change: add-keeper-output-capture-toggle.
+   */
+  capturePiOutput: boolean;
+}
+
+export const DEFAULT_KEEPER_LOG: KeeperLogConfig = {
+  capturePiOutput: false,
+};
+
 export interface EditorConfig {
   /** Override path to code-server binary */
   binary?: string;
@@ -206,6 +221,8 @@ export interface DashboardConfig {
   editor: EditorConfig;
   /** OpenSpec background polling behavior (interval, concurrency, change detection, jitter) */
   openspec: OpenSpecPollConfig;
+  /** Keeper log behavior — gates capture of pi stdout/stderr into keeper-<id>.log. */
+  keeperLog: KeeperLogConfig;
   /**
    * Timeout for ask_user prompts in seconds.
    * Default: 300 (5 minutes).
@@ -304,6 +321,7 @@ const DEFAULTS: DashboardConfig = {
   memoryLimits: { ...DEFAULT_MEMORY_LIMITS },
   editor: { ...DEFAULT_EDITOR_CONFIG },
   openspec: { ...DEFAULT_OPENSPEC_POLL },
+  keeperLog: { ...DEFAULT_KEEPER_LOG },
   trustedNetworks: [],
   resolvedTrustedNetworks: [],
   cors: { allowedOrigins: [] },
@@ -411,6 +429,16 @@ function parseOpenSpecPollConfig(raw: any): OpenSpecPollConfig {
     maxConcurrentSpawns: clampNumber(raw.maxConcurrentSpawns, DEFAULT_OPENSPEC_POLL.maxConcurrentSpawns, 1, 16),
     changeDetection,
     jitterSeconds: clampNumber(raw.jitterSeconds, DEFAULT_OPENSPEC_POLL.jitterSeconds, 0, 60),
+  };
+}
+
+function parseKeeperLogConfig(raw: any): KeeperLogConfig {
+  if (!raw || typeof raw !== "object") return { ...DEFAULT_KEEPER_LOG };
+  return {
+    capturePiOutput:
+      typeof raw.capturePiOutput === "boolean"
+        ? raw.capturePiOutput
+        : DEFAULT_KEEPER_LOG.capturePiOutput,
   };
 }
 
@@ -584,6 +612,7 @@ export function loadConfig(): DashboardConfig {
       memoryLimits: parseMemoryLimits(parsed.memoryLimits),
       editor: parseEditorConfig(parsed.editor),
       openspec: parseOpenSpecPollConfig(parsed.openspec),
+      keeperLog: parseKeeperLogConfig(parsed.keeperLog),
       trustedNetworks: parseTrustedNetworks(parsed.trustedNetworks),
       resolvedTrustedNetworks: [],
       cors: {

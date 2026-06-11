@@ -19,7 +19,7 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import type { ChildProcess } from "@blackbelt-technology/pi-dashboard-shared/platform/exec.js";
-import type { SpawnStrategy } from "@blackbelt-technology/pi-dashboard-shared/config.js";
+import { loadConfig, type SpawnStrategy } from "@blackbelt-technology/pi-dashboard-shared/config.js";
 import { MANAGED_BIN } from "@blackbelt-technology/pi-dashboard-shared/managed-paths.js";
 import { ToolResolver } from "@blackbelt-technology/pi-dashboard-shared/platform/binary-lookup.js";
 import { prependManagedNodeToPath } from "@blackbelt-technology/pi-dashboard-shared/platform/managed-node-path.js";
@@ -497,6 +497,14 @@ async function spawnHeadlessViaKeeper(
   // (which only exists once pi's RPC mode boots). We mint a fresh one per
   // spawn so the keeper's socket path is unique.
   const transportId = randomUUID();
+
+  // Gate capture of pi's stdout/stderr into keeper-<id>.log on the opt-in
+  // config flag (default OFF). Read at spawn time so toggling takes effect on
+  // the next spawn without a server restart. The keeper reads this env var to
+  // pick its pi-child stdio sink. See change: add-keeper-output-capture-toggle.
+  if (loadConfig().keeperLog.capturePiOutput) {
+    env = { ...env, PI_KEEPER_CAPTURE_PI_OUTPUT: "1" };
+  }
 
   // piArgs already includes `--mode rpc` plus any per-spawn flags from
   // `buildHeadlessArgs(options)` (e.g. `--session-file <path>` for resume,

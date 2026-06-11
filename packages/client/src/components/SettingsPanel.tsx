@@ -107,6 +107,8 @@ interface Config {
   modelProxy?: Record<string, any>;
   /** UI preference: show worktree spawn buttons in folder + OpenSpec rows. Default true. See change: openspec-worktree-spawn-button. */
   gitWorktreeEnabled?: boolean;
+  /** Keeper log behavior — gates capture of pi stdout/stderr into keeper-<id>.log. Default off. See change: add-keeper-output-capture-toggle. */
+  keeperLog?: { capturePiOutput?: boolean };
 }
 
 const DEFAULT_OPENSPEC_UI = {
@@ -237,6 +239,11 @@ export function SettingsPanel({ availableModels }: { availableModels?: Array<{ p
     // OpenSpec poll diff
     if (JSON.stringify(config.openspec) !== JSON.stringify(original.openspec)) {
       partial.openspec = config.openspec ?? DEFAULT_OPENSPEC_UI;
+    }
+
+    // Keeper log capture diff
+    if (JSON.stringify(config.keeperLog) !== JSON.stringify(original.keeperLog)) {
+      partial.keeperLog = config.keeperLog ?? { capturePiOutput: false };
     }
 
     // Editor config diff
@@ -621,6 +628,14 @@ export function SettingsPanel({ availableModels }: { availableModels?: Array<{ p
 
               <Section title="Developer">
                 <ToggleField label="Dev Build on Reload" value={config.devBuildOnReload} onChange={(v) => update((c) => { c.devBuildOnReload = v; })} />
+                <ToggleField
+                  label="Capture pi session output (debug)"
+                  value={config.keeperLog?.capturePiOutput ?? false}
+                  onChange={(v) => update((c) => { c.keeperLog = { ...c.keeperLog, capturePiOutput: v }; })}
+                />
+                <p className="text-xs text-[var(--text-tertiary)] mt-1">
+                  Archives each session's full pi stdout/stderr into keeper-&lt;id&gt;.log for debugging. Consumes significant disk on long sessions — leave off unless diagnosing a session. Applies to newly spawned sessions.
+                </p>
               </Section>
 
               <DiagnosticsSection />

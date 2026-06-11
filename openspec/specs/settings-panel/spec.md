@@ -3,9 +3,7 @@
 ## Purpose
 
 Dashboard settings UI: full-page panel rendered at `/settings`, tabbed by concern (General / Providers / Security / Advanced). Covers server config (ports, autoShutdown, spawnStrategy), OAuth providers, trusted networks, memory limits, OpenSpec polling tuning, and plugin-contributed sections.
-
 ## Requirements
-
 ### Requirement: Settings button in sidebar header
 The sidebar header SHALL include a gear icon button positioned at the end of the header row (after the collapse button). Clicking the button SHALL navigate to `/settings`.
 
@@ -379,6 +377,11 @@ Using a hardcoded `/api/preferences/display` path SHALL NOT be acceptable — it
 
 The panel SHALL have a save button that persists changes via `PUT /api/config`. When clicked, the panel SHALL compute a diff of changed fields (comparing current form values against the loaded config) and send only those changes in the request body.
 
+#### Scenario: Save sends only changed fields
+- **WHEN** the user edits one or more settings fields and clicks the save button
+- **THEN** the panel SHALL compute a diff against the loaded config
+- **AND** SHALL send only the changed fields in the `PUT /api/config` request body
+
 ### Requirement: OpenSpec Workflow Profile section
 
 The Settings panel's Advanced tab SHALL include an "OpenSpec Workflow Profile" section that lets the user select the global OpenSpec profile and refresh projects.
@@ -424,3 +427,20 @@ The section SHALL contain:
 - **WHEN** the user clicks Update all projects
 - **THEN** the client POSTs `{ all: true }` to `/api/openspec/update`
 - **AND** the per-cwd staleness badges refresh from `/api/openspec/update-status`
+
+### Requirement: Capture pi session output toggle in General tab
+The Settings panel General tab SHALL render a "Capture pi session output (debug)" toggle alongside the diagnostic tooling (`DiagnosticsSection` / `ToolsSection` / `SpawnFailuresSection`). The toggle SHALL be bound to `config.keeperLog.capturePiOutput`, SHALL default to off when the field is absent, and SHALL include explanatory help text noting that capture is for debugging and consumes disk. Changes SHALL be included in the save diff and persisted via the config write endpoint.
+
+#### Scenario: Toggle reflects current config
+- **WHEN** the General tab renders with `config.keeperLog.capturePiOutput === false` (or absent)
+- **THEN** the "Capture pi session output (debug)" toggle SHALL be off
+
+#### Scenario: Toggling on persists to config
+- **WHEN** the user enables the toggle and saves
+- **THEN** the save diff SHALL include `keeperLog.capturePiOutput: true`
+- **AND** the config write endpoint SHALL persist the value
+
+#### Scenario: Toggle placed with diagnostic tools
+- **WHEN** the General tab is displayed
+- **THEN** the toggle SHALL appear in the same region as the diagnostics sections, not under an unrelated section
+

@@ -430,6 +430,42 @@ describe.skipIf(process.platform === "win32")("rpc-keeper (Unix UDS)", () => {
 
     await killAndAwait(k);
   }, 10_000);
+
+  it("add-keeper-output-capture-toggle: capture OFF (default) discards pi stdout, keeps lifecycle log", async () => {
+    const marker = "MOCK_PI_STDOUT_MARKER_OFF";
+    const k = track(await spawnKeeper({ extraEnv: { MOCK_PI_STDOUT: marker } }));
+    await readyKeeper(k);
+
+    const klog = readFileSync(keeperLogFor(k), "utf8");
+    // Branch taken: keeper lifecycle records capture disabled.
+    expect(klog).toContain("pi output capture: disabled");
+    // pi's stdout marker was routed to /dev/null, NOT the keeper log.
+    expect(klog).not.toContain(marker);
+    // Keeper's own lifecycle breadcrumbs still present.
+    expect(klog).toMatch(/keeper starting:/);
+    expect(klog).toMatch(/spawning pi /);
+
+    await killAndAwait(k);
+  }, 10_000);
+
+  it("add-keeper-output-capture-toggle: capture ON archives pi stdout into keeper log", async () => {
+    const marker = "MOCK_PI_STDOUT_MARKER_ON";
+    const k = track(
+      await spawnKeeper({
+        extraEnv: { PI_KEEPER_CAPTURE_PI_OUTPUT: "1", MOCK_PI_STDOUT: marker },
+      }),
+    );
+    await readyKeeper(k);
+
+    await waitFor(
+      () => existsSync(keeperLogFor(k)) && readFileSync(keeperLogFor(k), "utf8").includes(marker),
+    );
+    const klog = readFileSync(keeperLogFor(k), "utf8");
+    expect(klog).toContain("pi output capture: enabled");
+    expect(klog).toContain(marker);
+
+    await killAndAwait(k);
+  }, 10_000);
 });
 
 describe.skipIf(process.platform !== "win32")("rpc-keeper (Windows named pipe)", () => {

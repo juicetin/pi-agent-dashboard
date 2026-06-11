@@ -61,6 +61,13 @@ if (process.env.MOCK_PI_ENV_LOG) {
   try { fs.writeFileSync(process.env.MOCK_PI_ENV_LOG, dump + "\n"); } catch { /* ignore */ }
 }
 
+// Emit a recognizable marker to stdout when MOCK_PI_STDOUT is set. Used by
+// keeper tests to assert pi stdout routing (captured to keeper log vs
+// discarded). See change: add-keeper-output-capture-toggle.
+if (process.env.MOCK_PI_STDOUT) {
+  process.stdout.write(process.env.MOCK_PI_STDOUT + "\n");
+}
+
 let buf = "";
 process.stdin.setEncoding("utf8");
 process.stdin.on("data", (chunk) => {

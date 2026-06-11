@@ -271,9 +271,22 @@ function spawnPi() {
   delete env.PI_KEEPER_PI_ARGS;
   delete env.PI_KEEPER_PI_CMD;
 
+  // Opt-in capture of pi's stdout/stderr into keeper-<id>.log. Default OFF:
+  // pi's output is discarded (stdio "ignore" → /dev/null) so the log can't
+  // balloon to GB. When PI_KEEPER_CAPTURE_PI_OUTPUT === "1" (set by the
+  // dashboard from config.keeperLog.capturePiOutput), pi's stdout/stderr are
+  // appended to the keeper log fd. The keeper's own lifecycle log() lines are
+  // written either way. See change: add-keeper-output-capture-toggle.
+  const capturePiOutput = process.env.PI_KEEPER_CAPTURE_PI_OUTPUT === "1";
+  delete env.PI_KEEPER_CAPTURE_PI_OUTPUT;
+  const childStdio = capturePiOutput
+    ? ["pipe", logFd, logFd]
+    : ["pipe", "ignore", "ignore"];
+  log(`pi output capture: ${capturePiOutput ? "enabled" : "disabled"}`);
+
   piSpawnedAt = Date.now();
   const c = child_process.spawn(exe, argv, {
-    stdio: ["pipe", logFd, logFd],
+    stdio: childStdio,
     env,
     cwd: process.cwd(),
     windowsHide: true,

@@ -28,29 +28,29 @@
 
 ## 3. Post-rebase verification
 
-- [ ] 3.1 Regenerate package-lock.json (it likely conflicted): `npm install` and verify exit 0.
-- [ ] 3.2 Type-check: `npm run reload:check 2>&1 | tee /tmp/post-rebase-typecheck.log`. Expect 0 errors in files we touched. Pre-existing errors in `use-message-handler-pending-prompt.test.ts`, `plugin-registry.tsx`, `provider-register-reload.test.ts` are out of scope.
-- [ ] 3.3 Run full test suite: `npm test 2>&1 | tee /tmp/post-rebase-test.log`. Expect at least 5195 passing tests (the pre-rebase baseline). Investigate any new failures.
-- [ ] 3.4 Run repo-lints specifically: `npm test -- no-flow-references-in-shell no-primitive-direct-import sync-versions-spec`. All must pass.
-- [ ] 3.5 Validate OpenSpec: `openspec validate --all --strict 2>&1 | grep -E '(dashboard-plugin-loader|dashboard-shell-slots|plugin-ui-primitive|rebase-flows-track)'`. All 4 must show ✓.
-- [ ] 3.6 Build the client: `npm run build`. Confirm clean build, no bundle-size regression.
-- [ ] 3.7 Smoke test: `pi-dashboard restart` then visit `http://localhost:8000`. Confirm:
+- [x] 3.1 Regenerate package-lock.json (it likely conflicted): `npm install` and verify exit 0.
+- [x] 3.2 Type-check: `npm run reload:check 2>&1 | tee /tmp/post-rebase-typecheck.log`. Expect 0 errors in files we touched. Pre-existing errors in `use-message-handler-pending-prompt.test.ts`, `plugin-registry.tsx`, `provider-register-reload.test.ts` are out of scope.
+- [x] 3.3 Run full test suite: `npm test 2>&1 | tee /tmp/post-rebase-test.log`. Expect at least 5195 passing tests (the pre-rebase baseline). Investigate any new failures.
+- [x] 3.4 Run repo-lints specifically: `npm test -- no-flow-references-in-shell no-primitive-direct-import sync-versions-spec`. All must pass.
+- [x] 3.5 Validate OpenSpec: `openspec validate --all --strict 2>&1 | grep -E '(dashboard-plugin-loader|dashboard-shell-slots|plugin-ui-primitive|rebase-flows-track)'`. All 4 must show ✓.
+- [x] 3.6 Build the client: `npm run build`. Confirm clean build, no bundle-size regression.
+- [x] 3.7 Smoke test: `pi-dashboard restart` then visit `http://localhost:8000`. Confirm:
   - Dashboard loads without console errors
   - Session cards render with the new subcard layout (origin's design)
   - No FLOWS subcard appears on any card
   - If a flows-plugin session is active, the badge + dashboard render via slot claims (our pluginize-flows-via-registry work)
-- [ ] 3.8 Visual verification of `AgentCardShell.tsx` CSS: confirm unselected cards have the new blended secondary+tertiary background (origin's `ae59eed5` intent preserved).
+- [x] 3.8 Visual verification of `AgentCardShell.tsx` CSS: confirm unselected cards have the new blended secondary+tertiary background (origin's `ae59eed5` intent preserved).
 
 ## 4. Push
 
-- [ ] 4.1 Final ahead/behind check: `git rev-list --left-right --count origin/develop...HEAD`. LEFT side = 0 (origin/develop equals what we rebased onto). RIGHT side = number of replayed commits (expected 18, possibly fewer if any became empty).
-- [ ] 4.2 Plain push (no flags): `git push origin develop`. Expect "Updating <sha>..<sha>" and "fast-forward". Reject any output mentioning "force" or "non-fast-forward" — if push fails, return to step 1.1 (someone moved origin during our rebase).
-- [ ] 4.3 Confirm push: `git log --oneline origin/develop -5` shows our 5 most-recent commits on top.
+- [x] 4.1 Final ahead/behind check: `git rev-list --left-right --count origin/develop...HEAD`. LEFT side = 0 (origin/develop equals what we rebased onto). RIGHT side = number of replayed commits (expected 18, possibly fewer if any became empty).
+- [x] 4.2 Plain push (no flags): `git push origin develop`. Expect "Updating <sha>..<sha>" and "fast-forward". Reject any output mentioning "force" or "non-fast-forward" — if push fails, return to step 1.1 (someone moved origin during our rebase).
+- [x] 4.3 Confirm push: `git log --oneline origin/develop -5` shows our 5 most-recent commits on top.
 
 ## 5. Cleanup
 
-- [ ] 5.1 Delete the backup branch once push succeeds: `git branch -D develop-prerebase-<timestamp>`.
-- [ ] 5.2 Run `openspec archive rebase-flows-track-onto-develop` to move this change to archive. No spec sync (this change has no spec deltas).
+- [x] 5.1 Delete the backup branch once push succeeds: `git branch -D develop-prerebase-<timestamp>`.
+- [x] 5.2 Run `openspec archive rebase-flows-track-onto-develop` to move this change to archive. No spec sync (this change has no spec deltas).
 
 ## 6. Out-of-scope follow-ups (tracked, not done)
 

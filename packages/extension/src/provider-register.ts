@@ -46,6 +46,13 @@ export interface ModelMetadata {
   reasoning: boolean;
   cost: { input: number; output: number; cacheRead: number; cacheWrite: number };
   input: InputModality[];
+  /**
+   * `"catalog"` when the probe resolved the model against pi's registry (real
+   * capabilities); `"fallback"` when defaults were forced because no catalog
+   * match (and `input` is the image-capable DEFAULT_INPUT assumption, not a
+   * verified capability). See change: enrich-model-selector-capabilities-favorites.
+   */
+  metadataSource: "catalog" | "fallback";
 }
 
 /**
@@ -89,7 +96,7 @@ const CANDIDATE_PROVIDERS: Record<string, readonly string[]> = {
 //   - anthropic-messages: 200k ctx (Claude 3/4 floor), 64k maxTok
 //   - google-generative-ai: 1M ctx (Gemini 1.5+/2.x floor), 65k maxTok
 //   - openai-completions (default): 128k ctx (GPT-4o floor), 16k maxTok
-const FALLBACK_DEFAULTS: Record<string, Omit<ModelMetadata, "input">> = {
+const FALLBACK_DEFAULTS: Record<string, Omit<ModelMetadata, "input" | "metadataSource">> = {
   "anthropic-messages": {
     contextWindow: 200_000,
     maxTokens: 64_000,
@@ -157,6 +164,7 @@ export function enrichModelMetadata(
             reasoning: match.reasoning,
             cost: match.cost,
             input: [...match.input] as InputModality[],
+            metadataSource: "catalog",
           };
         }
       }
@@ -169,6 +177,7 @@ export function enrichModelMetadata(
   return {
     ...fallback,
     input: [...DEFAULT_INPUT],
+    metadataSource: "fallback",
   };
 }
 
@@ -182,6 +191,44 @@ const CONFIG_PATH = configPath();
 
 // Snapshot of last-registered provider entries so reloadProviders can diff.
 const lastRegistered = new Map<string, ProviderEntry>();
+
+// Records the enrichment outcome ("catalog" vs "fallback") for each model the
+// bridge registers from a custom provider, keyed by `provider/id`. Built-in
+// catalog models are NOT in this map — they carry real pi-ai metadata, so the
+// push helper defaults them to "catalog".
+// See change: enrich-model-selector-capabilities-favorites.
+const enrichmentSource = new Map<string, "catalog" | "fallback">();
+
+/**
+ * Build a `ModelInfo` wire object from a pi registry `Model`, deriving the
+ * `vision` flag from `input` and resolving `metadataSource` from the
+ * enrichment record (custom providers) or defaulting to "catalog" (built-in
+ * models carry verified pi-ai metadata). Used by all `models_list` push sites
+ * to replace the prior lossy `{provider,id}` projection.
+ * See change: enrich-model-selector-capabilities-favorites.
+ */
+export function toModelInfo(m: any): {
+  provider: string;
+  id: string;
+  name?: string;
+  reasoning?: boolean;
+  vision?: boolean;
+  contextWindow?: number;
+  metadataSource?: "catalog" | "fallback";
+} {
+  const provider = m?.provider ?? "";
+  const id = m?.id ?? "";
+  const source = enrichmentSource.get(`${provider}/${id}`) ?? "catalog";
+  return {
+    provider,
+    id,
+    name: typeof m?.name === "string" ? m.name : undefined,
+    reasoning: typeof m?.reasoning === "boolean" ? m.reasoning : undefined,
+    vision: Array.isArray(m?.input) ? m.input.includes("image") : undefined,
+    contextWindow: typeof m?.contextWindow === "number" ? m.contextWindow : undefined,
+    metadataSource: source,
+  };
+}
 
 function entriesEqual(a: ProviderEntry, b: ProviderEntry): boolean {
   return (
@@ -489,11 +536,13 @@ async function registerEntry(pi: ExtensionAPI, name: string, entry: ProviderEntr
       ? (provider, modelId) => registry.find(provider, modelId) ?? null
       : null;
 
-  const models = discovered.map((m) => ({
-    id: m.id,
-    name: m.id,
-    ...enrichModelMetadata(m.id, entry.api, probe),
-  }));
+  const models = discovered.map((m) => {
+    const meta = enrichModelMetadata(m.id, entry.api, probe);
+    // Record enrichment confidence so models_list push sites can flag
+    // assumed-vs-verified capabilities. Keyed by the registered provider name.
+    enrichmentSource.set(`${name}/${m.id}`, meta.metadataSource);
+    return { id: m.id, name: m.id, ...meta };
+  });
 
   pi.registerProvider(name, {
     baseUrl: entry.baseUrl,

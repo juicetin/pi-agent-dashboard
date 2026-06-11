@@ -199,3 +199,24 @@ describe("enrichModelMetadata — probe order determinism", () => {
     expect(result.contextWindow).toBe(1_000_000);
   });
 });
+
+// See change: enrich-model-selector-capabilities-favorites.
+describe("enrichModelMetadata — metadataSource discriminator", () => {
+  it("flags catalog matches as metadataSource: 'catalog'", () => {
+    const result = enrichModelMetadata("cc/claude-opus-4-7", "anthropic-messages", fakeProbe);
+    expect(result.metadataSource).toBe("catalog");
+  });
+
+  it("flags unmatched custom models as metadataSource: 'fallback'", () => {
+    // Upstream reports no capability data; no catalog match → forced defaults.
+    const result = enrichModelMetadata("glm/glm-5.1", "anthropic-messages", fakeProbe);
+    expect(result.metadataSource).toBe("fallback");
+    expect(result.input).toEqual(["text", "image"]); // forced image-capable
+    expect(result.reasoning).toBe(false); // forced false
+  });
+
+  it("flags no-probe path as metadataSource: 'fallback'", () => {
+    const result = enrichModelMetadata("some-model", "openai-completions", null);
+    expect(result.metadataSource).toBe("fallback");
+  });
+});

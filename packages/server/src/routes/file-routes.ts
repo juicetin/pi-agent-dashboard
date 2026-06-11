@@ -223,6 +223,12 @@ export function registerFileRoutes(
     return { success: true, data: preferencesStore.getPinnedDirectories() } satisfies ApiResponse;
   });
 
+  // Favorite models endpoint (cold-load for the selector).
+  // See change: enrich-model-selector-capabilities-favorites.
+  fastify.get("/api/favorite-models", async () => {
+    return { success: true, data: { labels: preferencesStore.getFavoriteModels() } } satisfies ApiResponse;
+  });
+
   // Binary-safe file streaming endpoint (change: render-file-previews).
   // Streams the file bytes with `Content-Type` from extension, supports
   // HTTP Range so `<video>` seek works. Same cwd-allowlist + anti-traversal

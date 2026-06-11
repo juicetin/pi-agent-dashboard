@@ -420,6 +420,24 @@ export interface ContextUsage {
 export interface ModelInfo {
   provider: string;
   id: string;
+  /** Human-friendly label from `Model.name`; falls back to id when absent. */
+  name?: string;
+  /** From `Model.reasoning` — model supports thinking. */
+  reasoning?: boolean;
+  /** Derived: `Model.input.includes("image")` — model accepts image input. */
+  vision?: boolean;
+  /** From `Model.contextWindow`. */
+  contextWindow?: number;
+  /**
+   * Confidence of `reasoning`/`vision`: `"catalog"` when the bridge's
+   * `enrichModelMetadata()` probe resolved the model against pi's registry
+   * (real capabilities); `"fallback"` when it force-defaulted
+   * (`input:["text","image"]`, `reasoning:false`) because the provider
+   * reported no capability data. Drives confident-badge vs `?`-badge in the
+   * selector. Absent = old bridge that sent no capability fields (render no
+   * badge, NOT `?`). See change: enrich-model-selector-capabilities-favorites.
+   */
+  metadataSource?: "catalog" | "fallback";
 }
 
 /**

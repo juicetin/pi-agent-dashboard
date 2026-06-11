@@ -32,7 +32,7 @@ import { PromptBus } from "./prompt-bus.js";
 import { DashboardDefaultAdapter } from "./dashboard-default-adapter.js";
 import { registerAskUserTool } from "./ask-user-tool.js";
 import { decodeMultiselectAnswer } from "./multiselect-decode.js";
-import { activate as activateProviderRegister, onProviderChanged, reloadProviders, buildProviderCatalogue } from "./provider-register.js";
+import { activate as activateProviderRegister, onProviderChanged, reloadProviders, buildProviderCatalogue, toModelInfo } from "./provider-register.js";
 import { activate as activateRoleManager } from "./role-manager.js";
 import type { FlowInfo } from "@blackbelt-technology/pi-dashboard-shared/types.js";
 import { startMetricsMonitor, stopMetricsMonitor, collectMetrics } from "./process-metrics.js";
@@ -642,10 +642,7 @@ function initBridge(pi: ExtensionAPI) {
         // Push updated models list to dashboard client
         if (cachedModelRegistry && sessionReady) {
           try {
-            const models = cachedModelRegistry.getAvailable().map((m: any) => ({
-              provider: m.provider,
-              id: m.id,
-            }));
+            const models = cachedModelRegistry.getAvailable().map(toModelInfo);
             connection.send({ type: "models_list", sessionId, models });
             // See change: replace-hardcoded-provider-lists.
             connection.send({ type: "providers_list", sessionId, providers: buildProviderCatalogue() });
@@ -1930,10 +1927,7 @@ function initBridge(pi: ExtensionAPI) {
     cachedModelRegistry = (ctx as any).modelRegistry;
     if (cachedModelRegistry) {
       try {
-        const models = cachedModelRegistry.getAvailable().map((m: any) => ({
-          provider: m.provider,
-          id: m.id,
-        }));
+        const models = cachedModelRegistry.getAvailable().map(toModelInfo);
         connection.send({ type: "models_list", sessionId, models });
         // See change: replace-hardcoded-provider-lists.
         connection.send({ type: "providers_list", sessionId, providers: buildProviderCatalogue() });
@@ -2191,10 +2185,7 @@ function initBridge(pi: ExtensionAPI) {
     if (!isActive()) return;
     if (cachedModelRegistry && sessionReady) {
       try {
-        const models = cachedModelRegistry.getAvailable().map((m: any) => ({
-          provider: m.provider,
-          id: m.id,
-        }));
+        const models = cachedModelRegistry.getAvailable().map(toModelInfo);
         connection.send({ type: "models_list", sessionId, models });
         // See change: replace-hardcoded-provider-lists.
         connection.send({ type: "providers_list", sessionId, providers: buildProviderCatalogue() });

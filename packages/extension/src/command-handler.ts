@@ -13,7 +13,7 @@ import type { FileEntry, ImageContent, PiSessionInfo } from "@blackbelt-technolo
 import { filterHiddenCommands } from "./bridge-context.js";
 import { expandPromptTemplateFromDisk } from "./prompt-expander.js";
 import { tryDispatchExtensionCommand } from "./slash-dispatch.js";
-import { buildProviderCatalogue } from "./provider-register.js";
+import { buildProviderCatalogue, toModelInfo } from "./provider-register.js";
 
 const IGNORE_DIRS = new Set([".git", "node_modules", ".next", "dist", "build", ".cache", "__pycache__", ".venv"]);
 const MAX_RESULTS = 50;
@@ -578,10 +578,7 @@ export function createCommandHandler(
             try {
               registry.authStorage?.reload?.();
               registry.refresh();
-              const models = registry.getAvailable().map((m: any) => ({
-                provider: m.provider,
-                id: m.id,
-              }));
+              const models = registry.getAvailable().map(toModelInfo);
               return { type: "models_list", sessionId, models };
             } catch { /* ignore */ }
           }

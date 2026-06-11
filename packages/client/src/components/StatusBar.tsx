@@ -8,6 +8,10 @@ import type { ModelInfo, RoleInfo } from "@blackbelt-technology/pi-dashboard-sha
 interface Props {
   model?: string;
   models?: ModelInfo[];
+  /** Favorite model labels, forwarded to ModelSelector. See change: enrich-model-selector-capabilities-favorites. */
+  favorites?: string[];
+  /** Toggle a model favorite; forwarded to ModelSelector. */
+  onToggleFavorite?: (label: string, makeFavorite: boolean) => void;
   thinkingLevel?: string;
   status: "idle" | "streaming" | "ended";
   currentTool?: string;
@@ -53,6 +57,8 @@ interface Props {
 export function StatusBar({
   model,
   models,
+  favorites,
+  onToggleFavorite,
   thinkingLevel,
   status,
   currentTool,
@@ -90,7 +96,7 @@ export function StatusBar({
             <span aria-hidden="true" className="inline-block h-3 w-px bg-[var(--border-secondary)] flex-shrink-0" />
           </>
         )}
-        <ModelSelector current={model} models={models} onSelect={onSelectModel} />
+        <ModelSelector current={model} models={models} onSelect={onSelectModel} favorites={favorites} onToggleFavorite={onToggleFavorite} />
         <ThinkingLevelSelector current={thinkingLevel} onSelect={onSelectThinkingLevel} />
         {actions && (
           <>

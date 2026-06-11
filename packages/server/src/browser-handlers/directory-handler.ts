@@ -62,6 +62,24 @@ export function handleUnpinDirectory(
   }
 }
 
+export function handleFavoriteModel(
+  msg: Extract<BrowserToServerMessage, { type: "favorite_model" }>,
+  ctx: BrowserHandlerContext,
+): void {
+  if (!ctx.preferencesStore) return;
+  ctx.preferencesStore.addFavoriteModel(msg.label);
+  ctx.broadcast({ type: "favorite_models_updated", labels: ctx.preferencesStore.getFavoriteModels() });
+}
+
+export function handleUnfavoriteModel(
+  msg: Extract<BrowserToServerMessage, { type: "unfavorite_model" }>,
+  ctx: BrowserHandlerContext,
+): void {
+  if (!ctx.preferencesStore) return;
+  ctx.preferencesStore.removeFavoriteModel(msg.label);
+  ctx.broadcast({ type: "favorite_models_updated", labels: ctx.preferencesStore.getFavoriteModels() });
+}
+
 export function handleReorderPinnedDirs(
   msg: Extract<BrowserToServerMessage, { type: "reorder_pinned_dirs" }>,
   ctx: BrowserHandlerContext,

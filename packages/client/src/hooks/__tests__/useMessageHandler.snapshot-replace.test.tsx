@@ -56,7 +56,7 @@ function setup(initialSessions?: DashboardSession[], initialOrders?: Record<stri
     setRolesMap: vi.fn(),
     setSpawnResult: vi.fn(),
     setSessionOrderMap,
-    setPinnedDirectories: vi.fn(),
+    setPinnedDirectories: vi.fn(), setFavoriteModels: vi.fn(),
     setTerminals: vi.fn(),
     setEditorStatuses: vi.fn(),
     setDiscoveredServers: vi.fn(),

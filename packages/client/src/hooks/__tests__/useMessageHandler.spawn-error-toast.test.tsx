@@ -28,7 +28,7 @@ function setupHandler(visibilityInputs: {
     setSessions: vi.fn(), setSessionStates: vi.fn(), setSessionCommands: vi.fn(),
     setSessionFlows: vi.fn(), setFileResults: vi.fn(), setOpenspecMap: vi.fn(),
     setOpenspecGroupsMap: vi.fn(), setModelsMap: vi.fn(), setRolesMap: vi.fn(),
-    setSpawnResult: vi.fn(), setSessionOrderMap: vi.fn(), setPinnedDirectories: vi.fn(),
+    setSpawnResult: vi.fn(), setSessionOrderMap: vi.fn(), setPinnedDirectories: vi.fn(), setFavoriteModels: vi.fn(),
     setWorkspaces: vi.fn(), setTerminals: vi.fn(), setEditorStatuses: vi.fn(),
     setDiscoveredServers: vi.fn(), setSpawnErrors: vi.fn(), setResumeErrors: vi.fn(),
   };
@@ -118,7 +118,7 @@ describe("useMessageHandler — spawn_error off-screen toast", () => {
       setSessions: vi.fn(), setSessionStates: vi.fn(), setSessionCommands: vi.fn(),
       setSessionFlows: vi.fn(), setFileResults: vi.fn(), setOpenspecMap: vi.fn(),
       setOpenspecGroupsMap: vi.fn(), setModelsMap: vi.fn(), setRolesMap: vi.fn(),
-      setSpawnResult: vi.fn(), setSessionOrderMap: vi.fn(), setPinnedDirectories: vi.fn(),
+      setSpawnResult: vi.fn(), setSessionOrderMap: vi.fn(), setPinnedDirectories: vi.fn(), setFavoriteModels: vi.fn(),
       setWorkspaces: vi.fn(), setTerminals: vi.fn(), setEditorStatuses: vi.fn(),
       setDiscoveredServers: vi.fn(), setSpawnErrors: vi.fn(), setResumeErrors: vi.fn(),
     };

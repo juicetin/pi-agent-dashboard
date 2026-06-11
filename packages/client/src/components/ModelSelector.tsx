@@ -50,11 +50,11 @@ const ctxFmt = (n: number) => (n >= 1_000_000 ? `${n / 1_000_000}M` : `${Math.ro
  * One capability icon (MDI) with optional uncertainty `?` overlay.
  * Uses real MDI glyphs (not emoji) so it renders consistently across browsers.
  */
-function CapIcon({ path, color, uncertain, title }: { path: string; color: string; uncertain?: boolean; title: string }) {
+function CapIcon({ path, uncertain, title }: { path: string; uncertain?: boolean; title: string }) {
   return (
-    <span className="relative inline-flex items-center" title={title} style={{ color }}>
-      <Icon path={path} size={0.6} />
-      {uncertain && <b className="text-amber-400 text-[10px] leading-none -ml-0.5 -mt-1">?</b>}
+    <span className="relative inline-flex items-center text-[var(--text-muted)]" title={title}>
+      <Icon path={path} size={0.45} />
+      {uncertain && <b className="text-[var(--text-muted)] text-[9px] leading-none -ml-0.5 -mt-1">?</b>}
     </span>
   );
 }
@@ -71,15 +71,15 @@ function CapBadges({ m }: { m: ModelInfo }) {
     // Provider reported nothing: vision force-assumed, reasoning unknown.
     return (
       <>
-        <CapIcon path={mdiEye} color="var(--text-tertiary)" uncertain title="Vision assumed — provider reported no capabilities; image input defaulted on" />
-        <CapIcon path={mdiBrain} color="var(--text-tertiary)" uncertain title="Reasoning unknown — provider reported none" />
+        <CapIcon path={mdiEye} uncertain title="Vision assumed — provider reported no capabilities; image input defaulted on" />
+        <CapIcon path={mdiBrain} uncertain title="Reasoning unknown — provider reported none" />
       </>
     );
   }
   return (
     <>
-      {m.reasoning && <CapIcon path={mdiBrain} color="rgb(192 132 252)" title="Reasoning (confirmed)" />}
-      {m.vision && <CapIcon path={mdiEye} color="rgb(74 222 128)" title="Vision-capable (confirmed)" />}
+      {m.reasoning && <CapIcon path={mdiBrain} title="Reasoning (confirmed)" />}
+      {m.vision && <CapIcon path={mdiEye} title="Vision-capable (confirmed)" />}
     </>
   );
 }

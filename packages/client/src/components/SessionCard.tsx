@@ -460,6 +460,7 @@ export function SessionCard({
   // Suppress purple `card-input-pulse` when a widget-bar slot owns the
   // pending prompt. Plugin-agnostic. See change: fix-flows-plugin-polish (B1).
   const hasWidgetBarPrompt = useHasWidgetBarPrompt(session.id);
+  const hasSessionCardBadges = useSlotHasClaimsForSession("session-card-badge", session);
   // OpenSpec workflow config gates which action buttons render in the
   // OPENSPEC subcard. See change: redesign-session-card-and-composer
   // (config-driven-workflow).
@@ -502,6 +503,7 @@ export function SessionCard({
           <span className="text-sm truncate flex-1">
             {getSessionDisplayName(session)}
           </span>
+          {hasSessionCardBadges ? <SessionCardBadgeSlot session={session} /> : null}
           <span
             className="text-[11px] text-[var(--text-muted)] flex-shrink-0"
             title={`Started ${new Date(session.startedAt).toLocaleString()}`}
@@ -657,6 +659,7 @@ export function SessionCard({
             {getSessionDisplayName(session)}
           </span>
         )}
+        {hasSessionCardBadges ? <SessionCardBadgeSlot session={session} /> : null}
         {canRename && !isRenaming && (
           <button
             onClick={(e) => { e.stopPropagation(); setIsRenaming(true); }}
@@ -1047,13 +1050,11 @@ function GitSubcard({ session, showGitInfo, allSessions, onShutdownSession }: { 
  * See change: redesign-session-card-and-composer (5.1).
  */
 function JjSubcard({ session }: { session: DashboardSession }) {
-  const hasBadge = useSlotHasClaimsForSession("session-card-badge", session);
   const hasActions = useSlotHasClaimsForSession("workspace-action-bar", session);
-  if (!hasBadge && !hasActions) return null;
+  if (!hasActions) return null;
   return (
     <SessionSubcard title="JJ">
-      {hasBadge ? <SessionCardBadgeSlot session={session} /> : null}
-      {hasActions ? <WorkspaceActionBarSlot session={session} /> : null}
+      <WorkspaceActionBarSlot session={session} />
     </SessionSubcard>
   );
 }

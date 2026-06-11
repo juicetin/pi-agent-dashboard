@@ -22,6 +22,7 @@ export default defineConfig({
       "packages/flows-anthropic-bridge-plugin",
       "packages/jj-plugin",
       "packages/honcho-plugin",
+      "packages/harness-plugin",
       "packages/roles-plugin",
       "packages/subagents-plugin",
       "scripts",

@@ -72,11 +72,68 @@ Writing with Node.js (not bash) avoids fragile JSON construction in shell script
 
 **Rationale**: Session JSONL files are append-heavy. `noatime` eliminates unnecessary access-time writes. `data=writeback` journals only metadata (not data), significantly faster for small appends. `tmpfs` gives maximum speed when persistence isn't needed.
 
-### Decision 6: Workspace mounts via compose.override.yml
+### Decision 6: Path-identical workspace mounts, driven by a list, auto-pinned
 
-**Choice**: Base `compose.yml` has no workspace mounts. Users add their project directories in `compose.override.yml` (auto-merged by Docker Compose).
+**Choice**: Host project directories mount into the container at the **identical absolute path** (`/Users/robson/Project/a` → `/Users/robson/Project/a`), read-write, not under `/workspaces/<name>`. Two ways to add them, sharing one list:
+- **Wrapper `docker/up.sh`** (convenience): reads `PI_WORKSPACES="/path/a:/path/b:/path/c"`, generates one `-v <dir>:<dir>` bind per entry, and passes the same list as `PI_DASHBOARD_PIN_DIRS` so each mounted dir is auto-pinned on first run.
+- **Hand-edited `compose.override.yml`** (power users): path-identical bind-mount examples, documented in `.example`.
 
-**Rationale**: Workspace paths are user-specific and machine-specific. `compose.override.yml` is the standard Docker Compose pattern for local overrides. An `.example` file shows the pattern.
+**Rationale**: Path parity makes container log lines, session CWDs, and jj/git roots read identically to host paths — a path copied from a container log resolves on the host. The dashboard already pins arbitrary absolute paths (`preferences-store.ts` `pinnedDirectories`, no prefix restriction, persisted in the `pi-state` volume), so path-identical mounts are first-class with zero server change for the *mount*. Direct RW bind (no overlay) because a deployment edits real files. `/workspaces/<name>` is dropped: it forced log/path divergence for no benefit in a single-user deployment.
+
+**Note**: Docker Compose cannot expand a list env into N volumes natively — hence the wrapper. The override file remains the no-code escape hatch.
+
+### Decision 6b: Seed pinned directories on first run (small server change)
+
+**Choice**: Add a `PI_DASHBOARD_PIN_DIRS` env var (path-separator list). On first run only (when `pinnedDirectories` is empty / not yet persisted), `preferences-store` seeds it into `pinnedDirectories`. Subsequent runs respect user edits made via the UI (never re-seed over a non-empty persisted list).
+
+**Rationale**: Without seeding, a freshly-started container shows no pinned workspaces until the user pins each via the UI. Seeding makes "mount a dir → it appears pinned" true out of the box. First-run-only guard mirrors the existing auth-seed pattern (`seed-auth.js` skips if file exists) so it never fights user state. This is the only server-code change in docker-packaging; it lands in `preferences-store.ts` (read env, dedupe, normalize, resolve symlinks — reuse the existing load-path normalization) plus a one-line call from the entrypoint/startup.
+
+**Reference sketch — `docker/up.sh`** (one list → mounts + pins, path-identical):
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+# PI_WORKSPACES="/Users/x/Project/a:/Users/x/Project/b"  (path-separator list)
+IFS=':' read -r -a WS <<< "${PI_WORKSPACES:-}"
+
+mounts=()
+for dir in "${WS[@]}"; do
+  [ -z "$dir" ] && continue
+  [ -d "$dir" ] || { echo "skip (not a dir): $dir" >&2; continue; }
+  abs="$(cd "$dir" && pwd -P)"           # resolve to absolute, real path
+  mounts+=( -v "${abs}:${abs}" )          # PATH-IDENTICAL, read-write
+done
+
+# Same list drives first-run pin seeding inside the container.
+export PI_DASHBOARD_PIN_DIRS="${PI_WORKSPACES:-}"
+
+exec docker compose run --rm --service-ports \
+  "${mounts[@]}" \
+  -e PI_DASHBOARD_PIN_DIRS \
+  pi-dashboard
+# (or: write the mounts into a generated compose.override.yml, then `docker compose up`)
+```
+
+**Reference sketch — `preferences-store.ts` first-run seed** (reuses existing load-path normalization):
+
+```ts
+// inside the load path, after rawPinned is read from disk:
+let pinnedDirectories = normalizeResolveDedupe(data.pinnedDirectories ?? []);
+
+if (pinnedDirectories.length === 0) {
+  const seed = (process.env.PI_DASHBOARD_PIN_DIRS ?? "")
+    .split(path.delimiter)        // ':' on POSIX, ';' on Windows
+    .map(s => s.trim())
+    .filter(Boolean);
+  if (seed.length > 0) {
+    pinnedDirectories = normalizeResolveDedupe(seed);  // same pipeline as stored paths
+    // persisted on first save → subsequent runs see a non-empty list and skip seeding
+  }
+}
+```
+
+The `length === 0` gate is the entire first-run-only contract: any prior UI pin/unpin leaves a persisted (possibly empty-after-unpin) list — so to distinguish "never seeded" from "user unpinned everything", persist a `pinSeeded: true` marker on first seed and gate on that instead of array length. Implementer's choice; the marker is the robust form.
 
 ### Decision 7: Pi gateway bind address for external access control
 

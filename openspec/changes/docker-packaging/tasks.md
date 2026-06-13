@@ -27,12 +27,14 @@
 
 ## 5. Workspace and Override Files
 
-- [ ] 5.1 Create `docker/compose.override.yml.example` with example workspace bind mounts, read-only mount example, and instructions
+- [ ] 5.1 Create `docker/compose.override.yml.example` with **path-identical** workspace bind mounts (host `/Users/x/Project/a` → container `/Users/x/Project/a`, not `/workspaces/<name>`), read-only mount example, and instructions
 - [ ] 5.2 Create `docker/compose.dev.yml`: bind-mount source, anonymous volume for `node_modules`, expose Vite HMR port 5173, `NODE_ENV=development`
+- [ ] 5.3 Create `docker/up.sh`: parse `PI_WORKSPACES` path-separator list, generate one `-v <dir>:<dir>` RW bind per entry, export the same list as `PI_DASHBOARD_PIN_DIRS`, then `docker compose up`
+- [ ] 5.4 Server change: in `packages/server/src/preferences-store.ts`, on load seed `pinnedDirectories` from `PI_DASHBOARD_PIN_DIRS` (existing normalize/symlink-resolve/dedupe) only when no pinned dirs are persisted; ignore env otherwise. Add a unit test for first-run-seed vs persisted-wins
 
 ## 6. Environment Configuration
 
-- [ ] 6.1 Create `docker/.env.example` with all knobs: API keys, ports, gateway bind, zrok token, tunnel flag, spawn strategy, resource limits — each with explanatory comments
+- [ ] 6.1 Create `docker/.env.example` with all knobs: API keys, ports, gateway bind, zrok token, tunnel flag, spawn strategy, resource limits, `PI_WORKSPACES` (path-identical mount list), `PI_DASHBOARD_PIN_DIRS` (first-run pin list) — each with explanatory comments
 - [ ] 6.2 Add `docker/.gitignore` to exclude `.env` and `compose.override.yml` (user-specific files)
 
 ## 7. Electron Remote Mode

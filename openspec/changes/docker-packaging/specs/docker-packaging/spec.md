@@ -45,16 +45,27 @@ The `compose.yml` SHALL define a single service `pi-dashboard` with: build conte
 - **WHEN** the container is stopped and restarted
 - **THEN** pi sessions, auth credentials, dashboard preferences, and zrok enrollment are preserved
 
-### Requirement: Workspace bind mounts via compose override
-The project SHALL include a `compose.override.yml.example` that documents how to bind-mount host directories as workspaces. Each workspace mount SHALL target a subdirectory under `/workspaces/`. The base `compose.yml` SHALL NOT include any workspace mounts.
+### Requirement: Path-identical workspace mounts
+The project SHALL mount host project directories into the container at their identical absolute paths (e.g. host `/Users/x/Project/a` mounts to container `/Users/x/Project/a`), read-write. The base `compose.yml` SHALL NOT include any workspace mounts. Two mechanisms SHALL be provided sharing one directory list: a wrapper `docker/up.sh` reading a `PI_WORKSPACES` path-separator list, and a hand-edited `compose.override.yml` documented via `compose.override.yml.example`. Workspace mounts SHALL NOT be placed under `/workspaces/`.
 
-#### Scenario: User mounts a project directory
-- **WHEN** the user copies `compose.override.yml.example` to `compose.override.yml` and adds a bind mount for `~/Project/my-app` to `/workspaces/my-app`
-- **THEN** the dashboard can create pi sessions in `/workspaces/my-app` and the files are visible on the host
+#### Scenario: User mounts a project directory at its host path
+- **WHEN** the user runs `docker/up.sh` with `PI_WORKSPACES="/Users/x/Project/my-app"` (or adds the equivalent path-identical bind in `compose.override.yml`)
+- **THEN** the dashboard can create pi sessions in `/Users/x/Project/my-app` inside the container, the files are visible and editable on the host, and log lines / session CWDs read identically to the host path
 
-#### Scenario: Multiple workspace mounts
-- **WHEN** the user configures three bind mounts in `compose.override.yml`
-- **THEN** all three appear as pinnable workspace directories in the dashboard
+#### Scenario: Multiple workspace mounts from one list
+- **WHEN** the user sets `PI_WORKSPACES` to three colon-separated host paths
+- **THEN** all three are bind-mounted at their identical absolute paths and appear as pinnable workspace directories in the dashboard
+
+### Requirement: Seed pinned directories on first run
+The server SHALL read a `PI_DASHBOARD_PIN_DIRS` environment variable (path-separator list of absolute paths) and, only when no pinned directories are yet persisted, seed them into `pinnedDirectories` (normalized, symlink-resolved, deduped via the existing load path). On any run where pinned directories are already persisted, the env SHALL be ignored so user edits via the UI are never overwritten. The `docker/up.sh` wrapper SHALL pass the same `PI_WORKSPACES` list as `PI_DASHBOARD_PIN_DIRS`.
+
+#### Scenario: Mounted dirs appear pinned out of the box
+- **WHEN** a container starts for the first time with `PI_DASHBOARD_PIN_DIRS` set to the mounted workspace paths and an empty `pi-state` volume
+- **THEN** those directories appear as pinned workspaces in the dashboard without any manual pinning
+
+#### Scenario: User pin edits survive restart
+- **WHEN** the user has pinned/unpinned directories via the UI (persisted in `pi-state`) and the container restarts with `PI_DASHBOARD_PIN_DIRS` still set
+- **THEN** the persisted pinned list is used unchanged and the env value is ignored
 
 ### Requirement: Volume performance profiles
 The `compose.yml` SHALL include commented volume configurations for three profiles: default (named volume, no special options), performance (ext4/xfs with `noatime,data=writeback,barrier=0,commit=60`), and ephemeral (tmpfs with configurable size). Each profile SHALL be documented with its use case and trade-offs.

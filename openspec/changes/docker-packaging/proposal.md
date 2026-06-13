@@ -18,6 +18,10 @@ Add a `docker/` directory with a complete containerization setup. Add a "Remote"
 - Starts tmux server (for tmux spawn strategy)
 - Execs `pi-dashboard` with port/flag configuration from env vars
 
+**`packages/server/src/preferences-store.ts`** (server change) — First-run pin seeder:
+- On load, if `pinnedDirectories` is empty/unpersisted, seed from `PI_DASHBOARD_PIN_DIRS` (path-separator list) using the existing normalize / symlink-resolve / dedupe path
+- Never seeds over a non-empty persisted list (UI edits win); mirrors `seed-auth.js`'s first-run-only guard
+
 **`docker/scripts/seed-auth.js`** — First-run auth seeder:
 - Reads env vars: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, etc.
 - Writes `auth.json` with `0600` permissions
@@ -36,14 +40,21 @@ Add a `docker/` directory with a complete containerization setup. Add a "Remote"
 - Exposes Vite HMR port 5173
 - Sets `NODE_ENV=development`, runs `pi-dashboard --dev`
 
-**`docker/compose.override.yml.example`** — Template for workspace mounts:
-- Shows how to bind-mount individual project directories to `/workspaces/<name>`
-- Includes examples for read-only mounts, multiple projects
-- Documents that each mount maps to a pinnable workspace in the dashboard
+**`docker/up.sh`** — Workspace launcher (convenience path for multiple dirs):
+- Reads `PI_WORKSPACES="/abs/a:/abs/b:/abs/c"` (path-separator list)
+- Generates one `-v <dir>:<dir>` **path-identical** read-write bind per entry
+- Passes the same list as `PI_DASHBOARD_PIN_DIRS` so each mounted dir is auto-pinned on first run
+- Single source of truth: one list → mounted AND pinned at identical host paths
+
+**`docker/compose.override.yml.example`** — Power-user template for workspace mounts:
+- Shows **path-identical** bind mounts (host `/Users/x/Project/a` → container `/Users/x/Project/a`), not `/workspaces/<name>`
+- Includes examples for read-only mounts and multiple projects
+- Documents that each mount maps to a pinnable workspace at its real host path
 
 **`docker/.env.example`** — All configurable knobs:
 - API keys (ANTHROPIC_API_KEY, OPENAI_API_KEY, etc.)
 - Ports (DASHBOARD_PORT, PI_GATEWAY_PORT)
+- Workspaces (PI_WORKSPACES: path-separator list of host dirs to mount path-identically; PI_DASHBOARD_PIN_DIRS: list to auto-pin on first run)
 - External access (PI_GATEWAY_BIND: `0.0.0.0` or `127.0.0.1`)
 - Tunnel (ZROK_TOKEN, TUNNEL_ENABLED)
 - Spawn strategy (headless/tmux)
@@ -100,7 +111,7 @@ The dashboard's components are inherently colocated — pi sessions, terminals (
 
 ### New Capabilities
 
-- `docker-packaging`: Complete Docker containerization of the pi-dashboard ecosystem with all tools (pi, code-server, zrok, tmux, jq, git, bash, ripgrep), configurable volumes with I/O performance profiles, dual API key provisioning, and optional external pi gateway access.
+- `docker-packaging`: Complete Docker containerization of the pi-dashboard ecosystem with all tools (pi, code-server, zrok, tmux, jq, git, bash, ripgrep), configurable volumes with I/O performance profiles, dual API key provisioning, optional external pi gateway access, path-identical multi-directory workspace mounts driven by a single `PI_WORKSPACES` list, and first-run pin seeding via `PI_DASHBOARD_PIN_DIRS`.
 
 ### Existing Capabilities Modified
 

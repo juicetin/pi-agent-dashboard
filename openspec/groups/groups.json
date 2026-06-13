@@ -182,6 +182,8 @@
     "add-end-user-docs": "next-phase",
     "project-init-skill-and-profiles": "next-phase",
     "optimize-openspec-poll-derive-artifacts-locally": "ui",
-    "fix-openspec-worktree-cwd-keying": "ui"
+    "fix-openspec-worktree-cwd-keying": "ui",
+    "redesign-openspec-board": "ui",
+    "fix-mobile-back-depth-aware": "ui"
   }
 }

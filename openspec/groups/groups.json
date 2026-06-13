@@ -50,16 +50,10 @@
       "order": 7
     },
     {
-      "id": "worktree",
-      "name": "Worktree",
-      "color": "#22c55e",
-      "order": 8
-    },
-    {
       "id": "ui-extensions",
       "name": "UI Extensions",
       "color": "#eab308",
-      "order": 9
+      "order": 8
     }
   ],
   "assignments": {
@@ -97,7 +91,6 @@
     "overlay-url-routing": "sdasdasd",
     "history-nav-only-when-empty": "small-change",
     "adopt-pi-071-072-073-features": "future",
-    "workspace-actions": "worktree",
     "docker-packaging": "future",
     "session-card-attached-change-link": "next-phase",
     "focus-driven-folder-compaction": "next-phase",
@@ -112,7 +105,6 @@
     "extract-client-utils-package": "future",
     "unify-dialog-system": "next-phase",
     "add-extension-ui-rjsf-form": "ui-extensions",
-    "worktree-awareness": "worktree",
     "new-spec-spawn": "future",
     "accordion-workspace-folders": "future",
     "pi-log-miner-skill": "future",
@@ -167,7 +159,6 @@
     "fix-windows-path-system32-missing": "electrun-execution",
     "replace-wmic-with-powershell": "electrun-execution",
     "fix-electron-launch-source-bundled-node-dir": "electrun-execution",
-    "add-worktree-spawn-dialog": "worktree",
     "embed-git-bash-on-windows": "electrun-execution",
     "fix-doctor-oauth-credential-detection": "electrun-execution",
     "add-extension-ui-a11y-baseline": "ui-extensions",
@@ -181,7 +172,6 @@
     "fix-doctor-stale-managed-install-check": "electrun-execution",
     "add-tunnel-diagnostic-checks": "electrun-execution",
     "bump-pi-compat-to-0.75": "ui",
-    "add-worktree-lifecycle-actions": "worktree",
     "fix-node-resolution-under-electron": "electrun-execution"
   }
 }

@@ -1,3 +1,11 @@
+> **SUPERSEDED / PARTIALLY LANDED (archived 2026-06-12).** Recheck against `develop` found:
+> - Issue 1 (`delivery` param → `streamingBehavior`): **landed** (`slash-dispatch.ts`, `bridge.ts`, `command-handler.ts`, `protocol.ts`).
+> - Issue 2 (Path D emits error + returns `true`, no `sendUserMessage` fallthrough): **landed** via PR #30 (`820bb294`).
+> - Path D message wording in this proposal is **stale**: `enable-rpc-keeper-by-default` (PR #47, archived) removed the `useRpcKeeper: true` config knob; real Path D hint now describes "session shape" (tmux/WT vs dashboard-spawned headless). Spec scenarios referencing `~/.pi/dashboard/config.json` are obsolete. Delta specs NOT merged (`--skip-specs`).
+> - Decision 3 (`hasDispatchCommand` `in`-operator fallback): **NOT done**.
+> - Issue 3 / Decision 5 (`prompt-expander` global prompt-template resolution via `source: "prompt"`): **NOT done**.
+> Remaining work (Decision 3 + Issue 3) tracked in new change `resolve-global-prompt-templates-from-dashboard`.
+
 ## Why
 
 Two issues with the dashboard bridge's extension slash-command dispatch path:

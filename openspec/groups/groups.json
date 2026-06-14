@@ -76,7 +76,7 @@
     "linked-session-pill-lifecycle-icons": "ui",
     "add-plugin-activation-ui": "next-phase",
     "external-dashboard-plugins": "next-phase",
-    "replace-proposal-dialog-with-race-handling": "next-phase",
+    "replace-proposal-dialog-with-race-handling": "ui",
     "merge-windows-integration-linear": "ui",
     "register-build-time-tools": "ui",
     "spawn-correlation-token": "ui",
@@ -184,6 +184,7 @@
     "optimize-openspec-poll-derive-artifacts-locally": "ui",
     "fix-openspec-worktree-cwd-keying": "ui",
     "redesign-openspec-board": "ui",
-    "fix-mobile-back-depth-aware": "ui"
+    "fix-mobile-back-depth-aware": "ui",
+    "fix-spawn-token-env-leak": "ui"
   }
 }

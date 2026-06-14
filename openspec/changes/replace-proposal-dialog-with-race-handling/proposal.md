@@ -89,6 +89,39 @@ actually attaches) only changes through explicit user action.
 None. (The dialog UI is part of `proposal-attachment` since it owns
 the attach lifecycle; no new capability emerges.)
 
+## Codebase Anchors (verified)
+
+- `event-wiring.ts:248` — the manual-attachment branch returns no-op
+  today; this proposal adds the third branch here.
+- `packages/server/src/browser-handlers/session-meta-handler.ts` —
+  `applyAttachProposal` and `handleAttachProposal` already exist; the
+  accept handler reuses `applyAttachProposal`.
+- `packages/client-utils/src/Confirm.tsx` + `Dialog.tsx` — the
+  unified dialog primitives shipped via
+  `2026-06-07-unify-dialog-system` (archived). The replace dialog
+  imports `Confirm` from
+  `@blackbelt-technology/pi-dashboard-client-utils/Confirm` exactly as
+  `SessionOpenSpecActions.tsx` already does. `Confirm` exposes a `body`
+  slot — that's where the divergence banner renders.
+- `DetectedActivity.isActive` — shipped via
+  `2026-04-14-openspec-read-only-no-attach` (archived). Layer 1
+  filter is already in place; this proposal only adds Layer 2 + 3.
+- `pendingAttachRegistry` is unrelated — it queues attach intents for
+  not-yet-spawned sessions (per `add-folder-task-checker-and-spawn-
+  attach`). Do NOT reuse it for the open-dialog race.
+
+## Coordination with extract-openspec-as-plugin
+
+`extract-openspec-as-plugin` is currently proposal-only (no design,
+no tasks, no specs). It plans to MOVE `event-wiring.ts` and
+`session-meta-handler.ts` into `packages/openspec-plugin/server/`.
+Option B sequencing applies: land this race-handling change first;
+when the plugin extraction proceeds, it carries the
+`pendingReplaceProposal` branch and the accept/dismiss handlers
+along with the rest of the files. A reminder note SHALL be added to
+`extract-openspec-as-plugin/proposal.md` listing this branch as one
+of the things to preserve in the move.
+
 ## Out of Scope
 
 - Multi-target queue: this proposal does NOT queue multiple pending

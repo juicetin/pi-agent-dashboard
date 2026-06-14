@@ -38,11 +38,11 @@
 
 > **Dependency:** build on the shared `Dialog` shell from `unify-dialog-system` (custom body, NOT the `Confirm` preset — the banner/committedTarget logic needs the shell). If that change has not landed, sequence this after it or implement against its `Dialog` primitive contract. Do NOT hand-roll a new one-off dialog.
 
-- [ ] 5.1 Decide location: extend `packages/client/src/components/SessionOpenSpecActions.tsx` or add a sibling component. Pick one and document in the PR description.
+- [ ] 5.1 Extend `packages/client/src/components/SessionOpenSpecActions.tsx` (it already imports `Confirm` from `@blackbelt-technology/pi-dashboard-client-utils/Confirm`). Use `Confirm` with its `body?: ReactNode` slot to render the divergence banner above the message.
 - [ ] 5.2 Component renders when `session.attachedProposal != null && session.pendingReplaceProposal != null`.
 - [ ] 5.3 Local state: `committedTarget: string` initialised from `session.pendingReplaceProposal` on first render (use `useState` lazy initialiser keyed by `session.id`).
-- [ ] 5.4 If `session.pendingReplaceProposal !== committedTarget`, render banner: "Newer change detected: `<pendingReplaceProposal>`. [Use latest]" above the action row. Banner is dismissible only via `[Use latest]` (sets `committedTarget := pendingReplaceProposal`).
-- [ ] 5.5 Action row: `[Replace with <committedTarget>]` (primary) and `[Cancel]` (neutral).
+- [ ] 5.4 If `session.pendingReplaceProposal !== committedTarget`, render banner inside the `Confirm` `body` slot: "Newer change detected: `<pendingReplaceProposal>`. [Use latest]". Banner is dismissible only via `[Use latest]` (sets `committedTarget := pendingReplaceProposal`).
+- [ ] 5.5 `Confirm`'s `confirmLabel` reads `"Replace with <committedTarget>"` (primary intent); cancel uses the default `"Cancel"`.
 - [ ] 5.6 `[Replace]` sends `{ type: "accept_replace_proposal", sessionId, changeName: committedTarget }`. `[Cancel]` and Esc send `{ type: "dismiss_replace_proposal", sessionId, changeName: committedTarget }`.
 - [ ] 5.7 When `session.pendingReplaceProposal` becomes null (server cleared it after accept/dismiss/`agent_end`), unmount the dialog.
 

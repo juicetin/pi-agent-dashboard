@@ -58,6 +58,7 @@ None. This change is a refactor that uses `dashboard-shell-slots` and `dashboard
 
 - **Test imports**: many tests import from internal paths. All test files need import-path rewrites. Mechanical but voluminous.
 - **Type re-export**: any external code (e.g. the `pi-dashboard` skill in `.pi/skills/`) that uses OpenSpec types via `pi-dashboard-shared` paths needs a re-export shim, or the skill updates its imports.
+- **Carry pendingReplaceProposal**: if `replace-proposal-dialog-with-race-handling` has landed before this extraction, `event-wiring.ts` will contain a third manual-attachment branch and `session-meta-handler.ts` will have `accept_replace_proposal` / `dismiss_replace_proposal` handlers plus `pendingReplaceProposal` / `rejectedReplaceProposals` lifecycle on `agent_end`. Preserve all of that in the move; do not regress to the pre-race-handling no-op.
 - **Bridge auto-attach**: the OpenSpec activity detector currently lives in the bridge. Moving it into the plugin's `bridge/` entry means the dashboard server registers the plugin's bridge into `~/.pi/agent/settings.json` (per `dashboard-plugin-loader` spec). Validate that auto-attach behavior is identical post-move.
 - **REST route prefix**: `/api/openspec/*` routes are owned by the plugin now. Other consumers of those routes (skills, scripts) must continue to work — same prefix, same shapes.
 - **Config schema**: `openspec` config namespace moves from top-level to `plugins.openspec.*`. Migration is automated:

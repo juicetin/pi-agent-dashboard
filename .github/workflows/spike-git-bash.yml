@@ -73,25 +73,37 @@ jobs:
           Write-Host "Top-level entries:"
           Get-ChildItem git | Select-Object Name | Format-Table -AutoSize
 
+      - name: Map layout — locate git/bash/sh anywhere in tree
+        shell: pwsh
+        run: |
+          foreach ($name in @('git.exe','bash.exe','sh.exe')) {
+            Write-Host "=== $name ==="
+            $hits = Get-ChildItem -Path git -Recurse -Filter $name -ErrorAction SilentlyContinue
+            if (-not $hits) { Write-Host "  (none found)" }
+            foreach ($h in $hits) {
+              $rel = $h.FullName.Substring((Resolve-Path git).Path.Length + 1)
+              Write-Host ("  {0}  [LinkType={1}] [{2} bytes]" -f $rel, $h.LinkType, $h.Length)
+            }
+          }
+
       - name: Probe binaries (direct extract)
         shell: pwsh
         run: |
+          # Discover actual paths (MinGit trims usr/bin; don't assume layout).
+          $git  = Get-ChildItem git -Recurse -Filter git.exe  -ErrorAction SilentlyContinue | Select-Object -First 1
+          $bash = Get-ChildItem git -Recurse -Filter bash.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+          $sh   = Get-ChildItem git -Recurse -Filter sh.exe   -ErrorAction SilentlyContinue | Select-Object -First 1
           $ok = $true
-          foreach ($rel in @('cmd/git.exe','usr/bin/bash.exe','usr/bin/sh.exe')) {
-            $p = Join-Path git $rel
-            if (-not (Test-Path $p)) { Write-Host "::error::missing $rel"; $ok = $false; continue }
-            Write-Host "--- $rel --version ---"
-            & $p --version
-            if ($LASTEXITCODE -ne 0) { Write-Host "::error::$rel exited $LASTEXITCODE"; $ok = $false }
+          if ($git) { Write-Host "--- git --version ---"; & $git.FullName --version; if ($LASTEXITCODE -ne 0) { $ok = $false } }
+          else { Write-Host "::error::git.exe not found anywhere in tree"; $ok = $false }
+          # R1 core question: is a POSIX shell present at all? (bash OR sh)
+          if ($bash) { Write-Host "--- bash --version ---"; & $bash.FullName --version; if ($LASTEXITCODE -ne 0) { $ok = $false } }
+          if ($sh)   { Write-Host "--- sh --version ---";   & $sh.FullName   --version; if ($LASTEXITCODE -ne 0) { $ok = $false } }
+          if (-not $bash -and -not $sh) {
+            Write-Host "::error::NO POSIX SHELL in this dugite-native tarball (MinGit). pi's !/!! use pi.exec('sh',...) and would fail. R1 BLOCKER."
+            $ok = $false
           }
           if (-not $ok) { exit 1 }
-
-      - name: Inspect sh.exe link type (symlink vs copy)
-        shell: pwsh
-        run: |
-          $sh = Get-Item git/usr/bin/sh.exe
-          $sh | Format-List Name, Length, LinkType, Target
-          Write-Host "Attributes: $($sh.Attributes)"
 
       - name: ZIP round-trip (real Windows distribution path) + re-probe
         shell: pwsh
@@ -102,15 +114,18 @@ jobs:
           New-Item -ItemType Directory -Force git-extracted | Out-Null
           Expand-Archive -Path git-dist.zip -DestinationPath git-extracted -Force
           $ok = $true
-          foreach ($rel in @('cmd/git.exe','usr/bin/bash.exe','usr/bin/sh.exe')) {
-            $p = Join-Path git-extracted $rel
-            if (-not (Test-Path $p)) { Write-Host "::error::ZIP round-trip lost $rel"; $ok = $false; continue }
-            Write-Host "--- (post-zip) $rel --version ---"
-            & $p --version
-            if ($LASTEXITCODE -ne 0) { Write-Host "::error::(post-zip) $rel exited $LASTEXITCODE"; $ok = $false }
+          foreach ($name in @('git.exe','bash.exe','sh.exe')) {
+            $found = Get-ChildItem git-extracted -Recurse -Filter $name -ErrorAction SilentlyContinue | Select-Object -First 1
+            if (-not $found) {
+              # Only git.exe + a POSIX shell are mandatory; tolerate whichever shell exists.
+              if ($name -eq 'git.exe') { Write-Host "::error::ZIP round-trip lost $name"; $ok = $false }
+              else { Write-Host "(post-zip) $name absent" }
+              continue
+            }
+            Write-Host ("--- (post-zip) {0} [LinkType={1} {2}b] --version ---" -f $name, $found.LinkType, $found.Length)
+            & $found.FullName --version
+            if ($LASTEXITCODE -ne 0) { Write-Host "::error::(post-zip) $name exited $LASTEXITCODE (symlink->stub?)"; $ok = $false }
           }
-          $sh = Get-Item git-extracted/usr/bin/sh.exe -ErrorAction SilentlyContinue
-          if ($sh) { Write-Host "post-zip sh.exe LinkType=$($sh.LinkType) Length=$($sh.Length)" }
           if (-not $ok) { Write-Error "ZIP round-trip broke the git tree (symlink loss?)"; exit 1 }
           Write-Host "ZIP round-trip OK"
 

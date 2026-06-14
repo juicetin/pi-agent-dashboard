@@ -56,8 +56,3 @@ Within a group, session order SHALL be governed solely by the server-provided se
 - **WHEN** a folder group contains a main-checkout session and sessions from worktrees `feat-x` and `feat-y`, and a `feat-y` session is moved to front
 - **THEN** that `feat-y` session SHALL render at the top of its tier, ahead of the main-checkout and `feat-x` sessions
 - **AND** no cluster-adjacency rule SHALL reorder it back next to its `feat-y` siblings
-
-## REMOVED Requirements
-
-### Requirement: Worktree session cluster adjacency
-**Reason:** Cluster-adjacency ordering (`clusterByWorkspaceName` — main-checkout cluster first, then per-`workspaceName`/`gitWorktree.name` clusters sorted alphabetically, with `sortSessionsByOrder` applied only inside each cluster) is removed. Per the `simplify-session-card-ordering` design (Decision D8), the user wants no distinguished worktree/jj sub-groups: "first" means first of the whole folder. Order within a folder is now governed solely by the flat status-partitioned order map, so a worktree session can be surfaced at the top of its tier ahead of the main checkout. Grouping-under-parent collapse is retained; only the cluster *ordering* is dropped. This is an intentional reversal of Decision 15 of `add-jj-workspace-plugin` and MUST NOT be re-introduced as a bug fix. (The cluster-adjacency rules previously lived inside the "Group sessions by directory" requirement and its "Worktree sessions cluster adjacent" / "Worktree cluster preserves session order within" scenarios, all superseded by the MODIFIED requirement above.)

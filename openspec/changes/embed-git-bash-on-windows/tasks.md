@@ -41,8 +41,10 @@
   call after node-pty GO/NO-GO when target is win32. Reuse existing
   arch detection.
 - [ ] Add GO/NO-GO assertions to `bundle-server.mjs` for win32 targets:
-  `resources/git/cmd/git.exe`, `resources/git/usr/bin/bash.exe`,
-  `resources/git/THIRD-PARTY-LICENSE.txt`.
+  `resources/git/cmd/git.exe`, `resources/git/usr/bin/sh.exe`
+  (R1 spike: dugite-native ships NO `bash.exe`; the shell is `sh.exe`),
+  `resources/git/THIRD-PARTY-LICENSE.txt`. Also assert the arch libdir
+  exists (`mingw64` on x64 / `clangarm64` on arm64).
 - [ ] Update `packages/electron/scripts/assert-runnable-bundle.mjs` to
   cover bundled git presence on win32 bundles.
 

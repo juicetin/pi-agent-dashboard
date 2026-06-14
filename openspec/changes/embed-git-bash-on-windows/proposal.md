@@ -6,8 +6,12 @@ On Windows the pi agent cannot operate without two host-supplied tools:
 
 - **git.exe** — every flow that reads/writes the repo (status, diff, log,
   branch listing, checkout, stash) shells out to `git`.
-- **bash.exe** — pi's `!` and `!!` prompt prefixes pipe the command through
-  bash; without it, half the agent's interaction model is dead.
+- **a POSIX shell** — pi's `!` and `!!` prompt prefixes run via
+  `pi.exec("sh", ["-c", cmd])` (verified in `command-handler.ts`), so the
+  agent needs an `sh` on PATH; without it, half the interaction model is
+  dead. NOTE (R1 spike): dugite-native ships **no `bash.exe`** — the
+  shell is `usr/bin/sh.exe` (GNU bash 5.2.37 under the name `sh`). Since
+  pi calls `sh`, this matches exactly.
 
 Today we silently assume both are on `PATH`. On a fresh Windows laptop
 without **Git for Windows** installed:
@@ -33,7 +37,7 @@ regress mac/linux behaviour and does not bloat their installers.
    `THIRD-PARTY-LICENSE.txt`. Mac/Linux builds skip the step entirely.
 
 2. **GO/NO-GO guard in `bundle-server.mjs`.** When the target is win32,
-   assert `resources/git/cmd/git.exe`, `resources/git/usr/bin/bash.exe`,
+   assert `resources/git/cmd/git.exe`, `resources/git/usr/bin/sh.exe`,
    and `resources/git/THIRD-PARTY-LICENSE.txt` exist. Fail the build
    loudly if missing (mirrors the existing node-pty prebuilds guard).
 
@@ -69,13 +73,17 @@ regress mac/linux behaviour and does not bloat their installers.
    `!`/`!!` bang-prefix commands running in the terminal would miss
    bundled git/bash. When active, it prepends:
    - `resources/git/cmd` (git.exe)
-   - `resources/git/usr/bin` (bash + coreutils: grep, sed, find, awk,
+   - `resources/git/usr/bin` (sh + coreutils: grep, sed, find, awk,
      tar, etc.)
-   - `resources/git/mingw64/bin` (DLLs)
+   - `resources/git/<libdir>/bin` (DLLs)
 
    …and sets:
-   - `GIT_EXEC_PATH=resources/git/mingw64/libexec/git-core`
+   - `GIT_EXEC_PATH=resources/git/<libdir>/libexec/git-core`
    - `SSL_CERT_FILE=resources/git/ssl/certs/ca-bundle.crt`
+
+   **`<libdir>` is arch-specific (R1 spike).** win32-x64 → `mingw64`;
+   win32-arm64 → `clangarm64`. `resolveBundledGitDir()` detects which of
+   `mingw64/`/`clangarm64/` exists; never hardcode `mingw64`.
 
 5. **Settings UI.** New Windows-only section in `SettingsPanel.tsx`
    exposing the radio (`auto` / `host` / `bundled`) with a live readout
@@ -123,9 +131,10 @@ Rejected alternatives:
 Power users who installed Git for Windows themselves expect their
 version, their `~/.gitconfig`, their credential manager, their PATH to
 win. The bundled git exists for the fresh-laptop case. Atomicity rule:
-`auto` requires **both** `git.exe` **and** `bash.exe` on host PATH
-before falling back to host; otherwise we use bundled (both, atomically)
-to avoid the Frankenstein "git from winget, bash from us" case.
+`auto` requires **both** `git` **and** a POSIX shell (`bash`/`sh`) on
+host PATH before using host; otherwise we use bundled (both, atomically)
+to avoid the Frankenstein "git from winget, shell from us" case. (Host
+Git for Windows ships `bash.exe`; the bundle ships `sh.exe`.)
 
 Rejected alternatives:
 - *Always prefer bundled* (dugite's own model) — deterministic, but
@@ -255,8 +264,10 @@ gracefully, or crash the bridge? This shapes whether the change is a
 `ToolResolver.buildSpawnEnv` calls `ensureWindowsSystemPath` last, which
 prepends System32 et al. `ensureBundledGitOnPath` must run **after**
 that call so its entries land *before* System32 in PATH — but only when
-`selectGitSource()` returned `"bundled"`. `bash.exe` does not exist in
-System32, so no shadowing risk on coreutils. Verify in tests. Note the
+`selectGitSource()` returned `"bundled"`. `sh.exe` does not exist in
+System32, so no shadowing risk on coreutils. R1 spike confirmed the
+bundled shell is a real copied binary (not a symlink), so there is no
+symlink elevation/loss risk on extraction. Verify in tests. Note the
 terminal-manager PTY path does not call `buildSpawnEnv`; its separate
 hook must apply the same after-System32 ordering.
 

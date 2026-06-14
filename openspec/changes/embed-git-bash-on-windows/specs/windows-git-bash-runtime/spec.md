@@ -74,10 +74,12 @@ Windows return `"host"` or `"bundled"` according to:
 
 The helper `ensureBundledGitOnPath(env)` SHALL, when `selectGitSource()`
 returns `"bundled"`, prepend `resources/git/cmd`, `resources/git/usr/bin`, and
-`resources/git/mingw64/bin` to `env.PATH` (in that order), set
-`env.GIT_EXEC_PATH` to `resources/git/mingw64/libexec/git-core`, and set
+`resources/git/<libdir>/bin` to `env.PATH` (in that order), set
+`env.GIT_EXEC_PATH` to `resources/git/<libdir>/libexec/git-core`, and set
 `env.SSL_CERT_FILE` to `resources/git/ssl/certs/ca-bundle.crt`. The
-helper SHALL be idempotent.
+helper SHALL be idempotent. `<libdir>` SHALL be resolved per-arch (R1
+spike): `mingw64` on win32-x64, `clangarm64` on win32-arm64 — detected
+by which directory exists under `resources/git/`, never hardcoded.
 
 #### Scenario: Idempotence
 

@@ -23,7 +23,7 @@ import {
   ensureBundledGitOnPath,
   resolveBundledGitDir,
 } from "./ensure-bundled-git.js";
-import { spawnSync } from "node:child_process";
+import { spawnSync } from "./exec.js";
 import path from "node:path";
 
 export type WhichFn = (cmd: string) => string | null;
@@ -109,7 +109,7 @@ let readoutCache: GitSourceReadout | null = null;
 
 function probeVersion(gitPath: string): string | null {
   try {
-    const r = spawnSync(gitPath, ["--version"], { encoding: "utf8", timeout: 5000 });
+    const r = spawnSync<string>(gitPath, ["--version"], { encoding: "utf8", timeout: 5000 });
     return r.status === 0 ? (r.stdout || "").trim() || null : null;
   } catch {
     return null;

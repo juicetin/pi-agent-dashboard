@@ -113,7 +113,7 @@
 - [x] Extend `runSharedChecks` in
   `packages/shared/src/doctor-core.ts` with `git source` and
   `bash source` rows. Each shows path + version + `(host)` / `(bundled)`.
-- [ ] Diagnostics surfaces "Switch to host" / "Switch to bundled"
+- [x] Diagnostics surfaces "Switch to host" / "Switch to bundled"
   shortcut buttons that POST the setting change.
 
 ## License compliance
@@ -138,7 +138,7 @@
   Windows; no-op when setting=`host` and host present; PATH prepend
   when setting=`bundled`; PATH prepend when setting=`auto` + host
   missing; idempotence (apply twice = apply once).
-- [ ] Integration test in `qa/tests/` running on the Windows QA VM:
+- [x] Integration test in `qa/tests/` running on the Windows QA VM:
   uninstall Git for Windows, launch dashboard, run `git status` via a
   prompt, assert it succeeds via bundled git.
 - [x] Extend `_electron-build.yml` win32 legs to fail loudly if
@@ -147,15 +147,18 @@
 
 ## Documentation
 
-- [ ] Add `docs/file-index-electron.md` rows for
+- [x] Add `docs/file-index-electron.md` rows for
   `download-git-windows.mjs`, `_git-version.json`,
   `ensure-bundled-git.ts`, `select-git-source.ts`.
-- [ ] Add `docs/architecture.md` "Windows runtime dependencies"
+  (electron split + shared split; git-source.ts too)
+- [x] Add `docs/architecture.md` "Windows runtime dependencies"
   subsection covering the auto/host/bundled selection model + PATH
   semantics.
-- [ ] Add `docs/faq.md` entries: "How do I switch between bundled and
+- [x] Add `docs/faq.md` entries: "How do I switch between bundled and
   host git on Windows?" and "Why does my installer download include a
   copy of git?"
-- [ ] Update `AGENTS.md` key-files table with the new helpers (≤200
+- [x] Update `AGENTS.md` key-files table with the new helpers (≤200
   chars each, no inline change history per docs policy).
-- [ ] `CHANGELOG.md` `[Unreleased] → Added`: one-paragraph summary.
+  (routed to docs/file-index-{shared,electron}.md per Documentation
+  Update Protocol rule 0 — AGENTS.md must NOT carry per-file rows)
+- [x] `CHANGELOG.md` `[Unreleased] → Added`: one-paragraph summary.

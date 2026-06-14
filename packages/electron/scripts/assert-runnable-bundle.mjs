@@ -47,6 +47,22 @@ const required = [
   path.join(serverBundle, "start-server.sh"),
 ];
 
+// Bundled Windows git+sh — only on win32 builds (which run on a Windows
+// runner). dugite-native ships sh.exe, NOT bash.exe (R1 spike). Arch libdir
+// is mingw64 (x64) / clangarm64 (arm64). See change: embed-git-bash-on-windows.
+if (process.platform === "win32") {
+  const gitDir = path.join("packages", "electron", "resources", "git");
+  required.push(
+    path.join(gitDir, "cmd", "git.exe"),
+    path.join(gitDir, "usr", "bin", "sh.exe"),
+    path.join(gitDir, "THIRD-PARTY-LICENSE.txt"),
+  );
+  if (!existsSync(path.join(gitDir, "mingw64")) && !existsSync(path.join(gitDir, "clangarm64"))) {
+    console.error("\u2717 Runnable-bundle assertion failed. Missing bundled git arch libdir (mingw64 / clangarm64).");
+    process.exit(1);
+  }
+}
+
 const missing = required.filter((p) => !existsSync(p));
 
 if (missing.length > 0) {

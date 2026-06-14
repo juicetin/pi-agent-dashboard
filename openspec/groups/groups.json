@@ -169,6 +169,24 @@
     "fix-openspec-worktree-cwd-keying": "ui",
     "redesign-openspec-board": "ui",
     "fix-mobile-back-depth-aware": "ui",
-    "fix-spawn-token-env-leak": "ui"
+    "fix-spawn-token-env-leak": "ui",
+    "fix-openspec-board-mobile-scroll": "ui",
+    "emit-openspec-pending-from-poll": "ui"
+  },
+  "changeOrder": {
+    "__ungrouped__": [
+      "register-bash-and-tool-install-help",
+      "surface-input-streaming-behavior",
+      "add-release-video-pipeline",
+      "restore-pi-version-skew-surface"
+    ],
+    "ui": [
+      "fix-openspec-board-mobile-scroll",
+      "docker-test-harness",
+      "emit-openspec-pending-from-poll",
+      "fix-openspec-worktree-cwd-keying",
+      "fix-spawn-token-env-leak",
+      "replace-proposal-dialog-with-race-handling"
+    ]
   }
 }

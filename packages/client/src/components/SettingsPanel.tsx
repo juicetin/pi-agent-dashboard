@@ -211,12 +211,15 @@ export function SettingsPanel({ availableModels, onMessage }: {
     setting: string; source: string; gitPath: string | null;
     gitVersion: string | null; shellPath: string | null;
   } | null>(null);
-  useEffect(() => {
-    fetch(`${getApiBase()}/api/health`)
+  const refreshGitSourceReadout = useCallback(() => {
+    return fetch(`${getApiBase()}/api/health`)
       .then((res) => (res.ok ? res.json() : null))
       .then((h) => setGitSourceReadout(h?.gitSource ?? null))
       .catch(() => {});
   }, []);
+  useEffect(() => {
+    void refreshGitSourceReadout();
+  }, [refreshGitSourceReadout]);
 
   useEffect(() => {
     const configPromise = fetch(`${getApiBase()}/api/config`).then((res) => res.json());
@@ -364,6 +367,12 @@ export function SettingsPanel({ availableModels, onMessage }: {
         }
         restartRequired = data.restartRequired;
         setOriginal(JSON.parse(JSON.stringify(config)));
+        // windowsGitSource change re-resolves the active source server-side;
+        // refresh the "Currently active" readout so it doesn't stay stale.
+        // See change: embed-git-bash-on-windows.
+        if (partial.windowsGitSource !== undefined) {
+          void refreshGitSourceReadout();
+        }
       }
 
       // Save LLM providers

@@ -42,7 +42,7 @@ let cached: ActiveGitSource | null = null;
 export function setWindowsGitSourceSetting(setting: WindowsGitSourceSetting): void {
   if (setting !== configuredSetting) {
     configuredSetting = setting;
-    cached = null;
+    invalidateGitSourceCache(); // resets BOTH cached + readoutCache
   }
 }
 

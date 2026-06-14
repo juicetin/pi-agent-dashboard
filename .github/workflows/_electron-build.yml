@@ -284,6 +284,11 @@ jobs:
         # Windows. No `shell: bash` (Windows-reachable invariant pinned by
         # packages/shared/src/__tests__/no-bash-on-windows.test.ts).
         if: ${{ inputs.source_only_bundle == false }}
+        # GIT_TARGET_ARCH lets the win32 git libdir assertion pick the exact
+        # expected dir (mingw64 x64 / clangarm64 arm64). See change:
+        # embed-git-bash-on-windows.
+        env:
+          GIT_TARGET_ARCH: ${{ matrix.arch }}
         run: node packages/electron/scripts/assert-runnable-bundle.mjs
 
       - name: Use x64 Node.js for Windows arm64 bundled server

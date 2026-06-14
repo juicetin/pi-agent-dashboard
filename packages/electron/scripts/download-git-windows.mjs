@@ -54,26 +54,33 @@ function resolveTargetPlatform() {
   return process.env.npm_config_target_platform || process.platform;
 }
 
+/** Idle-socket timeout (ms): abort a stalled download so the build fails
+ *  loudly instead of hanging the CI job indefinitely. */
+const DOWNLOAD_TIMEOUT_MS = 60_000;
+
 /** GET with redirect following (GitHub release assets 302 → codeload/S3). */
 function download(url, dest, redirects = 0) {
   return new Promise((resolve, reject) => {
     if (redirects > 5) return reject(new Error("too many redirects"));
-    https
-      .get(url, { headers: { "User-Agent": "pi-dashboard-build" } }, (res) => {
-        if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-          res.resume();
-          return resolve(download(res.headers.location, dest, redirects + 1));
-        }
-        if (res.statusCode !== 200) {
-          res.resume();
-          return reject(new Error(`HTTP ${res.statusCode} for ${url}`));
-        }
-        const out = createWriteStream(dest);
-        res.pipe(out);
-        out.on("finish", () => out.close(() => resolve()));
-        out.on("error", reject);
-      })
-      .on("error", reject);
+    const req = https.get(url, { headers: { "User-Agent": "pi-dashboard-build" } }, (res) => {
+      if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        res.resume();
+        return resolve(download(res.headers.location, dest, redirects + 1));
+      }
+      if (res.statusCode !== 200) {
+        res.resume();
+        return reject(new Error(`HTTP ${res.statusCode} for ${url}`));
+      }
+      const out = createWriteStream(dest);
+      res.pipe(out);
+      out.on("finish", () => out.close(() => resolve()));
+      out.on("error", reject);
+    });
+    req.on("error", reject);
+    // Fail-closed on a stalled connection: destroy the socket and reject.
+    req.setTimeout(DOWNLOAD_TIMEOUT_MS, () => {
+      req.destroy(new Error(`download timed out after ${DOWNLOAD_TIMEOUT_MS}ms: ${url}`));
+    });
   });
 }
 

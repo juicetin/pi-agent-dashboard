@@ -57,8 +57,19 @@ if (process.platform === "win32") {
     path.join(gitDir, "usr", "bin", "sh.exe"),
     path.join(gitDir, "THIRD-PARTY-LICENSE.txt"),
   );
-  if (!existsSync(path.join(gitDir, "mingw64")) && !existsSync(path.join(gitDir, "clangarm64"))) {
-    console.error("\u2717 Runnable-bundle assertion failed. Missing bundled git arch libdir (mingw64 / clangarm64).");
+  // Assert the EXACT libdir for the target arch (x64 -> mingw64,
+  // arm64 -> clangarm64). An either/or check would let an x64 leg pass with
+  // only the arm64 tree (or vice versa) and ship an invalid runtime.
+  // GIT_TARGET_ARCH (set by the Bundle + Assert steps) drives this; process.arch
+  // is the x64 runner even on the arm64 cross-build leg. See change:
+  // embed-git-bash-on-windows.
+  const gitArch = (process.env.GIT_TARGET_ARCH || process.arch) === "arm64" ? "arm64" : "x64";
+  const expectedLibDir = gitArch === "arm64" ? "clangarm64" : "mingw64";
+  if (!existsSync(path.join(gitDir, expectedLibDir))) {
+    console.error(
+      `\u2717 Runnable-bundle assertion failed. Missing bundled git libdir ` +
+        `'${expectedLibDir}' for GIT_TARGET_ARCH=${gitArch}.`,
+    );
     process.exit(1);
   }
 }

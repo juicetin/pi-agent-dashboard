@@ -151,15 +151,27 @@ export function DiagnosticsSection({ fetcher }: Props = {}) {
   }, [fetch, running]);
 
   // Switch windowsGitSource then re-run diagnostics. Takes effect for newly
-  // spawned sessions. See change: embed-git-bash-on-windows.
+  // spawned sessions. /api/config is PUT (matches SettingsPanel); check the
+  // response + body success and surface failures. See change:
+  // embed-git-bash-on-windows.
   const switchGitSource = useCallback(async (value: "host" | "bundled") => {
     try {
-      await window.fetch(`${getApiBase()}/api/config`, {
-        method: "POST",
+      const res = await window.fetch(`${getApiBase()}/api/config`, {
+        method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ windowsGitSource: value }),
       });
-    } catch { /* surfaced by the re-run below */ }
+      const body = await res.json().catch(() => null);
+      if (!res.ok || body?.success === false) {
+        const msg = body?.error || `HTTP ${res.status}`;
+        setError({ status: res.status, excerpt: "", message: `Failed to set git source: ${msg}` });
+        return;
+      }
+    } catch (err) {
+      const e = err instanceof Error ? err : new Error(String(err));
+      setError({ status: null, excerpt: "", message: `Failed to set git source: ${e.message}` });
+      return;
+    }
     await run();
   }, [run]);
 

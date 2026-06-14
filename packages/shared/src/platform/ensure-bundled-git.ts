@@ -132,13 +132,21 @@ export function ensureBundledGitOnPath(
   if (libDir) dirs.push(join(gitDir, libDir, "bin"));
 
   const currentPath = env.PATH ?? "";
-  const currentLower = currentPath.toLowerCase();
+  // Exact per-entry equality (case-insensitive), NOT substring containment:
+  // substring matching would let `C:\x\usr\bin-old` block the required
+  // `C:\x\usr\bin` prepend. Trailing separators trimmed.
+  const present = new Set(
+    currentPath
+      .split(";")
+      .map((e) => e.trim().replace(/[\\/]+$/, "").toLowerCase())
+      .filter(Boolean),
+  );
   const seen = new Set<string>();
   const toAdd: string[] = [];
   for (const dir of dirs) {
     if (!exists(dir)) continue;
-    const lower = dir.toLowerCase();
-    if (currentLower.includes(lower) || seen.has(lower)) continue;
+    const lower = dir.replace(/[\\/]+$/, "").toLowerCase();
+    if (present.has(lower) || seen.has(lower)) continue;
     seen.add(lower);
     toAdd.push(dir);
   }

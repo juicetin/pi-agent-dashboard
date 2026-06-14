@@ -163,7 +163,7 @@
     "simplify-session-card-ordering": "ui",
     "resolve-global-prompt-templates-from-dashboard": "ui",
     "add-hyperframes-skills": "next-phase",
-    "add-end-user-docs": "next-phase",
+    "add-end-user-docs": "ui",
     "project-init-skill-and-profiles": "next-phase",
     "optimize-openspec-poll-derive-artifacts-locally": "ui",
     "fix-openspec-worktree-cwd-keying": "ui",
@@ -176,22 +176,21 @@
     "fix-popover-viewport-flip": "ui",
     "add-board-drag-visual-feedback": "ui",
     "surface-input-streaming-behavior": "ui",
-    "stepper-compact-done-letters": "ui"
+    "stepper-compact-done-letters": "ui",
+    "register-bash-and-tool-install-help": "ui"
   },
   "changeOrder": {
     "__ungrouped__": [
-      "register-bash-and-tool-install-help",
       "add-release-video-pipeline",
       "restore-pi-version-skew-surface"
     ],
     "ui": [
       "docker-test-harness",
-      "fix-openspec-worktree-cwd-keying",
-      "stepper-compact-done-letters"
+      "add-end-user-docs",
+      "register-bash-and-tool-install-help"
     ],
     "next-phase": [
       "add-dashboard-slash-commands",
-      "add-end-user-docs",
       "add-honcho-docker-integration-tests",
       "add-hyperframes-skills",
       "docker-packaging",

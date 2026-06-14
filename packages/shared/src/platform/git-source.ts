@@ -23,6 +23,8 @@ import {
   ensureBundledGitOnPath,
   resolveBundledGitDir,
 } from "./ensure-bundled-git.js";
+import { spawnSync } from "node:child_process";
+import path from "node:path";
 
 export type WhichFn = (cmd: string) => string | null;
 
@@ -47,6 +49,7 @@ export function setWindowsGitSourceSetting(setting: WindowsGitSourceSetting): vo
 /** Drop the cached resolution (config-write, manual re-check). */
 export function invalidateGitSourceCache(): void {
   cached = null;
+  readoutCache = null;
 }
 
 export interface GitSourceResolveOpts {
@@ -89,4 +92,54 @@ export function augmentEnvWithGitSource(
   } catch {
     return env;
   }
+}
+
+export interface GitSourceReadout {
+  setting: WindowsGitSourceSetting;
+  source: GitSource;
+  /** Resolved git.exe path (bundled or host), or null. */
+  gitPath: string | null;
+  /** `git --version` output, or null when unresolved. */
+  gitVersion: string | null;
+  /** Resolved POSIX shell path (bundled usr/bin/sh.exe or host), or null. */
+  shellPath: string | null;
+}
+
+let readoutCache: GitSourceReadout | null = null;
+
+function probeVersion(gitPath: string): string | null {
+  try {
+    const r = spawnSync(gitPath, ["--version"], { encoding: "utf8", timeout: 5000 });
+    return r.status === 0 ? (r.stdout || "").trim() || null : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Windows-only diagnostic readout for /api/health + Diagnostics. Returns
+ * null on macOS/Linux (the setting is a no-op there). Cached for the life
+ * of the process; reset by invalidateGitSourceCache().
+ */
+export function getGitSourceReadout(which: WhichFn, opts: GitSourceResolveOpts = {}): GitSourceReadout | null {
+  if (process.platform !== "win32") return null;
+  if (readoutCache) return readoutCache;
+  const { source, setting, gitDir } = getActiveGitSource(which, opts);
+  let gitPath: string | null = null;
+  let shellPath: string | null = null;
+  if (source === "bundled" && gitDir) {
+    gitPath = path.win32.join(gitDir, "cmd", "git.exe");
+    shellPath = path.win32.join(gitDir, "usr", "bin", "sh.exe");
+  } else {
+    gitPath = which("git");
+    shellPath = which("bash") ?? which("sh");
+  }
+  readoutCache = {
+    setting,
+    source,
+    gitPath,
+    gitVersion: gitPath ? probeVersion(gitPath) : null,
+    shellPath,
+  };
+  return readoutCache;
 }

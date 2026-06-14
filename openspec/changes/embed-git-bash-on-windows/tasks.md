@@ -97,20 +97,20 @@
 
 ## Settings UI
 
-- [ ] Add Windows-only "Git & Bash source" radio group to
+- [x] Add Windows-only "Git & Bash source" radio group to
   `packages/client/src/components/SettingsPanel.tsx`. Hide on
   non-Windows. Three options: Auto / Host only / Bundled only, with
   descriptive subtext per proposal §3.
-- [ ] Add live "Currently active: <source> — <path> (v<version>)"
+- [x] Add live "Currently active: <source> — <path> (v<version>)"
   readout below the radio. Fetches from `/api/health` or a new
   `/api/git-source` endpoint.
-- [ ] Server endpoint: extend `/api/health` payload with
+- [x] Server endpoint: extend `/api/health` payload with
   `gitSource: { active, setting, path, version, source }` Windows-only
   block.
 
 ## Diagnostics
 
-- [ ] Extend `runSharedChecks` in
+- [x] Extend `runSharedChecks` in
   `packages/shared/src/doctor-core.ts` with `git source` and
   `bash source` rows. Each shows path + version + `(host)` / `(bundled)`.
 - [ ] Diagnostics surfaces "Switch to host" / "Switch to bundled"
@@ -118,17 +118,17 @@
 
 ## License compliance
 
-- [ ] Author `resources/git/THIRD-PARTY-LICENSE.txt` template (verbatim
+- [x] Author `resources/git/THIRD-PARTY-LICENSE.txt` template (verbatim
   Git COPYING, MSYS2/MinGW notice file, OpenSSL/zlib/libidn2/expat
   notices as bundled by dugite-native, corresponding-source pointer
   https://github.com/desktop/dugite-native).
-- [ ] Add "Bundled software" entry in the Electron About dialog
+- [x] Add "Bundled software" entry in the Electron About dialog
   (`packages/electron/src/lib/app-menu.ts`) linking to the file when
   bundled git is active.
 
 ## CI / tests
 
-- [ ] Repo-lint test
+- [x] Repo-lint test
   `packages/shared/src/__tests__/no-hardcoded-bundled-git-paths.test.ts`
   forbidding `resources/git/cmd/git.exe` etc. outside the platform/
   resolver helpers (mirrors `no-hardcoded-node-modules-paths.test.ts`).

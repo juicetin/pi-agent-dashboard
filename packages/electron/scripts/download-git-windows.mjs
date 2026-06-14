@@ -87,13 +87,15 @@ function sha256(file) {
   });
 }
 
-function writeLicense(tag) {
+function writeLicense(manifest) {
   const bundledLicense = path.join(GIT_OUT_DIR, "LICENSE.txt");
   const header = [
     "Bundled Git for Windows (via desktop/dugite-native)",
     "===================================================",
     "",
-    `Pinned release: dugite-native ${tag}`,
+    // Stable marker line — parsed by the Electron About dialog.
+    `Git version: ${manifest.gitVersion}`,
+    `Pinned release: dugite-native ${manifest.dugiteNativeTag}`,
     "Corresponding source (GPLv2 §3 written offer / pointer):",
     "  https://github.com/desktop/dugite-native",
     "",
@@ -157,7 +159,7 @@ async function main() {
     rmSync(GIT_OUT_DIR, { recursive: true, force: true });
     mkdirSync(GIT_OUT_DIR, { recursive: true });
     await extract({ file: tmp, cwd: GIT_OUT_DIR });
-    writeLicense(manifest.dugiteNativeTag);
+    writeLicense(manifest);
     console.log(`  [git-bundle] extracted to ${GIT_OUT_DIR}`);
   } finally {
     rmSync(tmp, { force: true });

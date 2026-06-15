@@ -2241,7 +2241,7 @@ Cross-refs:
 
 Enable Settings → Sessions → "Initialize on worktree". Default off.
 
-After worktree spawn, trusted `worktreeInit` hook auto-runs.
+After worktree spawn, trusted `worktreeInit` hook auto-runs when `needsInit` true.
 
 Untrusted hook → no auto-run. Use manual Initialize button (grants TOFU trust first).
 

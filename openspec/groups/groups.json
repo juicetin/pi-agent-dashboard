@@ -181,12 +181,15 @@
     "reorganize-settings-into-pages": "ui",
     "add-faux-model-integration-tests": "ui",
     "restore-pi-version-skew-surface": "sdasdasd",
-    "add-release-video-pipeline": "future"
+    "add-release-video-pipeline": "future",
+    "scope-openspec-poll-to-active-cwds": "ui",
+    "offload-openspec-poll-to-worker": "ui"
   },
   "changeOrder": {
     "__ungrouped__": [],
     "ui": [
-      "embed-git-bash-on-windows",
+      "scope-openspec-poll-to-active-cwds",
+      "offload-openspec-poll-to-worker",
       "reorganize-settings-into-pages",
       "add-end-user-docs",
       "docker-test-harness",

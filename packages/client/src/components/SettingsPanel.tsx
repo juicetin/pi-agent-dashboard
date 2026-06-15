@@ -1167,14 +1167,20 @@ function DebugToolsToggle() {
 // toggle (decoupled from the config Save button). Fail-safe to OFF.
 function WorktreeAutoInitToggle() {
   const [value, setValue] = useState(false);
+  // Monotonic request counter: only the latest PATCH may write state, so
+  // out-of-order responses from rapid toggling can't clobber a newer choice.
+  const latestRequestRef = useRef(0);
   useEffect(() => {
     let alive = true;
     void fetchAutoInitWorktreePref().then((v) => { if (alive) setValue(v); });
     return () => { alive = false; };
   }, []);
   const onChange = useCallback((next: boolean) => {
+    const seq = ++latestRequestRef.current;
     setValue(next); // optimistic
-    void setAutoInitWorktreePref(next).then((persisted) => setValue(persisted)).catch(() => setValue(!next));
+    void setAutoInitWorktreePref(next)
+      .then((persisted) => { if (seq === latestRequestRef.current) setValue(persisted); })
+      .catch(() => { if (seq === latestRequestRef.current) setValue(!next); });
   }, []);
   return (
     <ToggleField

@@ -32,15 +32,23 @@ function mintRequestId(): string {
  * it issued a `runWorktreeInit` call, `false` otherwise (for tests/diagnostics).
  */
 export async function maybeAutoInitWorktreeOnSpawn(cwd: string): Promise<boolean> {
-  const enabled = await fetchAutoInitWorktreePref();
-  if (!enabled) return false;
+  if (!cwd) return false;
+  // Invoked fire-and-forget from spawn callbacks; swallow any failure so a
+  // rejected probe/run never surfaces as an unhandled rejection.
+  try {
+    const enabled = await fetchAutoInitWorktreePref();
+    if (!enabled) return false;
 
-  const status = await fetchWorktreeInitStatus(cwd);
-  if (status.hasHook !== true || status.needsInit !== true || status.trusted !== true) {
+    const status = await fetchWorktreeInitStatus(cwd);
+    if (status.hasHook !== true || status.needsInit !== true || status.trusted !== true) {
+      return false;
+    }
+
+    // Trusted + needs init → run. Never pass confirmHash (TOFU invariant).
+    await runWorktreeInit({ cwd, requestId: mintRequestId() });
+    return true;
+  } catch (error) {
+    console.warn("[worktree-auto-init] failed", { cwd, error });
     return false;
   }
-
-  // Trusted + needs init → run. Never pass confirmHash (TOFU invariant).
-  await runWorktreeInit({ cwd, requestId: mintRequestId() });
-  return true;
 }

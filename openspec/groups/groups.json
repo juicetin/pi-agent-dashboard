@@ -187,16 +187,18 @@
     "instrument-session-hydration-timing": "ui",
     "offload-session-events-load-to-worker": "ui",
     "fix-worktree-spawn-placeholder-and-ordering": "ui",
-    "auto-init-worktree-on-spawn": "ui"
+    "auto-init-worktree-on-spawn": "ui",
+    "show-chat-history-loading-indicator": "ui",
+    "fix-settings-mobile-layout": "ui"
   },
   "changeOrder": {
     "__ungrouped__": [],
     "ui": [
       "add-end-user-docs",
       "docker-test-harness",
-      "restore-windows-nsis-installer",
-      "offload-session-events-load-to-worker",
-      "auto-init-worktree-on-spawn"
+      "fix-settings-mobile-layout",
+      "show-chat-history-loading-indicator",
+      "restore-windows-nsis-installer"
     ],
     "next-phase": [
       "add-dashboard-slash-commands",

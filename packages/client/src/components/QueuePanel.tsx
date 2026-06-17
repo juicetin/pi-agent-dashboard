@@ -224,7 +224,7 @@ function FollowupCycler({
         <div className="flex items-start gap-1.5">
           <div
             data-testid="queue-chip-followup"
-            className="flex-1 min-w-0 text-sm text-[var(--text-primary)] whitespace-pre-wrap break-words leading-relaxed"
+            className="flex-1 min-w-0 max-h-80 overflow-auto text-sm text-[var(--text-primary)] whitespace-pre-wrap break-words leading-relaxed"
           >
             {text}
           </div>

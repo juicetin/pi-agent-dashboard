@@ -57,6 +57,13 @@ describe("QueuePanel — basic rendering", () => {
     expect(getByTestId("queue-chip-followup").textContent).toBe("gamma");
     expect(getByTestId("queue-followup-position").textContent).toMatch(/3.*3/);
   });
+
+  it("display chip caps height and scrolls on overflow (max-h-80 overflow-auto)", () => {
+    const { getByTestId } = render(<QueuePanel followUp={["long entry"]} />);
+    const chip = getByTestId("queue-chip-followup");
+    expect(chip.className).toContain("max-h-80");
+    expect(chip.className).toContain("overflow-auto");
+  });
 });
 
 describe("QueuePanel — cycler navigation (display-only)", () => {

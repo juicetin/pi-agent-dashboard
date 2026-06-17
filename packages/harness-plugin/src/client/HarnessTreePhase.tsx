@@ -40,12 +40,13 @@ export function HarnessTreePhase({ session }: { session: DashboardSession }): Re
 
   const run = harnessDetailValue(details, "Run");
   const phase = harnessDetailValue(details, "Phase");
+  const skill = harnessDetailValue(details, "Skill");
   const task = harnessDetailValue(details, "Task");
   const taskId = extractHarnessTaskId(task);
   const label = harnessPhaseLabel(phase);
   const tone = harnessPhaseTone(phase);
   const toneClass = HARNESS_PHASE_TONE_CLASS[tone];
-  const accessibleName = ["Harness", label, taskId, "details"].filter(Boolean).join(" ");
+  const accessibleName = ["Harness", label, skill, taskId, "details"].filter(Boolean).join(" ");
 
   return (
     <>
@@ -62,6 +63,7 @@ export function HarnessTreePhase({ session }: { session: DashboardSession }): Re
       >
         <Icon path={mdiClipboardCheckOutline} size={0.45} className="flex-shrink-0 opacity-80" />
         <span className="truncate">{label}</span>
+        {skill ? <span className="flex-shrink-0 opacity-70">/{skill}</span> : null}
         {taskId ? <span className="flex-shrink-0 opacity-80">· {taskId}</span> : null}
       </button>
       <HarnessStatusDialog

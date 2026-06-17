@@ -1,3 +1,4 @@
+import { SessionCardBadgeSlot } from "@blackbelt-technology/dashboard-plugin-runtime";
 import type { CommandInfo, DashboardSession, ImageContent, OpenSpecChange } from "@blackbelt-technology/pi-dashboard-shared/types.js";
 import { mdiArrowLeft, mdiCrosshairsGps, mdiFileCompare, mdiLinkOff, mdiPaperclip, mdiPencilOutline, mdiPlay, mdiPlayCircleOutline, mdiRefresh, mdiSourceFork, mdiViewGridOutline } from "@mdi/js";
 import { Icon } from "@mdi/react";
@@ -15,8 +16,8 @@ import { ArtifactLettersButton } from "../openspec/openspec-helpers.js";
 // FlowLaunchDialog removed: flow launching is owned entirely by
 // flows-plugin's command-route claims (/flows, /flows:new, etc.) and
 // SessionFlowActionsClaim. See change: pluginize-flows-via-registry.
-import { SearchableSelectDialog, type SelectOption } from "../primitives/SearchableSelectDialog.js";
 import { useOptionalSessionDiff } from "../diff/SessionDiffContext.js";
+import { SearchableSelectDialog, type SelectOption } from "../primitives/SearchableSelectDialog.js";
 import { useOptionalSplitWorkspace } from "../split/SplitWorkspaceContext.js";
 import { TagChip } from "../tags/TagChip.js";
 import { TagEditor } from "../tags/TagEditor.js";
@@ -433,6 +434,8 @@ export function SessionHeader({ session, state, onRename, showBack, onBack, mobi
       {/* Extension UI System (Phase 2): footer-segment decorator slot. */}
       {/* See change: add-extension-ui-decorations. */}
       <FooterSegmentSlot session={session} />
+      {/* Plugin badges also appear in the desktop session header. */}
+      <SessionCardBadgeSlot session={session} />
       {/* Editable user-tag strip + read-only phase chip (D5: detail-header
           primary). See change: add-session-tags. */}
       {onSetTags && (

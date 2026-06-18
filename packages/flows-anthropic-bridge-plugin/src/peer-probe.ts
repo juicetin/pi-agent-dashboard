@@ -18,7 +18,11 @@
  *   - `via === "pi-packages"` → `await import(entryPath!)` (absolute path)
  */
 
-export const PEER_AM = "@pi/anthropic-messages";
+export const PEER_AM = "@blackbelt-technology/pi-anthropic-messages";
+/** Legacy pre-rescope module name, still probed for back-compat. */
+export const PEER_AM_LEGACY = "@pi/anthropic-messages";
+/** All anthropic-messages specifiers to probe, new name first. */
+export const PEER_AM_NAMES = [PEER_AM, PEER_AM_LEGACY] as const;
 export const PEER_FLOWS = "pi-flows";
 
 export interface PeerProbe {
@@ -73,7 +77,13 @@ function probePeer(spec: string, deps: ProbeDeps): PeerProbe {
  * loaded under a different module spec than the canonical "pi-flows").
  */
 export function probeAll(deps: ProbeDeps): ProbeResult {
-  const am = probePeer(PEER_AM, deps);
+  // Probe the current name first, then the legacy pre-rescope name. Keep
+  // the last probe result so the failure reason surfaces when neither hits.
+  let am: PeerProbe = { ok: false, reason: "not probed" };
+  for (const name of PEER_AM_NAMES) {
+    am = probePeer(name, deps);
+    if (am.ok) break;
+  }
   const flowsModule = probePeer(PEER_FLOWS, deps);
   const flowsListener = (deps.flowsListenerCount?.() ?? 0) > 0;
   const flows: PeerProbe = flowsModule.ok

@@ -98,7 +98,10 @@ export interface EnrichedRecommendedExtension extends RecommendedExtension {
 export const RECOMMENDED_EXTENSIONS: readonly RecommendedExtension[] = [
 	{
 		id: "pi-anthropic-messages",
-		source: "https://github.com/BlackBeltTechnology/pi-anthropic-messages.git",
+		// Published to the @blackbelt-technology npm scope. Source MUST be the
+		// npm spec so sourcesMatch() recognizes the npm install as satisfying
+		// this required entry (npm↔git cross-kind also added defensively).
+		source: "npm:@blackbelt-technology/pi-anthropic-messages",
 		displayName: "pi-anthropic-messages",
 		fallbackDescription:
 			"Protocol bridge that makes pi's custom tools work with any " +

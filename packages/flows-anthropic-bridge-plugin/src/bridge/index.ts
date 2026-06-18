@@ -118,8 +118,14 @@ export default async function activate(ctx: any): Promise<void> {
       } else {
         // Peer dependency, not a direct dep — TS can't see types here.
         // Resolved at runtime via probeAll() before we reach this line.
-        // @ts-expect-error optional peer; resolved dynamically
-        mod = await import("@pi/anthropic-messages");
+        // Try the current scoped name first, fall back to the legacy name.
+        try {
+          // @ts-expect-error optional peer; resolved dynamically
+          mod = await import("@blackbelt-technology/pi-anthropic-messages");
+        } catch {
+          // @ts-expect-error legacy pre-rescope name; resolved dynamically
+          mod = await import("@pi/anthropic-messages");
+        }
       }
     } catch (e) {
       // Resolve said yes, import said no — surface the import error and stay

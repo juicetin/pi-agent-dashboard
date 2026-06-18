@@ -122,5 +122,15 @@ export function sourcesMatch(a: string, b: string): boolean {
 		if (basename && basename === gitKey.repo.toLowerCase()) return true;
 	}
 
+	// Cross-kind: git ↔ npm. Match the git repo name against the npm
+	// package's unscoped name (strip @scope/). Handles packages migrated from
+	// a git source to a published npm scope without updating every
+	// registration (e.g. pi-anthropic-messages).
+	const npmKey = ka.kind === "npm" ? ka : kb.kind === "npm" ? kb : null;
+	if (gitKey && npmKey) {
+		const unscoped = npmKey.name.replace(/^@[^/]+\//, "").toLowerCase();
+		if (unscoped && unscoped === gitKey.repo.toLowerCase()) return true;
+	}
+
 	return false;
 }

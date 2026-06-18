@@ -140,4 +140,29 @@ describe("sourcesMatch", () => {
 			),
 		).toBe(false);
 	});
+
+	it("cross-matches a git URL against an npm install whose unscoped name is the repo", () => {
+		expect(
+			sourcesMatch(
+				"https://github.com/BlackBeltTechnology/pi-anthropic-messages.git",
+				"npm:@blackbelt-technology/pi-anthropic-messages",
+			),
+		).toBe(true);
+		// order-independent
+		expect(
+			sourcesMatch(
+				"npm:@blackbelt-technology/pi-anthropic-messages@0.3.2",
+				"git@github.com:BlackBeltTechnology/pi-anthropic-messages.git",
+			),
+		).toBe(true);
+	});
+
+	it("does not cross-match a git URL against an unrelated npm package", () => {
+		expect(
+			sourcesMatch(
+				"https://github.com/BlackBeltTechnology/pi-anthropic-messages.git",
+				"npm:@blackbelt-technology/pi-image-fit",
+			),
+		).toBe(false);
+	});
 });

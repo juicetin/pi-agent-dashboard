@@ -110,9 +110,27 @@ describe("BuiltInRolesSettings", () => {
     seedConfig({});
   });
 
-  it("renders an empty hint when plugin config has no roles", () => {
-    const { getByTestId } = render(wrap(<BuiltInRolesSettings />));
-    expect(getByTestId("roles-settings-empty").textContent).toContain("pi-flows");
+  it("renders default role rows + setup banner when no role is assigned", () => {
+    // Back-end overlays default role names (empty values) on a fresh install.
+    seedConfig({
+      roles: { planning: "", coding: "", compact: "", fast: "", vision: "", research: "" },
+      presets: [],
+      activePreset: null,
+      models: [],
+    });
+    const { getByTestId, queryByTestId } = render(wrap(<BuiltInRolesSettings />));
+    // Setup banner shown; legacy pi-flows empty-state gone.
+    expect(getByTestId("roles-settings-setup-banner").textContent).toContain("set up now");
+    expect(queryByTestId("roles-settings-empty")).toBeNull();
+    // Default rows render, each with the unassigned "Add model" affordance.
+    expect(getByTestId("roles-row-fast").textContent).toContain("Add model");
+    expect(getByTestId("roles-row-planning")).toBeTruthy();
+  });
+
+  it("hides the setup banner once a role has an assigned model", () => {
+    seedConfig(sampleConfig);
+    const { queryByTestId } = render(wrap(<BuiltInRolesSettings />));
+    expect(queryByTestId("roles-settings-setup-banner")).toBeNull();
   });
 
   it("renders preset row + role grid when config is populated", () => {

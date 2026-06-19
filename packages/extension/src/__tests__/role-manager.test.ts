@@ -15,7 +15,21 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-import { activate, getModelRole, loadRoleConfig, saveRoleConfig } from "../role-manager.js";
+import {
+  activate,
+  getModelRole,
+  loadRoleConfig,
+  saveRoleConfig,
+  DEFAULT_ROLE_NAMES,
+  overlayDefaultRoles,
+} from "../role-manager.js";
+
+/** Build the expected overlay map: every default name empty, then `assigned` wins. */
+function withDefaults(assigned: Record<string, string> = {}): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const name of DEFAULT_ROLE_NAMES) out[name] = "";
+  return { ...out, ...assigned };
+}
 
 const CONFIG = () => join(homedir(), ".pi", "agent", "providers.json");
 
@@ -103,17 +117,19 @@ describe("saveRoleConfig", () => {
 });
 
 describe("flow:role-get-all", () => {
-  it("returns empty snapshot on missing file", async () => {
+  it("overlays default role names on a missing file and does not create it", async () => {
     const { pi } = makeFakePi();
     activate(pi);
     const data: any = {};
     await pi.events.emit("flow:role-get-all", data);
-    expect(data.roles).toEqual({});
+    expect(data.roles).toEqual(withDefaults());
     expect(data.presets).toEqual([]);
     expect(data.activePreset).toBeNull();
+    // Overlay-only: reading must not write providers.json.
+    expect(existsSync(CONFIG())).toBe(false);
   });
 
-  it("returns current roles, presets, and active preset", async () => {
+  it("overlays defaults onto assigned roles (assigned wins)", async () => {
     writeFileSync(CONFIG(), JSON.stringify({
       roles: { fast: "anthropic/opus" },
       rolePresets: [{ name: "default", roles: { fast: "anthropic/opus" } }],
@@ -123,18 +139,41 @@ describe("flow:role-get-all", () => {
     activate(pi);
     const data: any = {};
     await pi.events.emit("flow:role-get-all", data);
-    expect(data.roles).toEqual({ fast: "anthropic/opus" });
+    expect(data.roles).toEqual(withDefaults({ fast: "anthropic/opus" }));
     expect(data.presets).toEqual([{ name: "default", roles: { fast: "anthropic/opus" } }]);
     expect(data.activePreset).toBe("default");
   });
 
-  it("does not crash on malformed JSON", async () => {
+  it("preserves non-default assigned roles in the overlay", async () => {
+    writeFileSync(CONFIG(), JSON.stringify({
+      roles: { custom: "x/y" }, rolePresets: [], activePreset: null,
+    }));
+    const { pi } = makeFakePi();
+    activate(pi);
+    const data: any = {};
+    await pi.events.emit("flow:role-get-all", data);
+    expect(data.roles).toEqual(withDefaults({ custom: "x/y" }));
+  });
+
+  it("does not crash on malformed JSON (overlays defaults)", async () => {
     writeFileSync(CONFIG(), "{ not json");
     const { pi } = makeFakePi();
     activate(pi);
     const data: any = {};
     await pi.events.emit("flow:role-get-all", data);
-    expect(data.roles).toEqual({});
+    expect(data.roles).toEqual(withDefaults());
+  });
+});
+
+describe("overlayDefaultRoles", () => {
+  it("maps every default name to empty when no assignments", () => {
+    expect(overlayDefaultRoles({})).toEqual(withDefaults());
+  });
+
+  it("lets assigned values win and keeps extra roles", () => {
+    expect(overlayDefaultRoles({ fast: "a/b", extra: "c/d" })).toEqual(
+      withDefaults({ fast: "a/b", extra: "c/d" }),
+    );
   });
 });
 
@@ -303,13 +342,26 @@ describe("role:resolve-model (subagents adapter)", () => {
     expect(probe.resolved).toBe("anthropic/haiku");
   });
 
-  it("leaves probe.resolved unset when role is unassigned", async () => {
+  it("leaves probe.resolved unset and sets a structured reason when unconfigured", async () => {
     const { pi } = makeFakePi();
     activate(pi);
     const probe: any = { ref: "@ghost" };
     await pi.events.emit("role:resolve-model", probe);
     expect(probe.resolved).toBeUndefined();
     expect(probe.available).toEqual({});
+    expect(probe.reason).toBe("role 'ghost' not configured yet");
+  });
+
+  it("does not set a reason when the role resolves", async () => {
+    writeFileSync(CONFIG(), JSON.stringify({
+      roles: { fast: "anthropic/haiku" }, rolePresets: [], activePreset: null,
+    }));
+    const { pi } = makeFakePi();
+    activate(pi);
+    const probe: any = { ref: "@fast" };
+    await pi.events.emit("role:resolve-model", probe);
+    expect(probe.resolved).toBe("anthropic/haiku");
+    expect(probe.reason).toBeUndefined();
   });
 
   it("re-reads disk so cross-session role edits are visible", async () => {

@@ -165,15 +165,18 @@ export function BuiltInRolesSettings() {
   const dirtyRoles = computeDirtyRoles(rolesMap, pending);
   const isDirty = dirtyRoles.length > 0;
   const effective = (role: string) => pending[role] ?? rolesMap[role];
+  const isAssigned = (role: string) => {
+    const v = effective(role);
+    return typeof v === "string" && v.trim() !== "";
+  };
 
-  if (Object.keys(rolesMap).length === 0) {
-    return (
-      <section data-testid="roles-settings-empty" className="text-xs text-[var(--text-muted)] py-2">
-        No roles configured yet. Install an extension that registers roles (e.g.{" "}
-        <code>pi-flows</code>) to assign per-role models.
-      </section>
-    );
-  }
+  // Shadow-disabled state: the back-end overlays default role names
+  // (planning/coding/compact/fast/vision/research) so `rolesMap` is
+  // populated even on a fresh install. "Set up" means at least one role
+  // has an assigned model (persisted or pending). Until then we show a
+  // setup banner instead of the legacy empty-state.
+  // See change: roles-standalone-defaults-and-local-install-detection.
+  const hasAnyAssigned = Object.keys(rolesMap).some((role) => isAssigned(role));
 
   const dispatch = (msg: unknown) => send(msg);
 
@@ -294,20 +297,32 @@ export function BuiltInRolesSettings() {
         </span>
       </div>
 
+      {/* Setup banner (shadow-disabled state): a small error message shown
+          until at least one role has an assigned model. Replaces the legacy
+          "install pi-flows" empty-state — roles are owned by the dashboard now.
+          See change: roles-standalone-defaults-and-local-install-detection. */}
+      {!hasAnyAssigned && (
+        <div
+          data-testid="roles-settings-setup-banner"
+          className="text-[11px] text-[var(--accent-warning,#f59e0b)] border border-[var(--border-secondary)] rounded px-2 py-1.5 bg-[var(--bg-tertiary)]"
+        >
+          No roles have been set up — set up now by assigning a model to a role below.
+        </div>
+      )}
+
       {/* Preset row.
-          Both preset chips and the "+ Save current as preset" chip share
-          identical wrapper styling (`px-2 py-0.5 text-[11px] rounded`) so
-          they render at the same size. Preset chips use an inline-flex
-          wrapper holding two <button>s (load + delete ×) instead of an
-          absolutely-positioned overlay — the flex layout keeps height
-          consistent with the save chip and lets the × turn red on hover. */}
-      <div className="flex items-center gap-1 flex-wrap">
+          Preset chips use an inline-flex wrapper holding a load <button> and
+          a separate circular delete <button>. The delete control has its own
+          left margin + rounded hover target so the × is not cramped against
+          the preset name via segment padding (px-2.5 label / px-2 ×), so the
+          × is not cramped (see change: roles-standalone-defaults-and-local-install-detection). */}
+      <div className="flex items-center gap-2 flex-wrap">
         {presets.map((preset) => {
           const isActive = activePreset === preset.name;
           return (
             <span
               key={preset.name}
-              className={`inline-flex items-center shrink-0 rounded text-[11px] transition-colors ${
+              className={`inline-flex items-stretch shrink-0 overflow-hidden rounded-md text-[11px] transition-colors ${
                 isActive
                   ? "bg-[var(--accent-blue)] text-white"
                   : "bg-[var(--bg-tertiary)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
@@ -316,7 +331,7 @@ export function BuiltInRolesSettings() {
               <button
                 data-testid={`roles-preset-load-${preset.name}`}
                 onClick={() => loadPreset(preset.name)}
-                className={`pl-2 pr-1 py-0.5 transition-colors ${
+                className={`px-2.5 py-1 transition-colors ${
                   isActive ? "text-white" : "hover:text-[var(--text-primary)]"
                 }`}
               >
@@ -325,10 +340,10 @@ export function BuiltInRolesSettings() {
               <button
                 data-testid={`roles-preset-delete-${preset.name}`}
                 onClick={(e) => { e.stopPropagation(); deletePreset(preset.name); }}
-                className={`pr-2 pl-0.5 py-0.5 leading-none transition-colors ${
+                className={`flex items-center justify-center px-2 leading-none text-[12px] transition-colors ${
                   isActive
-                    ? "text-white/70 hover:text-red-300"
-                    : "text-[var(--text-muted)] hover:text-red-400"
+                    ? "text-white/70 hover:text-white hover:bg-white/15"
+                    : "text-[var(--text-muted)] hover:text-[var(--accent-red)] hover:bg-[var(--bg-hover)]"
                 }`}
                 aria-label={`Delete preset ${preset.name}`}
                 title={`Delete preset "${preset.name}"`}
@@ -342,7 +357,7 @@ export function BuiltInRolesSettings() {
           <button
             data-testid="roles-preset-save-new"
             onClick={() => { setSavingPreset(true); setPresetName(""); }}
-            className="px-2 py-0.5 text-[11px] rounded shrink-0 bg-[var(--bg-tertiary)] text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-colors"
+            className="px-2.5 py-1 text-[11px] rounded-md shrink-0 bg-[var(--bg-tertiary)] text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-colors"
           >
             + Save current as preset
           </button>
@@ -412,13 +427,17 @@ export function BuiltInRolesSettings() {
         )}
       </div>
 
-      {/* Role grid. Each pill shows the role and its effective model
-          (pending overlaid on persisted). Legacy bare-id entries are
-          migrated for display via inferProviderForBareId. */}
+      {/* Role grid (compact pills). Each pill: @role + effective model
+          (pending overlaid on persisted). Unconfigured roles show an
+          "+ Add model" affordance in accent; the setup banner above is the
+          accompanying error message. Legacy bare-id entries migrated for
+          display via inferProviderForBareId.
+          See change: roles-standalone-defaults-and-local-install-detection. */}
       <div className="grid grid-cols-2 gap-1">
-        {Object.entries(rolesMap).map(([role]) => {
+        {Object.keys(rolesMap).map((role) => {
           const isEditing = editingRole === role;
           const dirty = role in pending && pending[role] !== rolesMap[role];
+          const assigned = isAssigned(role);
           const displayLabel = inferProviderForBareId(effective(role), models);
           return (
             <button
@@ -430,14 +449,20 @@ export function BuiltInRolesSettings() {
                   ? "bg-[color-mix(in_srgb,var(--accent-blue)_25%,transparent)] outline outline-2 outline-[var(--accent-blue)]"
                   : "bg-[var(--bg-tertiary)] hover:bg-[var(--bg-hover)]"
               }`}
-              title={displayLabel}
+              title={assigned ? displayLabel : `Set a model for @${role}`}
             >
               <span className={`text-[11px] font-semibold shrink-0 ${isEditing ? "text-[var(--accent-blue)]" : "text-[var(--accent-blue)]/70"}`}>
                 @{role}
               </span>
-              <span className="text-[11px] text-[var(--text-muted)] font-mono truncate flex-1">
-                {shortModel(displayLabel)}
-              </span>
+              {assigned ? (
+                <span className="text-[11px] text-[var(--text-muted)] font-mono truncate flex-1">
+                  {shortModel(displayLabel)}
+                </span>
+              ) : (
+                <span className="text-[11px] text-[var(--accent-blue)] truncate flex-1">
+                  + Add model
+                </span>
+              )}
               {dirty && (
                 <span
                   data-testid={`roles-row-${role}-dirty`}

@@ -62,23 +62,24 @@ export function SubagentsSettings() {
 			</header>
 
 			{/*
-			  Plugin-level dep on the Roles plugin is declared in this plugin's
-			  manifest (`dependsOn: ["roles"]`). The Plugins tab already surfaces
-			  the relationship with cascade enable/disable; this inline disclaimer
-			  is for users who land directly on Subagent settings and would
-			  otherwise be surprised when the bundled Explore agent fails to
-			  resolve `@fast` after they disable Roles.
+			  Soft (runtime) relationship with the Roles plugin — no manifest
+			  `dependsOn`. The bundled Explore agent resolves `@fast` via the
+			  standalone `role:resolve-model` event; an unconfigured role
+			  degrades to a structured "not configured yet" error at spawn time
+			  rather than blocking Subagents from loading. This disclaimer points
+			  users to configure Roles so `@fast` resolves.
+			  See change: roles-standalone-defaults-and-local-install-detection.
 			*/}
 			<div
 				data-testid="subagents-settings-roles-dep"
 				className="text-[11px] text-[var(--text-tertiary)] border border-[var(--border-secondary)] rounded px-2 py-1.5 bg-[var(--bg-tertiary)]"
 			>
-				Requires the{" "}
+				Configure the{" "}
 				<code className="font-mono text-[var(--text-secondary)]">Roles</code> plugin
-				— the bundled <code className="font-mono">Explore</code> agent uses{" "}
-				<code className="font-mono">@fast</code> for model resolution. Disabling{" "}
-				<code className="font-mono">Roles</code> from the Plugins tab will cascade-disable
-				Subagents.
+				so the bundled <code className="font-mono">Explore</code> agent can resolve{" "}
+				<code className="font-mono">@fast</code>. If no model is assigned to{" "}
+				<code className="font-mono">@fast</code>, agents using <code className="font-mono">@role</code>{" "}
+				aliases report “not configured yet” at spawn time — Subagents still loads.
 			</div>
 
 			<label className="flex items-start gap-2 cursor-pointer">

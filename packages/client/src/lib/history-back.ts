@@ -20,7 +20,7 @@
  * See change: fix-mobile-back-depth-aware (replaces `goBackOrHome` from
  * overlay-url-routing).
  */
-import { computeBackTarget, routeDepth } from "./back-target.js";
+import { computeBackTarget, routeDepth, isModalRoute } from "./back-target.js";
 import type { NavEntry } from "./nav-tracker.js";
 
 export interface BackTracker {
@@ -37,6 +37,20 @@ export function goBack(
   if (currentDepth === 0) return;
 
   const pred = tracker.predecessor();
+
+  // Modal routes (settings / tunnel-setup) are entered from a launching route
+  // and must return to it. They are same-depth (1) with their launcher, so the
+  // shallower-only fast-path below never fires for them; consult the tracked
+  // predecessor directly. A tracked predecessor is by construction in-app, so
+  // history.back() is safe and preserves scroll/forward. No predecessor
+  // (cold-load / deep-link) falls through to computeBackTarget → "/".
+  // See change: fix-settings-back-to-launching-route.
+  if (isModalRoute(currentRoute) && pred) {
+    window.history.back();
+    tracker.popNav();
+    return;
+  }
+
   if (pred && pred.depth < currentDepth) {
     window.history.back();
     tracker.popNav();

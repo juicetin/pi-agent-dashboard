@@ -102,6 +102,19 @@ describe("SettingsPanel", () => {
     });
   });
 
+  // Back arrow returns to the launching route via onBack (App's goBack), not a
+  // hardcoded navigate("/"). See change: fix-settings-back-to-launching-route.
+  it("back arrow invokes onBack when not dirty", async () => {
+    global.fetch = mockFetchConfig();
+    const onBack = vi.fn();
+
+    render(<SettingsPanel onBack={onBack} />);
+
+    await waitFor(() => expect(screen.getByTitle("Back")).toBeTruthy());
+    fireEvent.click(screen.getByTitle("Back"));
+    expect(onBack).toHaveBeenCalledOnce();
+  });
+
   it("keeps header and nav rail outside the scroll container", async () => {
     global.fetch = mockFetchConfig();
 
@@ -269,18 +282,16 @@ describe("SettingsPanel", () => {
     });
   });
 
-  it("shows 'No changes' when saving without modifications", async () => {
+  it("hides the Save Bar (no Save button) when there are no changes", async () => {
     global.fetch = mockFetchConfig();
 
     render(<SettingsPanel />);
 
-    await waitFor(() => screen.getAllByTestId("save-btn"));
+    await waitFor(() => screen.getByText("Interface"));
 
-    fireEvent.click(screen.getAllByTestId("save-btn")[0]);
-
-    await waitFor(() => {
-      expect(screen.getByText("No changes to save")).toBeTruthy();
-    });
+    // Dirty-gated friction: nothing to save → no bar, no Save button.
+    expect(screen.queryByTestId("settings-save-bar")).toBeNull();
+    expect(screen.queryByTestId("save-btn")).toBeNull();
   });
 
   it("displays bypass URLs from auth config on the Security page", async () => {
@@ -427,17 +438,14 @@ describe("SettingsPanel", () => {
     });
 
     render(<SettingsPanel />);
-    await waitFor(() => screen.getAllByTestId("save-btn"));
+    await waitFor(() => screen.getByText("Interface"));
 
-    fireEvent.click(screen.getAllByTestId("save-btn")[0]);
-
-    await waitFor(() => {
-      expect(screen.getByText("No changes to save")).toBeTruthy();
-    });
+    // Nothing changed → no Save Bar appears and no PUT can fire.
+    expect(screen.queryByTestId("settings-save-bar")).toBeNull();
     expect(putCalled).toBe(false);
   });
 
-  it("toggling 'Initialize on worktree' PATCHes the preference", async () => {
+  it("buffers 'Initialize on worktree' and persists it only on Save", async () => {
     global.fetch = mockFetchConfig();
     setPath("/settings/sessions");
 
@@ -447,8 +455,65 @@ describe("SettingsPanel", () => {
     const row = screen.getByText("Initialize on worktree").closest("div")!;
     fireEvent.click(within(row).getByRole("button"));
 
+    // Buffered — not persisted on toggle.
+    expect(setAutoInitWorktreePref).not.toHaveBeenCalled();
+
+    // Save Bar appears; saving commits the buffered preference.
+    await waitFor(() => screen.getByTestId("save-btn"));
+    fireEvent.click(screen.getByTestId("save-btn"));
     await waitFor(() => {
       expect(setAutoInitWorktreePref).toHaveBeenCalledWith(true);
     });
+  });
+
+  it("Save Bar appears on first edit and Discard reverts to baseline", async () => {
+    global.fetch = mockFetchConfig();
+    setPath("/settings/server");
+
+    render(<SettingsPanel />);
+    await waitFor(() => screen.getByText("HTTP Port"));
+    expect(screen.queryByTestId("settings-save-bar")).toBeNull();
+
+    fireEvent.change(screen.getByDisplayValue("8000"), { target: { value: "9000" } });
+
+    await waitFor(() => screen.getByTestId("settings-save-bar"));
+    expect(screen.getByTestId("save-btn")).toBeTruthy();
+    expect(screen.getByTestId("discard-btn")).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId("discard-btn"));
+    await waitFor(() => expect(screen.queryByTestId("settings-save-bar")).toBeNull());
+    expect(screen.getByDisplayValue("8000")).toBeTruthy();
+  });
+
+  it("shows a per-page dirty dot for the page with unsaved edits", async () => {
+    global.fetch = mockFetchConfig();
+    setPath("/settings/server");
+
+    render(<SettingsPanel />);
+    await waitFor(() => screen.getByText("HTTP Port"));
+    expect(screen.queryByTestId("nav-dirty-server")).toBeNull();
+
+    fireEvent.change(screen.getByDisplayValue("8000"), { target: { value: "9000" } });
+    await waitFor(() => screen.getByTestId("nav-dirty-server"));
+  });
+
+  it("prompts before leaving while dirty; Cancel keeps editing", async () => {
+    global.fetch = mockFetchConfig();
+    setPath("/settings/server");
+
+    render(<SettingsPanel />);
+    await waitFor(() => screen.getByText("HTTP Port"));
+    fireEvent.change(screen.getByDisplayValue("8000"), { target: { value: "9000" } });
+    await waitFor(() => screen.getByTestId("settings-save-bar"));
+
+    // Header Back is the first button in the header.
+    const back = within(screen.getByTestId("settings-header")).getAllByRole("button")[0];
+    fireEvent.click(back);
+
+    await waitFor(() => screen.getByTestId("unsaved-changes-dialog"));
+    fireEvent.click(screen.getByTestId("unsaved-cancel"));
+    await waitFor(() => expect(screen.queryByTestId("unsaved-changes-dialog")).toBeNull());
+    // Still dirty — edits preserved.
+    expect(screen.getByTestId("settings-save-bar")).toBeTruthy();
   });
 });

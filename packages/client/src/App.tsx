@@ -1772,9 +1772,9 @@ export default function App() {
           }
           detailPanel={
             settingsMatch ? (
-              <SettingsPanel onMessage={onMessage} />
+              <SettingsPanel onMessage={onMessage} onBack={goBack} />
             ) : tunnelSetupMatch ? (
-              <ZrokInstallGuide onBack={() => navigate("/")} />
+              <ZrokInstallGuide onBack={goBack} />
             ) : pluginOverlayMatched ? (
               // Plugin-owned overlay routes (subagent popout, flow-agent popout,
               // any future plugin route). The slot consumer matches the active
@@ -1948,7 +1948,7 @@ export default function App() {
                See change: pluginize-flows-via-registry (design.md
                Decision 3 RECONSIDERED). */
             (selectedId && selectedSession && forSession(_pluginRegistry.getClaims("content-view"), selectedSession).length > 0
-              ? <ContentViewSlot session={selectedSession} routeParams={{}} onClose={() => navigate("/")} />
+              ? <ContentViewSlot session={selectedSession} routeParams={{}} onClose={() => { /* Plugin claim clears its own UI state on dismiss, revealing the chat at the current /session/:id; the shell must NOT navigate away. See change: fix-settings-back-to-launching-route. */ }} />
               : null
             ) ?? sessionDetail ?? (
               <LandingPage
@@ -1973,8 +1973,8 @@ export default function App() {
             }
           }
           return models;
-        })()} onMessage={onMessage} />}
-        {tunnelSetupMatch && <ZrokInstallGuide onBack={() => navigate("/")} />}
+        })()} onMessage={onMessage} onBack={goBack} />}
+        {tunnelSetupMatch && <ZrokInstallGuide onBack={goBack} />}
       </div>
       {boardWorktreeForChange && (
         <WorktreeSpawnDialog

@@ -60,6 +60,19 @@ export function routeDepth(url: string): number {
 }
 
 /**
+ * True for *modal* routes — full-screen routes entered from a launching route
+ * and expected to return to it (`/settings`, `/settings/:page`, `/tunnel-setup`).
+ * Distinct from *lateral* depth-1 routes (session / folder) whose back goes to
+ * the card list. Used by `goBack` to prefer the tracked in-app predecessor for
+ * same-depth modals. See change: fix-settings-back-to-launching-route.
+ */
+export function isModalRoute(url: string): boolean {
+  const [rawPath] = url.split("?");
+  const first = rawPath.split("/").filter(Boolean)[0];
+  return first === "settings" || first === "tunnel-setup";
+}
+
+/**
  * Compute the route exactly one shell depth shallower, or null at depth 0.
  *
  * - depth 0 → null (no-op).

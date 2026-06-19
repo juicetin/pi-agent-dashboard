@@ -8,7 +8,7 @@
 
 - [x] 2.1 In `packages/dashboard-plugin-runtime/src/server/requirement-probes.ts`, confirm `installedMatchesName` delegates its source comparison to the fixed `sourcesMatch` (keep `id/name/displayName` checks)
 - [x] 2.2 Add a probe test: a `piExtensions` requirement whose extension is installed from a local path (source = filesystem path) reports `satisfied: true`
-- [ ] 2.3 Verify `/api/health.plugins[]` no longer reports the subagents pi-extension as missing when installed globally from a local build
+- [x] 2.3 Verify `/api/health.plugins[]` no longer reports the subagents pi-extension as missing when installed globally from a local build
 
 ## 3. Default role names + seeding (role-manager)
 

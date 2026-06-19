@@ -105,7 +105,15 @@
     "project-init-skill-and-profiles": "next-phase",
     "restore-pi-version-skew-surface": "sdasdasd",
     "add-release-video-pipeline": "future",
+    "scope-openspec-poll-to-active-cwds": "ui",
+    "offload-openspec-poll-to-worker": "ui",
+    "instrument-session-hydration-timing": "ui",
+    "offload-session-events-load-to-worker": "ui",
+    "fix-worktree-spawn-placeholder-and-ordering": "ui",
+    "auto-init-worktree-on-spawn": "ui",
+    "show-chat-history-loading-indicator": "ui",
     "fix-settings-mobile-layout": "ui",
+    "suppress-hidden-session-auto-navigation": "ui",
     "remove-project-readme-button": "ui",
     "fix-automation-slot-parity-and-routing": "ui",
     "add-goals-folder-page": "ui"
@@ -113,12 +121,15 @@
   "changeOrder": {
     "__ungrouped__": [
       "add-connector-layer",
-      "selectable-tool-output-links"
+      "selectable-tool-output-links",
+      "add-ws-broadcast-load-harness"
     ],
     "ui": [
+      "suppress-hidden-session-auto-navigation",
       "remove-project-readme-button",
       "fix-automation-slot-parity-and-routing",
       "add-goals-folder-page",
+      "fix-settings-mobile-layout",
       "add-end-user-docs",
       "docker-test-harness",
       "restore-windows-nsis-installer"

@@ -315,6 +315,8 @@ In `--dev` mode, the server proxies to Vite for HMR. If Vite is not running, it 
 
 ## OpenSpec Conventions
 
+In a git worktree, use the worktree parent's `.pi/skills` (opsx/OpenSpec skills) — resolve OpenSpec skills from the main repo root, not the worktree checkout.
+
 When creating OpenSpec change artifacts, always place them at `openspec/changes/<name>/` — never nest under subdirectories like `active/` or `archive/`. Prefer using `openspec change new <name>` CLI to scaffold the directory structure correctly.
 
 ## Diagram Style

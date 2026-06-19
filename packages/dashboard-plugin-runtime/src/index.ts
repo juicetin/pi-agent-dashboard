@@ -54,3 +54,12 @@ export {
   useUiPrimitiveOrNull,
 } from "./ui-primitive-context.js";
 export type { UiPrimitiveProviderProps } from "./ui-primitive-context.js";
+export {
+  SettingsDraftProvider,
+  useSettingsDraftSource,
+} from "./settings-draft-context.js";
+export type {
+  SettingsDraftSource,
+  RegisteredSource,
+  SettingsDraftRegistry,
+} from "./settings-draft-context.js";

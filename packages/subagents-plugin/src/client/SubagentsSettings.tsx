@@ -15,40 +15,40 @@
  *
  * See change: add-subagent-inspector §16.
  */
-import React, { useState } from "react";
-import { usePluginConfig } from "@blackbelt-technology/dashboard-plugin-runtime";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { usePluginConfig, useSettingsDraftSource } from "@blackbelt-technology/dashboard-plugin-runtime";
 
 interface SubagentsPluginConfig {
 	inheritContext?: boolean;
 }
 
 export function SubagentsSettings() {
+	// Buffered source: the toggle edits a local draft and persists via the
+	// host Settings panel's unified Save. See change: unify-settings-save-contract.
 	const config = usePluginConfig<SubagentsPluginConfig>();
-	const checked = config.inheritContext ?? true;
-	const [inFlight, setInFlight] = useState(false);
-	const [error, setError] = useState<string | null>(null);
+	const baseline = config.inheritContext ?? true;
+	const [draft, setDraft] = useState(baseline);
+	const isDirty = draft !== baseline;
+	const dirtyRef = useRef(isDirty); dirtyRef.current = isDirty;
+	const draftRef = useRef(draft); draftRef.current = draft;
+	// Adopt a new baseline (e.g. config broadcast) only while clean.
+	useEffect(() => { if (!dirtyRef.current) setDraft(baseline); }, [baseline]);
 
-	async function handleToggle(next: boolean) {
-		setError(null);
-		setInFlight(true);
-		try {
-			const res = await fetch("/api/config/plugins/subagents", {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ inheritContext: next }),
-				credentials: "include",
-			});
-			if (!res.ok) {
-				const body = await res.text().catch(() => "");
-				throw new Error(`HTTP ${res.status}: ${body || res.statusText}`);
-			}
-			// usePluginConfig will refresh via plugin_config_update broadcast
-		} catch (err) {
-			setError(err instanceof Error ? err.message : String(err));
-		} finally {
-			setInFlight(false);
+	const commit = useCallback(async () => {
+		const res = await fetch("/api/config/plugins/subagents", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ inheritContext: draftRef.current }),
+			credentials: "include",
+		});
+		if (!res.ok) {
+			const body = await res.text().catch(() => "");
+			throw new Error(`HTTP ${res.status}: ${body || res.statusText}`);
 		}
-	}
+	}, []);
+	const reset = useCallback(() => setDraft(baseline), [baseline]);
+	useSettingsDraftSource({ id: "plugin:subagents", page: "general", isDirty, commit, reset });
+	const checked = draft;
 
 	return (
 		<section className="space-y-3 p-4">
@@ -87,8 +87,7 @@ export function SubagentsSettings() {
 					type="checkbox"
 					className="mt-0.5"
 					checked={checked}
-					disabled={inFlight}
-					onChange={(e) => handleToggle(e.target.checked)}
+					onChange={(e) => setDraft(e.target.checked)}
 				/>
 				<span className="flex-1">
 					<span className="block text-sm text-[var(--text-primary)]">
@@ -99,16 +98,7 @@ export function SubagentsSettings() {
 						When off, every subagent starts with an empty conversation (isolated).
 					</span>
 				</span>
-				{inFlight && (
-					<span className="text-[10px] text-[var(--text-muted)]">saving…</span>
-				)}
 			</label>
-
-			{error && (
-				<div className="text-[11px] text-red-400 px-1">
-					Failed to save: {error}
-				</div>
-			)}
 		</section>
 	);
 }

@@ -22,6 +22,7 @@ import {
   fetchGlobalOpenSpecConfig,
   type CwdUpdateStatus,
 } from "../lib/openspec-config-api.js";
+import { useSettingsDraftSource } from "@blackbelt-technology/dashboard-plugin-runtime";
 import { t as i18nT } from "../lib/i18n";
 
 type Profile = OpenSpecConfig["profile"];
@@ -47,8 +48,10 @@ export function OpenSpecProfileSection() {
   const [loadStatus, setLoadStatus] = useState<LoadStatus>("loading");
   // Once the user picks a profile, a late-arriving load must not clobber it.
   const userTouched = useRef(false);
-  const [saving, setSaving] = useState(false);
-  const [savedMsg, setSavedMsg] = useState<string | null>(null);
+  // Loaded-config baseline for unified-Save dirty detection.
+  // See change: unify-settings-save-contract.
+  const [baselineProfile, setBaselineProfile] = useState<Profile | null>(null);
+  const [baselineWorkflows, setBaselineWorkflows] = useState<string[]>([...CORE_WORKFLOWS]);
   const [statuses, setStatuses] = useState<CwdUpdateStatus[]>([]);
   const [expanded, setExpanded] = useState(false);
   const [updating, setUpdating] = useState<string | null>(null); // cwd or "__all__"
@@ -79,13 +82,14 @@ export function OpenSpecProfileSection() {
     for (let attempt = 1; attempt <= LOAD_MAX_ATTEMPTS; attempt++) {
       try {
         const cfg = await fetchGlobalOpenSpecConfig();
+        const loadedProfile =
+          cfg.profile === "core" || cfg.profile === "expanded" || cfg.profile === "custom" ? cfg.profile : null;
+        const loadedWorkflows = Array.isArray(cfg.workflows) && cfg.workflows.length > 0 ? cfg.workflows : null;
+        if (loadedProfile) setBaselineProfile(loadedProfile);
+        if (loadedWorkflows) setBaselineWorkflows(loadedWorkflows);
         if (!userTouched.current) {
-          if (cfg.profile === "core" || cfg.profile === "expanded" || cfg.profile === "custom") {
-            setProfile(cfg.profile);
-          }
-          if (Array.isArray(cfg.workflows) && cfg.workflows.length > 0) {
-            setWorkflows(cfg.workflows);
-          }
+          if (loadedProfile) setProfile(loadedProfile);
+          if (loadedWorkflows) setWorkflows(loadedWorkflows);
         }
         setLoadStatus("ready");
         return;
@@ -118,21 +122,31 @@ export function OpenSpecProfileSection() {
     setWorkflows((prev) => (prev.includes(wf) ? prev.filter((w) => w !== wf) : [...prev, wf]));
   }
 
-  async function handleSave() {
-    if (profile === null) return; // not yet loaded — nothing authoritative to save
-    setSaving(true);
-    setSavedMsg(null);
-    try {
-      await saveOpenSpecConfig(profile, workflows);
-      setSavedMsg("Saved");
-      // Saving may change the current signature → refresh staleness badges.
-      await refreshStatus();
-    } catch (err: any) {
-      setSavedMsg(err?.message ?? "Save failed");
-    } finally {
-      setSaving(false);
-    }
-  }
+  // Buffered source: profile/workflows persist via the unified Settings Save
+  // (no standalone "Save profile" button). See change:
+  // unify-settings-save-contract.
+  const isDirty =
+    baselineProfile !== null &&
+    profile !== null &&
+    (profile !== baselineProfile || JSON.stringify(workflows) !== JSON.stringify(baselineWorkflows));
+  const profileRef = useRef(profile); profileRef.current = profile;
+  const workflowsRef = useRef(workflows); workflowsRef.current = workflows;
+  const baseProfileRef = useRef(baselineProfile); baseProfileRef.current = baselineProfile;
+  const baseWfRef = useRef(baselineWorkflows); baseWfRef.current = baselineWorkflows;
+  const commit = useCallback(async () => {
+    if (profileRef.current === null) return;
+    await saveOpenSpecConfig(profileRef.current, workflowsRef.current);
+    setBaselineProfile(profileRef.current);
+    setBaselineWorkflows([...workflowsRef.current]);
+    userTouched.current = false;
+    await refreshStatus();
+  }, [refreshStatus]);
+  const reset = useCallback(() => {
+    if (baseProfileRef.current !== null) setProfile(baseProfileRef.current);
+    setWorkflows([...baseWfRef.current]);
+    userTouched.current = false;
+  }, []);
+  useSettingsDraftSource({ id: "openspec-profile", page: "openspec", isDirty, commit, reset });
 
   async function handleUpdate(target: { cwd: string } | { all: true }) {
     setUpdating("all" in target ? "__all__" : target.cwd);
@@ -232,20 +246,6 @@ export function OpenSpecProfileSection() {
           (Claude Code, Cursor, the CLI). Saving does not touch project files — use the Update buttons below to regenerate
           a project's <code>/opsx:</code> {i18nT("auto.skill_files", undefined, "skill files.")}
         </span>
-      </div>
-
-      {/* Save row */}
-      <div className="mt-3 flex items-center gap-2">
-        <button
-          type="button"
-          data-testid="save-profile-btn"
-          disabled={saving || profile === null}
-          onClick={handleSave}
-          className="text-xs px-3 py-1.5 rounded bg-blue-500 text-white border border-blue-500 disabled:opacity-50"
-        >
-          {saving ? "Saving…" : "Save profile"}
-        </button>
-        {savedMsg && <span className="text-[11px] text-[var(--text-tertiary)]" data-testid="save-msg">{savedMsg}</span>}
       </div>
 
       {/* Projects: update-all + collapsible per-cwd list */}

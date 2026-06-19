@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { getApiBase } from "../lib/api-context.js";
+import { DialogPortal } from "./DialogPortal.js";
 import { useDebugToolsVisible } from "../hooks/useDebugToolsVisible.js";
 import { useDisplayPrefsContext } from "../lib/DisplayPrefsContext.js";
 import { DISPLAY_PRESETS, type DisplayPrefs } from "@blackbelt-technology/pi-dashboard-shared/display-prefs.js";
@@ -8,7 +9,7 @@ import { mdiArrowLeft, mdiContentSave, mdiAlert, mdiPlus, mdiDelete, mdiRestart,
 import { testProvider, type TestProviderResult } from "../lib/providers-api.js";
 import { fetchAutoInitWorktreePref, setAutoInitWorktreePref } from "../lib/git-api.js";
 import { useLocation, useRoute } from "wouter";
-import { SettingsSectionSlot } from "@blackbelt-technology/dashboard-plugin-runtime";
+import { SettingsSectionSlot, SettingsDraftProvider, useSettingsDraftSource, type RegisteredSource, type SettingsDraftRegistry } from "@blackbelt-technology/dashboard-plugin-runtime";
 import { VALID_SETTINGS_TABS } from "@blackbelt-technology/pi-dashboard-shared/dashboard-plugin/slot-types.js";
 import { ProviderAuthSection } from "./ProviderAuthSection.js";
 import { ModelSelector } from "./ModelSelector.js";
@@ -141,6 +142,96 @@ const PROVIDER_LABELS: Record<string, string> = {
 
 const NEEDS_ISSUER = new Set(["keycloak", "oidc"]);
 
+// Maps each config-diff key to the settings page it renders on, so the nav
+// rail can show a per-page dirty dot. See change: unify-settings-save-contract.
+const CONFIG_FIELD_PAGE: Record<string, string> = {
+  port: "server", piPort: "server", autoShutdown: "server", shutdownIdleSeconds: "server",
+  tunnel: "server", memoryLimits: "server",
+  spawnStrategy: "sessions", reattachPlacement: "sessions", completedFirst: "sessions",
+  questionFirst: "sessions", askUserPromptTimeoutSeconds: "sessions", spawnRegisterTimeoutMs: "sessions",
+  gitWorktreeEnabled: "sessions", dashboardName: "sessions", defaultModel: "sessions",
+  windowsGitSource: "sessions", autoStart: "sessions",
+  trustedNetworks: "security", auth: "security",
+  modelProxy: "providers",
+  openspec: "openspec",
+  devBuildOnReload: "developer", keeperLog: "developer", editor: "developer",
+};
+
+/**
+ * Compute the changed-fields partial for `PUT /api/config` by diffing the
+ * working draft against the loaded baseline. Pure — used both to render live
+ * dirty state and to build the Save payload. See change:
+ * unify-settings-save-contract.
+ */
+function computeConfigPartial(config: Config, original: Config): Record<string, any> {
+  const partial: Record<string, any> = {};
+  if (config.port !== original.port) partial.port = config.port;
+  if (config.piPort !== original.piPort) partial.piPort = config.piPort;
+  if (config.autoStart !== original.autoStart) partial.autoStart = config.autoStart;
+  if (config.autoShutdown !== original.autoShutdown) partial.autoShutdown = config.autoShutdown;
+  if (config.shutdownIdleSeconds !== original.shutdownIdleSeconds) partial.shutdownIdleSeconds = config.shutdownIdleSeconds;
+  if (config.spawnStrategy !== original.spawnStrategy) partial.spawnStrategy = config.spawnStrategy;
+  if (config.reattachPlacement !== original.reattachPlacement) {
+    partial.reattachPlacement = config.reattachPlacement ?? "always";
+  }
+  if ((config.completedFirst ?? false) !== (original.completedFirst ?? false)) {
+    partial.completedFirst = config.completedFirst ?? false;
+  }
+  if ((config.questionFirst ?? false) !== (original.questionFirst ?? false)) {
+    partial.questionFirst = config.questionFirst ?? false;
+  }
+  if (config.askUserPromptTimeoutSeconds !== original.askUserPromptTimeoutSeconds) {
+    partial.askUserPromptTimeoutSeconds = config.askUserPromptTimeoutSeconds ?? 300;
+  }
+  if (config.spawnRegisterTimeoutMs !== original.spawnRegisterTimeoutMs) {
+    partial.spawnRegisterTimeoutMs = config.spawnRegisterTimeoutMs ?? 30000;
+  }
+  if ((config.windowsGitSource ?? "auto") !== (original.windowsGitSource ?? "auto")) {
+    partial.windowsGitSource = config.windowsGitSource ?? "auto";
+  }
+  if ((config.gitWorktreeEnabled ?? true) !== (original.gitWorktreeEnabled ?? true)) {
+    partial.gitWorktreeEnabled = config.gitWorktreeEnabled ?? true;
+  }
+  {
+    const tunnelPartial: Record<string, any> = {};
+    if (config.tunnel.enabled !== original.tunnel.enabled) {
+      tunnelPartial.enabled = config.tunnel.enabled;
+    }
+    if (JSON.stringify(config.tunnel.watchdog ?? null) !== JSON.stringify(original.tunnel.watchdog ?? null)) {
+      tunnelPartial.watchdog = config.tunnel.watchdog;
+    }
+    if (Object.keys(tunnelPartial).length > 0) partial.tunnel = tunnelPartial;
+  }
+  if (config.devBuildOnReload !== original.devBuildOnReload) partial.devBuildOnReload = config.devBuildOnReload;
+  if (config.defaultModel !== original.defaultModel) partial.defaultModel = config.defaultModel;
+  if ((config.dashboardName ?? "") !== (original.dashboardName ?? "")) {
+    const trimmed = (config.dashboardName ?? "").trim();
+    partial.dashboardName = trimmed.length > 0 ? trimmed : "";
+  }
+  if (JSON.stringify(config.trustedNetworks) !== JSON.stringify(original.trustedNetworks)) {
+    partial.trustedNetworks = config.trustedNetworks ?? [];
+  }
+  if (JSON.stringify(config.memoryLimits) !== JSON.stringify(original.memoryLimits)) {
+    partial.memoryLimits = config.memoryLimits;
+  }
+  if (JSON.stringify(config.openspec) !== JSON.stringify(original.openspec)) {
+    partial.openspec = config.openspec ?? DEFAULT_OPENSPEC_UI;
+  }
+  if (JSON.stringify(config.keeperLog) !== JSON.stringify(original.keeperLog)) {
+    partial.keeperLog = config.keeperLog ?? { capturePiOutput: false };
+  }
+  if (JSON.stringify(config.editor) !== JSON.stringify(original.editor)) {
+    partial.editor = config.editor || null;
+  }
+  if (JSON.stringify(config.auth) !== JSON.stringify(original.auth)) {
+    partial.auth = config.auth || null;
+  }
+  if (JSON.stringify(config.modelProxy) !== JSON.stringify(original.modelProxy)) {
+    partial.modelProxy = config.modelProxy;
+  }
+  return partial;
+}
+
 // Legacy page-id aliases applied before validation so old links/bookmarks land
 // on the new page homes. See change: reorganize-settings-into-pages.
 const SETTINGS_PAGE_ALIASES: Record<string, string> = {
@@ -156,10 +247,23 @@ function resolveSettingsPage(raw: string | undefined | null): string | null {
   return VALID_PAGES.has(aliased) ? aliased : null;
 }
 
-export function SettingsPanel({ availableModels, onMessage }: {
+/**
+ * Pending-nav sentinel meaning "resolve via the depth-aware back action"
+ * (not a literal route). Routes never start with "@@".
+ * See change: fix-settings-back-to-launching-route.
+ */
+const BACK_SENTINEL = "@@back";
+
+export function SettingsPanel({ availableModels, onMessage, onBack }: {
   availableModels?: Array<{ provider: string; id: string }>;
   /** WS bus subscribe (from App) used to correlate the confirm:"ws" restart. */
   onMessage?: (handler: (msg: ServerToBrowserMessage) => void) => () => void;
+  /**
+   * Depth-aware back action (App's `goBack`) — returns to the launching route
+   * instead of the card list. Falls back to `navigate("/")` when omitted.
+   * See change: fix-settings-back-to-launching-route.
+   */
+  onBack?: () => void;
 }) {
   const { language, setLanguage, t } = useI18n();
   const [, navigate] = useLocation();
@@ -289,170 +393,209 @@ export function SettingsPanel({ availableModels, onMessage }: {
       .finally(() => setLoading(false));
   }, [t]);
 
-  const handleSave = useCallback(async () => {
-    if (!config || !original) return;
+  // ── Unified-Save draft registry ──────────────────────────────────────────────
+  // Built-in + plugin settings sources register here so a single Save commits
+  // every dirty store. See change: unify-settings-save-contract.
+  const [draftSources, setDraftSources] = useState<Map<string, RegisteredSource>>(new Map());
+  const draftRegistry = useMemo<SettingsDraftRegistry>(() => ({
+    upsert: (id, source) => setDraftSources((prev) => {
+      const existing = prev.get(id);
+      if (existing && existing.page === source.page && existing.isDirty === source.isDirty
+        && existing.commit === source.commit && existing.reset === source.reset) return prev;
+      const next = new Map(prev);
+      next.set(id, source);
+      return next;
+    }),
+    remove: (id) => setDraftSources((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Map(prev);
+      next.delete(id);
+      return next;
+    }),
+  }), []);
+
+  // Live diff for the config + providers sources (the rest register via context).
+  const configPartial = useMemo(
+    () => (config && original ? computeConfigPartial(config, original) : {}),
+    [config, original],
+  );
+  const configDirty = Object.keys(configPartial).length > 0;
+  const llmChanged = useMemo(
+    () => JSON.stringify(llmProviders) !== JSON.stringify(originalLlmProviders),
+    [llmProviders, originalLlmProviders],
+  );
+  const dirtyDraftCount = useMemo(
+    () => Array.from(draftSources.values()).filter((s) => s.isDirty).length,
+    [draftSources],
+  );
+  const unsavedCount = (configDirty ? 1 : 0) + (llmChanged ? 1 : 0) + dirtyDraftCount;
+  const isDirty = unsavedCount > 0;
+  // Pages with unsaved edits → nav-rail dirty dots.
+  const dirtyPages = useMemo(() => {
+    const pages = new Set<string>();
+    for (const k of Object.keys(configPartial)) {
+      const p = CONFIG_FIELD_PAGE[k];
+      if (p) pages.add(p);
+    }
+    if (llmChanged) pages.add("providers");
+    for (const s of draftSources.values()) if (s.isDirty) pages.add(s.page);
+    return pages;
+  }, [configPartial, llmChanged, draftSources]);
+
+  const handleDiscard = useCallback(() => {
+    if (original) setConfig(JSON.parse(JSON.stringify(original)));
+    setLlmProviders(JSON.parse(JSON.stringify(originalLlmProviders)));
+    for (const s of draftSources.values()) s.reset();
+    setMessage(null);
+  }, [original, originalLlmProviders, draftSources]);
+
+  const handleSave = useCallback(async (): Promise<boolean> => {
+    if (!config || !original) return false;
+    if (!isDirty) {
+      setMessage({ type: "warn", text: t("settings.noChanges", undefined, "No changes to save") });
+      return true;
+    }
     setSaving(true);
     setMessage(null);
 
-    // Build partial diff
-    const partial: Record<string, any> = {};
-    if (config.port !== original.port) partial.port = config.port;
-    if (config.piPort !== original.piPort) partial.piPort = config.piPort;
-    if (config.autoStart !== original.autoStart) partial.autoStart = config.autoStart;
-    if (config.autoShutdown !== original.autoShutdown) partial.autoShutdown = config.autoShutdown;
-    if (config.shutdownIdleSeconds !== original.shutdownIdleSeconds) partial.shutdownIdleSeconds = config.shutdownIdleSeconds;
-    if (config.spawnStrategy !== original.spawnStrategy) partial.spawnStrategy = config.spawnStrategy;
-    if (config.reattachPlacement !== original.reattachPlacement) {
-      partial.reattachPlacement = config.reattachPlacement ?? "always";
+    // One commit task per dirty source. Each is independent — Save does NOT
+    // claim cross-store atomicity; failed sources stay dirty for Retry.
+    type Task = { label: string; run: () => Promise<{ restartRequired?: boolean }> };
+    const tasks: Task[] = [];
+
+    if (configDirty) {
+      tasks.push({
+        label: t("settings.sourceConfig", undefined, "Settings"),
+        run: async () => {
+          const res = await fetch(`${getApiBase()}/api/config`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(configPartial),
+          });
+          const data = await res.json();
+          if (!data.success) throw new Error(data.error || "config");
+          setOriginal(JSON.parse(JSON.stringify(config)));
+          if (configPartial.windowsGitSource !== undefined) void refreshGitSourceReadout();
+          return { restartRequired: !!data.restartRequired };
+        },
+      });
     }
-    if ((config.completedFirst ?? false) !== (original.completedFirst ?? false)) {
-      partial.completedFirst = config.completedFirst ?? false;
+
+    if (llmChanged) {
+      tasks.push({
+        label: t("settings.sourceProviders", undefined, "LLM providers"),
+        run: async () => {
+          const validProviders = llmProviders.filter((p) => p.name.trim() !== "");
+          const providersObj: Record<string, any> = {};
+          for (const p of validProviders) {
+            providersObj[p.name] = { baseUrl: p.baseUrl, apiKey: p.apiKey, api: p.api };
+          }
+          const res = await fetch(`${getApiBase()}/api/providers`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ providers: providersObj }),
+          });
+          const data = await res.json();
+          if (!data.success) throw new Error(data.error || "providers");
+          const saved = validProviders.map(({ isNew, ...rest }) => rest);
+          setLlmProviders(saved);
+          setOriginalLlmProviders(JSON.parse(JSON.stringify(saved)));
+          return {};
+        },
+      });
     }
-    if ((config.questionFirst ?? false) !== (original.questionFirst ?? false)) {
-      partial.questionFirst = config.questionFirst ?? false;
+
+    for (const [id, src] of draftSources) {
+      if (!src.isDirty) continue;
+      tasks.push({ label: id, run: async () => { await src.commit(); return {}; } });
     }
-    if (config.askUserPromptTimeoutSeconds !== original.askUserPromptTimeoutSeconds) {
-      partial.askUserPromptTimeoutSeconds = config.askUserPromptTimeoutSeconds ?? 300;
+
+    const results = await Promise.allSettled(tasks.map((tk) => tk.run()));
+    const failed: string[] = [];
+    let restartRequired = false;
+    results.forEach((r, i) => {
+      if (r.status === "fulfilled") restartRequired ||= !!r.value.restartRequired;
+      else failed.push(tasks[i].label);
+    });
+
+    if (failed.length > 0) {
+      setMessage({
+        type: "error",
+        text: t("settings.savePartialFail", undefined, "Couldn't save: ") + failed.join(", "),
+      });
+    } else if (restartRequired) {
+      setMessage({ type: "warn", text: t("settings.restartRequired", undefined, "Saved. Some changes require a server restart to take effect.") });
+    } else {
+      setMessage({ type: "success", text: t("settings.saved", undefined, "Settings saved") });
     }
-    if (config.spawnRegisterTimeoutMs !== original.spawnRegisterTimeoutMs) {
-      partial.spawnRegisterTimeoutMs = config.spawnRegisterTimeoutMs ?? 30000;
-    }
-    if ((config.windowsGitSource ?? "auto") !== (original.windowsGitSource ?? "auto")) {
-      partial.windowsGitSource = config.windowsGitSource ?? "auto";
-    }
-    if ((config.gitWorktreeEnabled ?? true) !== (original.gitWorktreeEnabled ?? true)) {
-      partial.gitWorktreeEnabled = config.gitWorktreeEnabled ?? true;
-    }
-    // Tunnel diff (top-level enabled + nested watchdog)
-    {
-      const tunnelPartial: Record<string, any> = {};
-      if (config.tunnel.enabled !== original.tunnel.enabled) {
-        tunnelPartial.enabled = config.tunnel.enabled;
+    setSaving(false);
+    return failed.length === 0;
+  }, [config, original, isDirty, configDirty, configPartial, llmChanged, llmProviders, draftSources, refreshGitSourceReadout, t]);
+
+  // ── Unsaved-changes navigation guards ─────────────────────────────────────
+  const [pendingNav, setPendingNav] = useState<string | null>(null);
+  const isDirtyRef = useRef(isDirty);
+  isDirtyRef.current = isDirty;
+
+  // In-app navigation away from Settings: prompt when dirty, else go.
+  const requestNavigate = useCallback((to: string) => {
+    if (isDirtyRef.current) setPendingNav(to);
+    else navigate(to);
+  }, [navigate]);
+
+  // Back arrow: resolve through the depth-aware `onBack` (launching route) when
+  // provided, else fall back to the card list. Routed through the same dirty
+  // guard via the BACK_SENTINEL pending value so unsaved edits still prompt.
+  // See change: fix-settings-back-to-launching-route.
+  const performBack = useCallback(() => {
+    if (onBack) onBack();
+    else navigate("/");
+  }, [onBack, navigate]);
+  const requestBack = useCallback(() => {
+    if (isDirtyRef.current) setPendingNav(BACK_SENTINEL);
+    else performBack();
+  }, [performBack]);
+
+  // Hard exits (tab close / reload / Electron window close): native prompt,
+  // registered only while dirty.
+  useEffect(() => {
+    if (!isDirty) return;
+    const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ""; };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [isDirty]);
+
+  // Browser back/forward: while dirty, re-push state and prompt instead of
+  // losing edits. See change: unify-settings-save-contract.
+  useEffect(() => {
+    if (!isDirty) return;
+    window.history.pushState(null, "", window.location.href);
+    const onPop = () => {
+      if (isDirtyRef.current) {
+        window.history.pushState(null, "", window.location.href);
+        setPendingNav("/");
       }
-      if (JSON.stringify(config.tunnel.watchdog ?? null) !== JSON.stringify(original.tunnel.watchdog ?? null)) {
-        tunnelPartial.watchdog = config.tunnel.watchdog;
-      }
-      if (Object.keys(tunnelPartial).length > 0) partial.tunnel = tunnelPartial;
-    }
-    if (config.devBuildOnReload !== original.devBuildOnReload) partial.devBuildOnReload = config.devBuildOnReload;
-    if (config.defaultModel !== original.defaultModel) partial.defaultModel = config.defaultModel;
-    // PWA display name. Empty/whitespace clears the override (server falls
-    // back to Host header → os.hostname()). See change:
-    // add-dynamic-pwa-manifest-naming.
-    if ((config.dashboardName ?? "") !== (original.dashboardName ?? "")) {
-      const trimmed = (config.dashboardName ?? "").trim();
-      partial.dashboardName = trimmed.length > 0 ? trimmed : "";
-    }
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, [isDirty]);
 
-    // Trusted networks diff
-    if (JSON.stringify(config.trustedNetworks) !== JSON.stringify(original.trustedNetworks)) {
-      partial.trustedNetworks = config.trustedNetworks ?? [];
-    }
+  const confirmDiscardLeave = useCallback(() => {
+    const to = pendingNav;
+    handleDiscard();
+    setPendingNav(null);
+    if (to === BACK_SENTINEL) performBack();
+    else if (to) navigate(to);
+  }, [pendingNav, handleDiscard, navigate, performBack]);
 
-    // Memory limits diff
-    if (JSON.stringify(config.memoryLimits) !== JSON.stringify(original.memoryLimits)) {
-      partial.memoryLimits = config.memoryLimits;
-    }
-
-    // OpenSpec poll diff
-    if (JSON.stringify(config.openspec) !== JSON.stringify(original.openspec)) {
-      partial.openspec = config.openspec ?? DEFAULT_OPENSPEC_UI;
-    }
-
-    // Keeper log capture diff
-    if (JSON.stringify(config.keeperLog) !== JSON.stringify(original.keeperLog)) {
-      partial.keeperLog = config.keeperLog ?? { capturePiOutput: false };
-    }
-
-    // Editor config diff
-    if (JSON.stringify(config.editor) !== JSON.stringify(original.editor)) {
-      partial.editor = config.editor || null;
-    }
-
-    // Auth diff
-    if (JSON.stringify(config.auth) !== JSON.stringify(original.auth)) {
-      partial.auth = config.auth || null;
-    }
-
-    // Model proxy diff
-    if (JSON.stringify(config.modelProxy) !== JSON.stringify(original.modelProxy)) {
-      partial.modelProxy = config.modelProxy;
-    }
-
-    // Check if LLM providers changed
-    const llmChanged = JSON.stringify(llmProviders) !== JSON.stringify(originalLlmProviders);
-
-    if (Object.keys(partial).length === 0 && !llmChanged) {
-      setMessage({ type: "warn", text: t("settings.noChanges", undefined, "No changes to save") });
-      setSaving(false);
-      return;
-    }
-
-    try {
-      let restartRequired = false;
-
-      // Save config changes
-      if (Object.keys(partial).length > 0) {
-        const res = await fetch(`${getApiBase()}/api/config`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(partial),
-        });
-        const data = await res.json();
-        if (!data.success) {
-          setMessage({ type: "error", text: data.error || t("settings.saveFailed", undefined, "Failed to save settings") });
-          setSaving(false);
-          return;
-        }
-        restartRequired = data.restartRequired;
-        setOriginal(JSON.parse(JSON.stringify(config)));
-        // windowsGitSource change re-resolves the active source server-side;
-        // refresh the "Currently active" readout so it doesn't stay stale.
-        // See change: embed-git-bash-on-windows.
-        if (partial.windowsGitSource !== undefined) {
-          void refreshGitSourceReadout();
-        }
-      }
-
-      // Save LLM providers
-      if (llmChanged) {
-        const validProviders = llmProviders.filter((p) => p.name.trim() !== "");
-        const providersObj: Record<string, any> = {};
-        for (const p of validProviders) {
-          providersObj[p.name] = {
-            baseUrl: p.baseUrl,
-            apiKey: p.apiKey,
-            api: p.api,
-          };
-        }
-        const res = await fetch(`${getApiBase()}/api/providers`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ providers: providersObj }),
-        });
-        const data = await res.json();
-        if (!data.success) {
-          setMessage({ type: "error", text: data.error || t("settings.saveFailed", undefined, "Failed to save settings") });
-          setSaving(false);
-          return;
-        }
-        // Update state: strip isNew flag, update original
-        const saved = validProviders.map(({ isNew, ...rest }) => rest);
-        setLlmProviders(saved);
-        setOriginalLlmProviders(JSON.parse(JSON.stringify(saved)));
-      }
-
-      if (restartRequired) {
-        setMessage({ type: "warn", text: t("settings.restartRequired", undefined, "Saved. Some changes require a server restart to take effect.") });
-      } else {
-        setMessage({ type: "success", text: t("settings.saved", undefined, "Settings saved") });
-      }
-    } catch {
-      setMessage({ type: "error", text: t("settings.saveFailed", undefined, "Failed to save settings") });
-    } finally {
-      setSaving(false);
-    }
-  }, [config, original, llmProviders, originalLlmProviders, t]);
+  const confirmSaveLeave = useCallback(async () => {
+    const to = pendingNav;
+    const ok = await handleSave();
+    setPendingNav(null);
+    if (!ok) return;
+    if (to === BACK_SENTINEL) performBack();
+    else if (to) navigate(to);
+  }, [pendingNav, handleSave, navigate, performBack]);
 
   if (loading) {
     return (
@@ -523,11 +666,12 @@ export function SettingsPanel({ availableModels, onMessage }: {
   ];
 
   return (
+    <SettingsDraftProvider registry={draftRegistry}>
     <div className="flex-1 flex flex-col min-w-0 h-full">
       {/* Header */}
       <div data-testid="settings-header" className="flex items-center gap-3 p-4 border-b border-[var(--border-primary)] shrink-0">
         <button
-          onClick={() => navigate("/")}
+          onClick={() => requestBack()}
           className="text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
           title={t("common.back", undefined, "Back")}
         >
@@ -543,15 +687,6 @@ export function SettingsPanel({ availableModels, onMessage }: {
         >
           <Icon path={mdiRestart} size={0.6} />
           {restarting ? t("common.restarting", undefined, "Restarting...") : t("common.restart", undefined, "Restart")}
-        </button>
-        <button
-          onClick={handleSave}
-          disabled={saving || restarting || spawnTimeoutInvalid}
-          data-testid="save-btn"
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium disabled:opacity-50"
-        >
-          <Icon path={mdiContentSave} size={0.6} />
-          {saving ? t("common.saving", undefined, "Saving...") : t("common.save", undefined, "Save")}
         </button>
       </div>
 
@@ -594,6 +729,13 @@ export function SettingsPanel({ availableModels, onMessage }: {
                   >
                     <Icon path={item.icon} size={0.65} />
                     {item.label}
+                    {dirtyPages.has(item.id) && (
+                      <span
+                        data-testid={`nav-dirty-${item.id}`}
+                        title={t("settings.unsavedOnPage", undefined, "Unsaved changes on this page")}
+                        className="ml-auto w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0"
+                      />
+                    )}
                   </button>
                 );
               })}
@@ -1144,11 +1286,113 @@ export function SettingsPanel({ availableModels, onMessage }: {
           </div>
         </div>
       </div>
+
+      {/* Save Bar — present only while dirty (dirty-gated friction). */}
+      {isDirty && (
+        <div
+          data-testid="settings-save-bar"
+          className="shrink-0 flex items-center gap-3 px-4 py-3 border-t border-[var(--border-primary)] bg-[var(--bg-secondary)]"
+        >
+          <span className="flex items-center gap-1.5 text-sm text-[var(--text-secondary)]">
+            <span data-testid="unsaved-count" className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+            {unsavedCount}{" "}
+            {unsavedCount === 1
+              ? t("settings.unsavedOne", undefined, "unsaved change")
+              : t("settings.unsavedMany", undefined, "unsaved changes")}
+          </span>
+          <div className="flex-1" />
+          <button
+            onClick={handleDiscard}
+            disabled={saving}
+            data-testid="discard-btn"
+            className="px-3 py-1.5 rounded text-sm font-medium text-[var(--text-secondary)] border border-[var(--border-secondary)] hover:bg-[var(--bg-tertiary)] disabled:opacity-50"
+          >
+            {t("settings.discard", undefined, "Discard")}
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={saving || restarting || spawnTimeoutInvalid}
+            data-testid="save-btn"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium disabled:opacity-50"
+          >
+            <Icon path={mdiContentSave} size={0.6} />
+            {saving ? t("common.saving", undefined, "Saving...") : t("common.save", undefined, "Save changes")}
+          </button>
+        </div>
+      )}
     </div>
+
+    {pendingNav !== null && (
+      <UnsavedChangesDialog
+        saving={saving}
+        onSave={confirmSaveLeave}
+        onDiscard={confirmDiscardLeave}
+        onCancel={() => setPendingNav(null)}
+      />
+    )}
+    </SettingsDraftProvider>
   );
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
+
+// Unsaved-changes confirm dialog shown when navigating away from a dirty
+// panel. Offers Save / Discard / Cancel. See change: unify-settings-save-contract.
+function UnsavedChangesDialog({ saving, onSave, onDiscard, onCancel }: {
+  saving: boolean;
+  onSave: () => void;
+  onDiscard: () => void;
+  onCancel: () => void;
+}) {
+  const { t } = useI18n();
+  return (
+    <DialogPortal>
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+        onClick={onCancel}
+      >
+        <div
+          data-testid="unsaved-changes-dialog"
+          className="w-full max-w-sm rounded-lg border border-[var(--border-primary)] bg-[var(--bg-secondary)] p-5 shadow-xl"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <h2 className="text-base font-semibold text-[var(--text-primary)] mb-1">
+            {t("settings.unsavedTitle", undefined, "Unsaved changes")}
+          </h2>
+          <p className="text-sm text-[var(--text-secondary)] mb-4">
+            {t("settings.unsavedBody", undefined, "You have unsaved settings changes. Save them before leaving?")}
+          </p>
+          <div className="flex items-center justify-end gap-2">
+            <button
+              data-testid="unsaved-cancel"
+              onClick={onCancel}
+              disabled={saving}
+              className="px-3 py-1.5 rounded text-sm font-medium text-[var(--text-secondary)] border border-[var(--border-secondary)] hover:bg-[var(--bg-tertiary)] disabled:opacity-50"
+            >
+              {t("settings.keepEditing", undefined, "Cancel")}
+            </button>
+            <button
+              data-testid="unsaved-discard"
+              onClick={onDiscard}
+              disabled={saving}
+              className="px-3 py-1.5 rounded text-sm font-medium text-red-400 border border-red-500/40 hover:bg-red-500/10 disabled:opacity-50"
+            >
+              {t("settings.discard", undefined, "Discard")}
+            </button>
+            <button
+              data-testid="unsaved-save"
+              onClick={onSave}
+              disabled={saving}
+              className="px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium disabled:opacity-50"
+            >
+              {saving ? t("common.saving", undefined, "Saving...") : t("settings.saveChanges", undefined, "Save changes")}
+            </button>
+          </div>
+        </div>
+      </div>
+    </DialogPortal>
+  );
+}
 
 function DebugToolsToggle() {
   const { t } = useI18n();
@@ -1166,27 +1410,30 @@ function DebugToolsToggle() {
 // Self-contained: reads the preference on mount, PATCHes immediately on
 // toggle (decoupled from the config Save button). Fail-safe to OFF.
 function WorktreeAutoInitToggle() {
-  const [value, setValue] = useState(false);
-  // Monotonic request counter: only the latest PATCH may write state, so
-  // out-of-order responses from rapid toggling can't clobber a newer choice.
-  const latestRequestRef = useRef(0);
+  // Buffered source: the toggle edits a local draft; the preference persists
+  // only on the unified Save. See change: unify-settings-save-contract.
+  const [baseline, setBaseline] = useState<boolean | null>(null);
+  const [draft, setDraft] = useState(false);
   useEffect(() => {
     let alive = true;
-    void fetchAutoInitWorktreePref().then((v) => { if (alive) setValue(v); });
+    void fetchAutoInitWorktreePref().then((v) => { if (alive) { setBaseline(v); setDraft(v); } });
     return () => { alive = false; };
   }, []);
-  const onChange = useCallback((next: boolean) => {
-    const seq = ++latestRequestRef.current;
-    setValue(next); // optimistic
-    void setAutoInitWorktreePref(next)
-      .then((persisted) => { if (seq === latestRequestRef.current) setValue(persisted); })
-      .catch(() => { if (seq === latestRequestRef.current) setValue(!next); });
+  const isDirty = baseline !== null && draft !== baseline;
+  const draftRef = useRef(draft); draftRef.current = draft;
+  const baseRef = useRef(baseline); baseRef.current = baseline;
+  const commit = useCallback(async () => {
+    const persisted = await setAutoInitWorktreePref(draftRef.current);
+    setBaseline(persisted);
+    setDraft(persisted);
   }, []);
+  const reset = useCallback(() => { if (baseRef.current !== null) setDraft(baseRef.current); }, []);
+  useSettingsDraftSource({ id: "worktree-auto-init", page: "sessions", isDirty, commit, reset });
   return (
     <ToggleField
       label={i18nT("auto.initialize_on_worktree", undefined, "Initialize on worktree")}
-      value={value}
-      onChange={onChange}
+      value={draft}
+      onChange={setDraft}
     />
   );
 }
@@ -1195,26 +1442,43 @@ function WorktreeAutoInitToggle() {
 function DisplayPrefsSection() {
   const { t } = useI18n();
   const { global } = useDisplayPrefsContext();
-  const prefs = global ?? DISPLAY_PRESETS.standard;
+  // Buffered source: toggles edit a local draft and persist on the unified
+  // Save (the per-session View popover keeps instant apply). See change:
+  // unify-settings-save-contract.
+  const baselineKey = JSON.stringify(global ?? DISPLAY_PRESETS.standard);
+  const [draft, setDraft] = useState<DisplayPrefs>(() => JSON.parse(baselineKey));
+  const isDirty = JSON.stringify(draft) !== baselineKey;
+  const dirtyRef = useRef(isDirty); dirtyRef.current = isDirty;
+  const baselineRef = useRef(baselineKey); baselineRef.current = baselineKey;
+  const draftRef = useRef(draft); draftRef.current = draft;
+  // Adopt a new baseline (e.g. cross-tab broadcast) only while clean.
+  useEffect(() => { if (!dirtyRef.current) setDraft(JSON.parse(baselineKey)); }, [baselineKey]);
 
   type ToolCallPatch = Partial<DisplayPrefs["toolCalls"]>;
   type DisplayPrefsPatch = Partial<Omit<DisplayPrefs, "toolCalls">> & { toolCalls?: ToolCallPatch };
-  const patch = useCallback(async (partial: DisplayPrefsPatch) => {
-    try {
-      await fetch("/api/preferences/display", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(partial),
-        credentials: "include",
-      });
-      // The WS `display_prefs_updated` broadcast updates the store; no
-      // local optimistic write needed here (single source of truth).
-    } catch { /* swallow; UI recovers on next broadcast */ }
+  const patch = useCallback((partial: DisplayPrefsPatch) => {
+    setDraft((prev) => ({
+      ...prev,
+      ...partial,
+      toolCalls: { ...prev.toolCalls, ...(partial.toolCalls ?? {}) },
+    }));
   }, []);
+  const commit = useCallback(async () => {
+    const res = await fetch("/api/preferences/display", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(draftRef.current),
+      credentials: "include",
+    });
+    if (!res.ok) throw new Error("display prefs");
+  }, []);
+  const reset = useCallback(() => setDraft(JSON.parse(baselineRef.current)), []);
+  useSettingsDraftSource({ id: "display-prefs", page: "general", isDirty, commit, reset });
 
   const resetToDefaults = useCallback(() => {
-    void patch(DISPLAY_PRESETS.standard);
+    patch(DISPLAY_PRESETS.standard);
   }, [patch]);
+  const prefs = draft;
 
   return (
     <Section title={t("settings.chatDisplay", undefined, "Chat display")}>

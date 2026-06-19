@@ -10,11 +10,12 @@
  *
  * See change: add-jj-workspace-plugin.
  */
-import React, { useState } from "react";
+import React, { useCallback, useRef, useState } from "react";
 import {
   usePluginConfig,
   usePluginSend,
 } from "@blackbelt-technology/dashboard-plugin-runtime/context";
+import { useSettingsDraftSource } from "@blackbelt-technology/dashboard-plugin-runtime";
 
 export interface JjPluginConfig {
   defaultPushTarget?: "trunk" | "bookmark";
@@ -46,21 +47,42 @@ export function JjPluginSettings(): React.ReactElement {
   const [showInit, setShowInit] = useState<boolean>(
     config.showInitColocatedSuggestion ?? DEFAULTS.showInitColocatedSuggestion,
   );
-  const [savedAt, setSavedAt] = useState<number | null>(null);
-
-  const onSave = () => {
+  // Buffered source: edits persist via the host Settings panel's unified Save.
+  // See change: unify-settings-save-contract.
+  const baseDefaultPushTarget = config.defaultPushTarget ?? DEFAULTS.defaultPushTarget;
+  const baseWorkspaceRoot = config.workspaceRoot ?? DEFAULTS.workspaceRoot;
+  const baseAllowDirectTrunkPush = config.allowDirectTrunkPush ?? DEFAULTS.allowDirectTrunkPush;
+  const baseShowInit = config.showInitColocatedSuggestion ?? DEFAULTS.showInitColocatedSuggestion;
+  const isDirty =
+    defaultPushTarget !== baseDefaultPushTarget ||
+    workspaceRoot !== baseWorkspaceRoot ||
+    allowDirectTrunkPush !== baseAllowDirectTrunkPush ||
+    showInit !== baseShowInit;
+  const valuesRef = useRef({ defaultPushTarget, workspaceRoot, allowDirectTrunkPush, showInit });
+  valuesRef.current = { defaultPushTarget, workspaceRoot, allowDirectTrunkPush, showInit };
+  const baseRef = useRef({ baseDefaultPushTarget, baseWorkspaceRoot, baseAllowDirectTrunkPush, baseShowInit });
+  baseRef.current = { baseDefaultPushTarget, baseWorkspaceRoot, baseAllowDirectTrunkPush, baseShowInit };
+  const commit = useCallback(async () => {
+    const v = valuesRef.current;
     send({
       type: "plugin_config_write" as never,
       id: "jj",
       config: {
-        defaultPushTarget,
-        workspaceRoot,
-        allowDirectTrunkPush,
-        showInitColocatedSuggestion: showInit,
+        defaultPushTarget: v.defaultPushTarget,
+        workspaceRoot: v.workspaceRoot,
+        allowDirectTrunkPush: v.allowDirectTrunkPush,
+        showInitColocatedSuggestion: v.showInit,
       },
     });
-    setSavedAt(Date.now());
-  };
+  }, [send]);
+  const reset = useCallback(() => {
+    const b = baseRef.current;
+    setDefaultPushTarget(b.baseDefaultPushTarget);
+    setWorkspaceRoot(b.baseWorkspaceRoot);
+    setAllowDirectTrunkPush(b.baseAllowDirectTrunkPush);
+    setShowInit(b.baseShowInit);
+  }, []);
+  useSettingsDraftSource({ id: "plugin:jj", page: "plugins", isDirty, commit, reset });
 
   return (
     <section
@@ -120,21 +142,6 @@ export function JjPluginSettings(): React.ReactElement {
         Show "Enable jj workspaces" affordance on plain-git sessions
       </label>
 
-      <div className="flex items-center gap-2 pt-2">
-        <button
-          type="button"
-          onClick={onSave}
-          className="text-xs px-3 py-1.5 rounded bg-indigo-600 text-white hover:bg-indigo-500"
-          data-testid="jj-settings-save"
-        >
-          Save
-        </button>
-        {savedAt && (
-          <span className="text-[10px] text-[var(--text-secondary)]">
-            Saved at {new Date(savedAt).toLocaleTimeString()}
-          </span>
-        )}
-      </div>
     </section>
   );
 }

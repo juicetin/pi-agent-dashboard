@@ -14,6 +14,7 @@ import { dispatchInitEvent } from "../lib/worktree-init-bus.js";
 import { isVisibleCwd } from "../lib/cwd-visibility.js";
 import { pathKey, inferPlatform } from "../lib/session-grouping.js";
 import { pushSpawnErrorToast } from "../lib/spawn-error-toast-bus.js";
+import { clearLoadingHistory } from "../lib/loading-history.js";
 import type {
   ServerToBrowserMessage,
   SpawnFailureCode,
@@ -78,6 +79,12 @@ export interface MessageHandlerSetters {
    * See change: render-file-previews.
    */
   setViewMessagesMap: React.Dispatch<React.SetStateAction<Map<string, import("../lib/event-reducer.js").ChatMessage[]>>>;
+  /**
+   * Per-session "history loading" flag. Cleared on the first content batch,
+   * the terminal `event_replay{isLast:true}`, or `session_updated{dataUnavailable:true}`.
+   * See change: show-chat-history-loading-indicator.
+   */
+  setLoadingHistory: React.Dispatch<React.SetStateAction<Map<string, boolean>>>;
 }
 
 export interface MessageHandlerDeps {
@@ -97,6 +104,12 @@ export interface MessageHandlerDeps {
    * `msg.requestId` matches, drop the entry). See change: spawn-correlation-token.
    */
   pendingSpawnsRef: React.MutableRefObject<Map<string, { cwd: string; kind: "spawn" | "resume"; placeholderCwd?: string }>>;
+  /**
+   * Safety-net timers for the per-session loading flag, owned by App.
+   * `clearLoadingHistory` tears the matching timer down on every exit edge.
+   * See change: show-chat-history-loading-indicator.
+   */
+  loadingHistoryTimersRef: React.MutableRefObject<Map<string, ReturnType<typeof setTimeout>>>;
   /**
    * Live snapshot of pinned dirs + workspaces + sessions for the
    * `isVisibleCwd` check that gates the off-screen spawn_error toast.
@@ -118,9 +131,9 @@ export function useMessageHandler(
     setFileResults, setOpenspecMap, setOpenspecGroupsMap, setModelsMap, setRolesMap, setSpawnResult,
     setSessionOrderMap, setPinnedDirectories, setFavoriteModels, setWorkspaces, setTerminals, setEditorStatuses,
     setDiscoveredServers, setSpawnErrors, setResumeErrors,
-    setDisplayPrefs, setViewMessagesMap,
+    setDisplayPrefs, setViewMessagesMap, setLoadingHistory,
   } = setters;
-  const { send, navigate, clearSpawningCwd, spawningCwdsRef, subscribedRef, pendingTerminalCwdRef, lastCreatedTerminalIdRef, maxSeqMapRef, selectedSessionIdRef, pendingSpawnsRef } = deps;
+  const { send, navigate, clearSpawningCwd, spawningCwdsRef, subscribedRef, pendingTerminalCwdRef, lastCreatedTerminalIdRef, maxSeqMapRef, selectedSessionIdRef, pendingSpawnsRef, loadingHistoryTimersRef } = deps;
 
   return useCallback((msg: ServerToBrowserMessage) => {
     switch (msg.type) {
@@ -137,40 +150,47 @@ export function useMessageHandler(
           }
           return next;
         });
-        // Tier 1: exact correlation by spawnRequestId. Works for both
-        // spawn-from-folder and fork-from-card (closes the no-auto-select-
-        // after-fork UX gap). See change: spawn-correlation-token.
-        if (msg.spawnRequestId && pendingSpawnsRef.current.has(msg.spawnRequestId)) {
-          const entry = pendingSpawnsRef.current.get(msg.spawnRequestId)!;
-          pendingSpawnsRef.current.delete(msg.spawnRequestId);
-          // Clear the placeholder keyed on the group cwd. For a worktree
-          // spawn `placeholderCwd` is the PARENT repo path (where the
-          // session groups), NOT `entry.cwd` (the worktree path).
-          // See change: add-worktree-spawn-placeholder-card.
-          if (entry.kind === "spawn" && entry.cwd) clearSpawningCwd(entry.placeholderCwd ?? entry.cwd);
-          navigate(`/session/${msg.session.id}`);
-        } else if (spawningCwdsRef.current.has(msg.session.cwd)) {
-          // Tier 2 (legacy fallback): cwd-based heuristic for older servers
-          // that don't echo spawnRequestId. Only fires for spawn (not fork)
-          // because fork dispatches don't add to spawningCwds today.
-          clearSpawningCwd(msg.session.cwd);
-          navigate(`/session/${msg.session.id}`);
-        } else {
-          // Tier 2.5 (worktree-aware fallback): no spawnRequestId matched and
-          // the session's own cwd is not in spawningCwds — true for worktree
-          // spawns, whose placeholder is keyed by the PARENT cwd, so Tier 2
-          // can never match. Scan pending spawns for a `kind: "spawn"` entry
-          // whose tracked cwd equals this session's cwd and clear its
-          // `placeholderCwd`. First-match-wins. See change:
-          // fix-worktree-spawn-placeholder-and-ordering.
-          const platform = inferPlatform([msg.session.cwd]);
-          const sessionKey = pathKey(msg.session.cwd, platform);
-          for (const [requestId, entry] of pendingSpawnsRef.current) {
-            if (entry.kind === "spawn" && entry.cwd && pathKey(entry.cwd, platform) === sessionKey) {
-              pendingSpawnsRef.current.delete(requestId);
-              clearSpawningCwd(entry.placeholderCwd ?? entry.cwd);
-              navigate(`/session/${msg.session.id}`);
-              break;
+        // A hidden session is an auto-hidden headless worker (subagent,
+        // `memory` tool, nested `pi -p`) that shares its parent's cwd. It must
+        // never steal focus OR consume the correlation token minted for the
+        // real visible spawn, so the whole cascade is gated.
+        // See change: suppress-hidden-session-auto-navigation.
+        if (!msg.session.hidden) {
+          // Tier 1: exact correlation by spawnRequestId. Works for both
+          // spawn-from-folder and fork-from-card (closes the no-auto-select-
+          // after-fork UX gap). See change: spawn-correlation-token.
+          if (msg.spawnRequestId && pendingSpawnsRef.current.has(msg.spawnRequestId)) {
+            const entry = pendingSpawnsRef.current.get(msg.spawnRequestId)!;
+            pendingSpawnsRef.current.delete(msg.spawnRequestId);
+            // Clear the placeholder keyed on the group cwd. For a worktree
+            // spawn `placeholderCwd` is the PARENT repo path (where the
+            // session groups), NOT `entry.cwd` (the worktree path).
+            // See change: add-worktree-spawn-placeholder-card.
+            if (entry.kind === "spawn" && entry.cwd) clearSpawningCwd(entry.placeholderCwd ?? entry.cwd);
+            navigate(`/session/${msg.session.id}`);
+          } else if (spawningCwdsRef.current.has(msg.session.cwd)) {
+            // Tier 2 (legacy fallback): cwd-based heuristic for older servers
+            // that don't echo spawnRequestId. Only fires for spawn (not fork)
+            // because fork dispatches don't add to spawningCwds today.
+            clearSpawningCwd(msg.session.cwd);
+            navigate(`/session/${msg.session.id}`);
+          } else {
+            // Tier 2.5 (worktree-aware fallback): no spawnRequestId matched and
+            // the session's own cwd is not in spawningCwds — true for worktree
+            // spawns, whose placeholder is keyed by the PARENT cwd, so Tier 2
+            // can never match. Scan pending spawns for a `kind: "spawn"` entry
+            // whose tracked cwd equals this session's cwd and clear its
+            // `placeholderCwd`. First-match-wins. See change:
+            // fix-worktree-spawn-placeholder-and-ordering.
+            const platform = inferPlatform([msg.session.cwd]);
+            const sessionKey = pathKey(msg.session.cwd, platform);
+            for (const [requestId, entry] of pendingSpawnsRef.current) {
+              if (entry.kind === "spawn" && entry.cwd && pathKey(entry.cwd, platform) === sessionKey) {
+                pendingSpawnsRef.current.delete(requestId);
+                clearSpawningCwd(entry.placeholderCwd ?? entry.cwd);
+                navigate(`/session/${msg.session.id}`);
+                break;
+              }
             }
           }
         }
@@ -187,6 +207,12 @@ export function useMessageHandler(
           }
           return next;
         });
+        // Exit LOADING on load failure: the cold branch's `.catch` /
+        // unsuccessful result marks the session `dataUnavailable`.
+        // See change: show-chat-history-loading-indicator.
+        if ((msg.updates as Partial<DashboardSession>).dataUnavailable === true) {
+          clearLoadingHistory(setLoadingHistory, loadingHistoryTimersRef, msg.sessionId);
+        }
         // Mirror model/thinkingLevel into sessionStates so the bottom StatusBar
         // (which reads selectedState.thinkingLevel ?? selectedSession.thinkingLevel)
         // stays in sync with the session card. model_update events from the bridge
@@ -437,6 +463,13 @@ export function useMessageHandler(
           if (lastEvt.seq > (maxSeqMapRef.current.get(msg.sessionId) ?? 0)) {
             maxSeqMapRef.current.set(msg.sessionId, lastEvt.seq);
           }
+        }
+        // Exit LOADING: first content (clear immediately so partial history
+        // paints) OR terminal marker for a genuinely-empty session
+        // (`events:[], isLast:true` → falls through to "No messages yet").
+        // See change: show-chat-history-loading-indicator.
+        if (msg.events.length > 0 || msg.isLast === true) {
+          clearLoadingHistory(setLoadingHistory, loadingHistoryTimersRef, msg.sessionId);
         }
         break;
       }
@@ -855,5 +888,5 @@ export function useMessageHandler(
         break;
       }
     }
-  }, [send, clearSpawningCwd, navigate, setSessions, setSessionStates, setSessionCommands, setFileResults, setOpenspecMap, setModelsMap, setRolesMap, setSpawnResult, setSessionOrderMap, setPinnedDirectories, setFavoriteModels, setWorkspaces, setTerminals, setEditorStatuses, setDiscoveredServers, spawningCwdsRef, subscribedRef, pendingTerminalCwdRef, maxSeqMapRef, selectedSessionIdRef]);
+  }, [send, clearSpawningCwd, navigate, setSessions, setSessionStates, setSessionCommands, setFileResults, setOpenspecMap, setModelsMap, setRolesMap, setSpawnResult, setSessionOrderMap, setPinnedDirectories, setFavoriteModels, setWorkspaces, setTerminals, setEditorStatuses, setDiscoveredServers, setLoadingHistory, spawningCwdsRef, subscribedRef, pendingTerminalCwdRef, maxSeqMapRef, selectedSessionIdRef, loadingHistoryTimersRef]);
 }

@@ -87,4 +87,35 @@ describe("mobile back — regression", () => {
     expect(back).toHaveBeenCalledOnce();
     expect(navigate).not.toHaveBeenCalled();
   });
+
+  // Reported bug (change: fix-settings-back-to-launching-route): Settings opened
+  // from a session is same-depth (1) with it, so the shallower-only fast-path
+  // can't fire; the modal carve-out must return to the launching session.
+  it("/ → /session/abc → /settings, back → /session/abc (modal carve-out)", () => {
+    resetNavStack("/");
+    recordNavigation("/session/abc");
+    recordNavigation("/settings");
+    const back = vi.fn();
+    window.history.back = back;
+    const navigate = vi.fn();
+
+    goBack(navigate, "/settings", tracker);
+
+    // predecessor /session/abc (same depth 1) → modal carve-out → history.back()
+    expect(back).toHaveBeenCalledOnce();
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it("cold-load /settings (no predecessor), back → / ", () => {
+    resetNavStack("/settings");
+    const back = vi.fn();
+    window.history.back = back;
+    const navigate = vi.fn();
+
+    goBack(navigate, "/settings", tracker);
+
+    // no in-app predecessor → computeBackTarget → "/"
+    expect(back).not.toHaveBeenCalled();
+    expect(navigate).toHaveBeenCalledWith("/");
+  });
 });

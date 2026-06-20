@@ -9,7 +9,7 @@
  *   - depth 0 ("/") → null (no-op)
  */
 import { describe, it, expect } from "vitest";
-import { computeBackTarget, routeDepth } from "../back-target.js";
+import { computeBackTarget, routeDepth, isModalRoute } from "../back-target.js";
 
 describe("computeBackTarget", () => {
   it("returns null at depth 0 (cards)", () => {
@@ -58,4 +58,20 @@ describe("computeBackTarget", () => {
       });
     }
   });
+});
+
+describe("isModalRoute", () => {
+  const modal = ["/settings", "/settings/general", "/settings/remote", "/settings?tab=servers", "/tunnel-setup"];
+  for (const url of modal) {
+    it(`${url} → true`, () => {
+      expect(isModalRoute(url)).toBe(true);
+    });
+  }
+
+  const lateral = ["/", "/session/abc", "/session/abc/diff", "/folder/Zm9v/terminals", "/folder/Zm9v/editor", "/folder/Zm9v/openspec/archive", "/pi-view?url=x"];
+  for (const url of lateral) {
+    it(`${url} → false`, () => {
+      expect(isModalRoute(url)).toBe(false);
+    });
+  }
 });

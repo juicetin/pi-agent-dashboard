@@ -246,10 +246,7 @@ export const PLUGIN_REGISTRY: RegistryEntry[] = [
             "piExtensions": [
                 "@blackbelt-technology/pi-dashboard-subagents"
             ]
-        },
-        "dependsOn": [
-            "roles"
-        ]
+        }
     },
     claims: [
       { pluginId: "subagents", priority: 100, slot: "settings-section", tab: "general", Component: SubagentsSettings },

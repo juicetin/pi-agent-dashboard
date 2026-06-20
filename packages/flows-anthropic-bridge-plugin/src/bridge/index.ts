@@ -89,6 +89,22 @@ export default async function activate(ctx: any): Promise<void> {
     });
   }
 
+  // Stable factory reference. Built once on first successful wire, then
+  // RE-EMITTED on every session boundary so pi-flows re-acquires it after it
+  // re-seeds its extraAgentExtensions array (on /reload or a new flow
+  // context) and so an activation-order race (plugin emits before pi-flows
+  // subscribes) self-heals. Stable identity lets pi-flows dedupe.
+  let agentFactory: ((agentPi: any) => Promise<void>) | null = null;
+
+  function emitAgentFactory(): void {
+    if (!agentFactory) return;
+    try {
+      pi?.events?.emit?.("flow:register-agent-extension", { factory: agentFactory });
+    } catch {
+      /* never throw from re-announce */
+    }
+  }
+
   async function tryWire(): Promise<void> {
     if (wired) {
       // Defensive: if a peer disappeared post-wire, drop to "degraded".
@@ -96,6 +112,10 @@ export default async function activate(ctx: any): Promise<void> {
       if (!probe.bothPresent && status !== "degraded") {
         status = "degraded";
         broadcast(probe);
+      } else {
+        // Re-announce the factory: pi-flows may have re-seeded its array
+        // since the last emit. Dedup is pi-flows' responsibility.
+        emitAgentFactory();
       }
       return;
     }
@@ -118,8 +138,14 @@ export default async function activate(ctx: any): Promise<void> {
       } else {
         // Peer dependency, not a direct dep — TS can't see types here.
         // Resolved at runtime via probeAll() before we reach this line.
-        // @ts-expect-error optional peer; resolved dynamically
-        mod = await import("@pi/anthropic-messages");
+        // Try the current scoped name first, fall back to the legacy name.
+        try {
+          // @ts-expect-error optional peer; resolved dynamically
+          mod = await import("@blackbelt-technology/pi-anthropic-messages");
+        } catch {
+          // @ts-expect-error legacy pre-rescope name; resolved dynamically
+          mod = await import("@pi/anthropic-messages");
+        }
       }
     } catch (e) {
       // Resolve said yes, import said no — surface the import error and stay
@@ -137,27 +163,27 @@ export default async function activate(ctx: any): Promise<void> {
     // 1. Main session.
     await piAnthropicMessages(pi);
 
-    // 2. Every spawned flow agent.
-    pi?.events?.emit?.("flow:register-agent-extension", {
-      factory: async (agentPi: any) => {
-        await piAnthropicMessages(agentPi);
-        try {
-          agentPi?.on?.("session_start", (_e: unknown, agentCtx: any) => {
-            try {
-              events?.emit?.("flows-anthropic-bridge:agent-active", {
-                pid: process.pid,
-                modelId: agentCtx?.model?.id,
-                gateOpen: !!isClaudeAnthropicMessages?.(agentCtx),
-              });
-            } catch {
-              /* never throw */
-            }
-          });
-        } catch {
-          /* agentPi.on not available — ignore */
-        }
-      },
-    });
+    // 2. Every spawned flow agent. Build the factory ONCE (stable ref) and
+    //    emit it; re-emitted on each session_start via emitAgentFactory().
+    agentFactory = async (agentPi: any) => {
+      await piAnthropicMessages(agentPi);
+      try {
+        agentPi?.on?.("session_start", (_e: unknown, agentCtx: any) => {
+          try {
+            events?.emit?.("flows-anthropic-bridge:agent-active", {
+              pid: process.pid,
+              modelId: agentCtx?.model?.id,
+              gateOpen: !!isClaudeAnthropicMessages?.(agentCtx),
+            });
+          } catch {
+            /* never throw */
+          }
+        });
+      } catch {
+        /* agentPi.on not available — ignore */
+      }
+    };
+    emitAgentFactory();
 
     wired = true;
     status = "active";

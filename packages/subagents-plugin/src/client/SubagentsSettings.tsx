@@ -15,40 +15,40 @@
  *
  * See change: add-subagent-inspector §16.
  */
-import React, { useState } from "react";
-import { usePluginConfig } from "@blackbelt-technology/dashboard-plugin-runtime";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { usePluginConfig, useSettingsDraftSource } from "@blackbelt-technology/dashboard-plugin-runtime";
 
 interface SubagentsPluginConfig {
 	inheritContext?: boolean;
 }
 
 export function SubagentsSettings() {
+	// Buffered source: the toggle edits a local draft and persists via the
+	// host Settings panel's unified Save. See change: unify-settings-save-contract.
 	const config = usePluginConfig<SubagentsPluginConfig>();
-	const checked = config.inheritContext ?? true;
-	const [inFlight, setInFlight] = useState(false);
-	const [error, setError] = useState<string | null>(null);
+	const baseline = config.inheritContext ?? true;
+	const [draft, setDraft] = useState(baseline);
+	const isDirty = draft !== baseline;
+	const dirtyRef = useRef(isDirty); dirtyRef.current = isDirty;
+	const draftRef = useRef(draft); draftRef.current = draft;
+	// Adopt a new baseline (e.g. config broadcast) only while clean.
+	useEffect(() => { if (!dirtyRef.current) setDraft(baseline); }, [baseline]);
 
-	async function handleToggle(next: boolean) {
-		setError(null);
-		setInFlight(true);
-		try {
-			const res = await fetch("/api/config/plugins/subagents", {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ inheritContext: next }),
-				credentials: "include",
-			});
-			if (!res.ok) {
-				const body = await res.text().catch(() => "");
-				throw new Error(`HTTP ${res.status}: ${body || res.statusText}`);
-			}
-			// usePluginConfig will refresh via plugin_config_update broadcast
-		} catch (err) {
-			setError(err instanceof Error ? err.message : String(err));
-		} finally {
-			setInFlight(false);
+	const commit = useCallback(async () => {
+		const res = await fetch("/api/config/plugins/subagents", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ inheritContext: draftRef.current }),
+			credentials: "include",
+		});
+		if (!res.ok) {
+			const body = await res.text().catch(() => "");
+			throw new Error(`HTTP ${res.status}: ${body || res.statusText}`);
 		}
-	}
+	}, []);
+	const reset = useCallback(() => setDraft(baseline), [baseline]);
+	useSettingsDraftSource({ id: "plugin:subagents", page: "general", isDirty, commit, reset });
+	const checked = draft;
 
 	return (
 		<section className="space-y-3 p-4">
@@ -62,23 +62,24 @@ export function SubagentsSettings() {
 			</header>
 
 			{/*
-			  Plugin-level dep on the Roles plugin is declared in this plugin's
-			  manifest (`dependsOn: ["roles"]`). The Plugins tab already surfaces
-			  the relationship with cascade enable/disable; this inline disclaimer
-			  is for users who land directly on Subagent settings and would
-			  otherwise be surprised when the bundled Explore agent fails to
-			  resolve `@fast` after they disable Roles.
+			  Soft (runtime) relationship with the Roles plugin — no manifest
+			  `dependsOn`. The bundled Explore agent resolves `@fast` via the
+			  standalone `role:resolve-model` event; an unconfigured role
+			  degrades to a structured "not configured yet" error at spawn time
+			  rather than blocking Subagents from loading. This disclaimer points
+			  users to configure Roles so `@fast` resolves.
+			  See change: roles-standalone-defaults-and-local-install-detection.
 			*/}
 			<div
 				data-testid="subagents-settings-roles-dep"
 				className="text-[11px] text-[var(--text-tertiary)] border border-[var(--border-secondary)] rounded px-2 py-1.5 bg-[var(--bg-tertiary)]"
 			>
-				Requires the{" "}
+				Configure the{" "}
 				<code className="font-mono text-[var(--text-secondary)]">Roles</code> plugin
-				— the bundled <code className="font-mono">Explore</code> agent uses{" "}
-				<code className="font-mono">@fast</code> for model resolution. Disabling{" "}
-				<code className="font-mono">Roles</code> from the Plugins tab will cascade-disable
-				Subagents.
+				so the bundled <code className="font-mono">Explore</code> agent can resolve{" "}
+				<code className="font-mono">@fast</code>. If no model is assigned to{" "}
+				<code className="font-mono">@fast</code>, agents using <code className="font-mono">@role</code>{" "}
+				aliases report “not configured yet” at spawn time — Subagents still loads.
 			</div>
 
 			<label className="flex items-start gap-2 cursor-pointer">
@@ -86,8 +87,7 @@ export function SubagentsSettings() {
 					type="checkbox"
 					className="mt-0.5"
 					checked={checked}
-					disabled={inFlight}
-					onChange={(e) => handleToggle(e.target.checked)}
+					onChange={(e) => setDraft(e.target.checked)}
 				/>
 				<span className="flex-1">
 					<span className="block text-sm text-[var(--text-primary)]">
@@ -98,16 +98,7 @@ export function SubagentsSettings() {
 						When off, every subagent starts with an empty conversation (isolated).
 					</span>
 				</span>
-				{inFlight && (
-					<span className="text-[10px] text-[var(--text-muted)]">saving…</span>
-				)}
 			</label>
-
-			{error && (
-				<div className="text-[11px] text-red-400 px-1">
-					Failed to save: {error}
-				</div>
-			)}
 		</section>
 	);
 }

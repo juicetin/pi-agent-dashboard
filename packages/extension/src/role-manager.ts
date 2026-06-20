@@ -107,6 +107,47 @@ export function saveRoleConfig(roleConfig: RoleConfig): void {
   renameSync(tmp, path);
 }
 
+// -- Default roles --------------------------------------------------------
+//
+// Dashboard-owned canonical role-name set. Roles ownership moved off
+// pi-flows (change: adopt-model-resolve-handler-and-roles-ownership), so the
+// dashboard owns the default names too rather than depending on pi-flows
+// being installed. Mirrors pi-flows' `KNOWN_MODEL_ROLES`.
+//
+// See change: roles-standalone-defaults-and-local-install-detection.
+export const DEFAULT_ROLE_NAMES = [
+  "planning",
+  "coding",
+  "compact",
+  "fast",
+  "vision",
+  "research",
+] as const;
+
+/**
+ * Overlay the default role names onto an assigned-roles map for DISPLAY.
+ * Assigned values win; default names absent from `roles` appear with an
+ * empty (unconfigured) value. Non-default assigned roles are preserved.
+ *
+ * Used by `flow:role-get-all` so the Roles table is never an empty dead
+ * end on a fresh install. NOT used by `role:resolve-model` (which reports
+ * the raw assigned map as `probe.available`).
+ */
+export function overlayDefaultRoles(
+  roles: Record<string, string>,
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const name of DEFAULT_ROLE_NAMES) out[name] = "";
+  return { ...out, ...roles };
+}
+
+// Persistence note (change: roles-standalone-defaults-and-local-install-detection):
+// default role names are NOT auto-written to providers.json. The read-time
+// overlay (`overlayDefaultRoles`) populates the Roles table without touching
+// disk; a role reaches disk only when the user assigns a model via the
+// existing `flow:role-set` handler. This avoids an uninvited write to the
+// shared global providers.json on every session.
+
 // -- In-memory cache ------------------------------------------------------
 //
 // Mirrors pi-flows' behaviour: a module-level snapshot of the current roles
@@ -158,12 +199,22 @@ export function activate(pi: ExtensionAPI): void {
     const mapped = cfg.roles[roleName];
     if (typeof mapped === "string" && mapped.trim() !== "") {
       probe.resolved = mapped.trim();
+    } else {
+      // Shadow-disabled: role exists by name (default-seeded) or is unknown,
+      // but has no assigned model. Signal a structured "not configured yet"
+      // reason so the subagents harness surfaces an actionable spawn-time
+      // error instead of an opaque resolution failure.
+      // See change: roles-standalone-defaults-and-local-install-detection.
+      probe.reason = `role '${roleName}' not configured yet`;
     }
   });
 
   pi.events.on("flow:role-get-all", (data: any) => {
     const cfg = loadRoleConfig();
-    data.roles = { ...cfg.roles };
+    // Overlay default role names so the Roles table is never empty on a
+    // fresh install. Assigned values win; unconfigured defaults appear with
+    // an empty value.
+    data.roles = overlayDefaultRoles(cfg.roles);
     data.presets = cfg.rolePresets;
     data.activePreset = cfg.activePreset;
   });

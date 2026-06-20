@@ -31,6 +31,15 @@ describe("probePiExtension", () => {
     expect(r.satisfied).toBe(true);
   });
 
+  it("satisfied when an npm-declared extension is installed from a local path", async () => {
+    // global-from-local-build: source is a filesystem path, requirement
+    // name is an npm-style scoped id. Resolved via the npm ↔ raw matcher.
+    const r = await probePiExtension("@blackbelt-technology/pi-dashboard-subagents", {
+      listInstalled: async () => [{ source: "/home/dev/pi-dashboard-subagents" }],
+    });
+    expect(r.satisfied).toBe(true);
+  });
+
   it("not satisfied when listInstalled is missing", async () => {
     const r = await probePiExtension("pi-memory-honcho", {});
     expect(r.satisfied).toBe(false);

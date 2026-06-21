@@ -100,6 +100,14 @@ export interface EventWiringDeps {
    */
   pendingAutomationRunRegistry?: import("./pending-automation-run-registry.js").PendingAutomationRunRegistry;
   /**
+   * Optional pending-goal-link registry + goal store. When both provided, the
+   * wiring consumes a pending goalId on each `session_register`, stamps
+   * `.meta.json#goalId` + in-memory `DashboardSession.goalId`, and links the
+   * new sessionId into its `GoalRecord`. See change: add-goals-folder-page.
+   */
+  pendingGoalLinkRegistry?: import("./pending-goal-link-registry.js").PendingGoalLinkRegistry;
+  goalStore?: import("./goal-store.js").GoalStore;
+  /**
    * Optional viewed-session tracker. When provided, the wiring evaluates
    * `isUnreadTrigger(...)` on each forwarded event and stamps
    * `session.unread = true` for sessions no browser is currently viewing.
@@ -152,6 +160,8 @@ export function wireEvents(deps: EventWiringDeps): void {
     pendingAttachRegistry,
     pendingWorktreeBaseRegistry,
     pendingAutomationRunRegistry,
+    pendingGoalLinkRegistry,
+    goalStore,
     viewedSessionTracker,
     pendingClientCorrelations,
     dispatchPluginPiMessage,
@@ -286,6 +296,33 @@ export function wireEvents(deps: EventWiringDeps): void {
           kind: "automation",
           automationRun: stamp,
         });
+      }
+    }
+
+    // ── goal-link arm ─────────────────────────────────────────────────
+    // Consume any pending goalId queued by the goal route's spawn path for
+    // this cwd. Stamps `.meta.json#goalId` + in-memory `goalId`, links the
+    // new sessionId into its GoalRecord, and broadcasts the update.
+    // See change: add-goals-folder-page.
+    if (pendingGoalLinkRegistry && goalStore) {
+      const goalId = pendingGoalLinkRegistry.consume(cwd);
+      if (goalId) {
+        sessionManager.update(sessionId, { goalId });
+        const session = sessionManager.get(sessionId);
+        if (session?.sessionFile) {
+          try {
+            mergeSessionMeta(session.sessionFile, { goalId });
+          } catch (err) {
+            console.warn(
+              `[event-wiring] failed to persist goalId to .meta.json for ${sessionId}:`,
+              err,
+            );
+          }
+        }
+        goalStore.linkSession(cwd, goalId, sessionId).catch((err) => {
+          console.warn(`[event-wiring] failed to link session ${sessionId} to goal ${goalId}:`, err);
+        });
+        browserGateway.broadcastSessionUpdated(sessionId, { goalId });
       }
     }
   };

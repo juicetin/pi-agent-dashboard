@@ -339,4 +339,4 @@ export const PLUGIN_REGISTRY: RegistryEntry[] = [
   },
 ];
 
-export const PLUGIN_REGISTRY_HASH = "1c3468e308727000ac7efa50283411cbbbd5cdf87cd63d54f3220b2f65c7fb09";
+export const PLUGIN_REGISTRY_HASH = "072048891ae2e1f66ac2308231303be2632c940e872e30df8ad27769493bfe2a";

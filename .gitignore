@@ -30,3 +30,4 @@ site/.astro/
 playwright-report/
 test-results/
 .playwright/
+doc-example/

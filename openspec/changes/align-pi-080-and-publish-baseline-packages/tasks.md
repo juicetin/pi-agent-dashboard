@@ -54,6 +54,7 @@
 - [x] 6.5 Populated `pi-agent-browser` only: `requires.binaries:["agent-browser"]` (probeable via ToolRegistry). **NOT** honcho (its Honcho-server requirement is a `service` absent from the closed V1 probe registry — would always report unsatisfied; surfaced instead via its `honcho` companion plugin) and **NOT** context-mode (sandbox runtimes are optional; Node always present). Avoids shipping always-red requirements. Guard test asserts any declared `services` is a known probe.
 - [x] 6.6 Rendered probe in `RecommendedExtensions.tsx` (green ✓ satisfied / amber ⚠ missing per requirement, `recommended-requires-<id>` testid)
 - [x] 6.7 `npm test` 8218 passed (+3) / 0 failures; `npm run build` clean
+- [x] 6.8 Playwright E2E `tests/e2e/recommended-requires.spec.ts`: Settings→Packages→Recommended Extensions card shows `recommended-requires-pi-agent-browser` badge containing `agent-browser`; `pi-web-access` has no requires row. Verified against the `docker/` all-in-one harness — 7/7 e2e green (required rebuilding `pi-dashboard:local` so the image carried Piece A; `test-up.sh` does `compose up` without `--build`). See project skill `run-dashboard-e2e-local-changes`.
 
 ## 7. Piece B — offline-bundle pi-hermes-memory — DEFERRED to a future proposal
 

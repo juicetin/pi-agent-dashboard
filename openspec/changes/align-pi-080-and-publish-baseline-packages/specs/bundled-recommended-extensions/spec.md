@@ -23,24 +23,13 @@ The `RECOMMENDED_EXTENSIONS` constant in `packages/shared/src/recommended-extens
 `RecommendedExtension` SHALL support an optional `requires` declaration (`piExtensions` / `binaries` / `services`), and the recommended route SHALL surface a live probe result per requirement.
 
 #### Scenario: requires declared and probed
-- **WHEN** a recommended entry declares `requires` (e.g. `pi-agent-browser` binary `agent-browser`, `pi-memory-honcho` service Honcho)
+- **WHEN** a recommended entry declares `requires` (e.g. `pi-agent-browser` binary `agent-browser`)
 - **THEN** `GET /api/packages/recommended` SHALL return a structured probe (`{ name, satisfied }` per category) computed with the same probe used for dashboard-plugin `requires`, and `RecommendedExtensions.tsx` SHALL render satisfied/missing state
 
 #### Scenario: native npm deps are NOT declared as requires
 - **WHEN** an extension's only external dependency is a native npm module it bundles (e.g. hermes → `better-sqlite3`)
 - **THEN** it SHALL NOT declare that module under `requires.binaries` — a bundled native dep is not a user-provided system requirement
 
-### Requirement: pi-hermes-memory ships offline in the Electron installer (bundled-but-dormant)
-The Electron build SHALL include `pi-hermes-memory` and its native `better-sqlite3` (matching the bundled-server Node ABI) inside `resources/server/node_modules/`, activated only on user opt-in.
-
-#### Scenario: native binary present per platform
-- **WHEN** an Electron matrix leg builds the bundled server
-- **THEN** `bundle-server.mjs` SHALL assert (GO/NO-GO, mirroring the node-pty gate) that the platform's `better_sqlite3.node` is present, failing the build on regression
-
-#### Scenario: cross-build does not claim bundling
-- **WHEN** the bundle runs in `--source-only` cross-build mode (no `npm install`)
-- **THEN** the hermes/better-sqlite3 gate SHALL be skipped and the bundle SHALL NOT claim hermes is bundled
-
-#### Scenario: dormant activation, offline
-- **WHEN** the user enables `pi-hermes-memory` in the Recommended Extensions card on a bundled Electron install
-- **THEN** activation SHALL resolve the bundled copy without a network `npm install`; hermes SHALL NOT be auto-activated on first run
+#### Scenario: unknown service names are not declared
+- **WHEN** an extension's external requirement is a service absent from the closed probe registry (e.g. a Honcho server)
+- **THEN** it SHALL NOT declare that name under `requires.services` (it would always report unsatisfied); the need is surfaced via the companion dashboard plugin instead

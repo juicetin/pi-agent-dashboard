@@ -55,17 +55,19 @@
 - [x] 6.6 Rendered probe in `RecommendedExtensions.tsx` (green ✓ satisfied / amber ⚠ missing per requirement, `recommended-requires-<id>` testid)
 - [x] 6.7 `npm test` 8218 passed (+3) / 0 failures; `npm run build` clean
 
-## 7. Piece B — offline-bundle pi-hermes-memory (bundled-but-dormant)
+## 7. Piece B — offline-bundle pi-hermes-memory — DEFERRED to a future proposal
 
-- [ ] 7.1 Make `pi-hermes-memory` land in `resources/server/node_modules/` at bundle time (add to the bundled server's prod deps OR a dedicated install step in `bundle-server.mjs`); confirm `better-sqlite3` resolves
-- [ ] 7.2 Add a GO/NO-GO gate in `bundle-server.mjs` mirroring the node-pty gate: assert `node_modules/better-sqlite3/build/Release/better_sqlite3.node` (or prebuilds) present for the leg's platform; fail build on regression
-- [ ] 7.3 Confirm per-platform: each matrix leg's `npm install --omit=dev` yields ABI-137 `better_sqlite3.node`; assert `--source-only` cross-build path does NOT claim hermes bundled (skip gate there)
-- [ ] 7.4 First-run/activation: enabling hermes in the Recommended Extensions card resolves the bundled copy **offline** (no network `npm install`); wire `sourcesMatch`/installed-path detection to the bundled location
-- [ ] 7.5 Keep dormant: hermes NOT auto-activated on first run; only user-enabled
-- [ ] 7.6 Verify installer size delta acceptable; `npm test` + targeted electron bundle test green
+Corrected understanding (design D8): hermes is a **pi extension**, not a server dependency — the "server `node_modules` route" is invalid. Offline-bundling requires reversing an offline-install path removed by `eliminate-electron-runtime-install`; out of scope here. Tasks below are the future-proposal blueprint, NOT executed in this change.
 
-## 8. Phase-A/B close-out
+- [~] 7.1 (DEFERRED) Choose mechanism: **A** bundled-extensions dir + offline local-source activation, or **B** npm offline cache (cacache) seed
+- [~] 7.2 (DEFERRED) Per-platform build-time install of `pi-hermes-memory` (yields ABI-137 `better_sqlite3.node`); node-pty-style GO/NO-GO gate
+- [~] 7.3 (DEFERRED) `--source-only` cross-build cannot produce better-sqlite3 — native coverage from matrix legs only
+- [~] 7.4 (DEFERRED) Offline activation via card (local-source / cache); `sourcesMatch` npm↔local-path already satisfies the `npm:pi-hermes-memory` entry
+- [~] 7.5 (DEFERRED) Dormant: not auto-activated; user-enabled only
+- [~] 7.6 (DEFERRED) Installer-size review; electron bundle test
 
-- [ ] 8.1 CHANGELOG `[Unreleased]`: `requires`+probe on recommended extensions; hermes offline-bundled (dormant)
-- [ ] 8.2 Update `docs/file-index-shared.md` (requires field) + `docs/file-index-electron.md` (bundle-server hermes gate) via subagent, caveman style
-- [ ] 8.3 Code-review gate; full `npm test` + `npm run build` green
+## 8. Phase-A close-out (Piece A only; Piece B deferred)
+
+- [ ] 8.1 CHANGELOG `[Unreleased]`: `requires`+probe on recommended extensions (Piece A). (Hermes offline-bundling deferred — no CHANGELOG entry.)
+- [ ] 8.2 Update `docs/file-index-shared.md` (recommended-extensions `requires` field + probe) via subagent, caveman style
+- [ ] 8.3 Code-review gate; full `npm test` + `npm run build` green (Piece A: done — 8218 passed, build clean)

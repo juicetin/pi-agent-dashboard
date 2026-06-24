@@ -103,6 +103,23 @@ describe("RECOMMENDED_EXTENSIONS manifest", () => {
 		);
 		expect(gitEntries).toEqual([]);
 	});
+
+	it("pi-agent-browser declares its agent-browser binary requirement", () => {
+		const entry = getRecommendedExtension("pi-agent-browser");
+		expect(entry?.requires?.binaries).toContain("agent-browser");
+	});
+
+	it("requires, when present, only names binaries/services/piExtensions that are probeable", () => {
+		// Guard against shipping always-red requirements: a declared `services`
+		// entry must be a known service probe (V1 closed registry: pi-model-proxy).
+		const KNOWN_SERVICES = new Set(["pi-model-proxy"]);
+		for (const e of RECOMMENDED_EXTENSIONS) {
+			if (!e.requires) continue;
+			for (const svc of e.requires.services ?? []) {
+				expect(KNOWN_SERVICES.has(svc)).toBe(true);
+			}
+		}
+	});
 });
 
 describe("getRecommendedExtension", () => {

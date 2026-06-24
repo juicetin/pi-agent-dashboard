@@ -195,6 +195,24 @@ describe("GET /api/packages/recommended", () => {
 		return fastify;
 	}
 
+	it("surfaces a requirements probe for entries that declare `requires`", async () => {
+		vi.mocked(fetchPackageMeta).mockResolvedValue(null);
+		vi.mocked(fetchGithubPackageJson).mockResolvedValue(null);
+		await setupRoute();
+
+		const res = await fastify.inject({ method: "GET", url: "/api/packages/recommended" });
+		const body = JSON.parse(res.payload);
+		const browser = body.data.recommended.find((e: any) => e.id === "pi-agent-browser");
+		expect(browser.requirements).toBeDefined();
+		expect(browser.requirements.binaries.map((b: any) => b.name)).toContain("agent-browser");
+		// missingRequirements is always an array when requirements is present.
+		expect(Array.isArray(browser.missingRequirements)).toBe(true);
+
+		// Entries without `requires` carry no probe.
+		const pwa = body.data.recommended.find((e: any) => e.id === "pi-web-access");
+		expect(pwa.requirements).toBeUndefined();
+	});
+
 	it("returns the 12 manifest entries with default (offline) descriptions", async () => {
 		vi.mocked(fetchPackageMeta).mockResolvedValue(null);
 		vi.mocked(fetchGithubPackageJson).mockResolvedValue(null);

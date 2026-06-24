@@ -35,6 +35,12 @@ import {
 	type PackageMeta,
 } from "../npm-search-proxy.js";
 import type { PackageManagerWrapper } from "../package-manager-wrapper.js";
+import { getDefaultRegistry } from "@blackbelt-technology/pi-dashboard-shared/tool-registry/index.js";
+import {
+	runRequirementProbesFor,
+	missingFromReport,
+	type RequirementProbeDeps,
+} from "@blackbelt-technology/dashboard-plugin-runtime/server";
 
 const CACHE_TTL_MS = 60 * 1000;
 
@@ -129,6 +135,7 @@ async function enrichEntry(
 	installedGlobal: Array<{ source: string; installedPath?: string }>,
 	installedLocal: Array<{ source: string; installedPath?: string }>,
 	activeSources: string[],
+	reqDeps: RequirementProbeDeps,
 ): Promise<EnrichedRecommendedExtension> {
 	const key = parseSourceKey(entry.source);
 	let meta: PackageMeta | null = null;
@@ -191,6 +198,20 @@ async function enrichEntry(
 		}
 	}
 
+	// Probe declarative external requirements (Piece A). Only entries that
+	// declare `requires` carry a `requirements` report + `missingRequirements`.
+	let requirements: EnrichedRecommendedExtension["requirements"];
+	let missingRequirements: string[] | undefined;
+	if (entry.requires) {
+		try {
+			const report = await runRequirementProbesFor(entry.requires, reqDeps);
+			requirements = report;
+			missingRequirements = missingFromReport(report);
+		} catch {
+			/* probe failure is non-fatal — leave requirements undefined */
+		}
+	}
+
 	return {
 		...entry,
 		description,
@@ -201,6 +222,7 @@ async function enrichEntry(
 		...(entry.dashboardPlugin
 			? { dashboardPluginInstalled: dashboardPluginInstalled ?? false }
 			: {}),
+		...(requirements ? { requirements, missingRequirements: missingRequirements ?? [] } : {}),
 	};
 }
 
@@ -231,9 +253,17 @@ export function registerRecommendedRoutes(
 		// The server's CWD is a reasonable proxy for the active project.
 		const activeSources = readActiveSources(process.cwd());
 
+		// Probe deps reused across entries: pi-extension matches come from the
+		// already-fetched installed lists; binaries resolve via the shared
+		// ToolRegistry; services use the closed built-in registry.
+		const reqDeps: RequirementProbeDeps = {
+			listInstalled: async () => [...installedGlobal, ...installedLocal],
+			toolRegistry: getDefaultRegistry(),
+		};
+
 		const enriched = await Promise.all(
 			RECOMMENDED_EXTENSIONS.map((entry) =>
-				enrichEntry(entry, installedGlobal, installedLocal, activeSources),
+				enrichEntry(entry, installedGlobal, installedLocal, activeSources, reqDeps),
 			),
 		);
 

@@ -47,13 +47,13 @@
 
 ## 6. Piece A — `requires` declaration + live probe on RecommendedExtension
 
-- [ ] 6.1 Add optional `requires?: { piExtensions?: string[]; binaries?: string[]; services?: string[] }` to `RecommendedExtension` (`packages/shared/src/recommended-extensions.ts`), mirroring `PluginRequirements` in `dashboard-plugin/manifest-types.ts`
-- [ ] 6.2 Add a structured probe result to `EnrichedRecommendedExtension` (`rest-api.ts`) mirroring `plugin-status.ts` `{ piExtensions[], binaries[], services[] }` with `satisfied` flags
-- [ ] 6.3 Locate + reuse the plugin requirement-probe in `packages/server/src/server.ts`; factor a shared probe helper if needed (ToolRegistry binary resolution + service probes). TDD: test the enricher returns satisfied/unsatisfied correctly
-- [ ] 6.4 Wire the probe into `recommended-routes.ts::enrichEntry` (cache like the existing 30s enrichment)
-- [ ] 6.5 Populate `requires` from each package's docs (confirm exact values): `pi-agent-browser` (binary `agent-browser` + Chromium), `pi-memory-honcho` (service: Honcho server), `context-mode` (sandbox runtimes — confirm which are hard vs optional). NOT hermes.
-- [ ] 6.6 Render the probe in `RecommendedExtensions.tsx` (satisfied ✓ / missing ⚠ per requirement); update manifest-shape test
-- [ ] 6.7 `npm test` + `npm run build` green
+- [x] 6.1 Added `requires?: PluginRequirements` to `RecommendedExtension` (reuses the dashboard-plugin schema; type-only import)
+- [x] 6.2 Added `requirements?: PluginRequirementReport` + `missingRequirements?: string[]` to `EnrichedRecommendedExtension`
+- [x] 6.3 Reused the existing probe: added `runRequirementProbesFor(requires, deps)` to `dashboard-plugin-runtime/server/requirement-probes.ts` (`runRequirementProbes` now delegates); no duplicate logic
+- [x] 6.4 Wired into `recommended-routes.ts::enrichEntry` (probe deps = installed lists + shared `getDefaultRegistry()`; non-fatal on probe error; rides the existing 60s route cache)
+- [x] 6.5 Populated `pi-agent-browser` only: `requires.binaries:["agent-browser"]` (probeable via ToolRegistry). **NOT** honcho (its Honcho-server requirement is a `service` absent from the closed V1 probe registry — would always report unsatisfied; surfaced instead via its `honcho` companion plugin) and **NOT** context-mode (sandbox runtimes are optional; Node always present). Avoids shipping always-red requirements. Guard test asserts any declared `services` is a known probe.
+- [x] 6.6 Rendered probe in `RecommendedExtensions.tsx` (green ✓ satisfied / amber ⚠ missing per requirement, `recommended-requires-<id>` testid)
+- [x] 6.7 `npm test` 8218 passed (+3) / 0 failures; `npm run build` clean
 
 ## 7. Piece B — offline-bundle pi-hermes-memory (bundled-but-dormant)
 

@@ -16,6 +16,9 @@
  * from the npm registry or GitHub (see `/api/packages/recommended`).
  */
 
+import type { PluginRequirements } from "./dashboard-plugin/manifest-types.js";
+import type { PluginRequirementReport } from "./dashboard-plugin/plugin-status.js";
+
 /** Relative importance of a recommended extension. */
 export type RecommendedExtensionStatus =
 	| "required"            // dashboard features or provider paths break without it
@@ -71,6 +74,22 @@ export interface RecommendedExtension {
 	 * See change: add-plugin-activation-ui (Layer 1.5).
 	 */
 	dashboardPlugin?: string;
+
+	/**
+	 * Optional declarative external requirements (system binaries, named
+	 * service probes, or sibling pi extensions) that the extension needs to
+	 * function. Reuses the dashboard-plugin `PluginRequirements` schema and is
+	 * probed server-side with the same machinery; the result is surfaced as
+	 * `EnrichedRecommendedExtension.requirements`.
+	 *
+	 * NOTE: declare ONLY genuinely-probeable, user-actionable requirements.
+	 * Do NOT list a native npm dependency the package bundles itself (e.g.
+	 * better-sqlite3) — that is an install concern, not a user requirement.
+	 * Do NOT list a `services` name absent from the closed service-probe
+	 * registry (it would always report unsatisfied).
+	 * See change: align-pi-080-and-publish-baseline-packages (Piece A).
+	 */
+	requires?: PluginRequirements;
 }
 
 /** Enriched manifest entry returned by GET /api/packages/recommended. */
@@ -93,6 +112,21 @@ export interface EnrichedRecommendedExtension extends RecommendedExtension {
 	 * See change: add-plugin-activation-ui.
 	 */
 	dashboardPluginInstalled?: boolean;
+
+	/**
+	 * Structured probe result for the entry's declarative `requires`, computed
+	 * server-side with the same probe used for dashboard plugins. Absent when
+	 * the entry declares no `requires`.
+	 * See change: align-pi-080-and-publish-baseline-packages (Piece A).
+	 */
+	requirements?: PluginRequirementReport;
+
+	/**
+	 * Flat list of unsatisfied requirement names across all categories. `[]`
+	 * when everything is satisfied; absent when the entry declares no
+	 * `requires`.
+	 */
+	missingRequirements?: string[];
 }
 
 export const RECOMMENDED_EXTENSIONS: readonly RecommendedExtension[] = [
@@ -190,6 +224,10 @@ export const RECOMMENDED_EXTENSIONS: readonly RecommendedExtension[] = [
 		status: "optional",
 		unlocks: ["browser tool (open, snapshot, click, screenshot)"],
 		toolsRegistered: ["browser"],
+		// The browser tool shells out to the `agent-browser` CLI; probed on PATH
+		// via the shared ToolRegistry. See change:
+		// align-pi-080-and-publish-baseline-packages (Piece A).
+		requires: { binaries: ["agent-browser"] },
 	},
 	{
 		id: "pi-memory-honcho",

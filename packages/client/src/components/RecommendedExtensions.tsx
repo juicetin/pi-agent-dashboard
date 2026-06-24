@@ -274,6 +274,37 @@ export function RecommendedExtensions({ scope, cwd }: Props) {
                 ))}
               </div>
 
+              {entry.requirements && (
+                // Declarative external requirements + live probe (Piece A).
+                // See change: align-pi-080-and-publish-baseline-packages.
+                <div
+                  className="flex flex-wrap gap-1"
+                  data-testid={`recommended-requires-${entry.id}`}
+                >
+                  {[
+                    ...entry.requirements.piExtensions,
+                    ...entry.requirements.binaries,
+                    ...entry.requirements.services,
+                  ].map((r) => (
+                    <span
+                      key={r.name}
+                      className={`text-[10px] px-1.5 py-0.5 rounded border whitespace-nowrap ${
+                        r.satisfied
+                          ? "bg-green-500/15 text-green-400 border-green-500/40"
+                          : "bg-amber-500/15 text-amber-400 border-amber-500/40"
+                      }`}
+                      title={
+                        r.satisfied
+                          ? `Requirement "${r.name}" satisfied`
+                          : `Requirement "${r.name}" missing`
+                      }
+                    >
+                      {r.satisfied ? "\u2713" : "\u26a0"} {r.name}
+                    </span>
+                  ))}
+                </div>
+              )}
+
               <div className="flex items-center justify-between pt-1 mt-auto">
                 <code className="text-[10px] text-muted truncate" title={entry.source}>
                   {entry.source}

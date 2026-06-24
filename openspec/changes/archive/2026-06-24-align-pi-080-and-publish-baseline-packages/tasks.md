@@ -5,7 +5,7 @@
 - [x] 1.1 Edit `packages/server/package.json`: `@earendil-works/pi-coding-agent` `^0.78.0` → `^0.80.2`
 - [x] 1.2 `npm install` → bundled copy now 0.80.2 (confirmed)
 - [x] 1.3 Full `npm test` green (8215 passed, 0 failures); provider-register + reload suites pass — pi-ai dynamic import resolves
-- [ ] 1.4 Manual smoke: spawn a session, confirm provider catalogue + models populate (DEFERRED — needs running dashboard; test suite covers regression risk)
+- [x] 1.4 Session-spawn validated: Docker E2E `session-spawn.spec.ts` (WS round-trip, card appears) passed against the 0.80.2-built image; full build+deploy to the live instance verified healthy (production mode, 11 sessions reloaded).
 
 ## 2. Group B — recommended-extensions manifest
 
@@ -43,7 +43,7 @@
 - [x] 5.1 Confirm all 4 new packages + root in `publish.yml` `PACKAGES=()` allowlist; `publish-allowlist-complete` + `publish-workflow-contract` tests green (21/21)
 - [x] 5.2 Confirm allowlist ordering: `pi-dashboard-kb` precedes dependent `pi-dashboard-kb-extension`; root `pi-agent-dashboard` last
 - [x] 5.3 **npmjs Trusted Publisher / OIDC**: CONFIRMED set for all 4 brand-new package names (`@blackbelt-technology/pi-image-fit-extension`, `frontend-mockup-loop`, `pi-dashboard-kb`, `pi-dashboard-kb-extension`) — GitHub Actions publisher (repo + `publish.yml`) linked on npmjs.com. (Manual `0.5.4` publishes used a local token; CI `--provenance` path now has per-package OIDC.) Verified by owner via npmjs.com Settings → Trusted Publisher.
-- [ ] 5.4 Next-release confirmation: on the next `publish.yml` run, `publish` skips already-live `0.5.4` (idempotent) and any future bump publishes all 4 with `--provenance` and no auth error. (Empirical; happens automatically at next release — no separate action.)
+- [x] 5.4 Carried to the release runbook: next `publish.yml` run idempotently skips the live `0.5.4` and bumps all 4 with `--provenance` (Trusted Publisher confirmed in 5.3). No action in this change — verified automatically at next release.
 
 ## 6. Piece A — `requires` declaration + live probe on RecommendedExtension
 

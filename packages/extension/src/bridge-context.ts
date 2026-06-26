@@ -28,13 +28,6 @@ export interface BridgeContext {
    * See change: add-worktree-spawn-dialog.
    */
   lastGitWorktreeJson: string | undefined;
-  /**
-   * Last serialized `JjState` snapshot sent to the server, or `null`
-   * when the previous probe explicitly cleared it. Compared on every
-   * probe tick so we only send `jj_state_update` when the value actually
-   * changes. See change: add-jj-workspace-plugin.
-   */
-  lastJjStateJson: string | undefined;
   lastSessionName: string | undefined;
   /**
    * `true` once the bridge's VCS tick has observed `existsSync(cwd) === false`

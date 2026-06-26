@@ -12,7 +12,7 @@
 ## 3. Awaitable commit (honor the draft contract)
 
 - [x] 3.1 Widened plugin send to `(message: unknown) => void | Promise<void>` (context value `send`, `usePluginSend` return, provider `send` prop, internal `send` callback now returns `sendFn(message)`).
-- [x] 3.2 `await send({...})` + dropped `as never` in `flows`, `automation`, `jj`; dropped `as never` in `flows-anthropic-bridge` + `demo` (onClick saves, not draft commits). (`goal`/`honcho`/`roles` do not use `plugin_config_write` — grep-confirmed only these 5 callers.)
+- [x] 3.2 `await send({...})` + dropped `as never` in `flows`, `automation`; dropped `as never` in `flows-anthropic-bridge` + `demo` (onClick saves, not draft commits). (`goal`/`roles` do not use `plugin_config_write` — grep-confirmed callers.)
 - [x] 3.3 Reject-on-failure verified by `writePluginConfig` 400/409 reject tests; `commit()` awaits so a rejection keeps the draft dirty per the `SettingsDraftSource` contract (host shows partial-fail, not "Settings saved").
 
 ## 4. Tests
@@ -25,7 +25,7 @@
 ## 5. Validate + land
 
 - [x] 5.1 `openspec validate --strict` → valid.
-- [x] 5.2 Affected suites green (shared + dashboard-plugin-runtime + flows/automation/jj): 1684 passed / 1 skipped; new plugin-config-write tests: 6 passed.
+- [x] 5.2 Affected suites green (shared + dashboard-plugin-runtime + flows/automation): 1684 passed / 1 skipped; new plugin-config-write tests: 6 passed.
 - [x] 5.3 `npm run build` clean; server restarted; smoke: `POST /api/config/plugins/flows {editFlow:true}` → HTTP 200, response merged `{enabled:true,editFlow:true}`, `config.json#plugins.flows.editFlow=true` (persisted, survives reload).
 - [x] 5.4 Code-review gate run: CodeRabbit CLI absent (ENOENT) → deferred, exit 0 (advisory). 
 - [x] 5.5 Docs: file-index-client row (writePluginConfig/dispatchPluginMessage) + file-index-shared row (plugin_config_write message). 

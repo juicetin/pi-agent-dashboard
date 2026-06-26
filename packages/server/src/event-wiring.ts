@@ -64,7 +64,7 @@ export interface EventWiringDeps {
   browserGateway: BrowserGateway;
   sessionOrderManager: SessionOrderManager;
   /** Source of pinned directories so order-map keys resolve via
-   *  `resolveOrderKey` (parent repo for worktree/jj sessions).
+   *  `resolveOrderKey` (parent repo for worktree sessions).
    *  See change: simplify-session-card-ordering. */
   preferencesStore: PreferencesStore;
   /** Live gate accessors for status-transition placement. Read fresh per
@@ -179,10 +179,10 @@ export function wireEvents(deps: EventWiringDeps): void {
   } = deps;
 
   /**
-   * Deferred order-key re-resolution. A worktree/jj session registers BEFORE
-   * its group identity (`gitWorktree.mainPath` / `jjState.workspaceRoot`)
+   * Deferred order-key re-resolution. A worktree session registers BEFORE
+   * its group identity (`gitWorktree.mainPath`)
    * arrives, so its id is inserted under the raw cwd key. Once a later
-   * `git_info_update` / `jj_state_update` establishes that identity, the
+   * `git_info_update` establishes that identity, the
    * resolved key changes from the raw cwd to the parent key. This moves the
    * id to the FRONT of the resolved key (matching the "new session at top"
    * intent \u2014 the just-spawned session takes the placeholder's slot), prunes
@@ -880,7 +880,7 @@ export function wireEvents(deps: EventWiringDeps): void {
         ? pendingForkRegistry.consumeFork(msg.spawnToken)
         : undefined;
       // Key the order map by the RESOLVED group path (parent repo for
-      // worktree/jj sessions) so the entry lands under the key the client
+      // worktree sessions) so the entry lands under the key the client
       // reads. Falls back to msg.cwd when the session isn't in the manager
       // yet (plain checkout → resolved path == cwd anyway).
       // See change: simplify-session-card-ordering.
@@ -903,7 +903,7 @@ export function wireEvents(deps: EventWiringDeps): void {
       }
 
       // validIds = sessions sharing the same resolved group key (not raw
-      // cwd), so worktree/jj siblings count toward the same order list.
+      // cwd), so worktree siblings count toward the same order list.
       const validIds = new Set(
         sessionManager.listAll()
           .filter((s) => resolveOrderKey(s, pinned) === orderKey)
@@ -1054,18 +1054,6 @@ export function wireEvents(deps: EventWiringDeps): void {
       sessionManager.update(sessionId, gitUpdates);
       browserGateway.broadcastSessionUpdated(sessionId, gitUpdates);
       maybeRekeyOrder(sessionId, oldOrderKey);
-    }
-
-    if (msg.type === "jj_state_update") {
-      // jjState is intentionally allowed to be `undefined` (no jj) when
-      // the bridge sends `null`; the session-manager update applies the
-      // value verbatim. See change: add-jj-workspace-plugin.
-      const jjUpdates = { jjState: msg.jjState ?? undefined };
-      const beforeJjSession = sessionManager.get(sessionId);
-      const oldJjOrderKey = beforeJjSession ? resolveOrderKey(beforeJjSession, preferencesStore.getPinnedDirectories()) : undefined;
-      sessionManager.update(sessionId, jjUpdates);
-      browserGateway.broadcastSessionUpdated(sessionId, jjUpdates);
-      maybeRekeyOrder(sessionId, oldJjOrderKey);
     }
 
     if (msg.type === "cwd_missing") {

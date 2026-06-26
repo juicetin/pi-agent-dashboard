@@ -2039,7 +2039,7 @@ Root cause:
 - Arbitrary worktree branches may not contain `.pi/skills/openspec-*/SKILL.md`.
 - Skill paths already injected into agent system prompt under `<available_skills>`. Filesystem search redundant.
 
-Stopgap: `.pi/skills/openspec-archive-change/SKILL.md` and `.pi/skills/openspec-bulk-archive-change/SKILL.md` carry guardrail: "Resolve `openspec/` strictly relative to CWD. Do NOT `find` the filesystem for SKILL.md, archive directories, or sibling `openspec/` trees — scoped to current working tree. In git/jj worktree, operate on worktree's own `openspec/changes/` (CWD already points there)." Edits local-only, gitignored, wiped by `openspec update`.
+Stopgap: `.pi/skills/openspec-archive-change/SKILL.md` and `.pi/skills/openspec-bulk-archive-change/SKILL.md` carry guardrail: "Resolve `openspec/` strictly relative to CWD. Do NOT `find` the filesystem for SKILL.md, archive directories, or sibling `openspec/` trees — scoped to current working tree. In git worktree, operate on worktree's own `openspec/changes/` (CWD already points there)." Edits local-only, gitignored, wiped by `openspec update`.
 
 Rule for agents: in worktree, treat CWD as openspec root. Never `find` for skill files. Use path from `<available_skills>` block.
 
@@ -2152,34 +2152,6 @@ sudo dnf install gh
 ```
 
 Vendor docs: https://cli.github.com/
-
-## Install jj
-
-Dashboard surfaces jj workspace state when repo uses Jujutsu.
-
-macOS:
-
-```bash
-brew install jj
-```
-
-Windows:
-
-```bash
-winget install jj-vcs.jj
-scoop install jj
-cargo install --locked --bin jj jj-cli
-```
-
-Linux:
-
-```bash
-brew install jj
-cargo install --locked --bin jj jj-cli
-sudo pacman -S jujutsu
-```
-
-Vendor docs: https://docs.jj-vcs.dev/latest/install-and-setup/
 
 ## Install node
 

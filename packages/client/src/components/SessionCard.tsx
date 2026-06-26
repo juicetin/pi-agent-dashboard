@@ -38,15 +38,13 @@ import { InlineRenameInput } from "./InlineRenameInput.js";
 // flows-plugin components (FlowActivityBadge, SessionFlowActions) are
 // rendered exclusively via plugin slot consumers (SessionCardBadgeSlot /
 // SessionCardActionBarSlot) per change pluginize-flows-via-registry.
-// jj-plugin components (JjWorkspaceBadge, JjActionBar, JjInitAffordance)
-// are rendered the same way per change wire-plugin-registry-into-shell.
 import { ProcessList, type ProcessEntry } from "./ProcessList.js";
 import { SessionActivityBar } from "./SessionActivityBar.js";
 import type { InflightBashTool } from "../hooks/useInflightBashTools.js";
 import type { CommandInfo } from "@blackbelt-technology/pi-dashboard-shared/types.js";
 import { useMobile } from "../hooks/useMobile.js";
 import { useDisplayPrefs } from "../hooks/useDisplayPrefs.js";
-import { SessionCardBadgeSlot, SessionCardActionBarSlot, SessionCardMemorySlot, SessionCardFlowsSlot, WorkspaceActionBarSlot, useSlotHasClaimsForSession, useHasWidgetBarPrompt } from "@blackbelt-technology/dashboard-plugin-runtime";
+import { SessionCardBadgeSlot, SessionCardActionBarSlot, SessionCardMemorySlot, SessionCardFlowsSlot, useSlotHasClaimsForSession, useHasWidgetBarPrompt } from "@blackbelt-technology/dashboard-plugin-runtime";
 import { SessionSubcard } from "./SessionSubcard.js";
 import { CwdGonePill } from "./CwdGonePill.js";
 import { WorktreeActionsMenu } from "./WorktreeActionsMenu.js";
@@ -852,16 +850,14 @@ export function SessionCard({
         </SessionSubcard>
       )}
 
-      {/* GIT + JJ subcards — split from the old WORKSPACE subcard so the
-          two version-control concepts no longer share a host container.
-          See change: redesign-session-card-and-composer (5.1–5.3). */}
+      {/* GIT subcard. See change: redesign-session-card-and-composer (5.1–5.3). */}
       <GitSubcard
         session={session}
         showGitInfo={showGitInfo}
         allSessions={allSessions ?? []}
         onShutdownSession={onShutdown ?? (() => { /* unwired */ })}
       />
-      <JjSubcard session={session} />
+      <BadgeSubcard session={session} />
 
       {/* PROCESS subcard — activity bar (in-flight bash toolCalls) +
           background processes drawer. Subcard hides only when BOTH the
@@ -887,9 +883,7 @@ export function SessionCard({
       <MemorySubcard session={session} />
 
       {/* Plugin slot: session-card-action-bar — generic card footer.
-          Currently no claimers after jj/honcho rerouted to workspace-action-bar /
-          session-card-memory and flows rerouted to session-card-flows; kept
-          rendered for future generic plugins. */}
+          Kept rendered for future generic plugins. */}
       <SessionCardActionBarSlot session={session} />
       </div>{/* end card content */}
       </div>{/* end flex row */}
@@ -1049,18 +1043,16 @@ function GitSubcard({ session, showGitInfo, allSessions, onShutdownSession }: { 
 }
 
 /**
- * JJ subcard — jj-plugin badge + workspace-action-bar slot contributions.
+ * STATUS subcard — session-card-badge slot contributions (goal/automation).
  * Strictly plugin-scoped: never considers git state.
  * See change: redesign-session-card-and-composer (5.1).
  */
-function JjSubcard({ session }: { session: DashboardSession }) {
+function BadgeSubcard({ session }: { session: DashboardSession }) {
   const hasBadge = useSlotHasClaimsForSession("session-card-badge", session);
-  const hasActions = useSlotHasClaimsForSession("workspace-action-bar", session);
-  if (!hasBadge && !hasActions) return null;
+  if (!hasBadge) return null;
   return (
-    <SessionSubcard title="JJ">
-      {hasBadge ? <SessionCardBadgeSlot session={session} /> : null}
-      {hasActions ? <WorkspaceActionBarSlot session={session} /> : null}
+    <SessionSubcard title="STATUS">
+      <SessionCardBadgeSlot session={session} />
     </SessionSubcard>
   );
 }

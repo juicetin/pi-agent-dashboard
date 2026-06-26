@@ -61,7 +61,7 @@ services:
       # container sees ${HOST_CWD} writable while the host stays untouched.
       - "${HOST_CWD:-/tmp}:/mnt/test-lower:ro"
       # Baked VCS fixture sources (read-only). The entrypoint copies these to
-      # the /fixtures tmpfs and inits them as real git/jj repos at start.
+      # the /fixtures tmpfs and inits them as real git repos at start.
       - "./fixtures:/fixtures-src:ro"
       # Test entrypoint wrapper (bind-mounted; no image rebuild).
       - "./test-entrypoint.sh:/usr/local/bin/test-entrypoint.sh:ro"

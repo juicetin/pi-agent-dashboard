@@ -77,7 +77,6 @@ import { registerPiChangelogRoutes } from "./routes/pi-changelog-routes.js";
 import { PiCoreChecker } from "./pi-core-checker.js";
 import { PiCoreUpdater } from "./pi-core-updater.js";
 import { registerToolRoutes } from "./routes/tool-routes.js";
-import { registerJjRoutes } from "./routes/jj-routes.js";
 import { getDefaultRegistry } from "@blackbelt-technology/pi-dashboard-shared/tool-registry/index.js";
 import { registerProviderRoutes } from "./routes/provider-routes.js";
 import { PackageManagerWrapper } from "./package-manager-wrapper.js";
@@ -278,21 +277,18 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
       // .meta.json overwrite (not a merge) — omitting it wipes the field set
       // by event-wiring / goal routes. See change: add-goals-folder-page.
       goalId: session.goalId,
-      // Persist the grouping-relevant worktree/jj parentage so a rebooted
+      // Persist the grouping-relevant worktree parentage so a rebooted
       // (bridge-less) scan can collapse this session under its parent repo.
       // Only the subset `resolveSessionGroupPath` needs is stored; volatile
-      // probe state (jj bookmarks/lastError, worktree base) is excluded.
+      // probe state (worktree base) is excluded.
       // See change: fix-cold-start-worktree-session-grouping.
       gitWorktree: session.gitWorktree
         ? { mainPath: session.gitWorktree.mainPath, name: session.gitWorktree.name }
         : undefined,
-      jjState: session.jjState
-        ? { workspaceRoot: session.jjState.workspaceRoot, workspaceName: session.jjState.workspaceName }
-        : undefined,
       cachedAt: Date.now(),
     });
     // Order-map key for this session: the RESOLVED group path (parent repo
-    // for worktree/jj sessions), the same key the client reads.
+    // for worktree sessions), the same key the client reads.
     // See change: simplify-session-card-ordering.
     const orderKey = resolveOrderKey(session, preferencesStore.getPinnedDirectories());
     // Status-transition tracking: the gated move runs ONCE per transition
@@ -933,7 +929,6 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
   // GET /api/doctor — see change: doctor-rich-output (task 4.2). Auth-gated identically to /api/config.
   registerDoctorRoutes(fastify);
   registerToolRoutes(fastify, { registry: getDefaultRegistry(), networkGuard });
-  registerJjRoutes(fastify, { browserGateway, pendingAttachRegistry, networkGuard });
 
   // /api/bootstrap/* routes removed under change:
   // eliminate-electron-runtime-install (task 3.4). pi-core in-place

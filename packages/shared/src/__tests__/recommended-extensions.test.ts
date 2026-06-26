@@ -8,7 +8,7 @@ import {
 } from "../recommended-extensions.js";
 
 describe("RECOMMENDED_EXTENSIONS manifest", () => {
-	it("contains exactly the sixteen expected entries", () => {
+	it("contains exactly the fifteen expected entries", () => {
 		const ids = RECOMMENDED_EXTENSIONS.map((e) => e.id).sort();
 		expect(ids).toEqual(
 			[
@@ -21,7 +21,6 @@ describe("RECOMMENDED_EXTENSIONS manifest", () => {
 				"context-mode",
 				"pi-flows",
 				"pi-hermes-memory",
-				"pi-memory-honcho",
 				"pi-simplify",
 				"pi-web-access",
 				"@blackbelt-technology/pi-dashboard-kb-extension",
@@ -51,12 +50,6 @@ describe("RECOMMENDED_EXTENSIONS manifest", () => {
 				expect(entry.dashboardPlugin.length).toBeGreaterThan(0);
 			}
 		}
-	});
-
-	it("pi-memory-honcho declares its companion dashboard plugin id", () => {
-		// See change: add-plugin-activation-ui (Layer 1.5).
-		const entry = getRecommendedExtension("pi-memory-honcho");
-		expect(entry?.dashboardPlugin).toBe("honcho");
 	});
 
 	it("pi-anthropic-messages is marked required and uses the npm: source", () => {
@@ -165,7 +158,6 @@ describe("getRecommendedByStatus", () => {
 				"@blackbelt-technology/pi-model-proxy",
 				"@ricoyudog/pi-goal-hermes",
 				"pi-hermes-memory",
-				"pi-memory-honcho",
 				"pi-simplify",
 				"@blackbelt-technology/frontend-mockup-loop",
 				"@blackbelt-technology/pi-dashboard-plugin-skill",

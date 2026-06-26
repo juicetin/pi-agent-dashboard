@@ -213,7 +213,7 @@ describe("GET /api/packages/recommended", () => {
 		expect(pwa.requirements).toBeUndefined();
 	});
 
-	it("returns the 12 manifest entries with default (offline) descriptions", async () => {
+	it("returns the manifest entries with default (offline) descriptions", async () => {
 		vi.mocked(fetchPackageMeta).mockResolvedValue(null);
 		vi.mocked(fetchGithubPackageJson).mockResolvedValue(null);
 		await setupRoute();
@@ -226,7 +226,7 @@ describe("GET /api/packages/recommended", () => {
 		const body = JSON.parse(res.payload);
 		expect(body.success).toBe(true);
 		const entries = body.data.recommended;
-		expect(entries).toHaveLength(16);
+		expect(entries).toHaveLength(15);
 		// Every entry falls back to fallbackDescription and has no version.
 		for (const e of entries) {
 			expect(typeof e.description).toBe("string");

@@ -430,7 +430,7 @@ Settings ▸ Plugins tab lists every discovered plugin (enabled or not) with dis
 
 Results populate `PluginStatus.requirements` + flat `missingRequirements: string[]`; surfaced via `GET /api/plugins`. 30s in-process cache keyed by category+name. `server.ts` invokes `refreshRequirementProbesFor(pluginIds)` on every successful `package_operation_complete` + broadcasts `plugin_config_update` for any plugin whose missing-set changed — install/uninstall of a pi-extension lights up dependent plugin without restart.
 
-**UI cross-references.** `RecommendedExtensions.tsx` reads `EnrichedRecommendedExtension.dashboardPluginInstalled` (computed server-side in `recommended-routes.ts::enrichEntry` from `RecommendedExtension.dashboardPlugin`) + renders `+plugin: <id>` badge linking to Plugins tab. `pi-memory-honcho` declares `dashboardPlugin: "honcho"`; `honcho-plugin` declares `requires.piExtensions: ["pi-memory-honcho"]` so install paths converge.
+**UI cross-references.** `RecommendedExtensions.tsx` reads `EnrichedRecommendedExtension.dashboardPluginInstalled` (computed server-side in `recommended-routes.ts::enrichEntry` from `RecommendedExtension.dashboardPlugin`) + renders `+plugin: <id>` badge linking to Plugins tab.
 
 **Restart-required model.** `usePluginEnabledSet` snapshots `/api/health.startedAt` ISO timestamp on first load. Subsequent `plugin_config_update` events update enabled-set live for claim filtering, but components that consumed plugin server entries (already loaded) require a restart to drop. `PluginsSection` compares toggle time to snapshot and renders "Restart required" banner when divergent.
 
@@ -638,9 +638,9 @@ When a user sends a prompt to an ended session, the server automatically resumes
 9. If user sends another prompt while already resuming, the queued prompt is updated without spawning a second process
 
 ### Sidebar session ordering: top-of-tier on status change
-Server keeps one persisted `sessionOrder` per resolved group path. List holds all-status ids: active + ended + hidden. Group path resolves via shared `resolveSessionGroupPath`. Key priority: pin > `jjState.workspaceRoot` > `gitWorktree.mainPath` > `cwd`. Server wraps resolver in `resolve-order-key.ts::resolveOrderKey`. Client groups by same resolver. Fixes worktree/jj keying bug: server keyed raw cwd, client grouped by parent. See change: simplify-session-card-ordering.
+Server keeps one persisted `sessionOrder` per resolved group path. List holds all-status ids: active + ended + hidden. Group path resolves via shared `resolveSessionGroupPath`. Key priority: pin > `gitWorktree.mainPath` > `cwd`. Server wraps resolver in `resolve-order-key.ts::resolveOrderKey`. Client groups by same resolver. Fixes worktree keying bug: server keyed raw cwd, client grouped by parent. See change: simplify-session-card-ordering.
 
-- **Render** — client partitions the single stored order into ACTIVE → ENDED → HIDDEN tiers (`SessionList` per-tier `sortSessionsByOrder`, stable status-partition). `moveToFront` lands card at top of its OWN tier. `clusterByWorkspaceName` DROPPED from ordering path (reverses add-jj-workspace-plugin Decision 15 — MUST NOT re-introduce; grouping-under-parent collapse retained). endedAt-desc ended-tier sort REMOVED — survives only as migration seed via `reconcileSessionOrder` backfill.
+- **Render** — client partitions the single stored order into ACTIVE → ENDED → HIDDEN tiers (`SessionList` per-tier `sortSessionsByOrder`, stable status-partition). `moveToFront` lands card at top of its OWN tier. `clusterByWorkspaceName` DROPPED from ordering path (MUST NOT re-introduce; grouping-under-parent collapse retained). endedAt-desc ended-tier sort REMOVED — survives only as migration seed via `reconcileSessionOrder` backfill.
 - **Status transitions** — alive→ended keeps id (no `remove`). Two global config booleans gate placement (default `false`, no-op when OFF): `completedFirst` gates `agent_end`(alive)→top-of-active and alive→ended→top-of-ended; `questionFirst` gates `ask_user`→top-of-active.
 - **Hide/unhide** — hide → `moveToFront` (top of hidden tier); unhide → clear hidden + `moveToFront` (top of ended tier).
 - **Reattach** — bridge auto-reattach after dashboard restart governed by `reattachPlacement` config (`"always"` default / `"streaming-only"` / `"preserve"`): `server.ts onChange` routes into `reattach-placement.ts::applyReattachPolicy` (now keyed by resolved order key). `"preserve"` leaves order untouched.
@@ -683,26 +683,10 @@ Plugin content-view claims (e.g. flows-plugin) remain predicate-driven, out of s
 7. Client's event reducer stores `contextUsage` from `stats_update` events; `App.tsx` falls back to `session.contextTokens/contextWindow` for sessions without live reducer state
 8. When real data is unavailable (e.g., old sessions without persisted context data), `state-replay.ts` and `session-stats-reader.ts` use `inferContextWindow()` to estimate context window from the model name
 
-### VCS Polling (Git + Jujutsu)
-1. Bridge polls VCS info every 30s (`vcs-info.ts`, was `git-info.ts`): branch, remote URL, PR number, plus jj workspace state when `.jj/` is present.
-2. Git half (`gatherGitInfo`): unchanged — emits `git_info_update` only when branch/PR change.
-3. Jj half (`gatherJjInfo`): emits `jj_state_update` only when the serialized `JjState` changes. **Fast path**: a single `fs.existsSync("<cwd>/.jj")` check runs before any subprocess. Sessions outside a jj repo pay zero subprocess cost. The probe also short-circuits when the tool registry can't resolve `jj` (cached at module level after first miss).
-   - `jjState.workspaceRoot` carries parent repo root (cwd for default workspace; parent of `.shadow/<name>/` for `jj workspace add`-created workspace). Derives by reading `<cwd>/.jj/repo` (directory → default; file → contents resolve to shared storage). Canonicalizes via `realpath` before emit. `jj workspace root` subprocess fallback only. Enables sidebar collapse of workspace cards under parent folder group. See change: fix-jj-workspace-root-probe.
-4. Server forwards both update types via `session_updated` to subscribed browsers.
-
-#### Jujutsu workspaces
-
-The jj-plugin (`packages/jj-plugin/`) renders UI slots gated by predicates that read `Session.jjState`. When the bridge probe never populates `jjState` — because `jj` isn't installed or `.jj/` doesn't exist — every predicate returns `false` and the plugin contributes nothing to the UI. Activation is silent.
-
-Server-side jj routes (`packages/server/src/routes/jj-routes.ts`):
-- `POST /api/jj/workspace/add` — reuses the existing `pendingAttachRegistry` + `spawnPiSession` lever (same code path as openspec attach-and-spawn). The new session boots inside the workspace cwd and the bridge probe populates its `jjState.workspaceName` on the next tick.
-- `POST /api/jj/workspace/forget` — two-step contract: first request returns 409 `UNFOLDED_WORK` listing the unfolded commits; only an explicit `force:true` re-issue actually deletes (and `rm -rf`'s the directory).
-- `POST /api/jj/init-colocated` — refuses 409 `DIRTY_INDEX` only on staged changes; allows working-tree dirt (jj snapshots unstaged edits as the new `@` non-destructively).
-- `GET /api/jj/workspace/list?cwd=` — enumerates workspaces.
-
-The `/api/session-diff` route is **regime-aware**: when `jjState.isJjRepo` is true, it routes through `enrichWithJjDiff` which uses `fork_point(@, trunk())` as the diff base for non-default workspaces (cumulative diff across every agent commit) and `@-` for the default workspace. Older clients that don't read `vcsKind`/`baseLabel`/`diffBase` continue to work unchanged.
-
-Fold-back is **a skill, not a server route**. The dashboard's `JjFoldBackDialog` builds a skill-invocation prompt; the agent's bash tool then drives `.pi/skills/jj-workspace-fold-back/SKILL.md`, which never invokes mutating git commands and uses `jj op restore` to roll back on conflicts.
+### VCS Polling (Git)
+1. Bridge polls VCS info every 30s (`vcs-info.ts`, was `git-info.ts`): branch, remote URL, PR number.
+2. `gatherGitInfo`: emits `git_info_update` only when branch/PR change.
+3. Server forwards update via `session_updated` to subscribed browsers.
 
 ### Git Polling (legacy entry, see VCS Polling above)
 1. Bridge polls git info every 30s (`vcs-info.ts`): branch, remote URL, PR number
@@ -2145,7 +2129,7 @@ Dashboard-resident LLM proxy: `GET /v1/models`, `POST /v1/chat/completions`, `PO
 
 ```mermaid
 sequenceDiagram
-    participant C as External client<br/>(Honcho, LangChain, curl)
+    participant C as External client<br/>(LangChain, curl)
     participant D as Dashboard :8000/v1/*
     participant R as InternalRegistry
     participant P as Upstream provider<br/>(Anthropic, OpenAI, Google…)

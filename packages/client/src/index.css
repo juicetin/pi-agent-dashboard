@@ -14,8 +14,6 @@
 @source "../../dashboard-plugin-runtime/src";
 @source "../../flows-plugin/src/client";
 @source "../../subagents-plugin/src/client";
-@source "../../jj-plugin/src/client";
-@source "../../honcho-plugin/src/client";
 @source "../../goal-plugin/src/client";
 @source "../../automation-plugin/src/client";
 

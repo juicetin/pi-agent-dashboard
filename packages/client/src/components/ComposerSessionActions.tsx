@@ -15,7 +15,6 @@ import { buildOpenSpecTooltips } from "./SessionOpenSpecActions.js";
 import { deriveStepperState } from "./OpenSpecStepper.js";
 import {
   SessionCardBadgeSlot,
-  WorkspaceActionBarSlot,
   useSlotHasClaimsForSession,
 } from "@blackbelt-technology/dashboard-plugin-runtime";
 import { WorktreeActionsMenu } from "./WorktreeActionsMenu.js";
@@ -190,7 +189,6 @@ export function ComposerSessionActions({
   // Hooks must run unconditionally.
   const safeSession = session ?? (undefined as unknown as DashboardSession);
   const hasBadge = useSlotHasClaimsForSession("session-card-badge", safeSession);
-  const hasJjActions = useSlotHasClaimsForSession("workspace-action-bar", safeSession);
   const [tasksOpen, setTasksOpen] = useState(false);
   const [exploreOpen, setExploreOpen] = useState(false);
   const [archiveConfirm, setArchiveConfirm] = useState(false);
@@ -204,7 +202,7 @@ export function ComposerSessionActions({
   const isEnded = session.status === "ended";
 
   const showOpenSpec = !isEnded && (openspecHasDir !== false || openspecPending === true);
-  const showJj = hasBadge || hasJjActions;
+  const showStatus = hasBadge;
   const showGit = (!!showGitInfo || !!session.gitWorktree) && !!session.gitWorktree;
 
   const tips = buildOpenSpecTooltips({ attached, state: changeState, streaming });
@@ -225,7 +223,7 @@ export function ComposerSessionActions({
   };
 
   // Nothing to render? Bail early so we don't add an empty group to StatusBar.
-  if (!showOpenSpec && !showJj && !showGit) return null;
+  if (!showOpenSpec && !showStatus && !showGit) return null;
 
   return (
     <div
@@ -361,24 +359,23 @@ export function ComposerSessionActions({
         </>
       )}
 
-      {showJj && (
+      {showStatus && (
         <>
           <Divider />
-          <GroupLabel testId="composer-jj-group-label">JJ</GroupLabel>
+          <GroupLabel testId="composer-status-group-label">STATUS</GroupLabel>
           {/* <fieldset disabled> natively disables every <button>/<input>
               inside per HTML spec. Used here to gate plugin-rendered
-              JJ actions while the session is streaming, without coupling
-              this strip to the jj-plugin's internal button rendering.
+              actions while the session is streaming, without coupling
+              this strip to a plugin's internal button rendering.
               See change: redesign-session-card-and-composer
               (statusbar-disable-on-streaming). */}
           <fieldset
             disabled={streaming}
-            data-testid="composer-jj-group"
+            data-testid="composer-status-group"
             title={streaming ? "Session is streaming" : undefined}
             className={`inline-flex items-center gap-1 flex-wrap p-0 m-0 border-0 min-w-0 ${streaming ? "opacity-40" : ""}`}
           >
             {hasBadge && <SessionCardBadgeSlot session={session} />}
-            {hasJjActions && <WorkspaceActionBarSlot session={session} />}
           </fieldset>
         </>
       )}

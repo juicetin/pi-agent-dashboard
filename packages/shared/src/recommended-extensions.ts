@@ -67,7 +67,7 @@ export interface RecommendedExtension {
 
 	/**
 	 * Companion dashboard plugin id, if this extension is paired with one
-	 * (e.g. `pi-memory-honcho` extension <-> `honcho` dashboard plugin).
+	 * (e.g. an extension paired with its companion dashboard plugin).
 	 * The recommended-extensions enricher carries this through alongside a
 	 * computed `dashboardPluginInstalled: boolean` so the install browser
 	 * can render a "+plugin: <id>" badge.
@@ -238,28 +238,6 @@ export const RECOMMENDED_EXTENSIONS: readonly RecommendedExtension[] = [
 		requires: { binaries: ["agent-browser"] },
 	},
 	{
-		id: "pi-memory-honcho",
-		source: "npm:pi-memory-honcho",
-		displayName: "pi-memory-honcho",
-		fallbackDescription:
-			"Alternative cross-session memory backend, backed by a Honcho " +
-			"server (the default backend is pi-hermes-memory). Pairs with the " +
-			"@blackbelt-technology/pi-dashboard-honcho-plugin dashboard plugin " +
-			"which adds a settings panel, per-card actions, and optional " +
-			"self-hosted Honcho server lifecycle. Choose this over hermes when " +
-			"you want a shared/self-hosted memory service rather than local SQLite.",
-		status: "optional",
-		unlocks: [
-			"Honcho memory tools (honcho_search, honcho_context, honcho_profile)",
-			"Honcho settings panel (when honcho-plugin is loaded)",
-			"Per-card 🧠 status badge + interview/sync/map actions",
-		],
-		toolsRegistered: ["honcho_search", "honcho_context", "honcho_profile"],
-		autowired: true,
-		// Companion dashboard plugin id. See change: add-plugin-activation-ui.
-		dashboardPlugin: "honcho",
-	},
-	{
 		id: "@blackbelt-technology/pi-image-fit-extension",
 		source: "npm:@blackbelt-technology/pi-image-fit-extension",
 		displayName: "pi-image-fit",
@@ -306,7 +284,7 @@ export const RECOMMENDED_EXTENSIONS: readonly RecommendedExtension[] = [
 			"Default persistent cross-session memory backend: token-aware, " +
 			"policy-only memory, SQLite FTS5 session search, secret scanning, " +
 			"auto-consolidation, and procedural skills. Local-first; no external " +
-			"service required. (See pi-memory-honcho for a server-backed alternative.)",
+			"service required.",
 		status: "optional",
 		unlocks: [
 			"Persistent memory (memory, memory_search)",

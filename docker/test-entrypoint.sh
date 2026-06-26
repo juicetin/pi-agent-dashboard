@@ -51,10 +51,6 @@ if [ -d /fixtures-src ] && [ -d /fixtures ]; then
       && git commit -q -m "initial fixture commit" ) \
       && echo "[test-entrypoint] git fixture ready: /fixtures/sample-git"
   fi
-  if [ -d /fixtures/sample-jj ] && ! [ -d /fixtures/sample-jj/.jj ]; then
-    ( cd /fixtures/sample-jj && jj git init >/dev/null 2>&1 ) \
-      && echo "[test-entrypoint] jj fixture ready: /fixtures/sample-jj"
-  fi
 fi
 
 # --- 1c. E2E credential + network seed (gated; BEFORE base entrypoint) ------

@@ -441,7 +441,7 @@ The handler is the host's last line of defence against single-point-of-failure p
 
 #### Scenario: Plugin throws an unhandled promise rejection
 
-- **WHEN** a loaded plugin (e.g. `honcho`) makes an async call whose rejection is not awaited / `.catch()`-ed
+- **WHEN** a loaded plugin (e.g. `flows`) makes an async call whose rejection is not awaited / `.catch()`-ed
 - **THEN** the dashboard server process logs `[crash-safety] unhandledRejection (suppressed): <stack>` to `~/.pi/dashboard/server.log`
 - **AND** the process keeps running; `/api/health` continues to return 200
 - **AND** open WebSocket connections remain open
@@ -505,7 +505,7 @@ Each directory SHALL be added to PATH only if it physically exists on disk AND i
 
 When `ToolResolver.resolveSystemTool()` falls back to `whichViaLoginShell()` (step 4 of the managed-bin → extraBinDirs → PATH → login-shell chain), the spawned shell command MUST use `-lc` (login, non-interactive) and MUST NOT include `-i` (interactive).
 
-**Rationale**: an interactive shell calls `tcsetpgrp(stdin_fd, shell_pgid)` on startup to claim the terminal's foreground process group. When that shell exits, the parent pi process is no longer in the foreground group; the tty driver delivers `SIGTSTP` and pi is suspended immediately after startup. This manifests as `[1]+ Stopped pi` in iTerm2 / macOS Terminal whenever the registry resolves a binary not on PATH (e.g. `jj` when not installed) and the login-shell fallback fires.
+**Rationale**: an interactive shell calls `tcsetpgrp(stdin_fd, shell_pgid)` on startup to claim the terminal's foreground process group. When that shell exits, the parent pi process is no longer in the foreground group; the tty driver delivers `SIGTSTP` and pi is suspended immediately after startup. This manifests as `[1]+ Stopped pi` in iTerm2 / macOS Terminal whenever the registry resolves a binary not on PATH (e.g. `zrok` when not installed) and the login-shell fallback fires.
 
 **Rule generalizes across shells** — `bash`, `zsh`, and `fish` all implement `tcsetpgrp` on interactive startup. The fallback uses `process.env.SHELL || "/bin/zsh"`; the no-`-i` rule applies regardless of which shell is selected.
 

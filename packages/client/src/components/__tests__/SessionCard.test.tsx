@@ -501,10 +501,9 @@ describe("SessionCard subcard structure", () => {
     // MEMORY and FLOWS are intentionally absent (no plugin contributes in this
     // test — the plugin registry is not populated). See change:
     // add-flows-subcard for the new FLOWS subcard's wiring.
-    // WORKSPACE was split into GIT + JJ in change
-    // redesign-session-card-and-composer. JJ is absent here because no plugin
-    // claims session-card-badge or workspace-action-bar in this test.
-    const filtered = titles.filter((t) => t && /^(OPENSPEC|GIT|JJ|WORKSPACE|PROCESS|FLOWS|MEMORY)$/.test(t));
+    // The STATUS subcard (session-card-badge slot) is absent here because no
+    // plugin claims session-card-badge in this test.
+    const filtered = titles.filter((t) => t && /^(OPENSPEC|GIT|STATUS|PROCESS|FLOWS|MEMORY)$/.test(t));
     expect(filtered).toEqual(["OPENSPEC", "GIT", "PROCESS"]);
   });
 

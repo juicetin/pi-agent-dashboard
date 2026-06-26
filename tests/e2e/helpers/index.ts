@@ -26,7 +26,7 @@ export const TESTIDS = {
   folderSpawnSessionBtn: "folder-spawn-session-btn", // sidebar "New Session"
   // VCS panels (scenario backlog).
   composerGitGroup: "composer-git-group",
-  composerJjGroup: "composer-jj-group",
+  composerStatusGroup: "composer-status-group",
   gitInitBtn: "git-init-btn",
   // Git branch indicator on a session card — renders once the bridge reports
   // session.gitBranch (proves git status read from the repo). Scenario 5.2.

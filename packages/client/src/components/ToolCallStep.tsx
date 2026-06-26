@@ -19,7 +19,7 @@ function claimShouldRender(claim: ClaimEntry, toolName: string): boolean {
   if (!claim.shouldRender) return true;
   try {
     // tool-renderer claims take no predicate input (SlotPredicateInput = never);
-    // honcho-style claims read a sync cache. Pass undefined.
+    // some claims read a sync cache. Pass undefined.
     return (claim.shouldRender as (input?: unknown) => boolean)(undefined) !== false;
   } catch (err) {
     console.warn(

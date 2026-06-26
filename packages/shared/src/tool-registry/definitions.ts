@@ -136,29 +136,6 @@ const INSTALL_HINTS: Record<string, InstallHints> = {
       url: "https://github.com/cli/cli/blob/trunk/docs/install_linux.md",
     },
   },
-  jj: {
-    docsAnchor: "install-jj",
-    darwin: {
-      commands: { brew: "brew install jj" },
-      url: "https://docs.jj-vcs.dev/latest/install-and-setup/",
-    },
-    win32: {
-      commands: {
-        winget: "winget install jj-vcs.jj",
-        scoop: "scoop install jj",
-        cargo: "cargo install --locked --bin jj jj-cli",
-      },
-      url: "https://docs.jj-vcs.dev/latest/install-and-setup/",
-    },
-    linux: {
-      commands: {
-        brew: "brew install jj",
-        cargo: "cargo install --locked --bin jj jj-cli",
-        pacman: "sudo pacman -S jujutsu",
-      },
-      url: "https://docs.jj-vcs.dev/latest/install-and-setup/",
-    },
-  },
   zrok: {
     docsAnchor: "install-zrok",
     darwin: {
@@ -661,7 +638,6 @@ export function registerDefaultTools(registry: ToolRegistry, deps?: StrategyDeps
   // See change: fix-node-resolution-under-electron (task 3.3).
   registry.register(npxBinaryDef(deps));
   registry.register(binaryDef("git", deps));
-  registry.register(binaryDef("jj", deps));
   registry.register(binaryDef("zrok", deps));
   // GitHub CLI — used by the worktree-lifecycle `pr` endpoint.
   // Optional; if missing the endpoint returns code `gh_not_found`.

@@ -21,7 +21,7 @@ import {
 import type { InstallHints, ToolListEntry } from "../types.js";
 
 /** Binary tools that are genuinely user-installable (have an install story). */
-const USER_INSTALLABLE = ["bash", "jj", "gh", "zrok", "git", "node"] as const;
+const USER_INSTALLABLE = ["bash", "gh", "zrok", "git", "node"] as const;
 const OSES = ["darwin", "win32", "linux"] as const satisfies readonly (keyof InstallHints)[];
 
 /** Platform-utility binaries that ship with the OS — must NOT carry hints. */

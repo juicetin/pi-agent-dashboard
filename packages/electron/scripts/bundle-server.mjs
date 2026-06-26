@@ -111,9 +111,7 @@ for (const pkg of BUNDLED_WORKSPACE_PKGS) {
 // See change: add-plugin-activation-ui (deployment gap follow-up).
 const BUNDLED_PLUGINS = [
   "roles-plugin",
-  "jj-plugin",
   "flows-plugin",
-  "honcho-plugin",
   "flows-anthropic-bridge-plugin",
   "automation-plugin",
   "goal-plugin",

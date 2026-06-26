@@ -307,6 +307,7 @@ jobs:
             "@blackbelt-technology/frontend-mockup-loop"
             "@blackbelt-technology/pi-dashboard-kb"
             "@blackbelt-technology/pi-dashboard-kb-extension"
+            "@blackbelt-technology/pi-dashboard-document-converter"
             "@blackbelt-technology/pi-agent-dashboard"
           )
           VERSION="${{ needs.resolve.outputs.version }}"

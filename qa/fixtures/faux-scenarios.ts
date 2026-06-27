@@ -157,6 +157,34 @@ export const SCENARIOS: Record<string, Scenario> = {
     expect: { text: "ISOLATION_MARKER_BBB" },
   },
 
+  // Assistant text carrying a unified-diff header. Exercises tool-output
+  // linkification end-to-end: MarkdownContent linkifies the `a/`/`b/` paths,
+  // the tokenizer strips the diff prefix from the resolved path, and clicking
+  // the (nonexistent) target opens the stale-file preview message.
+  // See change: selectable-tool-output-links.
+  "text-difflinks": {
+    script: [
+      fauxAssistantMessage([
+        fauxText("diff --git a/src/ghost.ts b/src/ghost.ts"),
+      ]),
+    ],
+    expect: { text: "src/ghost.ts" },
+  },
+
+  // Assistant text with an inline-code span carrying a file path + a URL.
+  // Inline code is linkified (markdown does not autolink inside code), so this
+  // renders a real FileLink (button) and UrlLink (anchor) — the surfaces whose
+  // selectability (drag-to-select, not drag-the-link) this change guarantees.
+  // See change: selectable-tool-output-links.
+  "text-linkrefs": {
+    script: [
+      fauxAssistantMessage([
+        fauxText("refs `src/example.ts https://example.com/page` end"),
+      ]),
+    ],
+    expect: { text: "src/example.ts" },
+  },
+
   "thinking-text": {
     script: [
       fauxAssistantMessage([

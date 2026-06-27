@@ -12,13 +12,17 @@ screenshots). It owns rendered-UI behaviour assertions.
 ## Prerequisites
 
 - **Docker** (running) — the suite boots the `docker/` test container.
-- **Chromium for Playwright** (one-time):
+- **Chromium for Playwright** — installed automatically. `npm run test:e2e` /
+  `npm run test:e2e:ui` run a `playwright install chromium` step first (a
+  sub-second no-op once installed). Browsers are NOT vendored.
+
+  If you bypass the npm scripts (e.g. `npx playwright test`, IDE runners, or
+  `PW_E2E_USE_RUNNING=1 playwright test`), `globalSetup` fails fast — before the
+  container boots — when the browser is missing, with the exact fix:
 
   ```bash
   npx playwright install chromium
   ```
-
-  Browsers are NOT vendored; install them locally once.
 
 ## Run
 

@@ -10,7 +10,7 @@ import {
   isOrphanWorktreePath,
   parsePorcelainWorktrees,
   slugifyBranch,
-  localNameOf,
+  resolveCheckoutLocalName,
   type WorktreeEntry,
 } from "./git-worktree.js";
 
@@ -312,7 +312,7 @@ export function addWorktree(opts: AddWorktreeOptions): AddWorktreeSuccess | AddW
   const baseIsLocalBranch =
     checkoutMode && tryRun(`git show-ref --verify ${shellEscape(`refs/heads/${base}`)}`, cwd) !== undefined;
   const resolvedBranch = checkoutMode
-    ? (baseIsLocalBranch ? base : localNameOf(base))
+    ? resolveCheckoutLocalName(base, baseIsLocalBranch)
     : newBranch;
   // In checkout mode the commit-ish handed to git is the resolved local
   // branch name (bare name triggers DWIM for remote-only refs); fork mode

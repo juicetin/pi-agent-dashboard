@@ -25,7 +25,7 @@ import {
 } from "../lib/git-api.js";
 import type { PullRequestInfo } from "@blackbelt-technology/pi-dashboard-shared/rest-api.js";
 import {
-  localNameOf,
+  resolveCheckoutLocalName,
   resolveDefaultBase,
   slugifyBranch,
 } from "@blackbelt-technology/pi-dashboard-shared/git-worktree-helpers.js";
@@ -170,12 +170,17 @@ export function WorktreeSpawnDialog({ cwd, onSpawn, onCancel, initialBranch, att
   // ── derived state ───────────────────────────────────────
   // Path slug source depends on mode: fork slugs the new branch name;
   // checkout slugs the LOCAL name of the picked branch ref so `origin/foo`
-  // previews as `.worktrees/foo` (not `origin-foo`).
-  // See change: worktree-checkout-existing-branch.
+  // previews as `.worktrees/foo` (not `origin-foo`). A LOCAL branch whose
+  // name contains a slash (`openspec/foo`) keeps its full name so the
+  // preview/orphan-check path matches the server's actual target.
+  // See change: fix-worktree-checkout-local-slash-path.
   const slug = useMemo(() => {
-    if (sourceMode === "checkout") return slugifyBranch(localNameOf(base));
+    if (sourceMode === "checkout") {
+      const baseIsLocalBranch = data?.localBranches.some((b) => b.name === base) ?? false;
+      return slugifyBranch(resolveCheckoutLocalName(base, baseIsLocalBranch));
+    }
     return slugifyBranch(newBranch);
-  }, [sourceMode, newBranch, base]);
+  }, [sourceMode, newBranch, base, data]);
   const derivedPath = useMemo(() => {
     if (!data || !slug) return "";
     // Path preview: <repo>/.worktrees/<slug>. The repo root is the main

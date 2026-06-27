@@ -229,6 +229,29 @@ describe("WorktreeSpawnDialog — source toggle + default mode", () => {
     const pathInput = screen.getByTestId("worktree-path-input") as HTMLInputElement;
     expect(pathInput.value).toBe("/repo/.worktrees/old-experiment");
   });
+
+  it("checkout mode keeps a LOCAL slashed branch name intact (openspec/foo → openspec-foo)", async () => {
+    // Regression: a local branch whose name contains a slash must NOT be
+    // treated as a remote ref. The preview path must match the server's
+    // actual target (.worktrees/openspec-...), else orphan/path-exists
+    // checks run against the wrong path and contradict each other.
+    defaultMocks({
+      head: { branch: "develop", detached: false, sha: "x" },
+      localBranches: ["develop", "openspec/inline-raw-html-image-tags"],
+      remoteBranches: [],
+    });
+    render(<WorktreeSpawnDialog cwd="/repo" onSpawn={() => {}} onCancel={() => {}} />);
+    await waitFor(() => screen.getByTestId("worktree-dialog-existing"));
+    fireEvent.click(screen.getByTestId("worktree-base-combobox"));
+    const option = await waitFor(() =>
+      screen.getByText("openspec/inline-raw-html-image-tags"),
+    );
+    fireEvent.click(option);
+    const pathInput = screen.getByTestId("worktree-path-input") as HTMLInputElement;
+    expect(pathInput.value).toBe(
+      "/repo/.worktrees/openspec-inline-raw-html-image-tags",
+    );
+  });
 });
 
 describe("WorktreeSpawnDialog — initialBranch + attachProposal props", () => {

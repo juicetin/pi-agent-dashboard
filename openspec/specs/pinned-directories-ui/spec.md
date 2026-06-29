@@ -1,5 +1,7 @@
-## ADDED Requirements
+## Purpose
 
+Sidebar UI for pinning directory groups: pin toggle on headers, always-visible pinned groups, drag-to-reorder, manual pin dialog, and visual distinction between pinned and unpinned groups.
+## Requirements
 ### Requirement: Pin toggle on directory group headers
 Each directory group header SHALL display a single pin icon on the right side. When pinned, the icon SHALL be yellow `mdiPin` (click to unpin). When unpinned, the icon SHALL be muted `mdiPin` (click to pin). The left side of the header SHALL display a folder icon: `mdiFolderOpen` when the group is expanded, `mdiFolder` when collapsed.
 
@@ -37,7 +39,7 @@ Pinned directory groups SHALL always appear in the sidebar, even when they have 
 - **THEN** the pinned group header SHALL still be visible (sessions within may be filtered, but the group remains)
 
 ### Requirement: Drag-to-reorder pinned directories
-Users SHALL be able to reorder pinned directory groups by dragging.
+Users SHALL be able to reorder pinned directory groups by dragging, regardless of whether the source group, the target group, or both are expanded or collapsed at the moment the drag begins. The sidebar's drag-and-drop collision detection SHALL constrain candidate drop targets to droppables of the same drag `type` as the active draggable before measuring distances, so that nested sortable contexts (e.g., session cards inside an expanded group) do not capture a pinned-group drag intended for another pinned group.
 
 #### Scenario: Drag pinned directory to new position
 - **WHEN** a user drags a pinned directory group from position 1 to position 3
@@ -50,6 +52,23 @@ Users SHALL be able to reorder pinned directory groups by dragging.
 #### Scenario: Unpinned directories are not draggable
 - **WHEN** a user attempts to drag an unpinned directory group
 - **THEN** the drag SHALL not initiate (unpinned groups are auto-sorted by recency)
+
+#### Scenario: Reorder works when source and target are both expanded
+- **WHEN** two pinned directory groups are both expanded (their session cards are visible) and a user drags the source group's drag-handle onto the target group's header
+- **THEN** the pinned directories list SHALL update to reflect the swapped order and persist the change
+- **AND** no session card inside either group SHALL be reordered
+
+#### Scenario: Reorder works when source is expanded and target is collapsed
+- **WHEN** the dragged pinned group is expanded but the target group is collapsed
+- **THEN** the pinned directories list SHALL update to reflect the new order and persist the change
+
+#### Scenario: Reorder works when source is collapsed and target is expanded
+- **WHEN** the dragged pinned group is collapsed but the target group is expanded
+- **THEN** the pinned directories list SHALL update to reflect the new order and persist the change
+
+#### Scenario: Session-card drag inside an expanded group does not reorder pinned groups
+- **WHEN** a user drags a session card from one position to another inside an expanded pinned group
+- **THEN** only the per-folder session order SHALL update; the pinned directories order SHALL remain unchanged
 
 ### Requirement: Manual pin dialog
 Users SHALL be able to pin a directory path that is not currently visible in the sidebar. The dialog SHALL render via DialogPortal at document.body with z-[60].
@@ -87,6 +106,11 @@ The `PinDirectoryDialog` SHALL be mounted at the application root (`App.tsx`) an
 ### Requirement: Pin directory dialog uses PathPicker
 Pin directory dialog (`PinDirectoryDialog.tsx`) SHALL use the `PathPicker` component for directory selection. The dialog SHALL serve as a thin wrapper providing the title and calling `onPin` with the selected path. All path navigation (typing, filtering, browsing) SHALL be handled by PathPicker internally.
 
+#### Scenario: Directory selection delegates to PathPicker
+- **WHEN** the pin directory dialog is open
+- **THEN** it SHALL render `PathPicker` for path navigation, filtering, and browsing
+- **AND** confirming a selection SHALL call `onPin` with the selected path
+
 ### Requirement: Visual distinction between pinned and unpinned groups
 The sidebar SHALL visually distinguish pinned directory groups from unpinned ones.
 
@@ -97,3 +121,4 @@ The sidebar SHALL visually distinguish pinned directory groups from unpinned one
 #### Scenario: Section separator
 - **WHEN** both pinned and unpinned directory groups exist
 - **THEN** a visual separator (subtle line or spacing) SHALL appear between the pinned and unpinned sections
+

@@ -283,6 +283,13 @@ export function createCommandHandler(
      * `handle`. See change: inject-session-context-into-agent.
      */
     onAttachProposalChanged?: (attachedChange: string | null) => void;
+    /**
+     * Clear the bridge's abort latch. Called at the start of `send_prompt`
+     * (before pi.sendUserMessage) so a deliberate new turn is never aborted
+     * by a latch left set from a prior user abort. See change:
+     * unify-error-retry-lifecycle.
+     */
+    noteUserPrompt?: () => void;
   },
 ): CommandHandler {
   const getSessionId = typeof sessionIdOrGetter === "function" ? sessionIdOrGetter : () => sessionIdOrGetter;
@@ -478,6 +485,14 @@ export function createCommandHandler(
           // single-line slash text gates through extension dispatch — multi-line and
           // image-bearing messages go raw to the LLM as before.
           // See change: fix-extension-slash-commands-in-dashboard.
+          // A real user turn WILL be dispatched on this passthrough path — clear
+          // any latched abort BEFORE pi.sendUserMessage (which can fire
+          // agent_start synchronously) so the new turn is never aborted by the
+          // latch. Placed here (not at the top of send_prompt) so non-turn
+          // commands (bash, compact, model, mgmt, slash dispatch/exec) do NOT
+          // disarm the latch — they never start a replacement turn.
+          // See change: unify-error-retry-lifecycle.
+          options?.noteUserPrompt?.();
           let outgoing = msg.text;
           if (outgoing.startsWith("/")) {
             outgoing = expandPromptTemplateFromDisk(outgoing, process.cwd(), pi);

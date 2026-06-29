@@ -1,13 +1,13 @@
-import React, { useState, useEffect, useRef, useCallback, type ReactNode } from "react";
-import { Icon } from "@mdi/react";
-import { mdiCloseCircleOutline, mdiCheckCircle, mdiAlertCircle, mdiStopCircle, mdiCloseCircle, mdiCircleOutline, mdiChevronRight, mdiChevronDown } from "@mdi/js";
-import type { DashboardSession, FlowState, FlowAgentState } from "@blackbelt-technology/pi-dashboard-shared/types.js";
+import { usePluginSend, useUiPrimitive, useUiPrimitiveOrNull } from "@blackbelt-technology/dashboard-plugin-runtime";
 import { UI_PRIMITIVE_KEYS } from "@blackbelt-technology/pi-dashboard-shared/dashboard-plugin/ui-primitives.js";
-import { useUiPrimitive, useUiPrimitiveOrNull, usePluginSend } from "@blackbelt-technology/dashboard-plugin-runtime";
-import { FlowGraph, flowStateToGraphSteps } from "./FlowGraph.js";
+import type { DashboardSession, FlowAgentState, FlowState } from "@blackbelt-technology/pi-dashboard-shared/types.js";
+import { mdiAlertCircle, mdiCheckCircle, mdiChevronDown, mdiChevronRight, mdiCircleOutline, mdiCloseCircle, mdiCloseCircleOutline, mdiStopCircle } from "@mdi/js";
+import { Icon } from "@mdi/react";
+import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { FlowAgentCard } from "./FlowAgentCard.js";
-import { FlowYamlPopoverButton } from "./FlowYamlPopoverButton.js";
+import { FlowGraph, flowStateToGraphSteps } from "./FlowGraph.js";
 import { useFlowsSessionState } from "./FlowsSessionStateContext.js";
+import { FlowYamlPopoverButton } from "./FlowYamlPopoverButton.js";
 
 
 // formatDuration moved to registry primitive lookup inside FlowSummary
@@ -37,6 +37,10 @@ export function FlowSummary({
   const formatDuration = useUiPrimitive(UI_PRIMITIVE_KEYS.formatDuration);
   const Dialog = useUiPrimitiveOrNull(UI_PRIMITIVE_KEYS.dialog);
   const [collapsed, setCollapsed] = useState(false);
+  // Whole-panel collapse (distinct from the footer `collapsed` above, which only
+  // hides the Summaries list). Shrinks the completed-flow summary to its header
+  // bar, mirroring FlowDashboard's collapse affordance. See change: improve-flow-graph-fidelity.
+  const [panelCollapsed, setPanelCollapsed] = useState(false);
   const [graphOpen, setGraphOpen] = useState(false);
   // Shared graph⇄card selection (ephemeral). See change:
   // improve-flow-graph-dialog-and-card-interaction.
@@ -81,6 +85,16 @@ export function FlowSummary({
     <div ref={rootRef} className="bg-[var(--bg-secondary)] border-b border-[var(--border-subtle)] px-3 py-2">
       {/* Header */}
       <div className="flex items-center gap-2 mb-1.5">
+        {/* Minimal disclosure chevron, left of the flow name (not near Dismiss). */}
+        <button
+          onClick={() => setPanelCollapsed(v => !v)}
+          data-testid="flow-summary-panel-toggle"
+          title={panelCollapsed ? "Expand summary" : "Collapse summary"}
+          aria-expanded={!panelCollapsed}
+          className="inline-flex -ml-0.5 text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
+        >
+          <Icon path={panelCollapsed ? mdiChevronRight : mdiChevronDown} size={0.6} />
+        </button>
         <span className={`${color} inline-flex`}>{icon}</span>
         <span className="text-sm text-[var(--text-primary)] flex-1">
           {flowState.flowName} {label}
@@ -98,6 +112,7 @@ export function FlowSummary({
         </button>
       </div>
 
+      {!panelCollapsed && (<>
       {/* Flow graph — bounded + fit-to-window; ⤢ expand opens the centered Dialog
           with pan/zoom. Bounded so it cannot be dragged over the cards/summaries.
           See change: show-flow-cards-in-summary. */}
@@ -117,45 +132,62 @@ export function FlowSummary({
         </div>
       )}
 
-      {/* Frozen agent cards — UNDER the graph, where they were live. Read-only. */}
-      {agents.length > 0 && (
-        <div
-          className="grid gap-2 mt-2"
-          style={{ gridTemplateColumns: `repeat(auto-fill, minmax(200px, 1fr))` }}
-        >
-          {agents.map(agent => (
-            <FlowAgentCard
-              key={agent.stepId || agent.agentName}
-              agent={agent}
-              session={session}
-              sessionId={sessionId ?? session?.id}
-              selected={selectedStepId === (agent.stepId || agent.agentName)}
-              onSelect={handleSelectStep}
-            />
-          ))}
-        </div>
-      )}
-
-      {/* Summaries — collapsible footer; each row expands inline. */}
-      <div className="mt-2 pt-1.5 border-t border-[var(--border-subtle)]">
-        <div
-          data-testid="flow-summary-toggle"
-          className="flex items-center gap-1.5 text-[11px] text-[var(--text-tertiary)] cursor-pointer mb-1 hover:text-[var(--text-primary)]"
-          onClick={() => setCollapsed(!collapsed)}
-        >
-          <Icon path={collapsed ? mdiChevronRight : mdiChevronDown} size={0.5} />
-          <span>Summaries ({agents.length})</span>
-        </div>
-        {!collapsed && (
-          <div className="space-y-0.5" data-testid="flow-summaries">
+      {/* Everything UNDER the graph lives in ONE fixed-height scrollable box so
+          the whole panel always fits the viewport (no page scroll). The summaries
+          section and each agent row stay independently collapsible inside it. */}
+      <div className="mt-2 overflow-y-auto" style={{ maxHeight: "48vh" }} data-testid="flow-summary-scrollbox">
+        {/* Frozen agent cards — read-only. */}
+        {agents.length > 0 && (
+          <div
+            className="grid gap-2"
+            style={{ gridTemplateColumns: `repeat(auto-fill, minmax(200px, 1fr))` }}
+          >
             {agents.map(agent => (
-              <FlowSummaryRow key={agent.stepId || agent.agentName} agent={agent} />
+              <FlowAgentCard
+                key={agent.stepId || agent.agentName}
+                agent={agent}
+                session={session}
+                sessionId={sessionId ?? session?.id}
+                selected={selectedStepId === (agent.stepId || agent.agentName)}
+                onSelect={handleSelectStep}
+              />
             ))}
+          </div>
+        )}
+
+        {/* Summaries — collapsible; each row expands inline. */}
+        <div className="mt-2 pt-1.5 border-t border-[var(--border-subtle)]">
+          <div
+            data-testid="flow-summary-toggle"
+            className="flex items-center gap-1.5 text-[11px] text-[var(--text-tertiary)] cursor-pointer mb-1 hover:text-[var(--text-primary)]"
+            onClick={() => setCollapsed(!collapsed)}
+          >
+            <Icon path={collapsed ? mdiChevronRight : mdiChevronDown} size={0.5} />
+            <span>Summaries ({agents.length})</span>
+          </div>
+          {!collapsed && (
+            <div className="space-y-0.5" data-testid="flow-summaries">
+              {agents.map(agent => (
+                <FlowSummaryRow key={agent.stepId || agent.agentName} agent={agent} />
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Next step suggestion */}
+        {flowState.nextStep && onSendPrompt && (
+          <div className="mt-1.5 pt-1.5 border-t border-[var(--border-subtle)]">
+            <button
+              onClick={() => onSendPrompt(`/${flowState.nextStep}`)}
+              className="text-[11px] px-2 py-1 rounded border border-blue-500/30 text-blue-400 hover:bg-blue-500/10"
+            >
+              Next: /{flowState.nextStep}
+            </button>
           </div>
         )}
       </div>
 
-      {/* Expanded graph — centered Dialog with pan/zoom. */}
+      {/* Expanded graph — centered Dialog with pan/zoom (OUTSIDE the scroll box). */}
       {Dialog && (
         <Dialog
           open={graphOpen}
@@ -175,18 +207,7 @@ export function FlowSummary({
           </div>
         </Dialog>
       )}
-
-      {/* Next step suggestion */}
-      {flowState.nextStep && onSendPrompt && (
-        <div className="mt-1.5 pt-1.5 border-t border-[var(--border-subtle)]">
-          <button
-            onClick={() => onSendPrompt(`/${flowState.nextStep}`)}
-            className="text-[11px] px-2 py-1 rounded border border-blue-500/30 text-blue-400 hover:bg-blue-500/10"
-          >
-            Next: /{flowState.nextStep}
-          </button>
-        </div>
-      )}
+      </>)}
     </div>
   );
 }

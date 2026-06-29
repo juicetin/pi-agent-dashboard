@@ -1,9 +1,5 @@
-# flow-graph-edges Specification
+## MODIFIED Requirements
 
-## Purpose
-
-Shared, pure edge-derivation for flow graphs: one `deriveFlowEdges` function maps a flow's steps to a canonical typed edge set consumed by BOTH the live `FlowGraph` and the static `flow_write` Mermaid snapshot, so both renderers produce matching edges from a single source of truth.
-## Requirements
 ### Requirement: Shared flow-edge derivation
 
 The flows plugin SHALL provide one pure edge-derivation function that maps a flow's steps to a canonical edge set, consumed by BOTH the live `FlowGraph` and the static `flow_write` Mermaid snapshot. Given a minimal step shape (`id`, `type`, `blockedBy`, optional `branches`, optional `onComplete`, optional `onError`) plus declared step order, it SHALL return a typed edge list where each edge carries `from`, `to`, optional `label`, a `kind` of `sequential` | `branch` | `route` | `implicit`, and a `backward` flag. Both renderers SHALL derive their edges from this function rather than from independent rules. The function derives only the edge classes its input carries: the live caller passes `branches` (but no `onComplete`/`onError`, which pi-flows omits from `flow:flow-started`), so `route` edges appear only in the static caller's output.
@@ -37,6 +33,8 @@ An `implicit` edge models a **segment boundary** the engine serializes — NOT a
 - **WHEN** a decision branch target also appears in the same step's `blockedBy` (or an `on_complete` equals an existing sequential edge)
 - **THEN** the derivation SHALL emit a single edge, preferring the labeled branch/route classification over the plain sequential one
 
+## ADDED Requirements
+
 ### Requirement: on_error routes classified and rendered by topology
 
 Each `route` edge labeled `on_error` SHALL carry a derived `routeTopology` of `returning` or `terminal`, computed purely from the derived edge set (no engine call). A route is **returning** when, following forward edges (`sequential` / `branch` / `on_complete`) from its handler target, the forward closure reaches a step on the main path at or after the route's source — the handler rejoins the flow. A route is **terminal** otherwise — its handler's forward closure never rejoins the main path. The classification reflects the engine, which keeps executing every step reachable from an `on_error` target after routing to it.
@@ -66,4 +64,3 @@ Renderers SHALL draw the two flavors differently. The error-route layer SHALL be
 - **WHEN** the error-route layer is toggled off
 - **THEN** the dagre layout input SHALL contain no error nodes or error edges
 - **AND** the resulting graph height SHALL equal that of the same flow with no `on_error` declared
-

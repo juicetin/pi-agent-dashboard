@@ -116,7 +116,13 @@ export function flowToMermaid(flow: ParsedFlow): string {
     })),
   );
   for (const e of edges) {
-    if (e.backward) {
+    if (e.kind === "route" && e.label === "on_error") {
+      // Topology-distinct on_error, mirroring the live FlowGraph: ↺ returning
+      // (handler rejoins the flow — a recovery loop) vs ⊗ terminal (a sink/exit).
+      // Always dashed so it reads as an exception edge, never the happy path.
+      const marker = e.routeTopology === "terminal" ? "⊗" : "↺";
+      lines.push(`  ${e.from} -. "on_error ${marker}" .-> ${e.to}`);
+    } else if (e.backward) {
       lines.push(`  ${e.from} -. "${e.label ?? ""} ↺" .-> ${e.to}`);
     } else if (e.label) {
       lines.push(`  ${e.from} -->|${e.label}| ${e.to}`);

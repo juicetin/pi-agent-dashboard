@@ -1,14 +1,14 @@
-import React, { useMemo, useRef, useState, useEffect } from "react";
+import { useUiPrimitive } from "@blackbelt-technology/dashboard-plugin-runtime";
 // useZoomPan is a HOOK — it cannot go through the registry (Rules of Hooks).
 // Stays as a direct import. See add-plugin-ui-primitive-registry Decision 4.
 import { useZoomPan } from "@blackbelt-technology/pi-dashboard-client-utils/useZoomPan";
 import { UI_PRIMITIVE_KEYS } from "@blackbelt-technology/pi-dashboard-shared/dashboard-plugin/ui-primitives.js";
-import { useUiPrimitive } from "@blackbelt-technology/dashboard-plugin-runtime";
+import type { FlowState } from "@blackbelt-technology/pi-dashboard-shared/types.js";
+import { mdiCallSplit, mdiCodeTags, mdiRobotOutline, mdiSourceBranch } from "@mdi/js";
 import { graphlib } from "dagre-d3-es";
 import { layout as dagreLayout } from "dagre-d3-es/src/dagre/index.js";
-import { mdiCodeTags, mdiCallSplit, mdiSourceBranch, mdiRobotOutline } from "@mdi/js";
-import type { FlowState } from "@blackbelt-technology/pi-dashboard-shared/types.js";
-import { deriveFlowEdges, type FlowEdgeStep } from "./flow-edges.js";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { deriveFlowEdges, type FlowEdge, type FlowEdgeKind, type FlowEdgeStep } from "./flow-edges.js";
 
 /** Per-kind visual identity for graph nodes, mirroring the FlowAgentCard badges:
  *  code/code-decision = cyan, fork/agent-decision = amber, agent = green/status.
@@ -50,6 +50,11 @@ export interface FlowGraphStep {
   type?: FlowStepType;
   /** Decision branch label → target step id (fork / agent-decision / code-decision). */
   branches?: Record<string, string>;
+  /** Success route target (`on_complete`). Present on the static preview path and,
+   *  once pi-flows emits it on `flow:flow-started`, the live path (see §8). */
+  onComplete?: string;
+  /** Error route target (`on_error`). Drives returning-loop vs terminal-sink rendering. */
+  onError?: string;
 }
 
 // ── Data converters ────────────────────────────────────────────────
@@ -111,24 +116,31 @@ interface PositionedEdge {
   sourceStatus: FlowGraphStep["status"];
   targetStatus: FlowGraphStep["status"];
   label?: string;
+  /** Edge class for styling (sequential/branch/route/implicit). */
+  kind?: FlowEdgeKind;
+  /** on_error route edge. */
+  isError?: boolean;
+  /** Returning on_error (rejoins the flow) vs terminal (routed to the sink). */
+  isReturning?: boolean;
+  /** Backward target (loop): declared at/before the source. */
+  isLoop?: boolean;
 }
 
-/** Backward/loop edge, hand-routed as an arc below the node band (dashed purple). */
-interface LoopBackEdge {
-  source: string;
-  target: string;
-  sourceStatus: FlowGraphStep["status"];
-  targetStatus: FlowGraphStep["status"];
-  path: string;
-  label?: string;
-  labelX: number;
-  labelY: number;
+/** Collapsed tail node pooling all terminal on_error handlers (`⚠ N exits`). */
+interface ErrorSink {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  /** Handler step ids pooled into this sink (expandable). */
+  handlers: string[];
 }
 
 interface LayoutResult {
   nodes: PositionedNode[];
   edges: PositionedEdge[];
-  loopEdges: LoopBackEdge[];
+  /** Collapsed terminal-handler sink (only when error routes are shown). */
+  errorSink?: ErrorSink;
   width: number;
   height: number;
 }
@@ -169,42 +181,100 @@ const ARROW_SIZE = 6;
  *  via preserveAspectRatio; expand to a Dialog for pan/zoom. */
 const FIT_HEIGHT = 240;
 
-export function computeLayout(steps: FlowGraphStep[]): LayoutResult {
+export function computeLayout(
+  steps: FlowGraphStep[],
+  opts: { showErrorRoutes?: boolean } = {},
+): LayoutResult {
   if (steps.length === 0) {
-    return { nodes: [], edges: [], loopEdges: [], width: 0, height: 0 };
+    return { nodes: [], edges: [], width: 0, height: 0 };
   }
 
-  const g = new graphlib.Graph().setDefaultEdgeLabel(() => ({}));
-  // Only FORWARD edges feed dagre (keeps the acyclic ranking clean + compact).
-  // Backward/loop edges are hand-routed BELOW the node band so they never feed
-  // a cycle into dagre (which mangles the layout) and never cross a node.
-  // `edgesep` fans out decision edges at a shared source. See change: improve-flow-ui.
-  g.setGraph({ rankdir: "LR", nodesep: 15, edgesep: 22, ranksep: 44, marginx: 16, marginy: 16 });
+  const showErrorRoutes = opts.showErrorRoutes ?? true;
+
+  // Single edge derivation (shared with the static Mermaid snapshot). Route
+  // edges (on_complete/on_error) appear only when the caller passes them; the
+  // live path gains them once pi-flows emits on_error on flow:flow-started (§8).
+  const flowEdges = deriveFlowEdges(
+    steps.map((s): FlowEdgeStep => ({
+      id: s.id,
+      type: s.type ?? "agent",
+      blockedBy: s.blockedBy,
+      branches: s.branches,
+      onComplete: s.onComplete,
+      onError: s.onError,
+    })),
+  );
+
+  const isOnError = (e: FlowEdge) => e.kind === "route" && e.label === "on_error";
+  const onErrorEdges = flowEdges.filter(isOnError);
+  const terminalHandlerIds = new Set(
+    onErrorEdges.filter(e => e.routeTopology === "terminal").map(e => e.to),
+  );
+
+  // A node reached ONLY via on_error routes is an error-only handler (returning
+  // or terminal). Roots (no incoming edge at all) are NOT error-only.
+  const incoming = new Map<string, FlowEdge[]>();
+  for (const e of flowEdges) {
+    const list = incoming.get(e.to);
+    if (list) list.push(e); else incoming.set(e.to, [e]);
+  }
+  const isErrorOnly = (id: string) => {
+    const inc = incoming.get(id) ?? [];
+    return inc.length > 0 && inc.every(isOnError);
+  };
+
+  // Terminal handlers collapse into ONE sink (excluded as real nodes). When the
+  // error layer is hidden, every error-only node leaves too — graph height then
+  // matches a flow with no on_error declared (zero footprint).
+  const excluded = new Set<string>(terminalHandlerIds);
+  if (!showErrorRoutes) {
+    for (const s of steps) if (isErrorOnly(s.id)) excluded.add(s.id);
+  }
+  const laidOutSteps = steps.filter(s => !excluded.has(s.id));
+  const laidOutIds = new Set(laidOutSteps.map(s => s.id));
+
+  const SINK_ID = "__errorSink__";
+  const SINK_W = 96;
+  const haveSink = showErrorRoutes && terminalHandlerIds.size > 0;
 
   const statusMap = new Map<string, FlowGraphStep["status"]>();
-  for (const step of steps) {
-    g.setNode(step.id, { width: NODE_WIDTH, height: NODE_HEIGHT });
-    statusMap.set(step.id, step.status);
-  }
+  for (const step of steps) statusMap.set(step.id, step.status);
 
-  // Single edge derivation (sequential blockedBy + decision branches), shared
-  // with the static Mermaid snapshot. FORWARD edges feed dagre layout (with
-  // label clearance); BACKWARD edges are hand-routed below the graph.
-  // See change: improve-flow-ui.
-  const flowEdges = deriveFlowEdges(
-    steps.map((s): FlowEdgeStep => ({ id: s.id, type: s.type ?? "agent", blockedBy: s.blockedBy, branches: s.branches })),
-  );
-  const forwardEdges = flowEdges.filter(e => !e.backward);
-  const backwardEdges = flowEdges.filter(e => e.backward);
-  for (const e of forwardEdges) {
-    const labelDims = e.label ? { width: e.label.length * 6 + 6, height: 12 } : {};
-    g.setEdge(e.from, e.to, labelDims);
+  // Feed EVERY edge to dagre with an acyclicer, so loops/back-edges are ranked
+  // AND routed by dagre itself. dagre threads edges through routing channels
+  // (dummy nodes) so a polyline goes AROUND nodes instead of through them — this
+  // is what eliminates the old hand-routed legs that sliced across node boxes.
+  // Terminal on_error edges are redirected to the collapsed sink node.
+  const g = new graphlib.Graph().setDefaultEdgeLabel(() => ({}));
+  // Flatter layout: tighter vertical node gap + small edgesep packs the graph
+  // (edges may overlap slightly — acceptable) so it reads more horizontal.
+  g.setGraph({ rankdir: "LR", nodesep: 12, edgesep: 8, ranksep: 46, marginx: 16, marginy: 16, acyclicer: "greedy" });
+
+  for (const step of laidOutSteps) g.setNode(step.id, { width: NODE_WIDTH, height: NODE_HEIGHT });
+  if (haveSink) g.setNode(SINK_ID, { width: SINK_W, height: NODE_HEIGHT });
+
+  interface EdgeSpec {
+    from: string; to: string; dTo: string; label?: string;
+    kind: FlowEdgeKind; isError: boolean; isReturning: boolean; isLoop: boolean;
+  }
+  const specs: EdgeSpec[] = [];
+  for (const e of flowEdges) {
+    const err = isOnError(e);
+    if (err && !showErrorRoutes) continue;
+    const terminal = err && e.routeTopology === "terminal";
+    const dTo = terminal ? SINK_ID : e.to;
+    if (!laidOutIds.has(e.from)) continue;
+    if (dTo !== SINK_ID && !laidOutIds.has(dTo)) continue;
+    g.setEdge(e.from, dTo, e.label ? { width: e.label.length * 6 + 6, height: 12 } : {});
+    specs.push({
+      from: e.from, to: e.to, dTo, label: e.label, kind: e.kind,
+      isError: err, isReturning: err && e.routeTopology === "returning", isLoop: !!e.backward,
+    });
   }
 
   dagreLayout(g, {});
 
-  const graphMeta = g.graph();
-  const nodes: PositionedNode[] = steps.map((step) => {
+  const nodes: PositionedNode[] = laidOutSteps.map((step) => {
     const n = g.node(step.id);
     return {
       id: step.id,
@@ -218,73 +288,39 @@ export function computeLayout(steps: FlowGraphStep[]): LayoutResult {
     };
   });
 
+  // Every edge rendered from dagre's routed waypoints (multi-segment, node-aware).
   const edges: PositionedEdge[] = [];
-  for (const e of forwardEdges) {
-    const edgeData = g.edge(e.from, e.to);
-    if (edgeData?.points) {
-      edges.push({
-        source: e.from,
-        target: e.to,
-        points: edgeData.points,
-        sourceStatus: statusMap.get(e.from) || "pending",
-        targetStatus: statusMap.get(e.to) || "pending",
-        label: e.label,
-      });
-    }
-  }
-
-  // Node-band extent (every node sits within [minNodeY, maxBottom]).
-  const graphWidth = graphMeta.width || 200;
-  const graphHeight = graphMeta.height || 50;
-  let maxRight = 0;
-  let maxBottom = 0;
-  for (const n of nodes) {
-    maxRight = Math.max(maxRight, n.x + n.width);
-    maxBottom = Math.max(maxBottom, n.y + n.height);
-  }
-  for (const e of edges) {
-    for (const p of e.points) maxRight = Math.max(maxRight, p.x);
-  }
-
-  // Backward/loop edges: route as an arc BELOW every node. Because the arc's
-  // horizontal run sits beneath `maxBottom`, it cannot cross any node. Multiple
-  // loops stagger downward so they don't overlap each other.
-  const nodeById = new Map(nodes.map(n => [n.id, n]));
-  const LOOP_GAP = 18;
-  const loopEdges: LoopBackEdge[] = [];
-  backwardEdges.forEach((e, idx) => {
-    if (!nodeById.has(e.from) || !nodeById.has(e.to)) return;
-    const src = nodeById.get(e.from)!;
-    const tgt = nodeById.get(e.to)!;
-    const srcCx = src.x + src.width / 2;
-    const srcBot = src.y + src.height;
-    const tgtCx = tgt.x + tgt.width / 2;
-    const tgtBot = tgt.y + tgt.height;
-    const arcY = maxBottom + LOOP_GAP + idx * LOOP_GAP;
-    const path = `M${srcCx},${srcBot} C${srcCx},${arcY} ${tgtCx},${arcY} ${tgtCx},${tgtBot}`;
-    loopEdges.push({
-      source: e.from,
-      target: e.to,
-      sourceStatus: statusMap.get(e.from) || "pending",
-      targetStatus: statusMap.get(e.to) || "pending",
-      path,
-      label: e.label,
-      labelX: (srcCx + tgtCx) / 2,
-      labelY: arcY + 3,
+  for (const s of specs) {
+    const ed = g.edge(s.from, s.dTo);
+    if (!ed?.points) continue;
+    edges.push({
+      source: s.from,
+      target: s.to,
+      points: ed.points,
+      sourceStatus: statusMap.get(s.from) || "pending",
+      targetStatus: statusMap.get(s.to) || "pending",
+      label: s.label,
+      kind: s.kind,
+      isError: s.isError,
+      isReturning: s.isReturning,
+      isLoop: s.isLoop,
     });
-  });
+  }
 
-  const loopBottom = loopEdges.length > 0 ? maxBottom + LOOP_GAP * (loopEdges.length + 1) : maxBottom;
-  const actualWidth = Math.max(graphWidth, maxRight + 16);
-  const actualHeight = Math.max(graphHeight, loopBottom + ARROW_SIZE + 8);
+  let errorSink: ErrorSink | undefined;
+  if (haveSink) {
+    const sn = g.node(SINK_ID);
+    errorSink = {
+      x: sn.x - SINK_W / 2,
+      y: sn.y - NODE_HEIGHT / 2,
+      width: SINK_W,
+      height: NODE_HEIGHT,
+      handlers: Array.from(terminalHandlerIds),
+    };
+  }
 
-  return {
-    nodes,
-    edges,
-    loopEdges,
-    width: actualWidth,
-    height: actualHeight,
-  };
+  const meta = g.graph();
+  return { nodes, edges, errorSink, width: meta.width || 200, height: meta.height || 50 };
 }
 
 // ── SVG edge path (cubic bezier through waypoints) ──────────────────
@@ -324,15 +360,22 @@ export function FlowGraph({ steps, fit = false, onExpand, selectedStepId, onSele
   /** Node click handler (toggle selection). When set, nodes are clickable. */
   onSelectStep?: (stepId: string) => void;
 }) {
+  // Error-route layer toggle. Default ON: returning routes show as red loop
+  // arcs, terminal handlers collapse to one sink. OFF removes them from the
+  // dagre input entirely (zero footprint). Only relevant when on_error exists.
+  const hasErrorRoutes = useMemo(() => steps.some(s => s.onError), [steps]);
+  const [showErrorRoutes, setShowErrorRoutes] = useState(true);
+  const [sinkExpanded, setSinkExpanded] = useState(false);
+
   const layout = useMemo(() => {
     if (steps.length === 0) return null;
     try {
-      return computeLayout(steps);
+      return computeLayout(steps, { showErrorRoutes });
     } catch (err) {
       console.error("[FlowGraph] computeLayout failed:", err, "steps:", steps);
       return null;
     }
-  }, [steps]);
+  }, [steps, showErrorRoutes]);
 
   const ZoomControls = useUiPrimitive(UI_PRIMITIVE_KEYS.zoomControls);
   const { state: zoom, handlers, zoomIn, zoomOut, reset } = useZoomPan();
@@ -362,10 +405,11 @@ export function FlowGraph({ steps, fit = false, onExpand, selectedStepId, onSele
   const svgWidth = Math.max(layout.width, 150);
   const svgHeight = Math.max(layout.height, 50);
 
-  // Fit mode is bounded + static: pan/zoom handlers are detached so the graph
-  // cannot be dragged over sibling content (cards / summaries). The whole graph
-  // scales into FIT_HEIGHT via preserveAspectRatio. See change: improve-flow-ui.
-  const panHandlers = fit ? {} : {
+  // Pan/zoom is enabled in BOTH the in-socket (fit) and dialog (non-fit) views.
+  // In fit mode the container clips (overflow:hidden) so panning never spills
+  // over sibling cards; the graph still defaults to whole-graph-fits via
+  // preserveAspectRatio, with zoom/pan layered on top.
+  const panHandlers = {
     onPointerDown: handlers.onPointerDown,
     onPointerMove: handlers.onPointerMove,
     onPointerUp: handlers.onPointerUp,
@@ -376,33 +420,51 @@ export function FlowGraph({ steps, fit = false, onExpand, selectedStepId, onSele
 
   return (
     <div
-      ref={fit ? undefined : containerRef}
-      className="flow-dag-graph-container relative"
-      style={fit ? { height: FIT_HEIGHT, overflow: "hidden" } : { overflow: "visible" }}
+      ref={containerRef}
+      className="flow-dag-graph-container relative flex items-center justify-center"
+      style={fit ? { height: FIT_HEIGHT, overflow: "hidden" } : { width: "100%", height: "100%", overflow: "visible" }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       {...panHandlers}
     >
+      {/* Controls stopPropagation on pointerdown so the container's pan handler
+          (which calls setPointerCapture) doesn't swallow their click. */}
       {fit && onExpand && (
         <button
           type="button"
           onClick={onExpand}
+          onPointerDown={(e) => e.stopPropagation()}
           title="Expand graph"
-          className="absolute top-1 right-1 z-10 text-[11px] px-1.5 py-0.5 rounded border border-[var(--border-subtle)] bg-[var(--bg-secondary)]/80 text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
+          className="absolute bottom-1 right-1 z-10 text-[11px] px-1.5 py-0.5 rounded border border-[var(--border-subtle)] bg-[var(--bg-secondary)]/80 text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
         >
           ⤢ Expand
         </button>
       )}
-      {!fit && hovered && (
-        <ZoomControls
-          onZoomIn={zoomIn}
-          onZoomOut={zoomOut}
-          onReset={reset}
-          scale={zoom.scale}
-        />
+      {hasErrorRoutes && (
+        <button
+          type="button"
+          onClick={() => setShowErrorRoutes(v => !v)}
+          onPointerDown={(e) => e.stopPropagation()}
+          title={showErrorRoutes ? "Hide error routes" : "Show error routes"}
+          aria-pressed={showErrorRoutes}
+          className={`absolute top-1 left-1 z-10 text-[11px] px-1.5 py-0.5 rounded border ${showErrorRoutes ? "border-[#ef4444]/60 text-[#ef4444]" : "border-[var(--border-subtle)] text-[var(--text-tertiary)]"} bg-[var(--bg-secondary)]/80 hover:text-[var(--text-primary)]`}
+        >
+          ⚠ error routes
+        </button>
+      )}
+      {hovered && (
+        <div onPointerDown={(e) => e.stopPropagation()}>
+          <ZoomControls
+            onZoomIn={zoomIn}
+            onZoomOut={zoomOut}
+            onReset={reset}
+            scale={zoom.scale}
+          />
+        </div>
       )}
       <div
-        style={fit ? { width: "100%", height: "100%" } : {
+        style={{
+          ...(fit ? { width: "100%", height: "100%" } : {}),
           transform: `translate(${zoom.translateX}px, ${zoom.translateY}px) scale(${zoom.scale})`,
           transformOrigin: "0 0",
         }}
@@ -432,10 +494,28 @@ export function FlowGraph({ steps, fit = false, onExpand, selectedStepId, onSele
             ))}
           </defs>
 
-          {/* Forward edges (dagre-routed). */}
+          {/* Edges — every edge routed by dagre (waypoints thread around nodes,
+              never through them). Styled by class: red on_error (↺ returning /
+              ⊗ terminal), purple loop, status-grey otherwise. */}
           {layout.edges.map((edge, i) => {
-            const { stroke, animated, dashed } = getEdgeColor(edge.sourceStatus, edge.targetStatus);
+            let stroke: string;
+            let dash: string;
+            let animated = false;
+            if (edge.isError) {
+              stroke = "#ef4444";
+              dash = "5 4";
+            } else if (edge.isLoop) {
+              stroke = "#a855f7";
+              dash = "5 3";
+            } else {
+              const c = getEdgeColor(edge.sourceStatus, edge.targetStatus);
+              stroke = c.stroke;
+              dash = c.dashed ? "4 3" : c.animated ? "6 3" : "none";
+              animated = c.animated;
+            }
             const mid = edge.points[Math.floor(edge.points.length / 2)];
+            const label = edge.isError ? `on_error ${edge.isReturning ? "↺" : "⊗"}` : edge.label;
+            const labelColor = edge.isError ? "#ef4444" : edge.isLoop ? "#a855f7" : "#888";
             return (
               <g key={`edge-${i}`}>
                 <path
@@ -443,52 +523,86 @@ export function FlowGraph({ steps, fit = false, onExpand, selectedStepId, onSele
                   fill="none"
                   stroke={stroke}
                   strokeWidth={1.5}
-                  strokeDasharray={dashed ? "4 3" : animated ? "6 3" : "none"}
+                  strokeDasharray={dash}
                   markerEnd={`url(#arrow-${stroke.replace("#", "")})`}
                   className={animated ? "flow-edge-animated" : ""}
+                  opacity={edge.isError || edge.isLoop ? 0.8 : 1}
                 />
-                {edge.label && mid && (
+                {label && mid && (
                   <text
                     x={mid.x}
                     y={mid.y - 3}
                     fontSize={8}
-                    fill="#888"
+                    fill={labelColor}
                     textAnchor="middle"
                     fontFamily="system-ui, -apple-system, sans-serif"
                   >
-                    {edge.label}
+                    {label}
                   </text>
                 )}
               </g>
             );
           })}
 
-          {/* Backward/loop edges — arc below the node band; cannot cross a node. */}
-          {layout.loopEdges.map((edge, i) => (
-            <g key={`loop-${i}`}>
-              <path
-                d={edge.path}
-                fill="none"
-                stroke="#a855f7"
+          {/* Collapsed terminal-handler sink (`⚠ N exits`), click to expand. */}
+          {layout.errorSink && (
+            <g
+              data-error-sink=""
+              style={{ cursor: "pointer" }}
+              onClick={() => setSinkExpanded(v => !v)}
+            >
+              <rect
+                x={layout.errorSink.x}
+                y={layout.errorSink.y}
+                width={layout.errorSink.width}
+                height={layout.errorSink.height}
+                rx={5}
+                ry={5}
+                fill="#2a1416"
+                stroke="#ef4444"
                 strokeWidth={1.5}
-                strokeDasharray="5 3"
-                markerEnd="url(#arrow-a855f7)"
-                opacity={0.7}
               />
-              {edge.label && (
-                <text
-                  x={edge.labelX}
-                  y={edge.labelY}
-                  fontSize={8}
-                  fill="#a855f7"
-                  textAnchor="middle"
-                  fontFamily="system-ui, -apple-system, sans-serif"
-                >
-                  {edge.label}
-                </text>
-              )}
+              <text
+                x={layout.errorSink.x + layout.errorSink.width / 2}
+                y={layout.errorSink.y + layout.errorSink.height / 2 + 1}
+                fontSize={10}
+                fill="#ef4444"
+                dominantBaseline="middle"
+                textAnchor="middle"
+                fontFamily="system-ui, -apple-system, sans-serif"
+              >
+                {`⚠ ${layout.errorSink.handlers.length} exit${layout.errorSink.handlers.length === 1 ? "" : "s"}`}
+              </text>
+              {/* Expanded handler list stacks below the sink. */}
+              {sinkExpanded && layout.errorSink.handlers.map((h, hi) => (
+                <g key={`sink-h-${h}`}>
+                  <rect
+                    x={layout.errorSink!.x}
+                    y={layout.errorSink!.y + layout.errorSink!.height + 6 + hi * (NODE_HEIGHT + 6)}
+                    width={layout.errorSink!.width}
+                    height={NODE_HEIGHT}
+                    rx={5}
+                    ry={5}
+                    fill="#2a1416"
+                    stroke="#ef4444"
+                    strokeWidth={1}
+                    opacity={0.85}
+                  />
+                  <text
+                    x={layout.errorSink!.x + layout.errorSink!.width / 2}
+                    y={layout.errorSink!.y + layout.errorSink!.height + 6 + hi * (NODE_HEIGHT + 6) + NODE_HEIGHT / 2 + 1}
+                    fontSize={10}
+                    fill="#ef4444"
+                    dominantBaseline="middle"
+                    textAnchor="middle"
+                    fontFamily="system-ui, -apple-system, sans-serif"
+                  >
+                    {h}
+                  </text>
+                </g>
+              ))}
             </g>
-          ))}
+          )}
 
           {/* Nodes */}
           {layout.nodes.map((node) => {

@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
-import { parseFlowYaml, flowToMermaid } from "../client/flow-yaml-parse.js";
+import { describe, expect, it } from "vitest";
+import { flowToMermaid, parseFlowYaml } from "../client/flow-yaml-parse.js";
 
 const YAML = `
 name: invoice-research
@@ -65,6 +65,38 @@ describe("flowToMermaid", () => {
     expect(m).not.toContain("extract --> validate-nav");
     // on_error -> park, but no `park` step exists -> edge skipped
     expect(m).not.toContain("park");
+  });
+
+  it("renders on_error routes topology-distinctly (returning ↺ vs terminal ⊗)", () => {
+    const flow = parseFlowYaml(`
+name: topo
+steps:
+  - id: validate
+    type: code-decision
+    blockedBy: []
+    on_error: fixup
+  - id: transform
+    type: agent
+    blockedBy: [validate]
+  - id: fixup
+    type: agent
+    blockedBy: []
+    on_complete: validate
+  - id: finalize
+    type: agent
+    blockedBy: [transform]
+    on_error: notify
+  - id: notify
+    type: agent
+    blockedBy: []
+`)!;
+    const m = flowToMermaid(flow);
+    // returning handler (fixup rejoins validate) → dashed loop marker
+    expect(m).toContain('validate -. "on_error ↺" .-> fixup');
+    // terminal handler (notify is a sink) → dashed terminal marker
+    expect(m).toContain('finalize -. "on_error ⊗" .-> notify');
+    // an on_error route is never rendered as a solid labeled forward edge
+    expect(m).not.toContain("-->|on_error|");
   });
 
   it("renders implicit-segment edges and emits no flow-ref shape", () => {

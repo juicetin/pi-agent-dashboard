@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
-import { computeLayout, mapStepType, type FlowGraphStep } from "../client/FlowGraph.js";
+import { describe, expect, it } from "vitest";
+import { computeLayout, type FlowGraphStep, mapStepType } from "../client/FlowGraph.js";
 
 describe("mapStepType (canonical node set)", () => {
   it("maps the new code node kinds", () => {
@@ -79,6 +79,22 @@ describe("computeLayout", () => {
     expect(nodeB.y).not.toBe(nodeC.y);
   });
 
+  it("places no-blockedBy parallel roots in the same rank (no false serialization)", () => {
+    // Two roots, no blockedBy, no separator between them. The engine runs both
+    // in wave 1 (parallel); the layout must NOT synthesize an impl→docs edge that
+    // pushes them into consecutive ranks (would read as sequential).
+    const steps: FlowGraphStep[] = [
+      { id: "impl", label: "impl", status: "running", blockedBy: [] },
+      { id: "docs", label: "docs", status: "running", blockedBy: [] },
+    ];
+    const result = computeLayout(steps);
+    expect(result.edges).toHaveLength(0);
+    const impl = result.nodes.find(n => n.id === "impl")!;
+    const docs = result.nodes.find(n => n.id === "docs")!;
+    expect(impl.x).toBe(docs.x); // same rank
+    expect(impl.y).not.toBe(docs.y); // stacked vertically = parallel
+  });
+
   it("handles single-step flow", () => {
     const steps: FlowGraphStep[] = [
       { id: "solo", label: "solo-step", status: "running", blockedBy: [] },
@@ -88,6 +104,54 @@ describe("computeLayout", () => {
     expect(result.nodes).toHaveLength(1);
     expect(result.edges).toHaveLength(0);
     expect(result.width).toBeGreaterThan(0);
+  });
+
+  it("marks a returning on_error route as a red loop-styled edge (isError + isReturning)", () => {
+    const steps: FlowGraphStep[] = [
+      { id: "validate", label: "validate", status: "complete", blockedBy: [], type: "code-decision", onError: "fixup" },
+      { id: "transform", label: "transform", status: "running", blockedBy: ["validate"] },
+      { id: "fixup", label: "fixup", status: "pending", blockedBy: [], onComplete: "validate" },
+    ];
+    const result = computeLayout(steps);
+    const e = result.edges.find(ed => ed.source === "validate" && ed.target === "fixup");
+    expect(e).toBeTruthy();
+    expect(e!.isError).toBe(true);
+    expect(e!.isReturning).toBe(true);
+    // dagre-routed: multi-segment polyline (does not cross the band naively)
+    expect(e!.points.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("collapses terminal on_error handlers into a single sink node", () => {
+    const steps: FlowGraphStep[] = [
+      { id: "a", label: "a", status: "complete", blockedBy: [], onError: "notify" },
+      { id: "b", label: "b", status: "running", blockedBy: ["a"], onError: "notify" },
+      { id: "notify", label: "notify", status: "pending", blockedBy: [] },
+    ];
+    const result = computeLayout(steps);
+    expect(result.errorSink).toBeTruthy();
+    expect(result.errorSink!.handlers).toEqual(["notify"]);
+    // the terminal handler is NOT laid out as a normal node
+    expect(result.nodes.some(n => n.id === "notify")).toBe(false);
+    // both terminal routes are present as error edges (routed to the sink)
+    expect(result.edges.filter(e => e.isError).map(e => e.source).sort()).toEqual(["a", "b"]);
+  });
+
+  it("removes error routes from layout when showErrorRoutes is false (zero footprint)", () => {
+    const withErr: FlowGraphStep[] = [
+      { id: "a", label: "a", status: "complete", blockedBy: [], onError: "notify" },
+      { id: "b", label: "b", status: "running", blockedBy: ["a"] },
+      { id: "notify", label: "notify", status: "pending", blockedBy: [] },
+    ];
+    const baseline: FlowGraphStep[] = [
+      { id: "a", label: "a", status: "complete", blockedBy: [] },
+      { id: "b", label: "b", status: "running", blockedBy: ["a"] },
+    ];
+    const off = computeLayout(withErr, { showErrorRoutes: false });
+    const base = computeLayout(baseline);
+    expect(off.errorSink).toBeUndefined();
+    expect(off.edges.some(e => e.isError)).toBe(false);
+    expect(off.nodes.some(n => n.id === "notify")).toBe(false);
+    expect(off.height).toBe(base.height);
   });
 
   it("handles empty steps array", () => {
@@ -186,21 +250,22 @@ describe("computeLayout", () => {
     expect(labels).toEqual(["PathA", "PathB"]);
   });
 
-  it("routes a backward branch as a loop arc below the node band", () => {
+  it("marks a backward branch as a loop edge, routed by dagre (not a hand-arc)", () => {
     const steps: FlowGraphStep[] = [
       { id: "work", label: "work", status: "complete", blockedBy: [] },
       { id: "gate", label: "gate", status: "running", blockedBy: ["work"], type: "code-decision", branches: { again: "work", go: "done" } },
       { id: "done", label: "done", status: "pending", blockedBy: [] },
     ];
     const result = computeLayout(steps);
-    // Backward branch gate->work is a hand-routed loop edge, not a forward edge.
-    expect(result.loopEdges).toHaveLength(1);
-    expect(result.loopEdges[0]).toMatchObject({ source: "gate", target: "work", label: "again" });
-    expect(result.edges.find(e => e.source === "gate" && e.target === "work")).toBeUndefined();
-    // The loop arc sits below every node (cannot cross one).
-    const maxNodeBottom = Math.max(...result.nodes.map(n => n.y + n.height));
-    expect(result.loopEdges[0].labelY).toBeGreaterThanOrEqual(maxNodeBottom);
-    // forward branch gate->done carries its label.
-    expect(result.edges.find(e => e.source === "gate" && e.target === "done")?.label).toBe("go");
+    // Backward branch gate->work is a loop-styled edge (isLoop), routed by dagre.
+    const loop = result.edges.find(e => e.source === "gate" && e.target === "work");
+    expect(loop).toBeTruthy();
+    expect(loop!.isLoop).toBe(true);
+    expect(loop!.label).toBe("again");
+    expect(loop!.points.length).toBeGreaterThanOrEqual(2);
+    // forward branch gate->done carries its label and is not a loop.
+    const fwd = result.edges.find(e => e.source === "gate" && e.target === "done");
+    expect(fwd?.label).toBe("go");
+    expect(fwd?.isLoop).toBeFalsy();
   });
 });

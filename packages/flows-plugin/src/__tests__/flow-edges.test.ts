@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 import { deriveFlowEdges, type FlowEdgeStep } from "../client/flow-edges.js";
 
 const key = (e: { from: string; to: string }) => `${e.from}->${e.to}`;
@@ -20,6 +20,42 @@ describe("deriveFlowEdges", () => {
     expect(byKey.get("d->b")?.label).toBe("again");
     expect(byKey.get("sep->e")?.kind).toBe("implicit");
     expect(byKey.get("b->d")?.kind).toBe("route");
+  });
+
+  it("does not serialize parallel siblings (no separator predecessor)", () => {
+    // Three roots with no blockedBy and no separator between them: the engine
+    // runs all three in wave 1 (parallel). No implicit chain should be drawn.
+    const steps: FlowEdgeStep[] = [
+      { id: "a", type: "agent", blockedBy: [] },
+      { id: "impl", type: "agent", blockedBy: [] },
+      { id: "docs", type: "agent", blockedBy: [] },
+    ];
+    const edges = deriveFlowEdges(steps);
+    expect(edges).toHaveLength(0);
+  });
+
+  it("keeps the implicit edge across a separator boundary", () => {
+    // A step with no blockedBy immediately after a separator falls through from it.
+    const steps: FlowEdgeStep[] = [
+      { id: "decide", type: "code-decision", blockedBy: [] },
+      { id: "next", type: "agent", blockedBy: [] },
+    ];
+    const edges = deriveFlowEdges(steps);
+    expect(edges.find((e) => key(e) === "decide->next")?.kind).toBe("implicit");
+  });
+
+  it("fans all no-blockedBy roots out from the preceding separator (parallel)", () => {
+    // Two parallel roots after one separator: BOTH fall through from the
+    // separator (parallel), not chained b->c.
+    const steps: FlowEdgeStep[] = [
+      { id: "sep", type: "fork", blockedBy: [] },
+      { id: "b", type: "agent", blockedBy: [] },
+      { id: "c", type: "agent", blockedBy: [] },
+    ];
+    const edges = deriveFlowEdges(steps);
+    expect(edges.find((e) => key(e) === "sep->b")?.kind).toBe("implicit");
+    expect(edges.find((e) => key(e) === "sep->c")?.kind).toBe("implicit");
+    expect(edges.some((e) => key(e) === "b->c")).toBe(false);
   });
 
   it("flags backward edges", () => {
@@ -59,6 +95,38 @@ describe("deriveFlowEdges", () => {
       { id: "b", type: "agent", blockedBy: [] },
     ]);
     expect(liveNoRoute.some((e) => e.kind === "route")).toBe(false);
+  });
+
+  it("classifies an on_error route as returning when the handler rejoins the flow", () => {
+    const steps: FlowEdgeStep[] = [
+      { id: "validate", type: "code-decision", blockedBy: [], onError: "fixup" },
+      { id: "transform", type: "agent", blockedBy: ["validate"] },
+      { id: "fixup", type: "agent", blockedBy: [], onComplete: "validate" }, // rejoins the spine
+    ];
+    const r = deriveFlowEdges(steps).find((e) => key(e) === "validate->fixup")!;
+    expect(r.kind).toBe("route");
+    expect(r.label).toBe("on_error");
+    expect(r.routeTopology).toBe("returning");
+  });
+
+  it("classifies an on_error route as terminal when the handler never rejoins", () => {
+    const steps: FlowEdgeStep[] = [
+      { id: "finalize", type: "agent", blockedBy: [], onError: "notify" },
+      { id: "notify", type: "agent", blockedBy: [] }, // sink: no forward edge back to the flow
+    ];
+    const r = deriveFlowEdges(steps).find((e) => key(e) === "finalize->notify")!;
+    expect(r.kind).toBe("route");
+    expect(r.routeTopology).toBe("terminal");
+  });
+
+  it("leaves routeTopology unset on non-on_error routes", () => {
+    const edges = deriveFlowEdges([
+      { id: "a", type: "code", blockedBy: [], onComplete: "b" },
+      { id: "b", type: "agent", blockedBy: [] },
+    ]);
+    const oc = edges.find((e) => key(e) === "a->b")!;
+    expect(oc.kind).toBe("route");
+    expect(oc.routeTopology).toBeUndefined();
   });
 
   it("skips edges with missing endpoints", () => {

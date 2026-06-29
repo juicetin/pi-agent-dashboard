@@ -5,21 +5,23 @@
  * auto-expand. Rows without detail are not interactive. Per-row state
  * is independent. See change: expandable-flow-summary-rows.
  */
-import React from "react";
-import { describe, it, expect, afterEach, beforeAll } from "vitest";
-import { render, cleanup, fireEvent, within } from "@testing-library/react";
+
+import { cleanup, fireEvent, render, within } from "@testing-library/react";
+import type React from "react";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
 
 // jsdom does not implement scrollIntoView; the selection effect calls it.
 beforeAll(() => {
   Element.prototype.scrollIntoView = () => {};
 });
+
 import {
-  UiPrimitiveProvider,
   createUiPrimitiveRegistry,
   registerUiPrimitive,
+  UiPrimitiveProvider,
 } from "@blackbelt-technology/dashboard-plugin-runtime";
 import { UI_PRIMITIVE_KEYS } from "@blackbelt-technology/pi-dashboard-shared/dashboard-plugin/ui-primitives.js";
-import type { FlowState, FlowAgentState } from "@blackbelt-technology/pi-dashboard-shared/types.js";
+import type { FlowAgentState, FlowState } from "@blackbelt-technology/pi-dashboard-shared/types.js";
 import { FlowSummary } from "../client/FlowSummary.js";
 
 const registry = createUiPrimitiveRegistry();
@@ -121,6 +123,42 @@ describe("FlowSummary frozen cards (show-flow-cards-in-summary)", () => {
     // Collapsing removes the summaries rows; cards stay visible.
     expect(queryByTestId("flow-summaries")).toBeNull();
     expect(getAllByTestId("agent-card")).toHaveLength(1);
+  });
+});
+
+describe("FlowSummary fit-window scroll box (improve-flow-graph-fidelity)", () => {
+  it("wraps cards + summaries in one bounded, scrollable box so the panel fits the viewport", () => {
+    const state = makeState([
+      agent({ stepId: "one", label: "step-one", status: "complete", summary: "S1" }),
+    ]);
+    const { getByTestId } = renderSummary(state);
+    const box = getByTestId("flow-summary-scrollbox");
+    expect(box.style.maxHeight).toBe("48vh");
+    expect(box.className).toMatch(/overflow-y-auto/);
+    // cards + summaries live INSIDE the scroll box
+    expect(box.querySelector("[data-testid='flow-summaries']")).toBeTruthy();
+    expect(box.querySelector("[data-testid='agent-card']")).toBeTruthy();
+  });
+});
+
+describe("FlowSummary whole-panel collapse (improve-flow-graph-fidelity)", () => {
+  it("collapses the whole panel to its header bar, hiding the body but keeping the name", () => {
+    const state = makeState([
+      agent({ stepId: "one", label: "step-one", status: "complete", summary: "S1" }),
+    ]);
+    const { getByTestId, queryByTestId, queryAllByTestId, getByText } = renderSummary(state);
+    // Body present initially (cards + summaries footer).
+    expect(queryAllByTestId("agent-card")).toHaveLength(1);
+    expect(queryByTestId("flow-summaries")).toBeTruthy();
+    // Collapse the whole panel.
+    fireEvent.click(getByTestId("flow-summary-panel-toggle"));
+    // Body gone; header (flow name) still shown — shrink-to-header, not dismiss.
+    expect(queryAllByTestId("agent-card")).toHaveLength(0);
+    expect(queryByTestId("flow-summaries")).toBeNull();
+    expect(getByText(/demo-flow/)).toBeTruthy();
+    // Toggling back restores the body.
+    fireEvent.click(getByTestId("flow-summary-panel-toggle"));
+    expect(queryAllByTestId("agent-card")).toHaveLength(1);
   });
 });
 

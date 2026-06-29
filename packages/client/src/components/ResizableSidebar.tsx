@@ -1,6 +1,6 @@
-import React, { useCallback, useRef, useEffect, type ReactNode } from "react";
-import { Icon } from "@mdi/react";
 import { mdiChevronLeft, mdiChevronRight } from "@mdi/js";
+import { Icon } from "@mdi/react";
+import React, { type ReactNode, useCallback, useEffect, useRef } from "react";
 import type { SidebarState } from "../hooks/useSidebarState.js";
 import { t as i18nT } from "../lib/i18n";
 
@@ -62,7 +62,7 @@ export function ResizableSidebar({ sidebar, children }: Props) {
       >
         <button
           onClick={toggleCollapse}
-          className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 z-10 w-5 h-8 flex items-center justify-center rounded-full bg-[var(--bg-tertiary)] border border-[var(--border-secondary)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-surface)] shadow-md transition-colors cursor-pointer"
+          className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 z-30 w-5 h-8 flex items-center justify-center rounded-full bg-[var(--bg-tertiary)] border border-[var(--border-secondary)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-surface)] shadow-md transition-colors cursor-pointer"
           title={i18nT("auto.expand_sidebar", undefined, "Expand sidebar")}
           data-testid="sidebar-expand"
         >
@@ -92,7 +92,7 @@ export function ResizableSidebar({ sidebar, children }: Props) {
       <button
         onClick={toggleCollapse}
         onMouseDown={(e) => e.stopPropagation()}
-        className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 z-10 w-5 h-8 flex items-center justify-center rounded-full bg-[var(--bg-tertiary)] border border-[var(--border-secondary)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-surface)] shadow-md transition-colors cursor-pointer"
+        className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 z-30 w-5 h-8 flex items-center justify-center rounded-full bg-[var(--bg-tertiary)] border border-[var(--border-secondary)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-surface)] shadow-md transition-colors cursor-pointer"
         title={i18nT("auto.collapse_sidebar", undefined, "Collapse sidebar")}
         data-testid="sidebar-collapse"
       >

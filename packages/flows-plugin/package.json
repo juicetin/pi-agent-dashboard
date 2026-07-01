@@ -33,7 +33,6 @@
     "id": "flows",
     "displayName": "Flows",
     "priority": 100,
-    "dependsOn": ["automation"],
     "configSchema": "./src/configSchema.json",
     "client": "./src/client/index.tsx",
     "server": "./src/server/index.ts",

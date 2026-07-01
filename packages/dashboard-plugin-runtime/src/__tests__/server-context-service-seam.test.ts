@@ -21,6 +21,11 @@ function depsWithSharedRegistry(): ServerContextDeps {
     onEvent: () => () => {},
     sendToSession: () => true,
     emitEventToSession: () => true,
+    consumeAll: <T = unknown>(prefix: string) => {
+      const out: Array<{ key: string; value: T }> = [];
+      for (const [key, value] of registry) if (key.startsWith(prefix)) out.push({ key, value: value as T });
+      return out;
+    },
     spawnSession: async () => ({ success: true }),
     abortSession: () => true,
     provide: (name, value) => { registry.set(name, value); },
@@ -55,5 +60,28 @@ describe("ServerPluginContext provide/consume", () => {
     ctx.provide("svc", 1);
     ctx.provide("svc", 2);
     expect(ctx.consume<number>("svc")).toBe(2);
+  });
+});
+
+describe("ServerPluginContext consumeAll (publish/collect)", () => {
+  it("collects every value under a prefix, regardless of publish order", () => {
+    const deps = depsWithSharedRegistry();
+    const flows = createServerPluginContext(deps, "flows");
+    const automation = createServerPluginContext(deps, "automation");
+    // publisher order: flows first, then automation (no ordering guarantee)
+    flows.provide("automation.action.flows", { id: "flows.run" });
+    automation.provide("automation.action.core", [{ id: "core.prompt" }]);
+    automation.provide("unrelated.key", { nope: true });
+
+    const collected = automation.consumeAll<unknown>("automation.action.");
+    const keys = collected.map((e) => e.key).sort();
+    expect(keys).toEqual(["automation.action.core", "automation.action.flows"]);
+  });
+
+  it("returns [] for a prefix with no matches and never throws", () => {
+    const deps = depsWithSharedRegistry();
+    const ctx = createServerPluginContext(deps, "automation");
+    expect(() => ctx.consumeAll("nope.")).not.toThrow();
+    expect(ctx.consumeAll("nope.")).toEqual([]);
   });
 });

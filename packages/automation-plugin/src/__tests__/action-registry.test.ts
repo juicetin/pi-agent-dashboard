@@ -6,6 +6,8 @@ import { describe, it, expect, vi } from "vitest";
 import {
   ActionRegistry,
   createActionRegistryWithBuiltins,
+  coreActionContributions,
+  collectActionRegistry,
   normalizeActionKind,
   MAX_PER_SOURCE,
 } from "../server/action-registry.js";
@@ -90,6 +92,23 @@ describe("ActionRegistry", () => {
     });
     expect(ok).toBe(true);
     expect(reg.get("flows.run")?.buildEvent).toBeDefined();
+  });
+
+  it("collectActionRegistry merges published contributions (single + array) with guards", () => {
+    const entries = [
+      { key: "automation.action.core", value: coreActionContributions() }, // array
+      { key: "automation.action.flows", value: { id: "flows.run", source: "flows", label: "Run", buildEvent: () => ({ eventType: "flow:run" }) } }, // single
+      { key: "automation.action.bad", value: { id: "nodispatch", source: "bad", label: "X" } }, // rejected: bad id + no dispatch
+    ];
+    const reg = collectActionRegistry(entries, { warn: () => {} });
+    const ids = [...reg.ids()].sort();
+    expect(ids).toEqual(["core.prompt", "core.skill", "flows.run"]);
+    expect(reg.get("flows.run")?.buildEvent).toBeDefined();
+  });
+
+  it("collectActionRegistry tolerates non-object contribution values", () => {
+    const reg = collectActionRegistry([{ key: "automation.action.junk", value: 42 }], { warn: () => {} });
+    expect([...reg.ids()]).toEqual([]);
   });
 
   it("rejects an action with neither or both of buildPrompt/buildEvent", () => {

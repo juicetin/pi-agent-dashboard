@@ -1,25 +1,22 @@
 /**
- * Flows → automation action registration.
+ * Flows → automation action contribution (publish/collect).
  *
- * The automation plugin publishes its action registry via the cross-plugin
- * service seam (`ctx.provide("automation.action-registry", …)`). Flows
- * consumes it and registers `flows.run` / `flows.resume` / `flows.cancel`,
- * each gated on flows existing in the target cwd. `flows.run` declares a
- * `flow` enum (discovered live from disk) + a `task` string and produces the
- * run session's seed prompt (`/<namespace>:<name> <task>`).
+ * Flows PUBLISHES an immutable action contribution under
+ * `automation.action.flows` via `ctx.provide`. It does NOT consume an
+ * automation-owned registry, import the automation package, or depend on load
+ * order — the automation plugin collects published contributions lazily. If
+ * flows is disabled, it publishes nothing and `flows.run` never appears.
  *
- * The registry is consumed structurally (the `consume` seam returns
- * `unknown`) so flows needs no compile dependency on the automation package.
- *
- * See change: register-plugin-automation-events.
+ * The contribution is typed structurally so flows needs no compile dependency
+ * on automation. See change: decouple-automation-action-registry.
  */
 import fs from "node:fs";
 import path from "node:path";
 
-/** Service-seam key the automation plugin publishes the registry under. */
-export const ACTION_REGISTRY_SERVICE = "automation.action-registry";
+/** Publish key automation collects under (`automation.action.<source>`). */
+export const ACTION_CONTRIBUTION_KEY = "automation.action.flows";
 
-/** Structural mirror of the automation ActionRegistry surface flows uses. */
+/** Structural mirror of one automation payload-schema field. */
 interface ActionFieldSpecLike {
   key: string;
   label: string;
@@ -27,7 +24,9 @@ interface ActionFieldSpecLike {
   help?: string;
   options?: (cwd: string) => string[];
 }
-interface ActionRegistrationLike {
+
+/** Structural mirror of an automation action contribution. */
+export interface ActionContributionLike {
   id: string;
   source: string;
   label: string;
@@ -39,11 +38,6 @@ interface ActionRegistrationLike {
   buildEvent?: (args: { payload: Record<string, unknown>; automation: unknown }) =>
     | { eventType: string; data?: Record<string, unknown> }
     | null;
-  /** Prompt-dispatch alternative (unused by flows). */
-  buildPrompt?: (args: { payload: Record<string, unknown>; automation: unknown }) => string;
-}
-export interface ActionRegistryLike {
-  register(reg: ActionRegistrationLike): boolean;
 }
 
 /**
@@ -80,35 +74,27 @@ export function discoverFlows(cwd: string): string[] {
 
 /**
  * A flow id is `<ns>:<name>` (from discoverFlows). It is placed into the
- * `flow:run` event payload, so a malformed value is rejected (emit nothing)
- * rather than dispatched. See change: automation-emit-configured-event.
+ * `flow:run` event payload, so a malformed value is rejected (emit nothing).
  */
 const FLOW_ID_RE = /^[\w.-]+:[\w.-]+$/;
 
-/** Register flows.run into a (structurally-typed) registry. */
-export function registerFlowAutomationActions(
-  registry: ActionRegistryLike,
-  log: (m: string) => void,
-  warn?: (m: string) => void,
-): void {
+/** Build the flows action contribution(s): flows.run only. */
+export function flowsActionContributions(): ActionContributionLike[] {
   const hasFlows = (cwd: string) => discoverFlows(cwd).length > 0;
-  const REASON = "no flows in this folder";
-
-  const registrations: ActionRegistrationLike[] = [
+  return [
     {
       id: "flows.run",
       source: "flows",
       label: "Run a flow",
       description: "Run a flow with a task.",
       available: hasFlows,
-      unavailableReason: REASON,
+      unavailableReason: "no flows in this folder",
       payloadSchema: [
         { key: "flow", label: "Flow", type: "enum", options: discoverFlows, help: "Discovered in .pi/flows/flows" },
         { key: "task", label: "Task", type: "multiline", help: "Passed as the flow's initial task." },
       ],
       // Emit flow:run into the run session (the event pi-flows listens for),
       // not a slash-command prompt. Runs finalize on agent_end.
-      // See change: automation-emit-configured-event.
       buildEvent: ({ payload }) => {
         const flow = String(payload.flow ?? "").trim();
         if (!FLOW_ID_RE.test(flow)) return null;
@@ -117,35 +103,16 @@ export function registerFlowAutomationActions(
       },
     },
   ];
-
-  const registered: string[] = [];
-  const rejected: string[] = [];
-  for (const reg of registrations) {
-    if (registry.register(reg)) registered.push(reg.id);
-    else rejected.push(reg.id);
-  }
-  if (registered.length > 0) {
-    log(`[flows] registered automation actions: ${registered.join(", ")}`);
-  }
-  if (rejected.length > 0) {
-    (warn ?? log)(`[flows] automation action registration rejected: ${rejected.join(", ")}`);
-  }
 }
 
 /**
- * Consume the automation action registry and register flows actions. No-ops
- * (with a warning) when the registry is absent — flows loads fine without
- * the automation plugin.
+ * Publish the flows action contribution for automation to collect. Pure
+ * publisher: consumes nothing, references no automation code, order-agnostic.
  */
-export function wireFlowAutomationActions(
-  consume: (name: string) => unknown,
+export function provideFlowsActions(
+  provide: (name: string, value: unknown) => void,
   log: (m: string) => void,
-  warn: (m: string) => void,
 ): void {
-  const reg = consume(ACTION_REGISTRY_SERVICE) as ActionRegistryLike | undefined;
-  if (!reg || typeof reg.register !== "function") {
-    warn("[flows] automation action registry unavailable; skipping action registration");
-    return;
-  }
-  registerFlowAutomationActions(reg, log, warn);
+  provide(ACTION_CONTRIBUTION_KEY, flowsActionContributions());
+  log("[flows] published automation action: flows.run");
 }

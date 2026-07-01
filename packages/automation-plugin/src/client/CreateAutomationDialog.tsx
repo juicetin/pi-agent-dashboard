@@ -972,6 +972,8 @@ function ActionPayloadForm({
               className="input"
             />
           ) : (
+            // string | text | any UNKNOWN type → plain text input (forward-compat
+            // fallback for a newer contributor). See change: decouple-automation-action-registry.
             <input
               type="text"
               value={values[f.key] ?? ""}

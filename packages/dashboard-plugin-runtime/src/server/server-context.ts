@@ -144,6 +144,16 @@ export type ProvideFn = (name: string, value: unknown) => void;
  */
 export type ConsumeFn = <T = unknown>(name: string) => T | undefined;
 
+/**
+ * Enumerate every value published via `provide(name, …)` whose `name` starts
+ * with `prefix`, paired with its key. Enables publish/collect: producers
+ * `provide` under a namespaced key, a consumer collects the namespace lazily,
+ * independent of plugin load order. In-process only (never crosses the
+ * bridge). Returns `[]` when nothing matches (never throws). Result order is
+ * unspecified. See change: decouple-automation-action-registry.
+ */
+export type ConsumeAllFn = <T = unknown>(prefix: string) => Array<{ key: string; value: T }>;
+
 /** Full ServerPluginContext API exposed to plugin server entries. */
 export interface ServerPluginContext {
   fastify: FastifyInstance;
@@ -183,6 +193,11 @@ export interface ServerPluginContext {
    * absent. See change: register-plugin-automation-events.
    */
   consume: ConsumeFn;
+  /**
+   * Collect every value published under keys starting with `prefix`.
+   * See change: decouple-automation-action-registry.
+   */
+  consumeAll: ConsumeAllFn;
   getPluginConfig<T = Record<string, unknown>>(): T;
   updatePluginConfig<T = Record<string, unknown>>(partial: Partial<T>): Promise<void>;
   logger: PluginLogger;
@@ -203,6 +218,7 @@ export interface ServerContextDeps {
   abortSession: AbortSessionFn;
   provide: ProvideFn;
   consume: ConsumeFn;
+  consumeAll: ConsumeAllFn;
   getPluginConfig: (pluginId: string) => Record<string, unknown>;
   updatePluginConfig: (pluginId: string, partial: Record<string, unknown>) => Promise<void>;
 }
@@ -230,6 +246,7 @@ export function createServerPluginContext(
     abortSession: deps.abortSession,
     provide: deps.provide,
     consume: deps.consume,
+    consumeAll: deps.consumeAll,
 
     getPluginConfig<T>(): T {
       return deps.getPluginConfig(pluginId) as T;

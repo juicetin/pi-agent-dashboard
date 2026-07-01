@@ -1462,6 +1462,15 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
               provide: (name, value) => { pluginServiceRegistry.set(name, value); },
               consume: <T = unknown>(name: string) =>
                 pluginServiceRegistry.get(name) as T | undefined,
+              // Prefix enumeration for publish/collect (in-process only).
+              // See change: decouple-automation-action-registry.
+              consumeAll: <T = unknown>(prefix: string) => {
+                const out: Array<{ key: string; value: T }> = [];
+                for (const [key, value] of pluginServiceRegistry) {
+                  if (key.startsWith(prefix)) out.push({ key, value: value as T });
+                }
+                return out;
+              },
               registerBrowserHandler: (type, handler) =>
                 browserGateway.registerHandler(type, (msg, ws) =>
                   handler(msg, ws as unknown),

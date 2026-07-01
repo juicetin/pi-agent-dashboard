@@ -20,6 +20,7 @@ function deps(abortSession: ServerContextDeps["abortSession"]): ServerContextDep
     onEvent: () => () => {},
     sendToSession: () => true,
     emitEventToSession: () => true,
+    consumeAll: () => [],
     spawnSession: async () => ({ success: true }),
     abortSession,
     provide: () => {},

@@ -142,7 +142,10 @@ export interface EngineDeps {
    * engine creates one with only the built-ins. See change:
    * register-plugin-automation-events.
    */
-  actionRegistry?: ActionRegistry;
+  /** Resolve the current action registry (collected fresh from published
+   *  contributions). Called at dispatch + scan time. See change:
+   *  decouple-automation-action-registry. */
+  resolveRegistry?: () => ActionRegistry;
   /** Scope targets to scan/arm (global + per-folder). */
   listScopes: () => ScopeTarget[];
   config: () => EngineConfig;
@@ -215,7 +218,7 @@ export function createEngine(deps: EngineDeps): Engine {
 
   const registry = new TriggerRegistry();
   registry.register(scheduleTrigger);
-  const actionRegistry = deps.actionRegistry ?? createActionRegistryWithBuiltins({ warn });
+  const resolveRegistry = deps.resolveRegistry ?? (() => createActionRegistryWithBuiltins({ warn }));
 
   // cwd(normalized) → FIFO queue of RunContexts awaiting register/end
   // correlation. Keyed by cwd (the only signal available at
@@ -307,7 +310,7 @@ export function createEngine(deps: EngineDeps): Engine {
     });
 
     const rec = storeStartRun(scopeBase, automation.name);
-    const dispatch = buildRunDispatch(automation, actionRegistry);
+    const dispatch = buildRunDispatch(automation, resolveRegistry());
     const promptText = dispatch.kind === "prompt" ? dispatch.text : "";
 
     const ctx: RunContext = {
@@ -355,7 +358,7 @@ export function createEngine(deps: EngineDeps): Engine {
     scheduler,
     runner,
     registry,
-    actionRegistry,
+    get actionRegistry() { return resolveRegistry(); },
 
     start(): void {
       this.refresh();
@@ -372,7 +375,7 @@ export function createEngine(deps: EngineDeps): Engine {
               ...(s.scope === "global" ? { homeDir: s.base, scanGlobal: true, scanFolder: false } : {}),
             },
             registry.kinds(),
-            actionRegistry.ids(),
+            resolveRegistry().ids(),
           ),
         );
       }

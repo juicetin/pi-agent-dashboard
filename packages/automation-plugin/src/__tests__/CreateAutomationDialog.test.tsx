@@ -204,6 +204,33 @@ describe("CreateAutomationDialog (redesign)", () => {
     });
   });
 
+  it("renders an unknown payload field type as a text input (fallback) and writes its value", async () => {
+    listActions.mockResolvedValue([
+      { id: "core.prompt", source: "core", label: "Prompt", available: true, payloadSchema: [] },
+      {
+        id: "future.act",
+        source: "future",
+        label: "Future action",
+        available: true,
+        payloadSchema: [{ key: "weird", label: "Weird", type: "totally-new-type" }],
+      },
+    ]);
+    const { getByTestId } = render(wrap(<CreateAutomationDialog cwd="/repo" onClose={() => {}} />));
+    fireEvent.change(getByTestId("create-name"), { target: { value: "fut" } });
+    await waitFor(() => expect(getByTestId("action-group-future")).toBeTruthy());
+    fireEvent.click(getByTestId("action-group-future"));
+    fireEvent.click(getByTestId("create-action-future.act"));
+    // unknown type still renders an editable control (text input fallback)
+    await waitFor(() => expect(getByTestId("action-payload-weird")).toBeTruthy());
+    fireEvent.change(getByTestId("action-payload-weird"), { target: { value: "hello" } });
+    fireEvent.click(getByTestId("create-submit"));
+    await waitFor(() => expect(createAutomation).toHaveBeenCalled());
+    expect(createAutomation.mock.calls[0]![0]!.config.action).toEqual({
+      kind: "future.act",
+      payload: { weird: "hello" },
+    });
+  });
+
   it("renders next-run as a relative duration and writes raw cron", async () => {
     const { getByTestId } = render(wrap(<CreateAutomationDialog cwd="/repo" onClose={() => {}} />));
     expect(getByTestId("create-next-run").textContent).toMatch(/in \d/);

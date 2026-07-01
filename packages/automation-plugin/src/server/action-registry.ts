@@ -168,39 +168,76 @@ function safeOptions(fn: (cwd: string) => string[], cwd: string): string[] {
 }
 
 /**
- * Build a registry seeded with the built-in `core.prompt` + `core.skill`
- * actions. These reproduce the legacy prompt/skill seed-prompt behavior.
+ * The automation plugin's built-in action contributions (`core.prompt` +
+ * `core.skill`). Published under `automation.action.core` and collected like
+ * any plugin's contribution — built-ins are peers, not privileged.
+ * See change: decouple-automation-action-registry.
+ */
+export function coreActionContributions(): ActionRegistration[] {
+  return [
+    {
+      id: "core.prompt",
+      source: "core",
+      label: "Prompt",
+      description: "Seed a fresh session with a prompt file.",
+      buildPrompt: ({ automation }) => {
+        const action = automation.config?.action;
+        const p = action?.prompt;
+        if (!p) return "";
+        const promptPath = path.isAbsolute(p) ? p : path.join(automation.dir, p);
+        try {
+          return fs.readFileSync(promptPath, "utf-8").trim();
+        } catch {
+          return "";
+        }
+      },
+    },
+    {
+      id: "core.skill",
+      source: "core",
+      label: "Skill",
+      description: "Invoke a $skill in a fresh session.",
+      buildPrompt: ({ automation }) => {
+        const skill = automation.config?.action?.skill;
+        if (!skill) return "";
+        return skill.startsWith("$") ? skill : `$${skill}`;
+      },
+    },
+  ];
+}
+
+/**
+ * Build a registry seeded with the built-in `core.*` actions. Used as the
+ * engine's standalone fallback + in tests; the automation plugin instead
+ * publishes `coreActionContributions()` and collects (publish/collect).
  */
 export function createActionRegistryWithBuiltins(opts?: { warn?: (msg: string) => void }): ActionRegistry {
   const reg = new ActionRegistry(opts);
-  reg.register({
-    id: "core.prompt",
-    source: "core",
-    label: "Prompt",
-    description: "Seed a fresh session with a prompt file.",
-    buildPrompt: ({ automation }) => {
-      const action = automation.config?.action;
-      const p = action?.prompt;
-      if (!p) return "";
-      const promptPath = path.isAbsolute(p) ? p : path.join(automation.dir, p);
-      try {
-        return fs.readFileSync(promptPath, "utf-8").trim();
-      } catch {
-        return "";
-      }
-    },
-  });
-  reg.register({
-    id: "core.skill",
-    source: "core",
-    label: "Skill",
-    description: "Invoke a $skill in a fresh session.",
-    buildPrompt: ({ automation }) => {
-      const skill = automation.config?.action?.skill;
-      if (!skill) return "";
-      return skill.startsWith("$") ? skill : `$${skill}`;
-    },
-  });
+  for (const c of coreActionContributions()) reg.register(c);
+  return reg;
+}
+
+/** Prefix under which action contributions are published for collection. */
+export const ACTION_CONTRIBUTION_PREFIX = "automation.action.";
+
+/**
+ * Collect all published action contributions into a fresh registry. Each
+ * publisher provides an `ActionRegistration` or array under
+ * `automation.action.<source>`. Registration guards (id shape, duplicate,
+ * exactly-one dispatch, per-source cap) apply during collection.
+ * See change: decouple-automation-action-registry.
+ */
+export function collectActionRegistry(
+  entries: Array<{ key: string; value: unknown }>,
+  opts?: { warn?: (msg: string) => void },
+): ActionRegistry {
+  const reg = new ActionRegistry(opts);
+  for (const { value } of entries) {
+    const contribs = Array.isArray(value) ? value : [value];
+    for (const c of contribs) {
+      if (c && typeof c === "object") reg.register(c as ActionRegistration);
+    }
+  }
   return reg;
 }
 

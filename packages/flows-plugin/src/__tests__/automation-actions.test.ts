@@ -1,7 +1,8 @@
 /**
- * Flows → automation action registration: per-cwd discovery, availability
- * gating, enum options, seed-prompt building, and graceful no-op when the
- * registry is absent. See change: register-plugin-automation-events.
+ * Flows → automation action contribution (publish/collect): per-cwd flow
+ * discovery, availability gating, enum options, flow:run event build, and
+ * pure-publisher wiring (provide, no consume). See change:
+ * decouple-automation-action-registry.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import fs from "node:fs";
@@ -9,9 +10,9 @@ import os from "node:os";
 import path from "node:path";
 import {
   discoverFlows,
-  registerFlowAutomationActions,
-  wireFlowAutomationActions,
-  type ActionRegistryLike,
+  flowsActionContributions,
+  provideFlowsActions,
+  ACTION_CONTRIBUTION_KEY,
 } from "../server/automation-actions.js";
 
 function mkFlow(root: string, ns: string, name: string): void {
@@ -28,18 +29,6 @@ afterEach(() => {
   fs.rmSync(tmp, { recursive: true, force: true });
 });
 
-/** Minimal registry capturing registrations. */
-function capturingRegistry() {
-  const regs: Parameters<ActionRegistryLike["register"]>[0][] = [];
-  const registry: ActionRegistryLike = {
-    register: (r) => {
-      regs.push(r);
-      return true;
-    },
-  };
-  return { registry, regs };
-}
-
 describe("discoverFlows", () => {
   it("lists <ns>:<name> for each flow.yaml, sorted", () => {
     mkFlow(tmp, "test", "capabilities");
@@ -52,15 +41,13 @@ describe("discoverFlows", () => {
   });
 });
 
-describe("registerFlowAutomationActions", () => {
-  it("registers flows.run only (no resume/cancel); gated on cwd flows; enum options resolve", () => {
-    const { registry, regs } = capturingRegistry();
-    registerFlowAutomationActions(registry, () => {});
-    expect(regs.map((r) => r.id)).toEqual(["flows.run"]);
-    expect(regs.find((r) => r.id === "flows.resume")).toBeUndefined();
-    expect(regs.find((r) => r.id === "flows.cancel")).toBeUndefined();
+describe("flowsActionContributions", () => {
+  it("contributes flows.run only (no resume/cancel); gated on cwd flows; enum options resolve", () => {
+    const contribs = flowsActionContributions();
+    expect(contribs.map((c) => c.id)).toEqual(["flows.run"]);
 
-    const run = regs.find((r) => r.id === "flows.run")!;
+    const run = contribs[0]!;
+    expect(run.source).toBe("flows");
     expect(run.available!(tmp)).toBe(false); // no flows yet
     mkFlow(tmp, "test", "capabilities");
     expect(run.available!(tmp)).toBe(true);
@@ -71,9 +58,7 @@ describe("registerFlowAutomationActions", () => {
   });
 
   it("flows.run emits a flow:run event (flowName+task)", () => {
-    const { registry, regs } = capturingRegistry();
-    registerFlowAutomationActions(registry, () => {});
-    const run = regs.find((r) => r.id === "flows.run")!;
+    const run = flowsActionContributions()[0]!;
     expect(run.buildEvent!({ payload: { flow: "test:capabilities", task: "do it" }, automation: {} }))
       .toEqual({ eventType: "flow:run", data: { flowName: "test:capabilities", task: "do it" } });
     // task optional
@@ -82,31 +67,21 @@ describe("registerFlowAutomationActions", () => {
   });
 
   it("flows.run rejects a malformed flow id (emits nothing)", () => {
-    const { registry, regs } = capturingRegistry();
-    registerFlowAutomationActions(registry, () => {});
-    const run = regs.find((r) => r.id === "flows.run")!;
+    const run = flowsActionContributions()[0]!;
     expect(run.buildEvent!({ payload: { flow: "test:cap x", task: "t" }, automation: {} })).toBeNull();
     expect(run.buildEvent!({ payload: { flow: "nocolon", task: "t" }, automation: {} })).toBeNull();
     expect(run.buildEvent!({ payload: { flow: "" }, automation: {} })).toBeNull();
   });
-
-  it("warns and skips when the registration is rejected by the registry", () => {
-    const warn = vi.fn();
-    const registry: ActionRegistryLike = { register: () => false };
-    registerFlowAutomationActions(registry, () => {}, warn);
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining("flows.run"));
-  });
 });
 
-describe("wireFlowAutomationActions", () => {
-  it("registers when the registry is present", () => {
-    const { registry, regs } = capturingRegistry();
-    wireFlowAutomationActions((name) => (name === "automation.action-registry" ? registry : undefined), () => {}, () => {});
-    expect(regs.length).toBe(1);
-  });
-  it("no-ops with a warning when the registry is absent", () => {
-    const warn = vi.fn();
-    wireFlowAutomationActions(() => undefined, () => {}, warn);
-    expect(warn).toHaveBeenCalled();
+describe("provideFlowsActions (pure publisher)", () => {
+  it("publishes the contribution under automation.action.flows and consumes nothing", () => {
+    const provide = vi.fn();
+    provideFlowsActions(provide, () => {});
+    expect(provide).toHaveBeenCalledTimes(1);
+    const [key, value] = provide.mock.calls[0]!;
+    expect(key).toBe(ACTION_CONTRIBUTION_KEY);
+    expect(key).toBe("automation.action.flows");
+    expect((value as Array<{ id: string }>).map((c) => c.id)).toEqual(["flows.run"]);
   });
 });

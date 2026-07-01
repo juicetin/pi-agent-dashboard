@@ -69,7 +69,11 @@ export const BUILTIN_ACTION_ALIASES = { prompt: "core.prompt", skill: "core.skil
 
 /** One field in an action's payload schema. `enum` options are resolved
  *  per-cwd server-side and sent to the client already-populated.
- *  See change: register-plugin-automation-events. */
+ *  `type` is a CLOSED, versioned primitive set: the client renders one
+ *  control per known type and falls back to a text input for an unrecognized
+ *  type (forward-compat with a newer contributor). Adding a type = one
+ *  versioned extension here + one client renderer.
+ *  See change: register-plugin-automation-events, decouple-automation-action-registry. */
 export interface ActionPayloadField {
   key: string;
   label: string;

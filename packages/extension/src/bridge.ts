@@ -848,6 +848,18 @@ function initBridge(pi: ExtensionAPI) {
       // Now handled by PromptBus: dashboard sends prompt_response,
       // bus calls respond(), adapters get onResponse() for cross-cancellation.
       // Route flow control messages to pi-flows via pi.events
+      // Generic plugin-registered event emission. A dashboard plugin action
+      // (e.g. automation) emits a configured event INTO this session; the
+      // bridge relays it onto pi.events. Decoupled: the bridge does not know
+      // which events exist. See change: automation-emit-configured-event.
+      if (msg.type === "plugin_emit_event" && pi.events) {
+        const eventType = (msg as { eventType?: unknown }).eventType;
+        if (typeof eventType === "string" && eventType.length > 0) {
+          const data = (msg as { data?: unknown }).data;
+          pi.events.emit(eventType, data && typeof data === "object" ? (data as Record<string, unknown>) : {});
+        }
+        return;
+      }
       if (msg.type === "flow_control" && pi.events) {
         if (msg.action === "abort") {
           pi.events.emit("flow:abort", {});

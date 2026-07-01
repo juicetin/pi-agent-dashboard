@@ -81,4 +81,25 @@ describe("ActionRegistry", () => {
     const sources = ds.map((d) => d.source);
     expect(sources).toEqual([...sources].sort());
   });
+
+  it("accepts an event-dispatch action (buildEvent)", () => {
+    const reg = new ActionRegistry();
+    const ok = reg.register({
+      id: "flows.run", source: "flows", label: "Run",
+      buildEvent: () => ({ eventType: "flow:run", data: {} }),
+    });
+    expect(ok).toBe(true);
+    expect(reg.get("flows.run")?.buildEvent).toBeDefined();
+  });
+
+  it("rejects an action with neither or both of buildPrompt/buildEvent", () => {
+    const warn = vi.fn();
+    const reg = new ActionRegistry({ warn });
+    expect(reg.register({ id: "x.none", source: "x", label: "N" } as any)).toBe(false);
+    expect(reg.register({
+      id: "x.both", source: "x", label: "B",
+      buildPrompt: noopBuild, buildEvent: () => null,
+    } as any)).toBe(false);
+    expect(warn).toHaveBeenCalledTimes(2);
+  });
 });

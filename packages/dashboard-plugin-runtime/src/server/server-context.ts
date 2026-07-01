@@ -54,6 +54,22 @@ export type OnEventFn = (handler: (sessionId: string, event: unknown) => void) =
  */
 export type SendToSessionFn = (sessionId: string, text: string) => boolean;
 
+/**
+ * Emit a configured pi event INTO a running session's in-process event bus
+ * (relayed over the bridge as a `plugin_emit_event` control message; the
+ * in-session bridge does `pi.events.emit(eventType, data)`). Decoupled: the
+ * host does not know which events exist — a plugin action emits whatever it
+ * registered. Gated to first-party / trusted plugins (same gate as
+ * `spawnSession`/`abortSession`): untrusted plugins get a hook returning
+ * `false` without sending. Returns `true` when the control message was
+ * dispatched to a connected session. See change: automation-emit-configured-event.
+ */
+export type EmitEventToSessionFn = (
+  sessionId: string,
+  eventType: string,
+  data?: Record<string, unknown>,
+) => boolean;
+
 /** Register a handler for a browser WebSocket message type. */
 export type RegisterBrowserHandlerFn = (type: string, handler: (msg: unknown, ws: unknown) => void) => void;
 
@@ -141,6 +157,11 @@ export interface ServerPluginContext {
   /** Send a prompt/command into a running session. See change: add-goal-continuation-plugin. */
   sendToSession: SendToSessionFn;
   /**
+   * Emit a configured pi event into a running session. See change:
+   * automation-emit-configured-event.
+   */
+  emitEventToSession: EmitEventToSessionFn;
+  /**
    * Spawn a new pi session. Gated to first-party/trusted plugins; untrusted
    * plugins get a hook that always resolves `{ success: false }`.
    * See change: add-automation-plugin.
@@ -177,6 +198,7 @@ export interface ServerContextDeps {
   registerBrowserHandler: RegisterBrowserHandlerFn;
   onEvent: OnEventFn;
   sendToSession: SendToSessionFn;
+  emitEventToSession: EmitEventToSessionFn;
   spawnSession: SpawnSessionFn;
   abortSession: AbortSessionFn;
   provide: ProvideFn;
@@ -203,6 +225,7 @@ export function createServerPluginContext(
     registerBrowserHandler: deps.registerBrowserHandler,
     onEvent: deps.onEvent,
     sendToSession: deps.sendToSession,
+    emitEventToSession: deps.emitEventToSession,
     spawnSession: deps.spawnSession,
     abortSession: deps.abortSession,
     provide: deps.provide,

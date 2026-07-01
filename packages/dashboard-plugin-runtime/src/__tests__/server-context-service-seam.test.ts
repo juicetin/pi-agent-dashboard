@@ -20,6 +20,7 @@ function depsWithSharedRegistry(): ServerContextDeps {
     registerBrowserHandler: () => {},
     onEvent: () => () => {},
     sendToSession: () => true,
+    emitEventToSession: () => true,
     spawnSession: async () => ({ success: true }),
     abortSession: () => true,
     provide: (name, value) => { registry.set(name, value); },

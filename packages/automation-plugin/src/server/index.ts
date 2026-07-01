@@ -187,7 +187,11 @@ async function initEngine(ctx: ServerPluginContext): Promise<void> {
         // retries) and clear the half-initialized buffers instead of
         // stranding a "delivered" run that never received its prompt.
         try {
-          if (pendingRun.promptText) {
+          if (pendingRun.emitEvent) {
+            // Event-dispatch action: emit the configured event into the run
+            // session instead of seeding a prompt.
+            ctx.emitEventToSession(sessionId, pendingRun.emitEvent.eventType, pendingRun.emitEvent.data);
+          } else if (pendingRun.promptText) {
             runPrompt.set(sessionId, pendingRun.promptText);
             ctx.sendToSession(sessionId, pendingRun.promptText);
           }
@@ -197,7 +201,7 @@ async function initEngine(ctx: ServerPluginContext): Promise<void> {
           runPrompt.delete(sessionId);
           runText.delete(sessionId);
           logger.warn(
-            `automation prompt delivery failed for runId=${stampedRunId}: ${err instanceof Error ? err.message : String(err)}`,
+            `automation action delivery failed for runId=${stampedRunId}: ${err instanceof Error ? err.message : String(err)}`,
           );
         }
       }

@@ -53,10 +53,12 @@ describe("discoverFlows", () => {
 });
 
 describe("registerFlowAutomationActions", () => {
-  it("registers run/resume/cancel; available gated on cwd flows; enum options resolve", () => {
+  it("registers flows.run only (no resume/cancel); gated on cwd flows; enum options resolve", () => {
     const { registry, regs } = capturingRegistry();
     registerFlowAutomationActions(registry, () => {});
-    expect(regs.map((r) => r.id)).toEqual(["flows.run", "flows.resume", "flows.cancel"]);
+    expect(regs.map((r) => r.id)).toEqual(["flows.run"]);
+    expect(regs.find((r) => r.id === "flows.resume")).toBeUndefined();
+    expect(regs.find((r) => r.id === "flows.cancel")).toBeUndefined();
 
     const run = regs.find((r) => r.id === "flows.run")!;
     expect(run.available!(tmp)).toBe(false); // no flows yet
@@ -68,34 +70,31 @@ describe("registerFlowAutomationActions", () => {
     expect(flowField.options!(tmp)).toEqual(["test:capabilities"]);
   });
 
-  it("flows.run.buildPrompt emits /<ns>:<name> <task>", () => {
+  it("flows.run emits a flow:run event (flowName+task)", () => {
     const { registry, regs } = capturingRegistry();
     registerFlowAutomationActions(registry, () => {});
     const run = regs.find((r) => r.id === "flows.run")!;
-    expect(run.buildPrompt({ payload: { flow: "test:capabilities", task: "do it" }, automation: {} }))
-      .toBe("/test:capabilities do it");
-    expect(run.buildPrompt({ payload: { flow: "", task: "x" }, automation: {} })).toBe("");
+    expect(run.buildEvent!({ payload: { flow: "test:capabilities", task: "do it" }, automation: {} }))
+      .toEqual({ eventType: "flow:run", data: { flowName: "test:capabilities", task: "do it" } });
+    // task optional
+    expect(run.buildEvent!({ payload: { flow: "test:capabilities" }, automation: {} }))
+      .toEqual({ eventType: "flow:run", data: { flowName: "test:capabilities" } });
   });
 
-  it("rejects malformed flow/runId payloads (no mangled slash command)", () => {
+  it("flows.run rejects a malformed flow id (emits nothing)", () => {
     const { registry, regs } = capturingRegistry();
     registerFlowAutomationActions(registry, () => {});
     const run = regs.find((r) => r.id === "flows.run")!;
-    const resume = regs.find((r) => r.id === "flows.resume")!;
-    const cancel = regs.find((r) => r.id === "flows.cancel")!;
-    // whitespace / control chars / missing ns shift the command boundary → empty
-    expect(run.buildPrompt({ payload: { flow: "test:cap x", task: "t" }, automation: {} })).toBe("");
-    expect(run.buildPrompt({ payload: { flow: "nocolon", task: "t" }, automation: {} })).toBe("");
-    expect(resume.buildPrompt({ payload: { flow: "a b:c" }, automation: {} })).toBe("");
-    expect(cancel.buildPrompt({ payload: { runId: "bad id" }, automation: {} })).toBe("");
-    expect(cancel.buildPrompt({ payload: { runId: "run-123" }, automation: {} })).toBe("/flows:cancel run-123");
+    expect(run.buildEvent!({ payload: { flow: "test:cap x", task: "t" }, automation: {} })).toBeNull();
+    expect(run.buildEvent!({ payload: { flow: "nocolon", task: "t" }, automation: {} })).toBeNull();
+    expect(run.buildEvent!({ payload: { flow: "" }, automation: {} })).toBeNull();
   });
 
-  it("warns and skips when a registration is rejected by the registry", () => {
+  it("warns and skips when the registration is rejected by the registry", () => {
     const warn = vi.fn();
-    const registry: ActionRegistryLike = { register: (r) => r.id !== "flows.resume" };
+    const registry: ActionRegistryLike = { register: () => false };
     registerFlowAutomationActions(registry, () => {}, warn);
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining("flows.resume"));
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("flows.run"));
   });
 });
 
@@ -103,7 +102,7 @@ describe("wireFlowAutomationActions", () => {
   it("registers when the registry is present", () => {
     const { registry, regs } = capturingRegistry();
     wireFlowAutomationActions((name) => (name === "automation.action-registry" ? registry : undefined), () => {}, () => {});
-    expect(regs.length).toBe(3);
+    expect(regs.length).toBe(1);
   });
   it("no-ops with a warning when the registry is absent", () => {
     const warn = vi.fn();

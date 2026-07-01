@@ -35,7 +35,12 @@ interface ActionRegistrationLike {
   available?: (cwd: string) => boolean;
   unavailableReason?: string;
   payloadSchema?: ActionFieldSpecLike[];
-  buildPrompt: (args: { payload: Record<string, unknown>; automation: unknown }) => string;
+  /** Event-dispatch: emit a configured event into the run session. */
+  buildEvent?: (args: { payload: Record<string, unknown>; automation: unknown }) =>
+    | { eventType: string; data?: Record<string, unknown> }
+    | null;
+  /** Prompt-dispatch alternative (unused by flows). */
+  buildPrompt?: (args: { payload: Record<string, unknown>; automation: unknown }) => string;
 }
 export interface ActionRegistryLike {
   register(reg: ActionRegistrationLike): boolean;
@@ -74,15 +79,13 @@ export function discoverFlows(cwd: string): string[] {
 }
 
 /**
- * A flow id is `<ns>:<name>` (from discoverFlows); a run id is an opaque
- * token. Both are interpolated into slash commands, so anything with
- * whitespace/control chars would shift the command boundary — reject it and
- * emit no prompt (the run then seeds nothing rather than a mangled command).
+ * A flow id is `<ns>:<name>` (from discoverFlows). It is placed into the
+ * `flow:run` event payload, so a malformed value is rejected (emit nothing)
+ * rather than dispatched. See change: automation-emit-configured-event.
  */
 const FLOW_ID_RE = /^[\w.-]+:[\w.-]+$/;
-const RUN_ID_RE = /^[\w.-]+$/;
 
-/** Register flows.run/resume/cancel into a (structurally-typed) registry. */
+/** Register flows.run into a (structurally-typed) registry. */
 export function registerFlowAutomationActions(
   registry: ActionRegistryLike,
   log: (m: string) => void,
@@ -103,35 +106,14 @@ export function registerFlowAutomationActions(
         { key: "flow", label: "Flow", type: "enum", options: discoverFlows, help: "Discovered in .pi/flows/flows" },
         { key: "task", label: "Task", type: "multiline", help: "Passed as the flow's initial task." },
       ],
-      buildPrompt: ({ payload }) => {
+      // Emit flow:run into the run session (the event pi-flows listens for),
+      // not a slash-command prompt. Runs finalize on agent_end.
+      // See change: automation-emit-configured-event.
+      buildEvent: ({ payload }) => {
         const flow = String(payload.flow ?? "").trim();
+        if (!FLOW_ID_RE.test(flow)) return null;
         const task = String(payload.task ?? "").trim();
-        if (!FLOW_ID_RE.test(flow)) return "";
-        return `/${flow}${task ? ` ${task}` : ""}`;
-      },
-    },
-    {
-      id: "flows.resume",
-      source: "flows",
-      label: "Resume a run",
-      available: hasFlows,
-      unavailableReason: REASON,
-      payloadSchema: [{ key: "flow", label: "Flow", type: "enum", options: discoverFlows }],
-      buildPrompt: ({ payload }) => {
-        const flow = String(payload.flow ?? "").trim();
-        return FLOW_ID_RE.test(flow) ? `/flows:resume ${flow}` : "";
-      },
-    },
-    {
-      id: "flows.cancel",
-      source: "flows",
-      label: "Cancel a run",
-      available: hasFlows,
-      unavailableReason: REASON,
-      payloadSchema: [{ key: "runId", label: "Run id", type: "string" }],
-      buildPrompt: ({ payload }) => {
-        const runId = String(payload.runId ?? "").trim();
-        return RUN_ID_RE.test(runId) ? `/flows:cancel ${runId}` : "";
+        return { eventType: "flow:run", data: { flowName: flow, ...(task ? { task } : {}) } };
       },
     },
   ];

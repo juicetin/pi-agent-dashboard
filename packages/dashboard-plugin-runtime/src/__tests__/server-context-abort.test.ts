@@ -19,6 +19,7 @@ function deps(abortSession: ServerContextDeps["abortSession"]): ServerContextDep
     registerBrowserHandler: () => {},
     onEvent: () => () => {},
     sendToSession: () => true,
+    emitEventToSession: () => true,
     spawnSession: async () => ({ success: true }),
     abortSession,
     provide: () => {},

@@ -54,7 +54,7 @@ export function buildRunPrompt(
   const action = automation.config!.action;
   const reg = actionRegistry?.get(normalizeActionKind(action.kind));
   if (reg) {
-    return reg.buildPrompt({ payload: action.payload ?? {}, automation }).trim();
+    return reg.buildPrompt ? reg.buildPrompt({ payload: action.payload ?? {}, automation }).trim() : "";
   }
   // Legacy fallback (no registry / unregistered): inline prompt|skill.
   if (action.kind === "skill") {
@@ -71,6 +71,32 @@ export function buildRunPrompt(
     }
   }
   return "";
+}
+
+/**
+ * How a run is delivered to its session: seed a prompt, or emit a configured
+ * event. Resolved at start from the action's `buildPrompt`/`buildEvent`.
+ * See change: automation-emit-configured-event.
+ */
+export type RunDispatch =
+  | { kind: "prompt"; text: string }
+  | { kind: "event"; eventType: string; data?: Record<string, unknown> };
+
+/** Resolve the dispatch for an automation's action against the registry. */
+export function buildRunDispatch(
+  automation: DiscoveredAutomation,
+  actionRegistry?: ActionRegistry,
+): RunDispatch {
+  const action = automation.config!.action;
+  const reg = actionRegistry?.get(normalizeActionKind(action.kind));
+  if (reg?.buildEvent) {
+    const ev = reg.buildEvent({ payload: action.payload ?? {}, automation });
+    if (ev && typeof ev.eventType === "string" && ev.eventType.length > 0) {
+      return { kind: "event", eventType: ev.eventType, ...(ev.data ? { data: ev.data } : {}) };
+    }
+    return { kind: "prompt", text: "" };
+  }
+  return { kind: "prompt", text: buildRunPrompt(automation, actionRegistry) };
 }
 
 /** Effective board visibility: per-automation field ?? settings default. */
@@ -135,6 +161,8 @@ export interface RunContext {
   automation: DiscoveredAutomation;
   cwd: string;
   promptText: string;
+  /** When set, dispatch emits this event into the session instead of a prompt. */
+  emitEvent?: { eventType: string; data?: Record<string, unknown> };
   modelError?: string;
   sessionId?: string;
   delivered: boolean;
@@ -279,7 +307,8 @@ export function createEngine(deps: EngineDeps): Engine {
     });
 
     const rec = storeStartRun(scopeBase, automation.name);
-    const promptText = buildRunPrompt(automation, actionRegistry);
+    const dispatch = buildRunDispatch(automation, actionRegistry);
+    const promptText = dispatch.kind === "prompt" ? dispatch.text : "";
 
     const ctx: RunContext = {
       key: automationKey(automation),
@@ -288,6 +317,9 @@ export function createEngine(deps: EngineDeps): Engine {
       automation,
       cwd: normalize(runCwd),
       promptText,
+      ...(dispatch.kind === "event"
+        ? { emitEvent: { eventType: dispatch.eventType, ...(dispatch.data ? { data: dispatch.data } : {}) } }
+        : {}),
       ...(resolved.error ? { modelError: resolved.error } : {}),
       delivered: false,
     };

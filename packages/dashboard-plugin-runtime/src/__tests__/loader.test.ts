@@ -21,6 +21,7 @@ function makeFakeContext(): ServerPluginContext {
     registerPiHandler: () => {},
     onEvent: () => () => {},
     sendToSession: () => true,
+    emitEventToSession: () => true,
     spawnSession: async () => ({ success: false }),
     abortSession: () => false,
     provide: () => {},

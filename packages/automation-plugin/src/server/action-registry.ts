@@ -35,7 +35,18 @@ export interface ActionFieldSpec {
   options?: (cwd: string) => string[];
 }
 
-/** A registered action (server-side, carries functions). */
+/** Event an action emits into the run session (via emitEventToSession). */
+export interface ActionEvent {
+  eventType: string;
+  data?: Record<string, unknown>;
+}
+
+/**
+ * A registered action (server-side, carries functions). An action dispatches
+ * either by seeding a prompt (`buildPrompt`) OR by emitting a configured event
+ * (`buildEvent`) into the spawned run session — exactly one. Runs finalize on
+ * `agent_end`. See change: automation-emit-configured-event.
+ */
 export interface ActionRegistration {
   /** Namespaced id `<source>.<verb>`. */
   id: string;
@@ -49,10 +60,15 @@ export interface ActionRegistration {
   unavailableReason?: string;
   payloadSchema?: ActionFieldSpec[];
   /** Produce the run session's seed prompt from the action payload. */
-  buildPrompt: (args: {
+  buildPrompt?: (args: {
     payload: Record<string, unknown>;
     automation: DiscoveredAutomation;
   }) => string;
+  /** Produce the event emitted into the run session. `null` emits nothing. */
+  buildEvent?: (args: {
+    payload: Record<string, unknown>;
+    automation: DiscoveredAutomation;
+  }) => ActionEvent | null;
 }
 
 export class ActionRegistry {
@@ -72,6 +88,10 @@ export class ActionRegistry {
   register(reg: ActionRegistration): boolean {
     if (!/^[a-z0-9-]+\.[a-z0-9-]+$/i.test(reg.id)) {
       this.warn(`[action-registry] rejected malformed action id "${reg.id}" (expected <source>.<verb>)`);
+      return false;
+    }
+    if (!reg.buildPrompt === !reg.buildEvent) {
+      this.warn(`[action-registry] rejected "${reg.id}": exactly one of buildPrompt/buildEvent required`);
       return false;
     }
     if (this.byId.has(reg.id)) {

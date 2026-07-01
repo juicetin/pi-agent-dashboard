@@ -1658,6 +1658,26 @@ function initBridge(pi: ExtensionAPI) {
         } catch (err) {
           console.error("[dashboard] tool-result image inline failed:", err);
         }
+        // Forward the tool result's structured `details` to the client. pi's
+        // live tool_execution_end extension event exposes the full ToolResult
+        // ({ content, details }) on `event.result`, but only `result` is
+        // otherwise surfaced — the reducer reads a top-level `data.details`
+        // (the same field the replay path synthesizes from the persisted
+        // entry). Lift `result.details` to the event so renderers (e.g. the
+        // flow_agents list card) get a non-truncated structured payload LIVE,
+        // not only after a replay/refresh. No-op when result carries no
+        // details or already has a top-level details.
+        // See change: flow-agents-readable-list.
+        try {
+          const r = (event as any).result;
+          if (
+            !(event as any).details &&
+            r && typeof r === "object" && !Array.isArray(r) &&
+            (r as any).details && typeof (r as any).details === "object"
+          ) {
+            (event as any).details = (r as any).details;
+          }
+        } catch { /* non-fatal */ }
       }
 
       const msg = mapEventToProtocol(sessionId, event);

@@ -1581,6 +1581,7 @@ export default function App() {
             status={selectedState.status}
             currentTool={selectedState.currentTool}
             streamingText={selectedState.streamingText || undefined}
+            onRefreshModels={() => selectedId && send({ type: "request_models", sessionId: selectedId })}
             leading={selectedSession && selectedCwd ? (
               <>
                 <StatusBarRefreshButton cwd={selectedCwd} onRefresh={handleOpenSpecRefresh} />

@@ -13,11 +13,14 @@ The back action SHALL resolve its target as follows:
 - Otherwise it SHALL navigate explicitly to the computed parent route `computeBackTarget(currentRoute)`, which returns the matched descriptor's `computeParent(...)` result, or the depth default when no `computeParent` is declared:
   - Depth 1 (`/session/:id`, `/folder/:cwd/...`, `/settings`, `/tunnel-setup`, and depth-1 plugin routes) → `/`.
   - Depth 2 `/session/:id/diff` → `/session/:id` (strip the `/diff` segment).
-  - Depth 2 overlays whose URL does not encode their launching detail (`/folder/:cwd/openspec/*`, `/folder/:cwd/pi-resources`, `/pi-resource?…`) → `/`.
-  - Depth 2 plugin routes with a declared `parentPath` → that parent (params interpolated from the current match).
+  - Depth 2 `/session/:id/editor` → `/session/:id` (internal Monaco editor pane, opened from a file-read preview's "Open").
+  - Depth 2 overlays whose URL does not encode their launching detail (`/folder/:cwd/openspec/*`, `/folder/:cwd/pi-resources`, `/pi-resource?…`, `/automation/run/:sid`) → `/`.
+  - Depth 2 plugin routes with a declared `parentPath` → that parent (params interpolated from the current match); when the current URL cannot supply a `parentPath` `:param` (e.g. `/automation/run/:sid` cannot fill `:encodedCwd`), `computeParent` SHALL degrade to `/` and the launching route SHALL instead be reached via the tracked-predecessor fast-path.
   - Depth 0 → no-op.
 
-The back action SHALL NEVER land on a sibling route of the same depth that was not the launching route (e.g. an unrelated `/session/:id`) and SHALL NEVER navigate outside the dashboard application. The app SHALL maintain the tracked navigation stack by appending each in-app navigation (tagged with its derived depth), overwriting the stack top on `replace`-style navigations, and realigning on `popstate`.
+The back action SHALL NEVER land on a sibling route of the same depth that was not the launching route (e.g. an unrelated `/session/:id`) and SHALL NEVER navigate outside the dashboard application. The app SHALL maintain the tracked navigation stack by appending each navigation (tagged with its derived depth), overwriting the stack top on `replace`-style navigations, and realigning on `popstate`.
+
+The tracker SHALL record navigations regardless of how they are issued — through the app's wrapped `navigate` OR through a component's direct history mutation (a plugin using wouter's raw `useLocation`, a wouter `<Link>`, or session-card routing). To capture the latter, `initNavTracker` SHALL patch `history.pushState`/`replaceState` (composing over any existing patch, e.g. wouter's) so an untracked navigation into a depth-2 plugin overlay (e.g. the automation run monitor, whose `computeParent` degrades to `/`) still records its shallower launching predecessor, letting the `history.back()` fast-path return there instead of falling back to `/`. The patch SHALL be reverted on teardown and its restore SHALL be idempotent.
 
 #### Scenario: Back from chat returns to cards regardless of prior chats
 - **GIVEN** the user navigated `/` → `/session/A` → `/session/B` (both depth 1)
@@ -36,8 +39,27 @@ The back action SHALL NEVER land on a sibling route of the same depth that was n
 - **THEN** `routeDepth` SHALL return `1` (not `0`)
 - **AND** the back action SHALL navigate to `/` rather than early-returning as a no-op
 
-#### Scenario: Plugin overlay route with a declared parent returns to it
-- **GIVEN** a plugin claim declaring `path: "/automation/run/:sid"` with `depth: 2` and `parentPath: "/folder/:encodedCwd/automations"`
-- **AND** the user opened the run monitor from the board for cwd `/Users/u/proj`
+#### Scenario: Plugin overlay route with an interpolable parent returns to it
+- **GIVEN** a plugin claim declaring `path: "/folder/:encodedCwd/thing/:id"` with `depth: 2` and `parentPath: "/folder/:encodedCwd/thing"`
+- **AND** the current URL supplies `:encodedCwd`
+- **WHEN** the user invokes the depth-aware back action with no tracked predecessor
+- **THEN** `computeParent` SHALL interpolate `:encodedCwd` and navigate to `/folder/<cwd>/thing`
+
+#### Scenario: Core editor overlay backs to its session
+- **GIVEN** the user opened the internal editor at `/session/abc/editor?file=AGENTS.md` from a file-read preview
 - **WHEN** the user invokes the depth-aware back action
-- **THEN** the back action SHALL navigate to `/folder/<encoded /Users/u/proj>/automations`
+- **THEN** `routeDepth` SHALL return `2`
+- **AND** `computeBackTarget` SHALL return `/session/abc`
+
+#### Scenario: Untracked navigation into a plugin overlay is still recorded
+- **GIVEN** a component navigates via wouter's raw `useLocation` (a direct `history.pushState`) from `/session/abc` (depth 1) into `/automation/run/S` (depth 2), bypassing the app's wrapped `navigate`
+- **WHEN** the user invokes the depth-aware back action
+- **THEN** the tracker (having observed the `pushState`) SHALL expose `/session/abc` as a strictly-shallower predecessor
+- **AND** the back action SHALL invoke `window.history.back()` returning to `/session/abc`, NOT navigate to `/`
+
+#### Scenario: Run monitor back returns to its launching route
+- **GIVEN** the user opened `/automation/run/S` (depth 2) from the board `/folder/<encoded /Users/u/proj>/automations` (depth 1)
+- **AND** `computeParent` for the run route degrades to `/` because the run URL cannot supply `:encodedCwd`
+- **WHEN** the user invokes the depth-aware back action
+- **THEN** the tracked shallower predecessor (the board) SHALL be returned to via `window.history.back()`
+- **AND** the back action SHALL NOT land on `/`

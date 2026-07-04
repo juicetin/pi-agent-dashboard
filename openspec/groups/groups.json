@@ -164,7 +164,6 @@
     "add-debugging-skills": "ui",
     "attribute-openspec-poll-eventloop-stalls": "ui",
     "bundle-disciplines-in-project-init": "ui",
-    "flag-package-source-overrides": "ui",
     "wire-discipline-skills-into-openspec": "ui",
     "add-panel-elevation-system": "ui",
     "folder-resource-activation-toggle": "ui",
@@ -179,7 +178,6 @@
     ],
     "ui": [
       "fix-node-electron-resolution-test-isolation",
-      "flag-package-source-overrides",
       "reasoning-auto-collapse-timer",
       "fix-nodescript-argv-electron-execpath-fallback",
       "folder-resource-activation-toggle",

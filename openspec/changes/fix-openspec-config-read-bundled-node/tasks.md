@@ -28,7 +28,8 @@
 - [x] 5.2 Add a test that a stripped-PATH spawn of the resolved openspec argv executes successfully (no `env: node` / exit 127). (`node-script-argv-matrix.test.ts` — real spawn with `env: { PATH: "" }`.)
 - [x] 5.3 Add a route test: `GET /api/openspec/config` returns the error state (not empty profile) when the CLI read fails, and returns `expanded` for a `custom`+expanded-set config on success. (`openspec-profile-routes.test.ts` — new 502 + no-cache tests; expanded-alias test pre-existing.)
 - [x] 5.4 Run `npm test` — no failures in touched areas. Only pre-existing failures are `@blackbelt-technology/pi-image-fit-extension` (`Jimp is not a constructor`, untouched package).
-- [ ] 5.5 (DEFERRED — needs affected macOS bundle) Manual bundle check: rebuild the Electron bundle, open Settings on macOS, confirm the OpenSpec profile loads (`expanded`, 10 workflows) instead of "not found."
+- [x] 5.4a End-to-end runner integration test in CI: drives the REAL `OPENSPEC_CONFIG_LIST` recipe through `run` + `runAsync` with `env: { PATH: "" }` and a managed-bin `.bin/openspec` shebang-symlink topology (the confirmed macOS bug env), asserting success where a CONTROL raw-shebang spawn exits 127. Closes most of task 1.2's intent (the failing spawn env) in CI without a real bundle. (`openspec-runner-stripped-path.integration.test.ts`)
+- [ ] 5.5 (DEFERRED — needs affected macOS bundle; the runner chain is now CI-covered by 5.4a, only the GUI-launched signed `.app` DOM check remains) Manual bundle check: rebuild the Electron bundle, open Settings on macOS, confirm the OpenSpec profile loads (`expanded`, 10 workflows) instead of "not found."
 
 ## 6. Land
 

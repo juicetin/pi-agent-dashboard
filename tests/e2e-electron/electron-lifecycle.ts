@@ -167,12 +167,19 @@ export function resolvePackagedBinary(): string {
     if (!exe) throw new Error(`[electron-e2e] No .exe under ${appDir}.`);
     return path.join(appDir, exe);
   }
-  // linux: the binary is the lowercased product name (no extension).
+  // linux: the app binary is forge's executableName ("pi-dashboard"). Prefer it
+  // by name — the app dir also contains OTHER extensionless executables
+  // (notably `chrome-sandbox`), so a "first executable without a dot" heuristic
+  // can grab the wrong file and yield "Process failed to launch".
+  const named = path.join(appDir, "pi-dashboard");
+  if (fs.existsSync(named)) return named;
+  const NON_APP = new Set(["chrome-sandbox", "chrome_crashpad_handler"]);
   const bin = fs.readdirSync(appDir).find((d) => {
+    if (NON_APP.has(d)) return false;
     const p = path.join(appDir, d);
     return fs.statSync(p).isFile() && (fs.statSync(p).mode & 0o111) !== 0 && !d.includes(".");
   });
-  if (!bin) throw new Error(`[electron-e2e] No executable under ${appDir}.`);
+  if (!bin) throw new Error(`[electron-e2e] No app executable under ${appDir}.`);
   return path.join(appDir, bin);
 }
 
@@ -185,7 +192,10 @@ export async function launchElectron(opts: {
   home: string;
   zombiePrompt?: boolean;
 }): Promise<ElectronApplication> {
-  const args: string[] = [];
+  // --no-sandbox is required for Electron to launch on CI Linux (no SUID
+  // chrome-sandbox helper under xvfb); harmless on macOS/Windows. Mirrors the
+  // repo's qa `08-electron-real-launch.sh`.
+  const args: string[] = ["--no-sandbox"];
   if (opts.zombiePrompt === false) args.push("--no-zombie-prompt");
   const env: Record<string, string> = {
     ...process.env,
@@ -254,4 +264,16 @@ export async function captureMenuTemplates(app: ElectronApplication): Promise<vo
 /** Read the recorded menu templates (array of item arrays) from the main process. */
 export async function readMenuTemplates(app: ElectronApplication): Promise<CapturedMenuItem[][]> {
   return await app.evaluate(() => (globalThis as any).__menuTemplates ?? []);
+}
+
+/**
+ * Open the Doctor window by emitting the `dashboard:open-doctor` IPC in the main
+ * process (the handler is registered by `registerPiDashboardIpc`). Robust
+ * against the loading page redirecting to the (healthy) fake server's URL,
+ * which discards the transient `#doctor-btn` control.
+ */
+export async function openDoctorViaIpc(app: ElectronApplication): Promise<void> {
+  await app.evaluate(({ ipcMain }) => {
+    ipcMain.emit("dashboard:open-doctor");
+  });
 }

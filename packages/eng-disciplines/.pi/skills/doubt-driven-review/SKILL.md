@@ -134,6 +134,25 @@ Agent(
 )
 ```
 
+**Choosing the reviewer model — from the *accessible* set, not a guess.** "Accessible" means credentialed and SDK-reachable right now, not merely named in config. Do not hand-pick a `provider/model-id` from memory or from `~/.pi/agent/providers.json#roles` — a role alias may not be SDK-invocable and the subagent returns empty output. Instead, enumerate what is actually reachable, then pick from that list:
+
+1. **Enumerate the accessible catalogue** (first source that answers wins):
+   - Dashboard REST: `GET /api/models` (reachable-filtered) — or `GET /v1/models` with a `pi-proxy-...` Bearer key. Rows are already credential-filtered (`getAvailable()`), so every id returned is by definition accessible.
+   - pi CLI: `pi --list-models [search]`.
+   - Never parse `providers.json` / `models.json` by hand — they hold no reachable-model inventory and fail silently.
+2. **Prefer a different *architecture family* than the author.** Identify the author's family first, then pick any *other* family from the list — the goal is a reviewer that does not share the author's blind spots. (Author is Claude → pick non-Anthropic; author is GPT → Claude is a fine reviewer; etc.) Strong reasoning families that make good adversarial reviewers — match these **name substrings** (no provider prefix) against your accessible set, newest version wins:
+   - `claude-opus` / `claude-sonnet` (Anthropic)
+   - `gpt-5` / `gpt-5-codex` (OpenAI)
+   - `deepseek-v4-pro` (DeepSeek)
+   - `kimi-k2` (Moonshot)
+   - `qwen3-plus` / `qwen3.x-plus` (Qwen)
+   - `glm-5` (Zhipu / GLM)
+   - `minimax-m2` (MiniMax)
+   - `mimo-v2` (Xiaomi MiMo)
+
+   These are families, not a fixed allowlist — resolve the concrete id by fuzzy-matching the substring against the enumerated accessible list (e.g. `gpt-5` → whatever `gpt-5.x` is live). Include the author's own family in the list only so you can *exclude* it; pick from the rest. A reasoning-capable model is preferred for adversarial review; the enumerate step above reports each row's `reasoning`/`input` flags.
+3. **Probe the resolved id before the real prompt** (see prerequisite #1 below). If it returns empty, it was not truly accessible — pick the next family from the list.
+
 Prerequisite + fallback (verify, do not assume):
 1. The target provider/model must be reachable by the Agent SDK, not merely present as a role alias. A model listed only under `~/.pi/agent/providers.json#roles` may NOT be SDK-invocable — a subagent spawned on it can return **empty output**. The correct provider prefix also matters (a cloud-hosted variant of a model often needs a different prefix than the direct-API one). Probe first with a trivial prompt ("Reply with exactly: OK"); empty return = wrong id or provider not SDK-configured — try the alternate prefix before giving up.
 2. If the subagent path returns empty, surface it explicitly (per Step 3 below) and fall back to an external review CLI or manual review. Do NOT silently proceed single-model.
@@ -255,5 +274,6 @@ After applying doubt-driven development:
 - [ ] Findings were classified against the artifact text (not rubber-stamped) using the precedence: contract misread / actionable / trade-off / noise
 - [ ] A stop condition was met (trivial findings, 3 cycles, or user override)
 - [ ] In interactive mode, cross-model was **explicitly offered** to the user (regardless of artifact stakes) and the response was acknowledged in the output. When run, the preferred Pi path (subagent with a `model` override on a different-architecture model) was tried first; an empty return from a role-only or wrong-prefix model id was surfaced as a failure, not silently swallowed
+- [ ] When cross-model ran, the reviewer id was chosen from the **enumerated accessible set** (`GET /api/models` / `pi --list-models`), not hand-picked from a role alias, and was a different architecture family than the author (per the family substrings in Cross-model escalation)
 - [ ] In non-interactive mode, cross-model was skipped and the skip was announced
 - [ ] Any external CLI invocation was preceded by a PATH check, a working-binary test, syntax confirmation with the user, and explicit authorization to run

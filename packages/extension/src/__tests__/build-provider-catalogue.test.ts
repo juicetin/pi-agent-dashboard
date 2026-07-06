@@ -36,7 +36,7 @@ describe("_buildProviderCatalogue", () => {
     expect(_buildProviderCatalogue(null, {})).toEqual([]);
   });
 
-  it("includes every OAuth id and every distinct model.provider, deduplicated", () => {
+  it("includes every OAuth id, pi-ai provider id, and distinct model.provider, deduplicated", () => {
     const reg = makeRegistry({
       oauthIds: ["anthropic", "openai-codex"],
       models: [
@@ -45,9 +45,11 @@ describe("_buildProviderCatalogue", () => {
         { provider: "deepseek", id: "deepseek-coder" },
       ],
     });
-    const cat = _buildProviderCatalogue(reg, {});
+    const cat = _buildProviderCatalogue(reg, {
+      getProviders: () => ["openrouter", "deepseek"],
+    });
     const ids = cat.map((c) => c.id).sort();
-    expect(ids).toEqual(["anthropic", "deepseek", "openai-codex"]);
+    expect(ids).toEqual(["anthropic", "deepseek", "openai-codex", "openrouter"]);
   });
 
   it("sets hasOAuth true only for ids in the OAuth provider set", () => {

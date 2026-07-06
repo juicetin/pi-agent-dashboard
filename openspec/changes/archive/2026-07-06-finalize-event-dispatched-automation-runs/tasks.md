@@ -42,7 +42,7 @@
 - [x] 3.3 `npm test` green for both affected packages.
 
 ## 4. Verify
-- [ ] 4.1 Rebuild the docker image; run the invoicebot scheduled self-picking
+- [x] 4.1 Rebuild the docker image; run the invoicebot scheduled self-picking
       intake end-to-end: successive fires each drain one file (run finalizes,
       session ends, `concurrency: skip` no longer starves), and PDF parsing
       succeeds (poppler present).

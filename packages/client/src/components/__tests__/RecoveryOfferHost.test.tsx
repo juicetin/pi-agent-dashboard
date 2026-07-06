@@ -80,4 +80,20 @@ describe("RecoveryOfferHost", () => {
     act(() => { clearRecoveryOffer(); }); // mirrors resume_result success path
     expect(queryByTestId("recovery-offer-host")).toBeNull();
   });
+
+  // Undefined custom properties resolve to the empty string, painting a
+  // transparent card / invisible button. The card and primary action must
+  // bind to theme-declared tokens (--bg-surface / --accent-primary), never
+  // the undeclared --bg-elevated / --accent.
+  // See change: fix-recovery-offer-undefined-tokens.
+  it("binds card + reopen action to declared theme tokens, not undeclared ones", () => {
+    const { getByTestId } = render(<RecoveryOfferHost onReopen={() => {}} />);
+    push();
+    const card = getByTestId("recovery-offer-host").querySelector('[role="status"]') as HTMLElement;
+    const reopen = getByTestId("recovery-offer-reopen");
+    expect(card.className).toContain("bg-[var(--bg-surface)]");
+    expect(reopen.className).toContain("bg-[var(--accent-primary)]");
+    expect(card.className).not.toContain("--bg-elevated");
+    expect(reopen.className).not.toContain("var(--accent)");
+  });
 });

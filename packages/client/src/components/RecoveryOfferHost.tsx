@@ -39,7 +39,7 @@ export function RecoveryOfferHost({ onReopen }: {
         role="status"
         aria-live="polite"
         aria-atomic="true"
-        className="pointer-events-auto flex items-center gap-3 px-3 py-2 bg-[var(--bg-elevated)] text-[var(--text-primary)] text-sm rounded-xl shadow-lg border border-[var(--border-primary)] max-w-sm"
+        className="pointer-events-auto flex items-center gap-3 px-3 py-2 bg-[var(--bg-surface)] text-[var(--text-primary)] text-sm rounded-xl shadow-lg border border-[var(--border-primary)] max-w-sm"
       >
         <span className="flex-none w-2 h-2 rounded-full bg-amber-500" aria-hidden="true" />
         <span className="flex-1 whitespace-nowrap font-medium">
@@ -49,7 +49,7 @@ export function RecoveryOfferHost({ onReopen }: {
           type="button"
           onClick={handleReopen}
           data-testid="recovery-offer-reopen"
-          className="flex-none px-3 py-1 rounded-lg bg-[var(--accent)] text-white font-medium hover:opacity-90"
+          className="flex-none px-3 py-1 rounded-lg bg-[var(--accent-primary)] text-white font-medium hover:opacity-90"
         >
           {i18nT("auto.reopen", undefined, "Reopen")}
         </button>

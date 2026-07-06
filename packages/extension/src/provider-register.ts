@@ -422,6 +422,7 @@ export function getCustomProviderNames(): Set<string> {
 type PiAiHelpers = {
   findEnvKeys?: (id: string) => string[] | undefined;
   getEnvApiKey?: (id: string) => string | undefined;
+  getProviders?: () => string[];
 };
 
 export function _buildProviderCatalogue(
@@ -442,6 +443,9 @@ export function _buildProviderCatalogue(
   // Filtering decisions belong to consumers, not to this function.
   // See change: replace-hardcoded-provider-lists.
   const allIds = new Set<string>(oauthIds);
+  for (const id of piAi.getProviders?.() ?? []) {
+    if (id) allIds.add(id);
+  }
   for (const m of (modelRegistry.getAll?.() ?? []) as Array<{ provider?: string }>) {
     if (m.provider) allIds.add(m.provider);
   }
@@ -511,7 +515,7 @@ async function loadPiAi(): Promise<PiAiHelpers> {
   _piAiLoadAttempted = true;
   try {
     const mod: any = await import("@earendil-works/pi-ai");
-    _piAiModule = { findEnvKeys: mod.findEnvKeys, getEnvApiKey: mod.getEnvApiKey };
+    _piAiModule = { findEnvKeys: mod.findEnvKeys, getEnvApiKey: mod.getEnvApiKey, getProviders: mod.getProviders };
     return _piAiModule;
   } catch {
     return {};

@@ -28,9 +28,11 @@
 - [ ] 5.3 Emit `mesh` endpoint with `tls:false`, no name → verify: endpoint shape correct
 
 ## 6. Endpoints + step-action executor
-- [ ] 6.1 Multi-source `getReachableUrls()` from all active provider endpoints, tagged `{kind,url,tls}` → verify: "Accessible at" returns all kinds
+- [ ] 6.1 Multi-source `getReachableUrls()` from all active provider endpoints **and manual `pairing.publicBaseUrls`**, tagged `{kind,url,tls}` → verify: "Accessible at" returns all kinds incl. a hand-added URL
 - [ ] 6.2 Whitelisted-recipe run endpoint keyed by `(provider, step)`, token as validated param, secret never logged → verify: security test — arbitrary command rejected; token redacted in logs
 - [ ] 6.3 Auth/activate steps run server-side via `runner.ts` Recipe; install stays copy-paste + live ✓ → verify: mock enroll succeeds; install has no run button
+- [ ] 6.4 **Manual HTTPS endpoint entry (migrated from `wire-nonzrok-pairing-view`).** "Add HTTPS URL" control: read current config via `GET /api/config`, append to `pairing.publicBaseUrls`, PUT the FULL `pairing` object via existing `PUT /api/config` (no new route; shallow merge caveat); re-fetch endpoints so it appears in "Accessible at" + pairing QR → verify: hand-added `https` URL round-trips without JSON edit
+- [ ] 6.5 Client-side `https`/`wss` validation (UX only) + confirm server-side read-time D4/D14 filter in `reachableUrls()` drops plain-http `publicBaseUrls` → verify: security test — `http://` entry never enters `urls[]`; unauthenticated `PUT /api/config` rejected
 
 ## 7. Trusted-network block events
 - [ ] 7.1 Bounded ring buffer of `localhost-guard` denials + auth-gated read endpoint → verify: refused IP appears; buffer capped
@@ -43,7 +45,7 @@
 - [ ] 8.4 Electron copy-string carries the TLS-only pairing payload → verify: base64url round-trips; no http url in decoded urls[]
 
 ## 9. UI — Gateway page + dialog (all strings "Gateway", internals stay tunnel)
-- [ ] 9.1 Reusable sections: `GatewayProviderSection`, `GatewayEndpoints`, `GatewayPairQR`, `GatewaySetupGuide` → verify: render in isolation
+- [ ] 9.1 Reusable sections: `GatewayProviderSection`, `GatewayEndpoints` (incl. the migrated **Add HTTPS URL** control, task 6.4), `GatewayPairQR`, `GatewaySetupGuide` → verify: render in isolation
 - [ ] 9.2 New **Gateway** settings page under Network nav; trusted networks cross-referenced from Security (no dupe) → verify: page routes; Security still owns trustedNetworks
 - [ ] 9.3 Tabbed **Gateway** dialog (Setup / Access & QR — QR first / Security) → verify: tabs switch; matches mockup
 - [ ] 9.4 UI label map "tunnel"→"Gateway" across strings/i18n/docs; internal identifiers unchanged → verify: grep shows no user-facing "tunnel"; `config.tunnel`/`/api/tunnel-status` intact

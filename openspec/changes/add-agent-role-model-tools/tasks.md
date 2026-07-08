@@ -1,4 +1,13 @@
-## 1. Registry-handle bugfix (Option A)
+## 0. Consolidate custom providers onto pi-native `models.json`
+
+- [ ] 0.1 Add a `models.json` writer in the extension: after `discoverModels` + `enrichModelMetadata`, persist each dashboard-managed custom provider to `~/.pi/agent/models.json` under `providers.<name>.models[]` (pi schema). Merge-not-clobber (preserve hand-authored entries), mark dashboard-managed providers, atomic tmp+rename.
+- [ ] 0.2 Tests: written `models.json` loads via a fresh `ModelRegistry` (`getAll`/`getAvailable` return the customs); hand-authored provider preserved; re-discovery updates only dashboard-managed entries.
+- [ ] 0.3 Make `models.json` the durable source: keep runtime `registerProvider` as a fast-path only; ensure a freshly-created registry (server + spawned sessions) sees customs WITHOUT a live `/v1/models` round-trip. Remove the now-unnecessary `preRegisterProviderAuth` async-race workaround if `models.json` covers it.
+- [ ] 0.4 Server: verify `internal-registry.ts` step 3 surfaces the customs from the populated `models.json` (the empty step-2 no-op loop can be dropped); `GET /api/models` now returns custom-provider models. Update `internal-registry` + `models-introspection-routes` tests to expect customs present.
+- [ ] 0.5 Write the auto-migration script (`scripts/migrate-providers-to-models-json.ts`): read `providers.json#providers` → discover/enrich → write `models.json` (merge, atomic) → strip `providers` from `providers.json`, preserve `roles`/`rolePresets`/`activePreset`; back up both files; idempotent no-op on re-run.
+- [ ] 0.6 Tests: migration moves providers + preserves roles + creates backups; second run is a no-op. Run full `npm test` — all pre-existing provider/model/resolution tests (`build-provider-catalogue`, `custom-provider-apikey-roundtrip`, `enrich-model-metadata`, `provider-register-reload`, `internal-registry`, `provider-routes*`) MUST stay green.
+
+## 1. Registry-handle cleanup (corollary of consolidation)
 
 - [ ] 1.1 Write a failing test reproducing the resolution failure: when `modelRegistryRef` is unpopulated and the handler falls back to the (non-existent) `pi.modelRegistry`, `probe.model` is never filled and `probe.error` fires for a known model.
 - [ ] 1.2 Remove the dead `(piRef as any)?.modelRegistry` fallback in `getModelRegistry()` (provider-register.ts); source the registry only from `ctx.modelRegistry`-captured `modelRegistryRef`.

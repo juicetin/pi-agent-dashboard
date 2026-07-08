@@ -869,6 +869,7 @@ export function SettingsPanel({ availableModels, onMessage, onBack }: {
                     onChange={(v) => setLanguage(v as Language)}
                   />
                 </Section>
+                <DisplayPrefsSection />
                 <SettingsSectionSlot tab="general" />
               </>
             )}

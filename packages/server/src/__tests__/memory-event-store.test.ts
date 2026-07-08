@@ -149,6 +149,48 @@ describe("memory-event-store", () => {
     });
   });
 
+  describe("message content preservation", () => {
+    it("preserves long user message strings even when generic truncation is enabled", () => {
+      const store = createMemoryEventStore(neverPinned, 100, 5000, 100);
+      const longText = "hello\n".repeat(100);
+      const event: DashboardEvent = {
+        eventType: "message_start",
+        timestamp: Date.now(),
+        data: {
+          message: {
+            role: "user",
+            content: longText,
+          },
+        },
+      };
+
+      store.insertEvent("s1", event);
+
+      const stored = store.getEvent("s1", 1);
+      expect((stored as any).data.message.content).toBe(longText);
+    });
+
+    it("preserves long assistant text content blocks even when generic truncation is enabled", () => {
+      const store = createMemoryEventStore(neverPinned, 100, 5000, 100);
+      const longText = "assistant\n".repeat(100);
+      const event: DashboardEvent = {
+        eventType: "message_end",
+        timestamp: Date.now(),
+        data: {
+          message: {
+            role: "assistant",
+            content: [{ type: "text", text: longText }],
+          },
+        },
+      };
+
+      store.insertEvent("s1", event);
+
+      const stored = store.getEvent("s1", 1);
+      expect((stored as any).data.message.content[0].text).toBe(longText);
+    });
+  });
+
   describe("image data preservation", () => {
     it("preserves base64 image data when sibling mimeType exists", () => {
       // maxStringFieldSize = 100 so normal strings get truncated

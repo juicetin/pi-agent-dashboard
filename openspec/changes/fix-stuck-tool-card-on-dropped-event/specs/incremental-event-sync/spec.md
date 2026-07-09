@@ -26,8 +26,10 @@ completion of its own.
 #### Scenario: Evicted result cannot reconcile (known limitation)
 - **WHEN** the server store has evicted the `tool_execution_end` under memory pressure
   and the REST route returns 404
-- **THEN** the client SHALL leave the row running (recovered only by a full refresh or
-  bridge reconnect re-sync); it SHALL NOT flip the row on a 404
+- **THEN** the client SHALL leave the row running (recovered only by an in-app full
+  replay (`lastSeq:0`) or bridge reconnect re-sync — a browser reload alone
+  delta-subscribes from the durable replay cache and does not recover it); it SHALL NOT
+  flip the row on a 404
 
 ### Requirement: Drop-site delivery instrumentation
 Both silent event-drop points SHALL be observable. The server fanout SHALL, when it

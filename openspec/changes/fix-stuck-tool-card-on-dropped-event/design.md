@@ -14,7 +14,7 @@ This change must not regress the shipped delta-replay win
 
 | Drop point | Recorded in store? | Leaves a seq gap? | Recoverable by |
 |---|---|---|---|
-| B — server→browser (`fanout` back-pressure) | **yes** (seq assigned) | yes | this change's REST reconcile; full refresh; (deferred) gap-resync |
+| B — server→browser (`fanout` back-pressure) | **yes** (seq assigned) | yes | this change's REST reconcile; in-app Refresh (`lastSeq:0`); bridge reconnect re-sync; (deferred) gap-resync — a browser *reload* alone delta-subscribes from the durable cache and does NOT recover it |
 | A — bridge→server (`bufferMessage` head-drop) | **no** (never ingested) | **no** | only `replaySessionEntries()` on bridge reconnect (already exists) |
 
 Key consequence (the doubt-review correction): a seq-based client heal is
@@ -72,8 +72,10 @@ it MODIFIES `incremental-event-sync` "Client-side sequence tracking" and ADDs a
 - **Reconcile false-positive on slow tools.** Mitigated by a conservative `STALE_TOOL_MS`
   and by only applying the server's authoritative result.
 - **Evicted result (known limitation).** If the store evicted the end event (20 000-event
-  overflow), the REST route 404s and the card stays stuck until a full refresh /
-  bridge reconnect. Rare; documented, not silently handled.
+  overflow), the REST route 404s and the card stays stuck until an in-app Refresh
+  (`lastSeq:0` full replay) or bridge reconnect re-sync (a browser *reload* alone
+  delta-subscribes from the durable replay cache and does NOT recover it). Rare;
+  documented, not silently handled.
 - **Reconcile poll cost.** One-shot per stale row (re-armed only on "in flight"); bounded.
 
 ## Interaction with other changes

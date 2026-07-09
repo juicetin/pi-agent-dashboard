@@ -28,8 +28,12 @@ The transport is `pi → bridge → server (MemoryEventStore, seq-numbered) → 
    full re-sync on bridge reconnect. This change only makes it *observable*.
 
 3. **The client never notices a missing event.** The client advances `maxSeqMap` to the
-   maximum seq seen with no gap detection, so a dropped seq is skipped and only a hard
-   page refresh (`lastSeq: 0` full replay) re-reads the recorded terminal event.
+   maximum seq seen with no gap detection, so a dropped seq is skipped. A browser page
+   *reload* does NOT recover it: the client rehydrates from its durable replay cache
+   (`reduce-session-replay-traffic`) and delta-subscribes with `lastSeq =
+   persistedMaxSeq`, so the older-seq dropped event is never re-sent. Only an in-app
+   Refresh (`subscribe { lastSeq: 0 }` full replay) or a bridge reconnect re-sync
+   (`session_state_reset` + replay from seq 1) re-reads the recorded terminal event.
 
 Attribution of the observed incident to weakness #1 specifically is **inferential**
 (from the stall telemetry), not proven — the instrumentation below is what will confirm

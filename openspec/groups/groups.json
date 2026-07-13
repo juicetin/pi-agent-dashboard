@@ -116,32 +116,32 @@
     "instrument-event-store-trim": "ui",
     "support-non-git-init-hook": "ui",
     "fix-remote-connect-cors-gates": "ui",
-    "gate-session-worktree-button-on-git": "ui"
+    "gate-session-worktree-button-on-git": "ui",
+    "fix-ctx-running-render": "ui",
+    "preserve-streaming-tail-selection": "ui",
+    "make-pairing-qr-camera-scannable": "ui",
+    "add-gateway-qr-network-selector": "ui",
+    "chat-copy-fidelity-intercept": "ui",
+    "copy-file-path": "ui",
+    "add-goal-session-supervisor": "ui",
+    "add-automatic-session-kb-index": "ui",
+    "add-kb-semantic-annotation-plane": "ui",
+    "add-modular-doctor-skill": "ui",
+    "memory-retrieval-injection": "ui",
+    "fix-flaky-full-suite-tests": "ui"
   },
   "changeOrder": {
     "__ungrouped__": [
-      "add-automatic-session-kb-index",
-      "add-goal-session-supervisor",
-      "add-kb-semantic-annotation-plane",
-      "add-lora-dataset-export-skill",
-      "add-modular-doctor-skill",
-      "memory-retrieval-injection"
+      "add-lora-dataset-export-skill"
     ],
     "ui": [
-      "fix-table-copy-empty-clipboard",
-      "fix-local-electron-dmg-build",
-      "fix-virtualized-image-row-measurement",
-      "add-flow-plugin-e2e-tests",
-      "add-custom-roles-ui",
-      "fix-remote-connect-cors-gates",
-      "preserve-chat-selection-during-churn",
-      "gate-session-worktree-button-on-git",
-      "support-non-git-init-hook",
-      "simplify-error-retry-single-card",
-      "fix-gemini-subagent-silent-tool-schema-failure",
-      "instrument-event-store-trim",
-      "fix-and-prefer-model-proxy-resolution",
-      "persist-goal-status-and-progress"
+      "copy-file-path",
+      "memory-retrieval-injection",
+      "add-modular-doctor-skill",
+      "fix-flaky-full-suite-tests",
+      "add-kb-semantic-annotation-plane",
+      "add-automatic-session-kb-index",
+      "add-goal-session-supervisor"
     ],
     "next-phase": [
       "add-kb-code-symbol-index",

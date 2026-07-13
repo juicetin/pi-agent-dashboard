@@ -26,6 +26,17 @@ We want inactive folders to compact themselves automatically while still surfaci
 - `session-filtering`: adds the per-folder attention filter that applies only when the folder is unfocused.
 - `collapsible-groups`: clarifies that the chevron toggle's effect is scoped to the focused folder (and to user-expanded overrides); unfocused folders are governed by `folder-focus` + the attention filter, not by the persisted collapse bit.
 
+## Drift reconciliation — 2026-07-13
+
+`condense-collapsed-folder-header` (archived 2026-07-07) already shipped a foundational subset:
+
+- `FolderStatusRollup.tsx` — compact working/idle dot-counts rendered when a folder is collapsed.
+- `countStatusRollup` helper in `session-status-visuals.ts`.
+- Collapsed-folder headers now hide heavy header slots (`GroupGitInfo`, `FolderActionBar`, `SidebarFolderSectionSlot`, `FolderOpenSpecSection`, `FolderSpawnButtons`) behind `{!isCollapsed && ...}`.
+- `FolderNeedsYouPill` + `FolderStatusRollup` render in the collapsed header.
+
+**Impact on this proposal**: the "collapsed folder renders heavy header" premise is outdated — collapsed folders are already compact. The focus-driven model now builds ON TOP of this foundation. The innovation shifts from "make collapsed folders lighter" (done) to "attention-driven partial expansion of unfocused folders" (the new additive layer). All references to "collapse behavior unchanged" throughout this document should be read with the understanding that the collapsed-state render is already compact; the focus-driven model adds compact render modes for *unfocused* folders as an additional layer.
+
 ## Impact
 
 - **Code**:

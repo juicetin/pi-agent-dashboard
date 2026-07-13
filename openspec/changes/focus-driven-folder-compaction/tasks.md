@@ -1,3 +1,12 @@
+> **Drift note — 2026-07-13:** `condense-collapsed-folder-header` (archived 2026-07-07) already shipped the collapsed-folder compaction this proposal assumed did not exist:
+> - `FolderStatusRollup` component (compact working/idle dot-counts in collapsed-folder header)
+> - `countStatusRollup` helper in `session-status-visuals.ts`
+> - Collapsed-folder header hides `GroupGitInfo`, `FolderActionBar`, `SidebarFolderSectionSlot`, `FolderOpenSpecSection`, `FolderSpawnButtons` behind `{!isCollapsed && ...}`
+> - `FolderNeedsYouPill` + `FolderStatusRollup` render when collapsed
+> - Corresponding collapse-behaviour tests updated
+>
+> The tasks below describe the REMAINING work — the focus-driven model builds on this foundation. The collapsed-state already matches the "lighter collapsed folder" vision; the remaining innovation is attention-driven partial expansion of unfocused folders, header-click-focus split, the render-mode matrix, and the user-expanded override.
+
 ## 1. Pure helpers + tests
 
 - [ ] 1.1 Create `packages/client/src/lib/folder-focus.ts` exporting `demandsAttention(session)`, `resolveActiveCwd(selectedId, lastFocusedCwd, sessionsByCwd)`, and `resolveGroupRenderMode({focused, collapsed, userExpanded, hasAttention})` plus the `GroupRenderMode` union type.

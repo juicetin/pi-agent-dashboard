@@ -1,6 +1,6 @@
 ## Context
 
-`packages/client/src/components/SessionList.tsx` renders one block per directory group. Today the only compaction control is `collapsedGroups` (a `Set<cwd>` persisted to localStorage by `packages/client/src/lib/collapsed-groups.ts`). The chevron toggles membership in that set, and the per-group render branches on `isFolderCollapsed(cwd)` to either show all session cards or none. The folder header (folder name, `GroupGitInfo`, `FolderActionBar`, `SidebarFolderSectionSlot`, `FolderOpenSpecSection`) renders in both states — so even a "collapsed" folder occupies many vertical lines.
+`packages/client/src/components/SessionList.tsx` renders one block per directory group. Today the only compaction control is `collapsedGroups` (a `Set<cwd>` persisted to localStorage by `packages/client/src/lib/collapsed-groups.ts`). The chevron toggles membership in that set, and the per-group render branches on `isFolderCollapsed(cwd)` to either show all session cards or none. Since `condense-collapsed-folder-header` (archived 2026-07-07), collapsed folders already hide heavy header slots (`GroupGitInfo`, `FolderActionBar`, `SidebarFolderSectionSlot`, `FolderOpenSpecSection`, `FolderSpawnButtons`) behind `{!isCollapsed && ...}` — the collapsed header is compact, showing only folder name + `FolderNeedsYouPill` + `FolderStatusRollup`. This proposal's focus-driven model adds compact render modes for *unfocused* folders on top of this already-compact collapsed state.
 
 Sessions in `packages/shared/src/types.ts` already carry every field needed to derive an attention signal:
 - `status: "active" | "idle" | "streaming" | "ended"`
@@ -105,12 +105,16 @@ For each group, compute `mode ∈ {expandedFull, expandedToggleHidden, compactWi
 
 Encoded as a pure helper `resolveGroupRenderMode({focused, collapsed, userExpanded, hasAttention}) → GroupRenderMode` so component tests can hit all five rows without mounting the full tree.
 
+**Note (2026-07-13 drift reconciliation)**: The compact modes (`compactWithAttention`, `compactEmpty`) are purely additive — they apply only to unfocused folders outside `userExpanded`. Focused folders keep today's `expandedFull` and `expandedToggleHidden` behaviour unchanged. "Today's behaviour" already includes the compact collapsed-header shipped by `condense-collapsed-folder-header` (heavy slots hidden via `{!isCollapsed && ...}`). The mode matrix adds a new layer on top without altering existing collapse semantics.
+
 ### Decision 6: Compact form keeps the existing header
 
 The compact form for an unfocused folder reuses today's header DOM (folder name, count, pin, `GroupGitInfo`, readme button, `FolderActionBar`, `SidebarFolderSectionSlot`, `FolderOpenSpecSection`). We do NOT shrink the header — only the session-card region changes:
 
 - `compactWithAttention` → renders `<div className="space-y-1 pt-1">…attention cards…</div>`. Cards reuse `<SortableSessionCard>` so drag-to-reorder still works (only attention cards are draggable in this view; rest are hidden).
 - `compactEmpty` → renders a single subdued affordance row: `"N sessions — click to view"` styled like the existing "Show N ended" footer button. Click sets `lastFocusedCwd` (does not change collapse state).
+
+**Drift note (2026-07-13)**: `condense-collapsed-folder-header` already made the COLLAPSED-folder header compact — heavy slots (`GroupGitInfo`, `FolderActionBar`, `SidebarFolderSectionSlot`, `FolderOpenSpecSection`, `FolderSpawnButtons`) are hidden behind `{!isCollapsed && ...}`. This Decision describes the UNFOCUSED (but not collapsed) header, which keeps all slots. The two concepts (collapsed = old binary toggle, unfocused = new attention-driven mode) are orthogonal; both now have compact forms.
 
 **Rationale**: keeping the header constant avoids layout thrash when a folder gains/loses focus; only the body region animates.
 

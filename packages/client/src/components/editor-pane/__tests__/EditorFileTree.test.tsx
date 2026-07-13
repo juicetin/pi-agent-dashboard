@@ -16,13 +16,21 @@ vi.mock("../../../lib/api-context.js", () => ({ getApiBase: () => "" }));
 import { EditorFileTree } from "../EditorFileTree.js";
 
 type Entry = { name: string; isDir: boolean };
-const dirs: Record<string, Entry[]> = {
-  ".": [
+const dirs: Record<string, Entry[]> = {};
+
+// Canonical tree, re-applied before EVERY test so no test's in-place mutation
+// of the shared `dirs` map leaks into the next. Previously a test restored
+// `dirs` at its OWN end, which was skipped whenever that test threw first —
+// cascading a single race failure into an unrelated ".git" test.
+// See change: fix-flaky-full-suite-tests.
+function resetDirs() {
+  for (const k of Object.keys(dirs)) delete dirs[k];
+  dirs["."] = [
     { name: ".git", isDir: true },
     { name: "README.md", isDir: false },
-  ],
-  ".git": [{ name: "HEAD", isDir: false }],
-};
+  ];
+  dirs[".git"] = [{ name: "HEAD", isDir: false }];
+}
 
 function mockTreeFetch() {
   globalThis.fetch = vi.fn((url: string) => {
@@ -36,7 +44,10 @@ function mockTreeFetch() {
 }
 
 const originalFetch = globalThis.fetch;
-beforeEach(mockTreeFetch);
+beforeEach(() => {
+  resetDirs();
+  mockTreeFetch();
+});
 afterEach(() => {
   cleanup();
   globalThis.fetch = originalFetch;
@@ -61,12 +72,9 @@ describe("EditorFileTree — active row reveal (#5)", () => {
       />,
     );
     await screen.findByText("README.md");
-    expect(scrollSpy).toHaveBeenCalled();
-    delete dirs["src"];
-    dirs["."] = [
-      { name: ".git", isDir: true },
-      { name: "README.md", isDir: false },
-    ];
+    // scrollIntoView fires in a post-mount effect that can lag behind the row
+    // appearing under CPU contention — poll instead of a bare one-shot assert.
+    await waitFor(() => expect(scrollSpy).toHaveBeenCalled());
   });
 });
 

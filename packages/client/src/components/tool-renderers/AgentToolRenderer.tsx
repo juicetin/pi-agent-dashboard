@@ -207,24 +207,43 @@ export function AgentToolRenderer({ args, status, result, toolDetails, context }
     </Dialog>
   ) : null;
 
-  // Open the detail dialog; if this is a still-running subagent whose timeline
-  // is empty (a gap swallowed its live frames), request a resync so the bridge
-  // replays the latest snapshot. See change: fix-subagent-live-detail-reliability (D2).
+  // Request a resync when the subagent is still running but its inspector
+  // timeline is empty or the map has no entry at all (a gap swallowed its
+  // live frames, or the client subscribed after it started and state-replay
+  // does not re-synthesize subagent_* events for running agents). The bridge
+  // replays the latest snapshot in response.
+  // See change: fix-subagent-live-detail-reliability (D2);
+  // see change: fix-subagent-inline-expand-resync (inline path parity).
+  const requestResyncIfStale = () => {
+    if (!agentId || !sessionId || !context?.send) return;
+    const sub = session?.subagents.get(agentId);
+    const emptyTimeline = !sub?.entries || sub.entries.length === 0;
+    // Card status is authoritative for "still running" even when the map has
+    // no entry yet (sub === undefined) — that is exactly the not-found case.
+    const running = details?.status === "running" || details?.status === "queued" || sub?.status === "running";
+    if (running && emptyTimeline) {
+      context.send({ type: "subagent_resync_request", sessionId, agentId });
+    }
+  };
+
+  // Open the detail dialog, resyncing first if the timeline is stale.
   const openDetail = () => {
     setDetailOpen(true);
-    if (agentId && sessionId && context?.send) {
-      const sub = session?.subagents.get(agentId);
-      const emptyTimeline = !sub?.entries || sub.entries.length === 0;
-      if (sub?.status === "running" && emptyTimeline) {
-        context.send({ type: "subagent_resync_request", sessionId, agentId });
-      }
-    }
+    requestResyncIfStale();
+  };
+
+  // Toggle the inline expanded body; when expanding, resync if stale so the
+  // inline timeline hydrates the same way the popout does (previously the
+  // inline path skipped resync → "Subagent not found in this session.").
+  const toggleExpand = () => {
+    if (!expanded) requestResyncIfStale();
+    setExpanded((v) => !v);
   };
 
   const controls = (
     <CardControls
       expanded={expanded}
-      onToggleExpand={() => setExpanded((v) => !v)}
+      onToggleExpand={toggleExpand}
       onOpenPopout={openDetail}
       canPopout={canPopout}
       elapsed={

@@ -13,8 +13,9 @@ interface Props {
   target: { kind: "file"; cwd: string; path: string };
   /**
    * Optional source-URL override. Defaults to `/api/file/raw` for the target.
-   * `DocxPreview` passes `/api/file/rendered-pdf` to stream a docx→PDF render.
-   * See change: render-office-previews.
+   * `DocxPreview` passes `/api/file/rendered-pdf` to stream a docx→PDF render;
+   * `EmlPreview` passes a `blob:` URL for a PDF attachment.
+   * See change: render-office-previews. See change: add-eml-preview.
    */
   srcUrl?: string;
 }

@@ -79,6 +79,16 @@ describe("PreviewCard", () => {
     expect(getByTestId("preview-card").getAttribute("data-kind")).toBe("fallback");
   });
 
+  // test-plan #3 — a URL target ending `.eml` dispatches to "email", but
+  // PreviewBody guards `kind !== "file"` → FallbackPreview (no crash).
+  it("URL ending .eml falls back to FallbackPreview without crashing (test-plan #3)", () => {
+    const target: ViewTarget = { kind: "url", url: "https://example.com/mail.eml" };
+    const { getByTestId, getByText } = wrap(<PreviewCard target={target} />);
+    expect(getByTestId("preview-card").getAttribute("data-kind")).toBe("email");
+    // FallbackPreview for a URL target renders an "Open in new tab" link.
+    expect(getByText("Open in new tab")).toBeTruthy();
+  });
+
   it("dispatches docx renderer for .docx files", () => {
     const target: ViewTarget = { kind: "file", cwd: "/x", path: "spec.docx" };
     const { getByTestId } = wrap(<PreviewCard target={target} />);

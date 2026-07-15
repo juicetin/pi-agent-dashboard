@@ -58,6 +58,20 @@ describe("dispatchPreview — file targets", () => {
     expect(dispatchPreview(f("x.htm"))).toBe("html");
   });
 
+  // test-plan #1 / #2 — .eml dispatches to the email renderer, ext lowercased.
+  it("maps .eml to email (test-plan #1)", () => {
+    expect(dispatchPreview(f("mail.eml"))).toBe("email");
+  });
+
+  it("maps upper-case .EML to email via lowercased ext (test-plan #2)", () => {
+    expect(dispatchPreview(f("Mail.EML"))).toBe("email");
+  });
+
+  // test-plan #4 — unknown extension stays fallback (regression guard).
+  it("maps .dat to fallback (test-plan #4)", () => {
+    expect(dispatchPreview(f("blob.dat"))).toBe("fallback");
+  });
+
   it("falls back on unknown file extension (test-plan #5)", () => {
     expect(dispatchPreview(f("x.dat"))).toBe("fallback");
     expect(dispatchPreview(f("noext"))).toBe("fallback");

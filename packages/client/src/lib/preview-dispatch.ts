@@ -17,6 +17,7 @@ export type RendererKind =
   | "audio"
   | "image"
   | "youtube"
+  | "email"
   | "fallback";
 
 /** Lowercase extension (including leading dot) → renderer. */
@@ -45,6 +46,7 @@ export const RENDERER_BY_EXT: Record<string, RendererKind> = {
   ".gif": "image",
   ".svg": "image",
   ".webp": "image",
+  ".eml": "email",
 };
 
 const YOUTUBE_HOSTS = new Set([

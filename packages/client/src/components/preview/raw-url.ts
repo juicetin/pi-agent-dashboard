@@ -44,3 +44,25 @@ export function sheetUrl(
   const q = limit != null ? `&limit=${encodeURIComponent(String(limit))}` : "";
   return `${base}/api/file/sheet?cwd=${cwd}&path=${p}${q}`;
 }
+
+/** `/api/file/eml` parse URL. `allowRemote` preserves remote resource refs. */
+export function emlUrl(
+  target: { kind: "file"; cwd: string; path: string },
+  allowRemote = false,
+): string {
+  const base = getApiBase();
+  const cwd = encodeURIComponent(target.cwd);
+  const p = encodeURIComponent(target.path);
+  return `${base}/api/file/eml?cwd=${cwd}&path=${p}${allowRemote ? "&allowRemote=1" : ""}`;
+}
+
+/** `/api/file/eml-attachment` streaming URL for one 0-based attachment index. */
+export function emlAttachmentUrl(
+  target: { kind: "file"; cwd: string; path: string },
+  index: number,
+): string {
+  const base = getApiBase();
+  const cwd = encodeURIComponent(target.cwd);
+  const p = encodeURIComponent(target.path);
+  return `${base}/api/file/eml-attachment?cwd=${cwd}&path=${p}&index=${index}`;
+}

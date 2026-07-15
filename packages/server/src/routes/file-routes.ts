@@ -884,7 +884,7 @@ export function registerFileRoutes(
       }
       try {
         const parsed = await loadParsedEml(gate.resolved, stat);
-        const data = toParseResult(parsed, { allowRemote: request.query.allowRemote === "1" });
+        const data = await toParseResult(parsed, { allowRemote: request.query.allowRemote === "1" });
         return { success: true, data } satisfies ApiResponse;
       } catch (err) {
         const msg = err instanceof Error ? err.message : "failed to parse EML";

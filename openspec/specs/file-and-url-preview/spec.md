@@ -405,6 +405,24 @@ cache keyed by path + mtime + size so the attachment endpoint does not re-parse 
   and does NOT crash the process (malformed parse uses 400, consistent with the file-routes
   error convention of 400/403/404/413/500 — not 422)
 
+### Requirement: EML sanitizer loads lazily so a broken jsdom cannot block server boot
+
+The server-side HTML sanitizer (`isomorphic-dompurify`, which constructs a `jsdom` window
+on first evaluation) SHALL be loaded via dynamic `import()` at first sanitize, NOT via a
+static top-level import. A failure to initialize the sanitizer (e.g. a corrupt/torn `jsdom`
+install) SHALL therefore surface only on an EML preview request, and SHALL NOT prevent the
+server from starting or registering routes.
+
+#### Scenario: Importing the EML module does not construct jsdom
+- **WHEN** the EML parse module is imported at server startup
+- **THEN** no `jsdom` window is constructed and the server boots and registers routes normally
+
+#### Scenario: A broken sanitizer degrades to a failed request, not a dead server
+- **GIVEN** a `node_modules/jsdom` that throws on construction
+- **WHEN** the client requests `/api/file/eml` for an `.eml` with an HTML body
+- **THEN** that single request fails with an HTTP error `{ success: false, error: … }`
+- **AND** the server process stays up and other routes continue to respond
+
 ### Requirement: EML attachment streaming endpoint is content-type-safe
 
 The server SHALL expose `GET /api/file/eml-attachment?cwd=&path=&index=` that parses the

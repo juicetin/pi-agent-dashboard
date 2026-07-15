@@ -100,6 +100,32 @@ No open clarifications — the two numeric gaps (256 KB synthetic-diff cap,
 
 **B3 — file-count cap (200).** *input:* detection yielding 201 candidate files (1 Write/Edit + 200 detector-only) · *trigger:* compose · *observable:* `data.files.length === 200`; the Write/Edit entry is retained (present in the 200).
 
+## Session-ownership gating
+
+| id | class | technique | level | disposition |
+|----|-------|-----------|-------|-------------|
+| O1 | edge-case | EP | L1 | automated |
+
+**O1 — mtime-in-window file is owned.** *input:* Bash exec-window `[t1,t2]`; a dirty file whose mtime ∈ `[t1,t2]` but whose path is NOT in the command string · *trigger:* ownership gate · *observable:* entry in `data.files`, `sessionOwned: true` (unnamed converter output claimed via mtime).
+
+| id | class | technique | level | disposition |
+|----|-------|-----------|-------|-------------|
+| O2 | edge-case | decision-table | L1 | automated |
+
+**O2 — other-session file diverted.** *input:* dirty file with no Write/Edit event, no Bash-token match, mtime inside no Bash window · *trigger:* gate · *observable:* absent from `data.files`; present in `data.otherChanges[]`.
+
+| id | class | technique | level | disposition |
+|----|-------|-----------|-------|-------------|
+| O3 | error-handling | BVA | L1 | automated |
+
+**O3 — formatter-bump not falsely claimed.** *input:* dirty file whose mtime is after session start but inside NO Bash execution window · *trigger:* gate · *observable:* not `sessionOwned`; routed to `data.otherChanges[]` (evidence ③ requires a real window, not "after start").
+
+| id | class | technique | level | disposition |
+|----|-------|-----------|-------|-------------|
+| U3 | frontend-quirk | state | L3 | automated |
+
+**U3 — other-changes group collapsed + toggle.** *input:* diff response with non-empty `otherChanges` · *trigger:* open Files panel (docker harness), click "this session only" · *observable:* `▸ N other working-tree changes` renders collapsed by default; toggle hides the group entirely (converged state).
+
 ## Degradation
 
 | id | class | technique | level | disposition |

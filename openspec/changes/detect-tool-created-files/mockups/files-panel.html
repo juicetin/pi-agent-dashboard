@@ -82,6 +82,7 @@
 <div class="wrap">
   <div class="toolbar">
     <h1>Files panel · tool-created origin</h1>
+    <button id="only" aria-pressed="false" title="Hide working-tree changes this session didn't make">this session only</button>
     <button id="mode" aria-pressed="false">☾ dark</button>
   </div>
 
@@ -152,6 +153,29 @@
         <span class="spacer"></span>
         <span class="counts"><span class="adds">+6</span></span>
       </div>
+
+      <!-- NEW: other-session changes — collapsed group (B default) -->
+      <div id="otherGroup">
+        <div class="row ogh" id="ogToggle">
+          <span class="caret" id="ogCaret">▸</span>
+          <span class="name" style="color:var(--text-tertiary)">2 other working-tree changes</span>
+          <span class="spacer"></span>
+          <span class="by" style="max-width:none">not from this session</span>
+        </div>
+        <div id="ogBody" style="display:none">
+          <div class="row indent1">
+            <span class="glyph g-mod" title="Modified elsewhere" style="color:var(--text-tertiary)">●</span>
+            <span class="name" style="color:var(--text-tertiary)">packages/web/src/theme.css</span>
+            <span class="spacer"></span>
+            <span class="counts"><span class="adds">+2</span> <span class="dels">−2</span></span>
+          </div>
+          <div class="row indent1">
+            <span class="glyph g-add" title="Added elsewhere" style="color:var(--text-tertiary)">+</span>
+            <span class="name" style="color:var(--text-tertiary)">.env.local</span>
+            <span class="spacer"></span>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -196,6 +220,17 @@
     btn.textContent = d ? '☾ dark' : '☀ light'; btn.setAttribute('aria-pressed', String(!d)); }
   btn.onclick = () => { html.setAttribute('data-mode', html.getAttribute('data-mode')==='dark'?'light':'dark'); sync(); };
   sync();
+
+  // collapse/expand the other-changes group (B: collapsed by default)
+  const ogBody = document.getElementById('ogBody'), ogCaret = document.getElementById('ogCaret');
+  document.getElementById('ogToggle').onclick = () => {
+    const open = ogBody.style.display !== 'none';
+    ogBody.style.display = open ? 'none' : 'block'; ogCaret.textContent = open ? '▸' : '▾';
+  };
+  // A toggle: 'this session only' hides the whole other-changes group
+  const only = document.getElementById('only'), og = document.getElementById('otherGroup');
+  only.onclick = () => { const on = only.getAttribute('aria-pressed')==='true';
+    only.setAttribute('aria-pressed', String(!on)); og.style.display = on ? 'block' : 'none'; };
 </script>
 </body>
 </html>

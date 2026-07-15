@@ -13,10 +13,13 @@
 - [ ] Compose precedence in `extractFileChanges`: write/edit → keep real events, mark `mixed` if also detected, NO synthetic event; detector-only → one representative `type:"tool"` event with non-zero timestamp
 - [ ] Binary/size safety before synthetic diff: NUL-sniff + known-binary ext + size cap → list without text `gitDiff`
 - [ ] Thread bulk-porcelain untracked set into `enrichWithGitDiff` so per-file `statusPorcelainOr` is not re-spawned; file-count cap on produced list
+- [ ] Session-ownership gate: classify each git-detected file by evidence (Write/Edit ∨ Bash-token ∨ mtime ∈ Bash exec-window `[start,end]`, fallback `[start,now]`, ±1s slack); owned → `data.files` (`sessionOwned:true`), else → `data.otherChanges[]`
+- [ ] Add `sessionOwned?` to `FileDiffEntry` and `otherChanges?: FileDiffEntry[]` to the session-diff response type in `packages/shared/src/diff-types.ts`
 
 ## Client — Files panel origin badge
 
 - [ ] Render `origin` badge in `DiffFileTree.tsx`; `tool`/`mixed` rows show `created by <producedBy>` (tooltip full) or generic `on disk`
+- [ ] Render `otherChanges` under a muted, collapsed `▸ N other working-tree changes` group; add a "this session only" header toggle that hides the group (default: collapsed-but-present)
 
 ## Docs
 
@@ -43,6 +46,10 @@ L3 exemplar: `tests/e2e/change-summary-table.spec.ts` (docker harness port from 
 - [ ] L1 B2 — synthetic-diff size cap 256 KB (test-plan #B2). input: text file 256KB−1 vs 256KB+1 · trigger: synthetic-diff · observable: under→`gitDiff` present, over→absent. see `session-diff.test.ts`
 - [ ] L1 B3 — file-count cap 200 (test-plan #B3). input: 1 Write/Edit + 200 detector-only · trigger: compose · observable: `data.files.length===200`, Write/Edit entry retained. see `session-diff.test.ts`
 - [ ] L1 G1 — git absent, endpoint returns (test-plan #G1). input: git unavailable (porcelain→"") · trigger: `/api/session-diff` · observable: `success:true`, Write/Edit entries, `isGitRepo:false`, no throw. see `session-diff.test.ts`
+- [ ] L1 O1 — mtime-in-window file owned (test-plan #O1). input: Bash window [t1,t2], file mtime∈[t1,t2], path not in command · trigger: ownership gate · observable: entry in `data.files`, `sessionOwned:true`. see `session-diff.test.ts`
+- [ ] L1 O2 — other-session file diverted (test-plan #O2). input: dirty file, no Write/Edit, no token, mtime in no window · trigger: gate · observable: absent from `data.files`, present in `data.otherChanges`. see `session-diff.test.ts`
+- [ ] L1 O3 — formatter-bump not claimed (test-plan #O3). input: dirty file mtime after session start but inside NO Bash window · trigger: gate · observable: not `sessionOwned`, in `otherChanges`. see `session-diff.test.ts`
+- [ ] L3 U3 — other-changes group collapsed + toggle (test-plan #U3). input: diff response with non-empty `otherChanges` · trigger: open Files panel, click "this session only" · observable: group renders collapsed by default; toggle hides it. see `tests/e2e/change-summary-table.spec.ts`
 - [ ] L3 U1 — Files panel badges a tool row (test-plan #U1). input: diff response with `tool`-origin entry + `producedBy` · trigger: open Files panel (docker harness) · observable: origin badge + `created by <command>` label (converged state). see `tests/e2e/change-summary-table.spec.ts`
 
 ## Validate (manual, post-merge)

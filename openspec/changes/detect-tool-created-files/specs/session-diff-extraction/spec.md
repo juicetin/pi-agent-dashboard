@@ -92,10 +92,33 @@ Before generating a synthetic new-file diff for a tool-detected file, the server
 - **THEN** `data.files` SHALL contain at most 200 entries
 - **AND** Write/Edit entries SHALL be retained in preference to detector-only entries
 
+### Requirement: Session-ownership gating of git-detected files
+
+Because `git status` reflects the cwd's shared working tree (not the session), the server SHALL classify each git-detected file by ownership evidence from THIS session and SHALL place only owned files in `data.files`. A file is `sessionOwned: true` when ANY of: (1) a Write/Edit event references it, (2) a Bash output-token names it, or (3) its `statSync` mtime falls inside one of this session's Bash execution windows `[tool_execution_start, tool_execution_end]` (fallback `[start, now]` when no end), with a small clock slack. Files with no such evidence SHALL be returned in a separate `data.otherChanges[]` array (never silently dropped).
+
+#### Scenario: File this session created is owned
+- **WHEN** a Bash command in this session wrote `out.pdf` and its mtime is inside that command's execution window
+- **THEN** `out.pdf` SHALL appear in `data.files` with `sessionOwned: true`
+
+#### Scenario: Other-session file diverted to otherChanges
+- **WHEN** `other.txt` is dirty in git status
+- **AND** this session has no Write/Edit event, no Bash-token match, and no Bash window covering its mtime
+- **THEN** `other.txt` SHALL NOT appear in `data.files`
+- **AND** it SHALL appear in `data.otherChanges[]`
+
+#### Scenario: mtime outside any Bash window is not claimed
+- **WHEN** a dirty file's mtime is after session start but inside NO Bash execution window (e.g. a formatter-on-save bump)
+- **THEN** it SHALL NOT be marked `sessionOwned`
+- **AND** it SHALL be placed in `data.otherChanges[]`
+
+#### Scenario: Worktree-isolated session has empty otherChanges
+- **WHEN** the session's cwd is a dedicated worktree with no other session sharing it and every dirty file is attributable to this session
+- **THEN** `data.otherChanges` SHALL be empty (or absent)
+
 ## MODIFIED Requirements
 
 ### Requirement: Event-based change extraction
-The server SHALL scan session events from the event store to extract individual file change events. Each change event SHALL include the timestamp, tool type, and tool-specific data. The change-event `type` SHALL be one of `"edit" | "write" | "tool"`, where `"tool"` denotes a file surfaced by git-status detection or non-git Bash detection rather than a direct Write/Edit call. Each file entry (`FileDiffEntry`) SHALL carry an `origin` of `"write" | "edit" | "tool" | "mixed"`, and MAY carry `producedBy`, `detectedVia`, and a reserved `previewable` flag. Attribution fields live at the file level; a `"mixed"` file SHALL retain its real Write/Edit change events with NO synthetic `"tool"` event injected.
+The server SHALL scan session events from the event store to extract individual file change events. Each change event SHALL include the timestamp, tool type, and tool-specific data. The change-event `type` SHALL be one of `"edit" | "write" | "tool"`, where `"tool"` denotes a file surfaced by git-status detection or non-git Bash detection rather than a direct Write/Edit call. Each file entry (`FileDiffEntry`) SHALL carry an `origin` of `"write" | "edit" | "tool" | "mixed"`, and MAY carry `producedBy`, `detectedVia`, `sessionOwned`, and a reserved `previewable` flag. The response MAY carry a separate `otherChanges: FileDiffEntry[]` array for git-detected files this session cannot claim. Attribution fields live at the file level; a `"mixed"` file SHALL retain its real Write/Edit change events with NO synthetic `"tool"` event injected.
 
 #### Scenario: Edit tool change
 - **WHEN** a `tool_execution_start` event has `toolName` matching "Edit" (case-insensitive)

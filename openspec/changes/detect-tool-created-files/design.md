@@ -84,6 +84,52 @@ Group by normalized path (one shared key space, Decision 1). Per path:
 A Bash false-positive that names a real, separately-edited file therefore can at most add a
 `producedBy` label — it can NEVER rewrite that file's real edits or invent changes.
 
+## Decision 3b — session-ownership gating (git state is cwd-scoped, not session-scoped)
+
+`git status --porcelain` reflects the **working tree**, keyed by cwd, not by session
+(`packages/shared/src/types.ts`: "sessions sharing a cwd share one working tree"). Multiple
+sessions can share a cwd (`active-sessions-in-cwd.ts`). A raw union would surface files another
+session — or a manual edit, or a build — touched, which THIS session never went near.
+`.gitignore` files are already excluded (porcelain default), but that does not solve
+cross-session pollution.
+
+Each git-detected file is classified by **ownership evidence** from THIS session's events:
+
+1. a `write`/`edit` event for the path (definitive), OR
+2. a Bash output-token naming the path (strong), OR
+3. the file's `statSync` **mtime falls inside one of this session's Bash execution windows**
+   `[tool_execution_start.ts, tool_execution_end.ts]` (catches a converter output the command
+   never named).
+
+- **Any hit → `sessionOwned: true`** → file goes in `data.files` with its `origin`.
+- **No hit → `sessionOwned: false`** → file goes in a separate `data.otherChanges[]` array
+  ("working-tree changes this session cannot claim"). NOT dropped — the worktree is genuinely
+  shared, so hiding it outright confuses ("I made that, where is it?").
+
+**Client treatment (B default + A toggle):** `data.files` renders normally; `data.otherChanges`
+renders under a muted, **collapsed** `▸ N other working-tree changes` group. A header toggle
+"this session only" (A) hides that group entirely. Default = B (collapsed-but-present).
+
+**mtime-window mechanics + fallbacks:** window = `[start, end]` from the Bash tool's execution
+events; no `end` (still running / dropped) → `[start, now]`. A small slack (≈±1 s) absorbs
+fs/event clock jitter. Evidence ③ requires an actual Bash window — NOT merely "mtime after
+session start" — so a formatter/editor/`git checkout` bump does not falsely claim a file.
+Deleted paths (` D`/`D `) are out of scope (Non-Goal: feature is tool-*created* files).
+
+**Known limits (documented, accepted):** mtime is coarse; concurrent sessions in the same cwd
+with overlapping Bash windows are genuinely ambiguous (mtime alone can't split them —
+Decision 3c is the future fix); clock domains differ under docker/remote. Worktree-isolated
+sessions (OpenSpec flow, one session per worktree) already have a session-scoped working tree,
+so `otherChanges` is empty there — this gating is a no-op where isolation exists and only does
+work in the shared-cwd case that needs it.
+
+## Decision 3c — positive other-session attribution (deferred, follow-up)
+
+The server sees ALL sessions in a cwd (`active-sessions-in-cwd.ts`) and their event streams, so
+an `otherChanges` file's mtime could be matched to another session's Bash window to label it
+`changed by <session>` instead of the generic group. Deferred: more compute + overlapping-window
+ambiguity needs its own rules. B (the collapsed group) ships first.
+
 ## Decision 4 — binary + size safety on the synthetic diff (fixes the headline case)
 
 nano-banana emits PNGs; the existing synthetic-diff path reads the file as utf-8 and prefixes

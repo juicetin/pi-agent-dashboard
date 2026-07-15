@@ -53,6 +53,16 @@ new/untracked on disk. Users lose track of artifacts the agent just made.
    the existing image/preview dispatch). This fixes the headline case: a generated PNG no longer
    becomes a corrupt utf-8 "diff".
 
+6. **Session-ownership gating (git state is cwd-scoped, not session-scoped).** Because
+   `git status` reflects the shared working tree (multiple sessions can share a cwd), a raw
+   union would surface files another session / a manual edit / a build touched. Each
+   git-detected file is classified by ownership evidence from THIS session: a Write/Edit event,
+   a Bash output-token match, or its mtime falling inside one of this session's Bash execution
+   windows. Owned files (`sessionOwned: true`) go in `data.files`; the rest go in a separate
+   `data.otherChanges[]`. The Files panel shows owned files normally and puts the rest under a
+   muted, **collapsed** `▸ N other working-tree changes` group, with a "this session only"
+   toggle that hides the group. Worktree-isolated sessions have an empty `otherChanges` (no-op).
+
 ## Non-Goals
 
 - **Files created OUTSIDE the session cwd.** Deferred to a follow-up change. Listing arbitrary

@@ -4,7 +4,7 @@
 
 ### Requirement: git-status file detection unioned into the changed-file list
 
-When the session cwd is a git repository, the server SHALL scan `git status --porcelain` (run with `cwd = session.cwd`) and union each new/modified/untracked path into the changed-file list, so files created by any tool (not only Write/Edit) appear. Each porcelain path SHALL be C-unquoted, rename/copy lines (`R`/`C` `old -> new`) SHALL resolve to the new path, and each SHALL be passed through the SAME `normalizePath(abs, cwd)` pipeline as Write/Edit so keys share one space and paths outside cwd are excluded. Paths already present from Write/Edit events SHALL be deduped by path (never listed twice).
+When the session cwd is a git repository, the server SHALL scan `git status --porcelain` (run with `cwd = session.cwd`) and union each new/modified/untracked path into the changed-file list, so files created by any tool (not only Write/Edit) appear. Each porcelain path SHALL be C-unquoted, rename/copy lines (`R`/`C` `old -> new`) SHALL resolve to the new path, and each SHALL be passed through the SAME `normalizePath(abs, cwd)` pipeline as Write/Edit so keys share one space and paths outside cwd are excluded. Containment SHALL be tested via `path.relative(cwd, abs)` + `..`-prefix check, NOT a literal string prefix (`abs.startsWith(cwd)`), so a sibling directory sharing a name prefix is not falsely admitted. Paths already present from Write/Edit events SHALL be deduped by path (never listed twice).
 
 #### Scenario: Tool-created file appears
 - **WHEN** the session cwd is a git repo
@@ -22,6 +22,16 @@ When the session cwd is a git repository, the server SHALL scan `git status --po
 - **WHEN** git reports a path with special characters as a C-quoted porcelain entry, or a rename line `R  old.ts -> new.ts`
 - **THEN** the detector SHALL unquote / take the new path
 - **AND** the resulting key SHALL equal the `normalizePath` key a Write/Edit event to the same file would produce
+
+#### Scenario: Absolute path under cwd yields the relative key
+- **WHEN** any source (porcelain, Bash-token, or a Write/Edit `args.path`) supplies an absolute path inside cwd (e.g. `/home/user/project/src/foo.ts`, cwd `/home/user/project`)
+- **THEN** its key SHALL be the relative-posix form `src/foo.ts` (never the absolute form)
+- **AND** an absolute-path source and a relative-path source for the same file SHALL dedup to ONE entry
+
+#### Scenario: Sibling directory sharing a name prefix is not admitted
+- **WHEN** cwd is `/home/user/project` and a path is `/home/user/project-backup/x.ts`
+- **THEN** `path.relative(cwd, abs)` yields `../project-backup/x.ts` (starts with `..`)
+- **AND** the file SHALL be excluded (a literal `startsWith(cwd)` prefix test would wrongly admit it)
 
 #### Scenario: Path outside cwd excluded
 - **WHEN** a porcelain entry resolves outside the session cwd

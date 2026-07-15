@@ -30,6 +30,18 @@ No open clarifications — the two numeric gaps (256 KB synthetic-diff cap,
 
 | id | class | technique | level | disposition |
 |----|-------|-----------|-------|-------------|
+| D3a | edge-case | EP | L1 | automated |
+
+**D3a — absolute-under-cwd yields relative key + dedups.** *input:* an absolute path `${cwd}/src/foo.ts` from one source and a relative `src/foo.ts` from another (e.g. porcelain vs a Write event) · *trigger:* `normalizePath` + dedup · *observable:* key is `src/foo.ts` (never absolute); exactly one entry (the two sources merge).
+
+| id | class | technique | level | disposition |
+|----|-------|-----------|-------|-------------|
+| D3b | error-handling | BVA | L1 | automated |
+
+**D3b — sibling-prefix directory not admitted.** *input:* cwd `/home/user/project`, candidate `/home/user/project-backup/x.ts` · *trigger:* containment check · *observable:* `path.relative` gives `../project-backup/x.ts`; file excluded (guards against a `startsWith(cwd)` false positive).
+
+| id | class | technique | level | disposition |
+|----|-------|-----------|-------|-------------|
 | D4 | edge-case | EP | L1 | automated |
 
 **D4 — out-of-cwd porcelain entry excluded.** *input:* porcelain entry resolving to `../sibling/x` (outside cwd) · *trigger:* detector · *observable:* `x` absent from `data.files` (v1 out-of-cwd out of scope).

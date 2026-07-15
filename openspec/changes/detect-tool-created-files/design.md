@@ -16,6 +16,13 @@ change is additive at the wire level and keeps the same key frame, but the two W
 on `session-diff.ts` and the `session-diff-extraction` spec. Reconciliation is explicit
 (Decision 8), not "rebase and hope".
 
+Adjacent, synergistic (no file/spec overlap): `auto-canvas` drives a preview surface from
+tool events but explicitly drops bash/mtime detection as "no reliable signal" and detects
+`write`/`edit` only. This change builds that signal (git-status + Bash-token + mtime-window).
+The two are additive here; a future follow-up could feed this change's `origin:"tool"` +
+`sessionOwned` deliverables into auto-canvas's classifier — but only after re-clearing
+auto-canvas's auto-open security bar (safe-for-list ≠ safe-for-auto-open).
+
 ## Scope (v1)
 
 - **IN:** git-status detection of tool-created files **inside cwd**; Bash-command

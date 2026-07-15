@@ -63,6 +63,17 @@ Adjacent, non-colliding: active change `fix-session-diff-open-nongit-and-preview
 diff-tab path-format mismatch (orthogonal); its non-git handling informs the versioning
 decision in `design.md` (Decision 6).
 
+Adjacent, synergistic: active change `detect-tool-created-files` **builds the very signal this
+proposal calls "no reliable signal to harvest" and drops** (Part 3) — git-status detection +
+Bash output-token attribution + mtime-in-Bash-window ownership for bash/skill/converter
+outputs, in `packages/server/src/session-diff.ts` (disjoint from this change's files). It does
+NOT change auto-canvas v1 (detect stays `write`/`edit`-only; bash/skill deliverables remain
+declare-driven). It only means a future follow-up could feed `origin:"tool"` +
+`sessionOwned` deliverables into `detectCanvasIntent`. **Load-bearing caveat:** that signal is
+validated for a *passive changed-file list* (no fetch, no auto-open); promoting it into canvas
+auto-open must re-clear this change's security/disruption bar (mobile chip gate, preview CSP,
+no pre-confirm fetch) — safe-for-list ≠ safe-for-auto-open.
+
 ## What Changes
 
 Six coherent parts (single change, per scope decision):
@@ -133,7 +144,9 @@ Six coherent parts (single change, per scope decision):
 - Per-extension registry granularity (RendererKind-level only; extension-level deferred).
 - Token-level streaming into an in-memory buffer (our granularity is file/tool-call settled).
 - New renderers — this rides `dispatchPreview`'s existing set.
-- Harvesting bash-script outputs that don't announce a path (declare-tool covers those).
+- Harvesting bash-script outputs that don't announce a path (declare-tool covers those in v1;
+  `detect-tool-created-files` is building a git-status/mtime signal that a later follow-up could
+  wire in — out of scope here, see the Adjacent-synergistic note above).
 - Versioning untracked/gitignored deliverables (v1 = unversioned for those; see design Deferred).
 
 ## Discipline Skills

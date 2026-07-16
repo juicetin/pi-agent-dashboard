@@ -31,7 +31,13 @@
 - [x] 4.3 Grep the three edited files to confirm no remaining "read the file
       first" anti-pattern and no orphaned "STOP/violation" prose.
 
-## 5. Manual verification (tested later)
-- [ ] 5.1 Scaffold a throwaway project via `project-init` (coding, dox-wired);
-      confirm the seeded root `AGENTS.md` contains the kb substitution table.
-- [ ] 5.2 Scaffold the manual variant; confirm the degraded table is seeded.
+## 5. Automated seed verification
+> project-init seeding runs through the deterministic composer
+> `seed-doctrine.ts` `buildDoctrineBlock({ kbWired })` — asserted directly in
+> `packages/extension/src/__tests__/project-init-seed-doctrine.test.ts` (no
+> docker/Playwright: the skill's browser path drives a model, not this content).
+- [x] 5.1 Assert `buildDoctrineBlock({ kbWired: true })` carries the kb
+      substitution table (symbol-lookup row, `kb_neighbors`/`kb_get`,
+      explicit fall-through).
+- [x] 5.2 Assert `buildDoctrineBlock({ kbWired: false })` carries the degraded
+      same-shape table (chain-walk rows, explicit fall-through, no kb tooling).

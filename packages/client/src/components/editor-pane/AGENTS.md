@@ -4,7 +4,8 @@ Files in this directory. One row per source file.
 
 | File | Purpose |
 |------|---------|
-| `BinaryWarn.tsx` | Binary-file tab. Shows "binary, open externally" notice. Fetches detected editors via `fetchEditors(cwd)`. Renders "Open in <name>" buttons calling `openEditor`. No content fetched. See change: add-internal-monaco-editor-pane. |
+| `BinaryWarn.tsx` | Binary-file tab. Shows a "binary file" notice (path only). No content fetched. Native-editor buttons / `fetchEditors` removed. See change: add-internal-monaco-editor-pane, remove-external-editor-integration. |
+| `ChangesRailSection.tsx` | Collapsible Changes section atop the editor-pane project-tree rail. Lists changed files (per-file `+adds −dels`); opens per-file diff as a `diff:` viewer tab. Reads shared `SessionDiffContext`. See change: add-change-summary-table. Threads `diff.data.otherChanges` into `DiffFileTree`; renders when either `files` or `otherChanges` non-empty. See change: detect-tool-created-files. |
 | `ChangedOnDiskBanner.tsx` | Per-tab changed-on-disk banner. Refresh re-fetches; Dismiss keeps stale view. No auto-reload. See change: split-editor-workspace. |
 | `ChangesRailSection.tsx` | Slim summary bar atop the rail: `Changes (N) · +X −Y`, `summed` badge (non-git), `this session only` toggle. Props `{sessionOnly, onSessionOnlyChange}` (rail-local, owned by `EditorPane`, D3 — not context; lifting breaks `FileDiffView` takeover). No per-file list / `DiffFileTree`. Reads `SessionDiffContext`; null when no `files`+`otherChanges`. See change: add-change-summary-table, detect-tool-created-files, collapse-diff-file-tree. |
 | `DiffViewer.tsx` | `diff` viewer tab. Strips `diff:` prefix from virtual path, reads file `gitDiff` from `SessionDiffContext`, delegates render to `DiffPanel`. See change: add-change-summary-table. |

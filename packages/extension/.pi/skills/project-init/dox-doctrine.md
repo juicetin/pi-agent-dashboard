@@ -55,9 +55,11 @@ the threshold stay verbatim (lossless).
 ## Finding docs (READ discipline)
 
 `kb_*` tools are faster and cheaper than raw search — they return a one-line
-purpose + key exports per file, not raw bytes. For any "where is X" / "how does
-Y work" / symbol lookup, run the kb call FIRST. When your reflex is the left
-column, run the right column instead:
+purpose + key exports per file, not raw bytes. **This fires on the ACTION, not
+the intent** — before you `grep`/`rg` for a symbol, `cat`/read a file to learn
+what it does, or chase an import, the kb call goes first. It fires **even
+mid-task when you already know the file**; knowing the file does not exempt you.
+When your reflex is the left column, run the right column instead:
 
 | You're about to… | Do this FIRST instead |
 |---|---|
@@ -76,9 +78,11 @@ WRITE discipline. kb does NOT replace grep; it goes first.
 ## Finding docs (READ discipline)
 
 The directory `AGENTS.md` tree is faster and cheaper than raw search — each row
-carries a one-line purpose + key exports per file. For any "where is X" / "how
-does Y work" / symbol lookup, consult the tree FIRST. When your reflex is the
-left column, do the right column instead:
+carries a one-line purpose + key exports per file. **This fires on the ACTION,
+not the intent** — before you `grep`/`rg` for a symbol, `cat`/read a file to
+learn what it does, or chase an import, consult the tree first. It fires **even
+mid-task when you already know the file**; knowing the file does not exempt you.
+When your reflex is the left column, do the right column instead:
 
 | You're about to… | Do this FIRST instead |
 |---|---|

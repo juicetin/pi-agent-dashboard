@@ -89,6 +89,7 @@ The full code-discipline reference lives in [`references/code-discipline.md`](re
 
 | Rule | One-liner |
 |------|-----------|
+| 0. kb-first, even as an executor | Before you `grep`/`rg` for a symbol, Read a file to learn its purpose, or chase an import, run `kb_search` / `kb agents <path>` / `kb_neighbors` FIRST. Fires on the ACTION, not the intent — knowing which file the task names does not exempt you. |
 | 1. Think before coding | State assumptions. Ask via `ask_user` when unclear. Never speculate about unread files. Confirm major plans. |
 | 2. Simplicity first | Minimum code that solves the problem. No speculative abstractions. "Would a senior engineer say this is overcomplicated?" |
 | 3. Surgical changes | Touch only what you must. Don't "improve" adjacent code. Match existing style. Every changed line traces to the request. |

@@ -51,6 +51,12 @@ reach the same all-green end state.
 
 ### 2. Run apply if non-manual work remains — inject the exemplar
 
+**kb-first, even as an executor.** You know which files the tasks name, so your
+reflex is `grep`/`cat`/Read on them directly. The docs-first gate still applies:
+before you `grep`/`rg` for a symbol, Read a file to learn its purpose, or chase
+an import, run `kb_search` / `kb agents <path>` / `kb_neighbors` FIRST. Knowing
+the file does not exempt you — kb the symbol/file, then edit.
+
 If non-`manual-only` tasks remain (real code + the test files the fold tasked),
 run `openspec-apply-change` for the change. `apply` writes code and marks tasks.
 

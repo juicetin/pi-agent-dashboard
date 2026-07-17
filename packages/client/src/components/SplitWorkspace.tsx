@@ -102,18 +102,6 @@ export function SplitWorkspace({
         className={`flex min-h-0 min-w-0 flex-col overflow-hidden ${isFull ? "hidden" : ""}`}
         style={isSplit ? { flexGrow: ratio, flexShrink: 1, flexBasis: 0 } : isClosed ? { flex: "1 1 0" } : undefined}
       >
-        {/* Always-visible pane caption (desktop). Folded as the chat pane's
-            header row — chat has no chrome of its own, so this is its single
-            header, not a second bar. */}
-        {isDesktop && (
-          <div
-            data-testid="pane-caption-chat"
-            className="flex h-8 shrink-0 items-center gap-1.5 border-b border-[var(--border-subtle)] bg-[var(--bg-secondary)] px-3 text-[10px] font-bold uppercase tracking-[0.1em] text-[var(--text-tertiary)]"
-          >
-            <span className="h-1.5 w-1.5 rounded-sm bg-[var(--accent-primary)] opacity-70" />
-            {i18nT("layout.chat", undefined, "Chat")}
-          </div>
-        )}
         {chat}
       </div>
 

@@ -37,15 +37,15 @@ describe("SplitWorkspace", () => {
     expect(onModeChange).toHaveBeenCalledWith("split");
   });
 
-  it("split: renders chat + resize-only divider + editor + chat caption", () => {
+  it("split: renders chat + resize-only divider + editor", () => {
     render(
       <SplitWorkspace mode="split" ratio={0.5} orientation="h" onRatioChange={vi.fn()} onModeChange={noop} chat={chat} editor={editor} />,
     );
     expect(screen.getByTestId("chat")).toBeTruthy();
     expect(screen.getByTestId("editor")).toBeTruthy();
     expect(screen.getByTestId("split-divider")).toBeTruthy();
-    // F3 (L1 slice): the CHAT caption is present as the chat pane's header row.
-    expect(screen.getByTestId("pane-caption-chat")).toBeTruthy();
+    // The CHAT caption bar was removed; no pane caption renders.
+    expect(screen.queryByTestId("pane-caption-chat")).toBeNull();
   });
 
   it("E5: divider carries no collapse control; the dotted grip is present", () => {

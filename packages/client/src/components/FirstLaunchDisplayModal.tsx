@@ -4,10 +4,9 @@
  * three presets (`simple` | `standard` | `everything`); on dismiss the
  * client PATCHes `standard` so the modal does not re-open.
  *
- * `seed()` closes the modal optimistically from local state: it applies the
- * chosen preset and calls `onClose(prefs)` on EVERY path (PATCH 200, non-2xx,
- * thrown fetch), so a dropped/failed WS broadcast never strands the modal.
- * The 200 body `{ displayPrefs }`, when readable, refines the passed value.
+ * `seed()` closes only after the PATCH response confirms the persisted
+ * `displayPrefs`. Failed or incompatible responses leave the selected preset
+ * in place and show an actionable error.
  *
  * See change: configurable-chat-display, fix-first-launch-display-modal-stuck-on-mobile.
  */
@@ -35,12 +34,11 @@ export function FirstLaunchDisplayModal({
 }): React.ReactElement {
   const [choice, setChoice] = useState<PresetKey>("standard");
   const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState(false);
 
   const seed = useCallback(async (key: PresetKey) => {
     setSubmitting(true);
-    // Source of truth is the chosen preset — the modal closes even if the
-    // PATCH never completes. The 200 body may refine it (server deep-merges).
-    let prefs = DISPLAY_PRESETS[key] as DisplayPrefs;
+    setError(false);
     try {
       const r = await fetch(`${apiBase}/api/preferences/display`, {
         method: "PATCH",
@@ -48,17 +46,28 @@ export function FirstLaunchDisplayModal({
         body: JSON.stringify(DISPLAY_PRESETS[key] as DisplayPrefs),
         credentials: "include",
       });
-      if (r.ok) {
-        const body = await r.json().catch(() => undefined) as { displayPrefs?: DisplayPrefs } | undefined;
-        if (body?.displayPrefs) prefs = body.displayPrefs;
+      if (!r.ok) throw new Error();
+      const body = await r.json() as { displayPrefs?: DisplayPrefs };
+      if (
+        !body.displayPrefs ||
+        typeof body.displayPrefs.tokenStatsBar !== "boolean" ||
+        !body.displayPrefs.toolCalls ||
+        Array.isArray(body.displayPrefs.toolCalls)
+      ) {
+        throw new Error();
       }
-    } catch { /* keep preset prefs; close unconditionally below */ }
-    setSubmitting(false);
-    onClose(prefs);
+      onClose(body.displayPrefs);
+    } catch {
+      setError(true);
+    } finally {
+      setSubmitting(false);
+    }
   }, [apiBase, onClose]);
 
   // Dismissal (Esc / backdrop) seeds `standard` — same as picking it.
-  const dismiss = useCallback(() => { void seed("standard"); }, [seed]);
+  const dismiss = useCallback(() => {
+    if (!submitting) void seed("standard");
+  }, [seed, submitting]);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -112,6 +121,15 @@ export function FirstLaunchDisplayModal({
               </label>
             ))}
           </div>
+          {error && (
+            <p role="alert" className="mt-3 text-xs text-red-400">
+              {i18nT(
+                "session.chatDisplaySaveFailed",
+                undefined,
+                "Couldn't save this preference. Check your connection and dashboard version, then try again.",
+              )}
+            </p>
+          )}
           <div className="mt-5 flex justify-end gap-2">
             <button
               type="button"

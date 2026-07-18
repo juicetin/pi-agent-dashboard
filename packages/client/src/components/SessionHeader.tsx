@@ -1,3 +1,4 @@
+import { SessionCardBadgeSlot } from "@blackbelt-technology/dashboard-plugin-runtime";
 import type { CommandInfo, DashboardSession, ImageContent, OpenSpecChange } from "@blackbelt-technology/pi-dashboard-shared/types.js";
 import { mdiArrowLeft, mdiCrosshairsGps, mdiFileCompare, mdiLinkOff, mdiPaperclip, mdiPencilOutline, mdiPlay, mdiPlayCircleOutline, mdiRefresh, mdiSourceFork, mdiViewGridOutline } from "@mdi/js";
 import { Icon } from "@mdi/react";
@@ -432,7 +433,9 @@ export function SessionHeader({ session, state, onRename, showBack, onBack, mobi
       )}
       {/* Extension UI System (Phase 2): footer-segment decorator slot. */}
       {/* See change: add-extension-ui-decorations. */}
-      <FooterSegmentSlot session={session} />
+      <FooterSegmentSlot session={session} excludeNamespace="harness" />
+      {/* The interactive harness badge replaces its tooltip-only footer segment. */}
+      <SessionCardBadgeSlot session={session} pluginId="harness" />
       {/* Editable user-tag strip + read-only phase chip (D5: detail-header
           primary). See change: add-session-tags. */}
       {onSetTags && (

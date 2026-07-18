@@ -183,15 +183,40 @@ function summarizeAtDepthLimit(obj: unknown, maxSize: number): unknown {
  * Recursively truncate large string fields in an object.
  * Returns a new object if any truncation occurred, otherwise the original.
  */
-function truncateStrings(obj: unknown, maxSize: number, depth = 0): unknown {
-  if (depth > 4) return summarizeAtDepthLimit(obj, maxSize);
-  if (typeof obj === "string") return capString(obj, maxSize);
+function isChatMessageContentPath(path: readonly string[]): boolean {
+  if (path.length < 2) return false;
+  const last = path[path.length - 1];
+  const parent = path[path.length - 2];
+  return parent === "message" && (last === "content" || last === "text");
+}
+
+function isTextContentBlockPath(path: readonly string[]): boolean {
+  if (path.length < 3) return false;
+  const last = path[path.length - 1];
+  const parent = path[path.length - 2];
+  return path.includes("message") && parent === "content" && last === "text";
+}
+
+function shouldPreserveChatMessageString(path: readonly string[], value: string): boolean {
+  const isChatMessage = isChatMessageContentPath(path) || isTextContentBlockPath(path);
+  return isChatMessage && !SKILL_ENVELOPE_RE.test(value);
+}
+
+function truncateStrings(obj: unknown, maxSize: number, depth = 0, path: string[] = []): unknown {
+  if (depth > 4) {
+    return typeof obj === "string" && shouldPreserveChatMessageString(path, obj)
+      ? obj
+      : summarizeAtDepthLimit(obj, maxSize);
+  }
+  if (typeof obj === "string") {
+    return shouldPreserveChatMessageString(path, obj) ? obj : capString(obj, maxSize);
+  }
   if (Array.isArray(obj)) {
-    // Skip large arrays (e.g., edits arrays)
-    if (obj.length > 20) return "[array truncated]";
+    // Skip large arrays (e.g., edits arrays), but preserve chat message content blocks.
+    if (obj.length > 20 && !isChatMessageContentPath(path)) return "[array truncated]";
     let changed = false;
     const result = obj.map((item) => {
-      const t = truncateStrings(item, maxSize, depth + 1);
+      const t = truncateStrings(item, maxSize, depth + 1, path);
       if (t !== item) changed = true;
       return t;
     });
@@ -201,6 +226,7 @@ function truncateStrings(obj: unknown, maxSize: number, depth = 0): unknown {
     let changed = false;
     const result: Record<string, unknown> = {};
     for (const [key, val] of Object.entries(obj)) {
+      const childPath = [...path, key];
       // Preserve base64 image data — skip truncation when sibling mimeType exists
       if (key === "data" && typeof val === "string" && "mimeType" in obj) {
         result[key] = val;
@@ -212,7 +238,7 @@ function truncateStrings(obj: unknown, maxSize: number, depth = 0): unknown {
         changed = true;
         continue;
       }
-      const t = truncateStrings(val, maxSize, depth + 1);
+      const t = truncateStrings(val, maxSize, depth + 1, childPath);
       if (t !== val) changed = true;
       result[key] = t;
     }

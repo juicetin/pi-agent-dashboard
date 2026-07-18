@@ -1236,6 +1236,7 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
     if (result.success) {
       void refreshRequirementProbesFor(null, {
         listInstalled: () => packageManagerWrapper.listInstalled("global"),
+        toolRegistry: getDefaultRegistry(),
       }).then((changed) => {
         for (const id of changed) {
           const status = getPluginStatusStore().getStatus(id);
@@ -1619,6 +1620,7 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
           },
           requirementDeps: {
             listInstalled: () => packageManagerWrapper.listInstalled("global"),
+            toolRegistry: getDefaultRegistry(),
           },
           createContext: (plugin) => createServerPluginContext(
             {

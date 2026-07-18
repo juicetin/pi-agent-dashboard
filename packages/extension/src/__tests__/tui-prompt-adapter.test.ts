@@ -45,31 +45,52 @@ describe("Bridge TUI adapter", () => {
     vi.useRealTimers();
   });
 
-  it("calls original select with question and options", () => {
+  it("includes explanatory message in select prompt text", () => {
     bus.registerAdapter(createTuiPromptAdapter(mockUi, bus));
-    bus.request({ pipeline: "command", type: "select", question: "Pick:", options: ["A", "B"] });
+    bus.request({
+      pipeline: "command",
+      type: "select",
+      question: "Pick:",
+      options: ["A", "B"],
+      metadata: { message: "Choose the safest option." },
+    });
 
-    expect(mockUi.select).toHaveBeenCalledWith("Pick:", ["A", "B"], expect.objectContaining({ signal: expect.any(AbortSignal) }));
+    expect(mockUi.select).toHaveBeenCalledWith(
+      "Pick:\n\nChoose the safest option.",
+      ["A", "B"],
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
   });
 
-  it("calls original input with question and defaultValue", () => {
+  it("includes explanatory message in input prompt text", () => {
     bus.registerAdapter(createTuiPromptAdapter(mockUi, bus));
-    bus.request({ pipeline: "command", type: "input", question: "Name:", defaultValue: "default" });
+    bus.request({
+      pipeline: "command",
+      type: "input",
+      question: "Name:",
+      defaultValue: "default",
+      metadata: { message: "Use the public display name." },
+    });
 
-    expect(mockUi.input).toHaveBeenCalledWith("Name:", "default", expect.objectContaining({ signal: expect.any(AbortSignal) }));
+    expect(mockUi.input).toHaveBeenCalledWith(
+      "Name:\n\nUse the public display name.",
+      "default",
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
   });
 
-  it("calls original editor with question and prefill", () => {
+  it("includes explanatory message in editor prompt text", () => {
     bus.registerAdapter(createTuiPromptAdapter(mockUi, bus));
     bus.request({
       pipeline: "command",
       type: "editor",
       question: "Edit response:",
       defaultValue: "draft",
+      metadata: { message: "Describe the change." },
     });
 
     expect(mockUi.editor).toHaveBeenCalledWith(
-      "Edit response:",
+      "Edit response:\n\nDescribe the change.",
       "draft",
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
@@ -158,9 +179,7 @@ describe("Bridge TUI adapter", () => {
     bus.registerAdapter(createTuiPromptAdapter(mockUi, bus));
     const promise = bus.request({ pipeline: "command", type: "select", question: "Q", options: ["A"] });
 
-    // External adapter answers
-    const id = (mockUi.select.mock.calls[0] as any)?.[2]?.signal ? undefined : undefined;
-    // Get the prompt id from the bus's pending
+    // External adapter answers. Get the prompt id from the bus's pending requests.
     bus.respond({ id: (bus as any).pending.keys().next().value, answer: "B", source: "dashboard" });
     await vi.advanceTimersByTimeAsync(0);
 

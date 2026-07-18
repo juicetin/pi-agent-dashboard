@@ -34,6 +34,11 @@ function promptMessage(prompt: PromptRequest): string {
     : "";
 }
 
+function promptQuestion(prompt: PromptRequest): string {
+  const message = promptMessage(prompt);
+  return message ? `${prompt.question}\n\n${message}` : prompt.question;
+}
+
 /** Create the PromptBus adapter that presents supported prompts in Pi's TUI. */
 export function createTuiPromptAdapter(
   ui: TuiPromptUi,
@@ -53,12 +58,12 @@ export function createTuiPromptAdapter(
           let answer: string | boolean | undefined;
 
           if (prompt.type === "select" && prompt.options && ui.select) {
-            answer = await ui.select(prompt.question, prompt.options, {
+            answer = await ui.select(promptQuestion(prompt), prompt.options, {
               signal: controller.signal,
             });
           } else if (prompt.type === "input" && ui.input) {
             answer = await ui.input(
-              prompt.question,
+              promptQuestion(prompt),
               prompt.defaultValue || "",
               { signal: controller.signal },
             );
@@ -68,7 +73,7 @@ export function createTuiPromptAdapter(
             });
           } else if (prompt.type === "editor" && ui.editor) {
             answer = await ui.editor(
-              prompt.question,
+              promptQuestion(prompt),
               prompt.defaultValue || "",
               { signal: controller.signal },
             );

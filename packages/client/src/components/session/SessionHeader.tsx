@@ -433,9 +433,9 @@ export function SessionHeader({ session, state, onRename, showBack, onBack, mobi
       )}
       {/* Extension UI System (Phase 2): footer-segment decorator slot. */}
       {/* See change: add-extension-ui-decorations. */}
-      <FooterSegmentSlot session={session} />
-      {/* Plugin badges also appear in the desktop session header. */}
-      <SessionCardBadgeSlot session={session} />
+      <FooterSegmentSlot session={session} excludeNamespace="harness" />
+      {/* The interactive harness badge replaces its tooltip-only footer segment. */}
+      <SessionCardBadgeSlot session={session} pluginId="harness" />
       {/* Editable user-tag strip + read-only phase chip (D5: detail-header
           primary). See change: add-session-tags. */}
       {onSetTags && (

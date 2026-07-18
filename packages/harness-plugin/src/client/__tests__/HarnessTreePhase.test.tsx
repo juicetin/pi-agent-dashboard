@@ -1,7 +1,6 @@
-import React from "react";
+import type { DashboardSession } from "@blackbelt-technology/pi-dashboard-shared/types.js";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import type { DashboardSession } from "@blackbelt-technology/pi-dashboard-shared/types.js";
 import { HarnessTreePhase } from "../HarnessTreePhase.js";
 
 function makeSession(tooltip: string): DashboardSession {

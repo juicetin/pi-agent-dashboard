@@ -1,7 +1,7 @@
+import { mdiClipboardCheckOutline, mdiClose, mdiOpenInNew } from "@mdi/js";
+import Icon from "@mdi/react";
 import React from "react";
 import { createPortal } from "react-dom";
-import Icon from "@mdi/react";
-import { mdiClipboardCheckOutline, mdiClose, mdiOpenInNew } from "@mdi/js";
 import type { HarnessDetail } from "./harness-status-data.js";
 import { formatHarnessUrlLabel } from "./harness-status-data.js";
 

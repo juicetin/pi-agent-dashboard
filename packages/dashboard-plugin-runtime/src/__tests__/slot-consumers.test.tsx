@@ -20,6 +20,31 @@ function makeSession(id = "s1"): DashboardSession {
 // ── Error boundary tests ──────────────────────────────────────────────────────
 
 describe("SessionCardBadgeSlot error boundary", () => {
+  it("can render badges from one plugin only", () => {
+    const registry = createSlotRegistry();
+    registry.addClaim({
+      pluginId: "harness",
+      priority: 100,
+      slot: "session-card-badge",
+      Component: () => <span data-testid="harness-badge">Harness</span>,
+    });
+    registry.addClaim({
+      pluginId: "automation",
+      priority: 100,
+      slot: "session-card-badge",
+      Component: () => <span data-testid="automation-badge">Automation</span>,
+    });
+
+    render(
+      <PluginContextProvider registry={registry}>
+        <SessionCardBadgeSlot session={makeSession()} pluginId="harness" />
+      </PluginContextProvider>,
+    );
+
+    expect(screen.getByTestId("harness-badge")).toBeDefined();
+    expect(screen.queryByTestId("automation-badge")).toBeNull();
+  });
+
   it("three plugins: second throws, first and third still render", () => {
     const registry = createSlotRegistry();
 

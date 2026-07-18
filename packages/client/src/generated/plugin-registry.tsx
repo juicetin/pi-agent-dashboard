@@ -8,7 +8,6 @@ import { FolderKbSection, KbSettingsClaim, catalog as kb_catalog } from "@blackb
 import { BuiltInRolesSettings, catalog as roles_catalog } from "@blackbelt-technology/pi-dashboard-roles-plugin";
 import { SubagentsSettings, SubagentPopoutClaim, catalog as subagents_catalog } from "@blackbelt-technology/pi-dashboard-subagents-plugin";
 import { FlowsAnthropicBridgeSettings, catalog as flows_anthropic_bridge_catalog } from "@blackbelt-technology/pi-dashboard-flows-anthropic-bridge-plugin";
-import { DemoSettings, DemoToolRenderer } from "@blackbelt-technology/demo-plugin";
 
 import type { PluginManifest } from "@blackbelt-technology/pi-dashboard-shared/dashboard-plugin/manifest-types.js";
 import type { ClaimEntry } from "@blackbelt-technology/dashboard-plugin-runtime";
@@ -313,31 +312,6 @@ export const PLUGIN_REGISTRY: RegistryEntry[] = [
     ],
     catalog: flows_anthropic_bridge_catalog,
   },
-  {
-    manifest: {
-        "id": "demo",
-        "displayName": "Demo Plugin (fixture)",
-        "priority": 1000,
-        "claims": [
-            {
-                "slot": "settings-section",
-                "component": "DemoSettings",
-                "tab": "general"
-            },
-            {
-                "slot": "tool-renderer",
-                "component": "DemoToolRenderer",
-                "toolName": "DashboardDemo"
-            }
-        ],
-        "client": "./src/client.tsx",
-        "fixture": true
-    },
-    claims: [
-      { pluginId: "demo", priority: 1000, slot: "settings-section", tab: "general", Component: DemoSettings },
-      { pluginId: "demo", priority: 1000, slot: "tool-renderer", toolName: "DashboardDemo", Component: DemoToolRenderer },
-    ],
-  },
 ];
 
-export const PLUGIN_REGISTRY_HASH = "48d707935ff618a2c640d7fb9a403ebd6f87dbc150bdd019e7c05db9cd812941";
+export const PLUGIN_REGISTRY_HASH = "25074ed37cfd4cc7af1c39282d4c94d6beecd6bbec75c28582c1425938cfc7da";

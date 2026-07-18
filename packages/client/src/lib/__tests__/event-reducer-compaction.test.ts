@@ -14,7 +14,7 @@ import {
   createInitialState,
   deriveCompactionBadge,
   reduceEvent,
-} from "../event-reducer.js";
+} from "../chat/event-reducer.js";
 import type { DashboardEvent } from "@blackbelt-technology/pi-dashboard-shared/types.js";
 
 function ev(data: Record<string, unknown>): DashboardEvent {

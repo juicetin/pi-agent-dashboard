@@ -14,8 +14,8 @@
  */
 import { mdiApplicationOutline, mdiFolderOpenOutline, mdiOpenInNew } from "@mdi/js";
 import { Icon } from "@mdi/react";
-import { getApiBase } from "../../lib/api-context.js";
-import { useI18n } from "../../lib/i18n";
+import { getApiBase } from "../../lib/api/api-context.js";
+import { useI18n } from "../../lib/i18n/i18n.js";
 
 export type TabActionTarget =
   | { kind: "file"; cwd: string; path: string }

@@ -9,9 +9,9 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("../../../lib/api-context.js", () => ({ getApiBase: () => "" }));
+vi.mock("../../../lib/api/api-context.js", () => ({ getApiBase: () => "" }));
 
-import { ThemeProvider } from "../../ThemeProvider.js";
+import { ThemeProvider } from "../../settings/ThemeProvider.js";
 import { TabActions } from "../TabActions.js";
 
 const fileTarget = { kind: "file" as const, cwd: "/proj", path: "doc.docx" };

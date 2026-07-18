@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeAll, afterEach } from "vitest";
 import { render, cleanup, waitFor } from "@testing-library/react";
 import React from "react";
-import { FilePreviewOverlay } from "../FilePreviewOverlay.js";
-import { ThemeProvider } from "../ThemeProvider.js";
+import { FilePreviewOverlay } from "../preview/FilePreviewOverlay.js";
+import { ThemeProvider } from "../settings/ThemeProvider.js";
 
 function renderOverlay(ui: React.ReactElement) {
   return render(<ThemeProvider>{ui}</ThemeProvider>);
@@ -141,6 +141,7 @@ describe("FilePreviewOverlay — non-blocking inspector", () => {
   });
 });
 
+import { friendlyReadError } from "../preview/FilePreviewOverlay.js";
 // Rich office / document / email kinds route to their shared `preview/*`
 // renderer and MUST NOT issue the plain `/api/file?` content fetch (which
 // returns no `content` for reclassified extensions → blank overlay regression).
@@ -203,7 +204,7 @@ describe("FilePreviewOverlay — rich office/email kinds", () => {
   });
 });
 
-import { friendlyReadError } from "../FilePreviewOverlay.js";
+
 
 function mockFileError(error: string, status = 404) {
   return vi.spyOn(globalThis, "fetch").mockResolvedValue(

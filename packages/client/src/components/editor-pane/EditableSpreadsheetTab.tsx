@@ -17,8 +17,8 @@
 import { mdiContentSave, mdiEyeOutline, mdiPencilOutline } from "@mdi/js";
 import { Icon } from "@mdi/react";
 import { lazy, Suspense, useCallback, useEffect, useState } from "react";
-import { getApiBase } from "../../lib/api-context.js";
-import { useI18n } from "../../lib/i18n";
+import { getApiBase } from "../../lib/api/api-context.js";
+import { useI18n } from "../../lib/i18n/i18n.js";
 import { SpreadsheetPreview } from "../preview/SpreadsheetPreview.js";
 import { ChangedOnDiskBanner } from "./ChangedOnDiskBanner.js";
 import type { ViewerProps } from "./types.js";

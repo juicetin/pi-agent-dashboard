@@ -77,6 +77,7 @@ export default defineConfig({
       "@blackbelt-technology/pi-dashboard-client-utils": path.resolve(__dirname, "../client-utils/src"),
     },
     dedupe: ["react", "react-dom", "@blackbelt-technology/dashboard-plugin-runtime"],
+    preserveSymlinks: true,
   },
   build: {
     outDir: "../dist",

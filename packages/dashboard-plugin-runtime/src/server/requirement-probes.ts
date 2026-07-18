@@ -36,7 +36,7 @@ export interface InstalledPackageRecord {
 
 /** Minimal tool-registry shape; satisfied by the shared `ToolRegistry`. */
 export interface ToolRegistryLike {
-  resolve(name: string): { ok: boolean; resolvedPath?: string };
+  resolve(name: string): { ok: boolean; path?: string | null };
 }
 
 export interface RequirementProbeDeps {
@@ -95,7 +95,13 @@ export function probeBinary(
   if (!deps.toolRegistry) return { name, satisfied: false };
   try {
     const r = deps.toolRegistry.resolve(name);
-    if (r.ok) return { name, satisfied: true, resolvedPath: r.resolvedPath };
+    if (r.ok) {
+      return {
+        name,
+        satisfied: true,
+        resolvedPath: r.path ?? undefined,
+      };
+    }
     return { name, satisfied: false };
   } catch {
     return { name, satisfied: false };

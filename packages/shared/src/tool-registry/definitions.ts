@@ -767,6 +767,13 @@ export function registerDefaultTools(registry: ToolRegistry, deps?: StrategyDeps
     // `findPidByMarker`, `isProcessLikePi` in platform/process.ts.
     registry.register(binaryDef("ps", deps));
     registry.register(binaryDef("pgrep", deps));
+
+    if (registry.getPlatform() === "linux") {
+      // Sandbox and transient-unit tools declared by the BTW dashboard plugin.
+      registry.register(binaryDef("bwrap", deps));
+      registry.register(binaryDef("systemd-run", deps));
+      registry.register(binaryDef("systemctl", deps));
+    }
   }
   // Windows Terminal — optional, override + where only (not part of
   // managed install, not on Unix).

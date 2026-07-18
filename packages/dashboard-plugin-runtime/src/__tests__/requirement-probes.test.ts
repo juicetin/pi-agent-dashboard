@@ -2,16 +2,20 @@
  * Tests for requirement-probes (probePiExtension / probeBinary / probeService /
  * runRequirementProbes / TTL cache). See change: add-plugin-activation-ui.
  */
-import { describe, it, expect, beforeEach } from "vitest";
 import {
-  probePiExtension,
+  registerDefaultTools,
+  ToolRegistry,
+} from "@blackbelt-technology/pi-dashboard-shared/tool-registry/index.js";
+import { beforeEach, describe, expect, it } from "vitest";
+import {
+  clearRequirementCache,
+  getCachedReport,
+  missingFromReport,
   probeBinary,
+  probePiExtension,
   probeService,
   runRequirementProbes,
-  missingFromReport,
-  getCachedReport,
   setCachedReport,
-  clearRequirementCache,
 } from "../server/requirement-probes.js";
 
 beforeEach(() => clearRequirementCache());
@@ -56,7 +60,7 @@ describe("probePiExtension", () => {
 describe("probeBinary", () => {
   it("satisfied when tool registry resolves the name", () => {
     const r = probeBinary("rg", {
-      toolRegistry: { resolve: () => ({ ok: true, resolvedPath: "/usr/bin/rg" }) },
+      toolRegistry: { resolve: () => ({ ok: true, path: "/usr/bin/rg" }) },
     });
     expect(r).toEqual({ name: "rg", satisfied: true, resolvedPath: "/usr/bin/rg" });
   });
@@ -69,6 +73,29 @@ describe("probeBinary", () => {
   it("not satisfied without a tool registry", () => {
     const r = probeBinary("rg", {});
     expect(r.satisfied).toBe(false);
+  });
+
+  it("resolves the Linux sandbox tools declared by the BTW plugin", () => {
+    const paths = new Map([
+      ["bwrap", "/usr/bin/bwrap"],
+      ["systemd-run", "/usr/bin/systemd-run"],
+      ["systemctl", "/usr/bin/systemctl"],
+    ]);
+    const registry = new ToolRegistry({ platform: "linux" });
+    registerDefaultTools(registry, {
+      exists: () => false,
+      which: (name) => paths.get(name) ?? null,
+      npmRootGlobal: () => "",
+      resolveModule: () => null,
+    });
+
+    for (const [name, resolvedPath] of paths) {
+      expect(probeBinary(name, { toolRegistry: registry })).toEqual({
+        name,
+        satisfied: true,
+        resolvedPath,
+      });
+    }
   });
 });
 
@@ -122,7 +149,7 @@ describe("runRequirementProbes", () => {
         listInstalled: async () => [{ name: "something-else" }],
         toolRegistry: {
           resolve: (n: string) =>
-            n === "rg" ? { ok: true, resolvedPath: "/usr/bin/rg" } : { ok: false },
+            n === "rg" ? { ok: true, path: "/usr/bin/rg" } : { ok: false },
         },
         fetchImpl,
       },

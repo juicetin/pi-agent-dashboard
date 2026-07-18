@@ -1,3 +1,4 @@
+import { SessionCardBadgeSlot } from "@blackbelt-technology/dashboard-plugin-runtime";
 import type { CommandInfo, DashboardSession, ImageContent, OpenSpecChange } from "@blackbelt-technology/pi-dashboard-shared/types.js";
 import { mdiArrowLeft, mdiCrosshairsGps, mdiFileCompare, mdiLinkOff, mdiPaperclip, mdiPencilOutline, mdiPlay, mdiPlayCircleOutline, mdiRefresh, mdiSourceFork, mdiViewGridOutline } from "@mdi/js";
 import { Icon } from "@mdi/react";
@@ -16,7 +17,6 @@ import { ArtifactLettersButton } from "./openspec-helpers.js";
 // flows-plugin's command-route claims (/flows, /flows:new, etc.) and
 // SessionFlowActionsClaim. See change: pluginize-flows-via-registry.
 import { SearchableSelectDialog, type SelectOption } from "./SearchableSelectDialog.js";
-import { SessionCardBadgeSlot } from "../../dashboard-plugin-runtime/slot-consumers.js";
 import { useOptionalSessionDiff } from "./SessionDiffContext.js";
 import { useOptionalSplitWorkspace } from "./SplitWorkspaceContext.js";
 import { TagChip } from "./tags/TagChip.js";
@@ -433,9 +433,9 @@ export function SessionHeader({ session, state, onRename, showBack, onBack, mobi
       )}
       {/* Extension UI System (Phase 2): footer-segment decorator slot. */}
       {/* See change: add-extension-ui-decorations. */}
-      <FooterSegmentSlot session={session} />
-      {/* Plugin badges also appear in the desktop session header. */}
-      <SessionCardBadgeSlot session={session} />
+      <FooterSegmentSlot session={session} excludeNamespace="harness" />
+      {/* The interactive harness badge replaces its tooltip-only footer segment. */}
+      <SessionCardBadgeSlot session={session} pluginId="harness" />
       {/* Editable user-tag strip + read-only phase chip (D5: detail-header
           primary). See change: add-session-tags. */}
       {onSetTags && (

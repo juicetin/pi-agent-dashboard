@@ -122,20 +122,31 @@ export function WorktreeCardSectionSlot({ folder }: { folder: FolderDescriptor }
   );
 }
 
-export function SessionCardBadgeSlot({ session }: { session: DashboardSession }) {
+export function SessionCardBadgeSlot({
+  session,
+  pluginId,
+}: {
+  session: DashboardSession;
+  pluginId?: string;
+}) {
   const registry = useSlotRegistryOrNull();
   const intents = useSlotIntents("session-card-badge", session.id);
   const legacyClaims = registry
-    ? forSessionRendered(registry.getClaims("session-card-badge"), session)
+    ? forSessionRendered(registry.getClaims("session-card-badge"), session).filter(
+      (claim) => !pluginId || claim.pluginId === pluginId,
+    )
     : [];
-  if (!legacyClaims.length && intents.size === 0) return null;
+  const matchingIntents = Array.from(intents.entries()).filter(
+    ([intentPluginId]) => !pluginId || intentPluginId === pluginId,
+  );
+  if (!legacyClaims.length && matchingIntents.length === 0) return null;
   return (
     <>
       {legacyClaims.map((c) =>
         renderClaim(c as Parameters<typeof renderClaim>[0], "session-card-badge", { session }),
       )}
-      {Array.from(intents.entries()).map(([pluginId, intent]) =>
-        renderIntent(pluginId, "session-card-badge", intent, session.id),
+      {matchingIntents.map(([intentPluginId, intent]) =>
+        renderIntent(intentPluginId, "session-card-badge", intent, session.id),
       )}
     </>
   );

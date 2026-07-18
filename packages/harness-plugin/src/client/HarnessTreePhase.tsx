@@ -1,17 +1,18 @@
-import React, { useEffect, useId, useMemo, useState } from "react";
-import Icon from "@mdi/react";
-import { mdiClipboardCheckOutline } from "@mdi/js";
 import type { DashboardSession } from "@blackbelt-technology/pi-dashboard-shared/types.js";
+import { mdiClipboardCheckOutline } from "@mdi/js";
+import Icon from "@mdi/react";
+import type React from "react";
+import { useEffect, useId, useMemo, useState } from "react";
+import { HarnessStatusDialog } from "./HarnessStatusDialog.js";
 import {
   extractHarnessTaskId,
   findHarnessStatus,
+  HARNESS_PHASE_TONE_CLASS,
   harnessDetailValue,
   harnessPhaseLabel,
   harnessPhaseTone,
-  HARNESS_PHASE_TONE_CLASS,
   parseHarnessTooltip,
 } from "./harness-status-data.js";
-import { HarnessStatusDialog } from "./HarnessStatusDialog.js";
 
 /**
  * Compact harness phase pill for the session-card title row in the left tree.

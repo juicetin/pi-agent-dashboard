@@ -197,18 +197,19 @@ function isTextContentBlockPath(path: readonly string[]): boolean {
   return path.includes("message") && parent === "content" && last === "text";
 }
 
-function shouldPreserveChatMessageString(path: readonly string[]): boolean {
-  return isChatMessageContentPath(path) || isTextContentBlockPath(path);
+function shouldPreserveChatMessageString(path: readonly string[], value: string): boolean {
+  const isChatMessage = isChatMessageContentPath(path) || isTextContentBlockPath(path);
+  return isChatMessage && !SKILL_ENVELOPE_RE.test(value);
 }
 
 function truncateStrings(obj: unknown, maxSize: number, depth = 0, path: string[] = []): unknown {
   if (depth > 4) {
-    return shouldPreserveChatMessageString(path)
+    return typeof obj === "string" && shouldPreserveChatMessageString(path, obj)
       ? obj
       : summarizeAtDepthLimit(obj, maxSize);
   }
   if (typeof obj === "string") {
-    return shouldPreserveChatMessageString(path) ? obj : capString(obj, maxSize);
+    return shouldPreserveChatMessageString(path, obj) ? obj : capString(obj, maxSize);
   }
   if (Array.isArray(obj)) {
     // Skip large arrays (e.g., edits arrays), but preserve chat message content blocks.

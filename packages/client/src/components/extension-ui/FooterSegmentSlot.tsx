@@ -7,14 +7,21 @@
  *
  * See change: add-extension-ui-decorations, design.md §6.
  */
-import React from "react";
-import { Icon } from "@mdi/react";
-import type { DashboardSession } from "@blackbelt-technology/pi-dashboard-shared/types.js";
-import { decoratorsOfKind } from "./decorator-utils.js";
-import { resolveMdiIcon } from "../../lib/mdi-icon-lookup.js";
 
-export function FooterSegmentSlot({ session }: { session: Pick<DashboardSession, "uiDecorators"> }) {
-  const segments = decoratorsOfKind(session.uiDecorators, "footer-segment");
+import type { DashboardSession } from "@blackbelt-technology/pi-dashboard-shared/types.js";
+import { Icon } from "@mdi/react";
+import { resolveMdiIcon } from "../../lib/mdi-icon-lookup.js";
+import { decoratorsOfKind } from "./decorator-utils.js";
+
+export function FooterSegmentSlot({
+  session,
+  excludeNamespace,
+}: {
+  session: Pick<DashboardSession, "uiDecorators">;
+  excludeNamespace?: string;
+}) {
+  const segments = decoratorsOfKind(session.uiDecorators, "footer-segment")
+    .filter((segment) => segment.namespace !== excludeNamespace);
   if (segments.length === 0) return null;
   return (
     <span

@@ -55,6 +55,7 @@ describe("plugin-registry-populated", () => {
   it("deduplicates context-owning dependencies for linked plugins", () => {
     const viteConfig = fs.readFileSync(path.join(REPO_ROOT, "packages/client/vite.config.ts"), "utf-8");
     expect(viteConfig).toContain('dedupe: ["react", "react-dom", "@blackbelt-technology/dashboard-plugin-runtime"]');
+    expect(viteConfig).toContain("preserveSymlinks: true");
   });
 
   if (PLUGIN_REGISTRY.length === 0) {

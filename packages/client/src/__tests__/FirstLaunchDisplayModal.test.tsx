@@ -2,17 +2,20 @@
  * Tests for FirstLaunchDisplayModal — preset PATCH on submit, default-to-
  * standard on dismiss. See change: configurable-chat-display.
  */
-import React from "react";
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { render, screen, fireEvent, waitFor, cleanup } from "@testing-library/react";
-import { FirstLaunchDisplayModal } from "../components/FirstLaunchDisplayModal.js";
+
 import { DISPLAY_PRESETS } from "@blackbelt-technology/pi-dashboard-shared/display-prefs.js";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { FirstLaunchDisplayModal } from "../components/FirstLaunchDisplayModal.js";
 
 describe("FirstLaunchDisplayModal", () => {
   let fetchMock: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
-    fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) });
+    fetchMock = vi.fn().mockImplementation(async (_url, init) => ({
+      ok: true,
+      json: async () => ({ displayPrefs: JSON.parse(init.body as string) }),
+    }));
     (globalThis as any).fetch = fetchMock;
   });
 
@@ -43,21 +46,63 @@ describe("FirstLaunchDisplayModal", () => {
     await waitFor(() => expect(onClose).toHaveBeenCalledWith(merged));
   });
 
-  it("closes with the preset prefs even when the PATCH returns non-2xx", async () => {
+  it("keeps the modal open when the PATCH returns non-2xx", async () => {
     fetchMock.mockResolvedValue({ ok: false, status: 500, json: async () => ({}) });
     const onClose = vi.fn();
     render(<FirstLaunchDisplayModal apiBase="" onClose={onClose} />);
     fireEvent.click(screen.getByDisplayValue("everything"));
     fireEvent.click(screen.getByRole("button", { name: /Continue/i }));
-    await waitFor(() => expect(onClose).toHaveBeenCalledWith(DISPLAY_PRESETS.everything));
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toMatch(/couldn't save/i));
+    expect(onClose).not.toHaveBeenCalled();
   });
 
-  it("closes with the preset prefs even when fetch rejects", async () => {
+  it("keeps the modal open when a version-skewed server returns the SPA HTML", async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => { throw new SyntaxError("Unexpected token '<'"); },
+    });
+    const onClose = vi.fn();
+    render(<FirstLaunchDisplayModal apiBase="" onClose={onClose} />);
+    fireEvent.click(screen.getByDisplayValue("everything"));
+    fireEvent.click(screen.getByRole("button", { name: /Continue/i }));
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toMatch(/dashboard version/i));
+    expect(onClose).not.toHaveBeenCalled();
+    expect((screen.getByDisplayValue("everything") as HTMLInputElement).checked).toBe(true);
+  });
+
+  it("keeps the modal open when fetch rejects", async () => {
     fetchMock.mockRejectedValue(new Error("network down"));
     const onClose = vi.fn();
     render(<FirstLaunchDisplayModal apiBase="" onClose={onClose} />);
     fireEvent.click(screen.getByRole("button", { name: /Continue/i }));
-    await waitFor(() => expect(onClose).toHaveBeenCalledWith(DISPLAY_PRESETS.standard));
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toMatch(/couldn't save/i));
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("keeps the modal open when the response contains malformed preferences", async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({ displayPrefs: { tokenStatsBar: true, toolCalls: null } }),
+    });
+    const onClose = vi.fn();
+    render(<FirstLaunchDisplayModal apiBase="" onClose={onClose} />);
+    fireEvent.click(screen.getByRole("button", { name: /Continue/i }));
+    await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("ignores Escape while a preset save is pending", async () => {
+    let resolveFetch: ((value: unknown) => void) | undefined;
+    fetchMock.mockImplementation(() => new Promise((resolve) => { resolveFetch = resolve; }));
+    const onClose = vi.fn();
+    render(<FirstLaunchDisplayModal apiBase="" onClose={onClose} />);
+    fireEvent.click(screen.getByDisplayValue("everything"));
+    fireEvent.click(screen.getByRole("button", { name: /Continue/i }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    resolveFetch?.({ ok: true, json: async () => ({ displayPrefs: DISPLAY_PRESETS.everything }) });
+    await waitFor(() => expect(onClose).toHaveBeenCalledWith(DISPLAY_PRESETS.everything));
   });
 
   it("PATCHes standard on Skip dismissal", async () => {

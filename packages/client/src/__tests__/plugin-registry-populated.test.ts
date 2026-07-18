@@ -52,6 +52,11 @@ function workspacePluginManifestCount(): number {
 const KNOWN_SLOTS = new Set(Object.keys(SLOT_DEFINITIONS));
 
 describe("plugin-registry-populated", () => {
+  it("deduplicates context-owning dependencies for linked plugins", () => {
+    const viteConfig = fs.readFileSync(path.join(REPO_ROOT, "packages/client/vite.config.ts"), "utf-8");
+    expect(viteConfig).toContain('dedupe: ["react", "react-dom", "@blackbelt-technology/dashboard-plugin-runtime"]');
+  });
+
   if (PLUGIN_REGISTRY.length === 0) {
     it.skip("generated registry empty — run `npm run build` first to populate it", () => {});
     return;

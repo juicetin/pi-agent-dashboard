@@ -19,9 +19,14 @@ interface Props {
   tabs?: PreviewTab[];
   activeTab?: string;
   onTabChange?: (tabId: string) => void;
-  onBack: () => void;
+  /** Back-navigation handler. When omitted, no back button is rendered (e.g.
+   *  when hosted in a Dialog that supplies its own standard close). */
+  onBack?: () => void;
   /** Enable text search overlay (default: true) */
   searchable?: boolean;
+  /** Reserve right padding in the header so a host Dialog's close (✕) button
+   *  does not overlap the search box. */
+  closeInset?: boolean;
 }
 
 export function MarkdownPreviewView({
@@ -34,20 +39,23 @@ export function MarkdownPreviewView({
   onTabChange,
   onBack,
   searchable = true,
+  closeInset = false,
 }: Props) {
   const contentRef = useRef<HTMLDivElement>(null);
   return (
     <div className="flex-1 flex flex-col min-h-0" data-testid="markdown-preview">
-      {/* Header with back button and title */}
-      <div className="flex items-center gap-2 px-4 py-2 border-b border-[var(--border-secondary)]">
-        <button
-          onClick={onBack}
-          className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] p-1 rounded hover:bg-[var(--bg-surface)]"
-          data-testid="preview-back"
-          title={i18nT("session.backToChat", undefined, "Back to chat")}
-        >
-          <Icon path={mdiArrowLeft} size={0.7} />
-        </button>
+      {/* Header with optional back button and title */}
+      <div className={`flex items-center gap-2 px-4 py-2 border-b border-[var(--border-secondary)]${closeInset ? " pr-12" : ""}`}>
+        {onBack && (
+          <button
+            onClick={onBack}
+            className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] p-1 rounded hover:bg-[var(--bg-surface)]"
+            data-testid="preview-back"
+            title={i18nT("session.backToChat", undefined, "Back to chat")}
+          >
+            <Icon path={mdiArrowLeft} size={0.7} />
+          </button>
+        )}
         {title && (
           <span className="text-sm font-medium text-[var(--text-secondary)] truncate">
             {title}

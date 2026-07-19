@@ -38,13 +38,15 @@ export function OpenSpecArtifactDialog({ cwd, changeName, initialArtifact, opens
   // NOT the reader's generic "Failed to fetch" on a missing file).
   const reader = useOpenSpecReader(cwd, changeName, activeTab, artifacts);
 
+  // No back button: the host Dialog supplies the standard close (✕ / Escape /
+  // backdrop). `closeInset` reserves header space so search doesn't collide.
   const body = isWaitingForReplay ? (
-    <MarkdownPreviewView title={changeName} isLoading onBack={onClose} />
+    <MarkdownPreviewView title={changeName} isLoading closeInset />
   ) : !change ? (
     <MarkdownPreviewView
       title={changeName}
       error={i18nT("openspec.changeNotFoundInFolder", { changeName }, 'No OpenSpec change named "{changeName}" in this folder.')}
-      onBack={onClose}
+      closeInset
     />
   ) : (
     <MarkdownPreviewView
@@ -55,7 +57,7 @@ export function OpenSpecArtifactDialog({ cwd, changeName, initialArtifact, opens
       tabs={reader.tabs}
       activeTab={reader.activeTab}
       onTabChange={setActiveTab}
-      onBack={onClose}
+      closeInset
     />
   );
 

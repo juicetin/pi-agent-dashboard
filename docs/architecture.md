@@ -519,7 +519,7 @@ See change: eliminate-electron-runtime-install.
 The Stop button supports two-click escalation for stuck sessions:
 1. **Click 1 (Abort)**: Sends `abort` → bridge → `ctx.abort()`. Button transitions to orange pulsing "Force Stop".
 2. **Click 2 (Force Kill)**: Sends `force_kill` → server delegates termination to the **platform layer** (`packages/shared/src/platform/process.ts::killProcess(pid, { timeoutMs: 2000 })`), which:
-   - on **Windows** runs `taskkill /F /T /PID <pid>` (genuine tree kill — descendant `node.exe`, pi children, tmux panes, `wt` tabs, code-server subtrees all die together),
+   - on **Windows** runs `taskkill /F /T /PID <pid>` (genuine tree kill — descendant `node.exe`, pi children, tmux panes, `wt` tabs all die together),
    - on **POSIX** sends `SIGTERM`, polls liveness every 200ms for up to 2s, then escalates to `SIGKILL` if the process is still alive.
 
    Session marked "ended" (not removed), resumable via fork/continue.
@@ -535,7 +535,7 @@ All process termination across the codebase goes through `packages/shared/src/pl
 | `killProcess(pid, {timeoutMs})` | SIGTERM → wait → SIGKILL (tree via pgroup) | `taskkill /F /T /PID <pid>` |
 | `killPidWithGroup(pid, sig)` | `kill(-pid, sig)` (process group) | `kill(pid, sig)` (leaf) |
 
-Sites routed through these helpers: `session-action-handler.ts::handleForceKill`, `process-scanner.ts::killProcessByPgid`, `tunnel.ts::cleanupStaleZrok` + `deleteTunnel`, `editor-manager.ts::stop`, `headless-pid-registry.ts`, `server-pid.ts`. See specs: [`command-executor`](../openspec/specs/command-executor/spec.md), [`force-kill-handler`](../openspec/specs/force-kill-handler/spec.md).
+Sites routed through these helpers: `session-action-handler.ts::handleForceKill`, `process-scanner.ts::killProcessByPgid`, `tunnel.ts::cleanupStaleZrok` + `deleteTunnel`, `headless-pid-registry.ts`, `server-pid.ts`. See specs: [`command-executor`](../openspec/specs/command-executor/spec.md), [`force-kill-handler`](../openspec/specs/force-kill-handler/spec.md).
 
 `taskkill` is invoked via the platform's `execSync` wrapper (`platform/exec.ts`) so it inherits `windowsHide: true` — no console flash — and stays consistent with the `no-direct-child_process-import` invariant.
 
@@ -745,6 +745,19 @@ Plugin content-view claims (e.g. flows-plugin) remain predicate-driven, out of s
 2. `gatherGitInfo`: emits `git_info_update` only when branch/PR change.
 3. Server forwards update via `session_updated` to subscribed browsers.
 
+### Working-tree status + commit from card
+1. Bridge gathers working-tree status on the SAME 30s VCS tick — no new polling loop. `gatherGitStatus(cwd)` runs `git status --porcelain=v2 --branch`, shared `parseGitStatusV2` parses into `GitStatus { dirtyCount, staged, unstaged, untracked, ahead, behind }`.
+2. `sendGitInfoIfChanged` includes `gitStatus` in `git_info_update`; deduped via `lastGitStatusJson`. Inconclusive probe omits `gitStatus`, leaves last value.
+3. Server `event-wiring.ts` merges `gitStatus` from `git_info_update` onto session, broadcasts `session_updated`.
+4. Hybrid delivery, keyed by cwd (not session): passive broadcast above PLUS on-demand `GET /api/git/status?cwd=` (`getGitStatus`, reuses `parseGitStatusV2`) on card/folder focus + right after commit. Client `git-status-cache.ts` (`useGitStatus(cwd, fallback)`) keys by cwd — folder header + solo card at same path share one entry.
+5. Commit: `POST /api/git/commit { cwd, message, files[] }` → `commitFiles` stages selected paths with argv (`git add -- <files>`, NO shell), commits via `git commit -F -` reading message from STDIN (injection-proof; multi-line body verbatim). Every path `assertPathsInside(cwd)`-guarded; errors carry stable codes via `GitCommitError`. On success route broadcasts fresh `gitStatus` to every session sharing cwd.
+6. `GET /api/git/changed-files?cwd=` feeds commit dialog picker (porcelain-v2 + `--numstat`).
+7. AI-drafted message: `POST /api/git/commit-draft { cwd, files, sessionId }` → `commit-draft-relay.ts` sends `git_commit_draft { requestId }` to owning bridge, awaits `git_commit_draft_result`. Bridge (`commit-draft.ts` ladder + `commit-draft-agent.ts`) seeds ephemeral in-memory `AgentSession` (`SessionManager.inMemory`, `tools:[]`) with live session context + staged diff, prompts once, captures assistant text, disposes it — visible conversation gets NO new turn. Fallback ladder: fork-subagent (full context) → diff-only one-shot → deterministic stub; timeout at each rung so dialog never hangs.
+8. UI: shared `GitDirtyPill` (`● N` amber pill + `↑A ↓B` chips; hidden when clean and in sync) mounts on per-card `GitInfo` and folder-header `GroupGitInfo`; never duplicated on suppressed child cards in a group. Pill is button opening placement-agnostic `CommitDialog` (`CommitDialogProvider`/`useCommitDialog`, one instance at app root). Post-commit toast `Committed <shortHash>`.
+9. Grouped same-cwd sessions: one working tree = one commit; commit action offered at folder level, not per card.
+
+See change: add-session-uncommitted-indicator-and-commit.
+
 ### Git Polling (legacy entry, see VCS Polling above)
 1. Bridge polls git info every 30s (`vcs-info.ts`): branch, remote URL, PR number
 2. Changes are sent to the server only when values differ from last poll
@@ -938,7 +951,39 @@ The dashboard provides a GitHub-style file diff viewer for sessions. It shows wh
 
 **UI**: Split-pane content-area view (replaces ChatView when active). Left panel shows a two-level file tree — files with status indicators, expandable to show individual change events with timestamps and assistant message context. Right panel renders diffs via `@git-diff-view/react` with `@git-diff-view/lowlight` syntax highlighting. Supports split/unified diff modes and a file content view toggle.
 
-**Entry point**: "Changed Files" button in SessionHeader (only visible when Write/Edit tool events exist). Works for both active and ended sessions.
+**Numstat counts**: session-diff payload carries optional per-file `additions`/`deletions` + top-level `totalAdditions`/`totalDeletions` from `git diff --numstat --relative HEAD`. Absent for non-git or binary files. `DiffFileTree` shows per-file `+adds −dels` + aggregate `summed` header. See change: add-change-summary-table.
+
+**Event-loop-safe git enrichment**: `/api/session-diff` computes git enrichment without blocking Node event loop — all git spawns async via `runAsync` (no `spawnSync`). Per-file content diffs sourced from ONE batched `git diff --relative HEAD` (`git.diffAllOr`), split per file by `splitBatchedDiff` on `diff --git` boundaries; replaces old O(files) per-file spawn loop. Diff chunk exceeding `TRACKED_DIFF_MAX_BYTES` (5 MB) or binary file → listed with numstat `additions`/`deletions` but no text `gitDiff`. `buildSessionDiff` (replaces `enrichWithVcsDiff`) async. `buildSessionDiffCached(sessionId, events, cwd, cache)` wraps with per-session short-TTL result cache + single-flight (`SessionDiffCache`, `packages/server/src/session/session-diff-cache.ts`), key `sessionId:HEAD-sha:djb2(porcelain)`. Repeated UI polls coalesce onto one computation; HEAD/dirty change busts key. See change: fix-session-diff-eventloop-block.
+
+**Per-turn change-summary block**: deterministic (no LLM). `ChangeSummaryBlock` renders in chat stream per turn, client-derived from Edit/Write events via `buildTurnSummaries` (`lib/lineDelta.ts`, jsdiff `structuredPatch`). Default expanded; collapses to `N files · +X −Y`. Gated on `displayPrefs.changeSummaryTable` (simple off; standard/everything on). See change: add-change-summary-table.
+
+**Changes rail + diff tab**: Changed Files integrate as a Changes section atop the editor-pane rail (`ChangesRailSection`). Per-file diff opens as a `diff` viewer tab (`DiffViewer`, virtual `diff:<relPath>` path). `SessionDiffProvider` shares one fetch across rail, diff-tab, and takeover. See change: add-change-summary-table.
+
+**Client/server path agreement**: client and server MUST agree on `data.files` key format. Server `session-diff.ts::normalizePath` keys `data.files` by relative-posix: absolute-under-cwd → relative; absolute-outside-cwd → dropped; already-relative → kept. Pre-fix bug: tool calls could record absolute `args.path`; change-summary row + `openDiffTab` then carried absolute path; absolute path never string-equaled relative key → diff blanked ("No changes for this file"). Now: `lib/normalize-path.ts::normalizeUnderCwd(rawPath, cwd)` mirrors server rule — absolute-under-cwd → relative-posix; else unchanged. `ChatView` applies it to both displayed row path + `openDiffTab` argument at source. `DiffViewer` retries with cwd-normalized path on exact-match miss. Non-git contract: git repo → render `gitDiff`; non-git or no `gitDiff` → `DiffPanel` derives all-additions/edit diff from file's own session change payload (last Write/Edit), never blanks. See change: fix-session-diff-open-nongit-and-preview.
+
+**Entry point**: SessionHeader `ChangedFilesChip` calls `openChanges()` (Changes rail); only visible when Write/Edit tool events exist. `/session/:id/diff` takeover retained as fallback. Works for both active and ended sessions.
+
+**Tool-created-file detection** (change: detect-tool-created-files):
+
+`/api/session-diff` built by `buildSessionDiff(events, cwd)` in `packages/server/src/session-diff.ts` (replaces `extractFileChanges` + `enrichWithVcsDiff`).
+
+git-status DETECTOR: git repo → `git status --porcelain` (cwd = session.cwd). C-unquotes paths. Rename `R old -> new` resolves to new path. Skips deletions. Routes each via same `normalizePath(abs, cwd)` as Write/Edit (one shared key space; out-of-cwd dropped). Unions detected files into changed-file list.
+
+Bash ATTRIBUTOR: scans `tool_execution_start` bash events for output tokens (`>`, `>>`, `-o`, `--output`, `tee`) → labels detected file with redacted, 120-char-capped producing command (`producedBy`). Inside cwd it only LABELS, never adds a file (kills `grep -o` false positives). Secret shapes stripped.
+
+Non-git detector: Bash-token scan + in-cwd `existsSync` only (anchored to cwd, no arbitrary-path probe).
+
+File-level origin: `FileDiffEntry.origin` = write | edit | tool | mixed. `detectedVia` = git-status | bash-artifact. Reserved `previewable`. mixed = Write/Edit event AND on-disk detection; no synthetic ghost change event injected.
+
+Binary/size safety: before synthetic new-file diff, sniff binary (NUL byte / known ext) + 256 KB size cap → binary/oversized rows listed with no text `gitDiff`.
+
+Session-ownership gate (git state cwd-scoped, not session-scoped): each git-detected file classified by evidence from THIS session — Write/Edit event, Bash output-token, or mtime inside Bash execution window `[start,end]` (fallback `[start,now]`, ±1s slack). Owned → `data.files` (`sessionOwned:true`); rest → `data.otherChanges[]`. Worktree-isolated sessions → empty `otherChanges`.
+
+200-entry file-count cap. Write/Edit take precedence when truncating.
+
+Client: Files panel badges tool/mixed rows (`created by <command>`). `otherChanges` render under muted, collapsed "N other working-tree changes" group with "this session only" toggle.
+
+Scope (v1): out-of-cwd files + deleted files excluded. No change to `/api/session-file` cwd 403 gate.
 
 ### Internal Monaco editor pane (v1 read-only)
 
@@ -952,9 +997,9 @@ Viewer registry: monaco (lazy), image, pdf, markdown, binary-warn.
 
 Monaco lazy chunk loads on first text-file open. ts.worker omitted (no LSP). Theme derives from active dashboard theme via `buildMonacoTheme`. Recolors live on theme/mode change.
 
-`OpenFileButton` now split button: default → internal pane; dropdown → native editors.
+`OpenFileButton` plain button. Click → internal Monaco pane.
 
-Three file-open paths coexist; nothing removed. This pane = quick read-only glance. editor-view (code-server iframe) = full IDE. open-in-editor (native) = external.
+File-open surfaces: internal Monaco pane and preview overlay only.
 
 v2–v4 follow-on (pin-to-split, create-file, edit-with-conflicts) deferred to separate proposals.
 
@@ -967,6 +1012,8 @@ v2–v4 follow-on (pin-to-split, create-file, edit-with-conflicts) deferred to s
 Content search: `GET /api/grep` → `rg` preferred, bounded JS fallback. Filename search: bridge `list_files` walk (`.gitignore`-aware, softened budget).
 
 Changed-on-disk: browser `watch_files` (open files only) → `file-watch-manager` `fs.watch` → `file_changed` broadcast → per-tab banner (Refresh, no auto-reload). Torn down on disconnect.
+
+Rail = vertical stack: `ChangesRailSection` (Changes) above the project tree. `openChanges()` reveals it (`changesRevealSignal`); `openDiffTab()` opens a `diff:` viewer tab. See change: add-change-summary-table.
 
 ### Directory Settings + scoped markdown editing
 
@@ -1071,7 +1118,7 @@ Approval mints long-lived opaque bearer token. Registry `~/.pi/dashboard/paired-
 
 #### WS single-use ticket — D11/F4/F6
 
-Durable bearer never rides WS. Client mints short-lived ~15s single-use ticket via `POST /api/ws-ticket {scope}` (authenticated). Opens `wss://host/ws?ticket=`. Ticket deleted on first upgrade attempt. Bound to route scope (browser/terminal/editor/live). Mismatched-scope refused. Module `ws-ticket.ts`.
+Durable bearer never rides WS. Client mints short-lived ~15s single-use ticket via `POST /api/ws-ticket {scope}` (authenticated). Opens `wss://host/ws?ticket=`. Ticket deleted on first upgrade attempt. Bound to route scope (browser/terminal/live). Mismatched-scope refused. Module `ws-ticket.ts`.
 
 #### Genuine-local trust — D10, narrowed
 
@@ -1264,6 +1311,14 @@ To disable: set `tunnel.enabled` to `false` in `~/.pi/dashboard/config.json` or 
 
 The client can query `GET /api/tunnel-status` which returns `{ status: "active"|"inactive"|"unavailable", url?, serverOs }`.
 The client can connect/disconnect the tunnel via `POST /api/tunnel-connect` and `POST /api/tunnel-disconnect`.
+
+**Zrok v2 support.** Runtime resolves `zrok2` binary first, then falls back to `zrok` (Homebrew ships `zrok`; tarball/Windows/Linux ship `zrok2`). Env config dir `~/.zrok2` (v1 `~/.zrok` still read at load time). API host `api-v2.zrok.io` (v1 deprecated to HTTP 500). Headless enrollment: `zrok2 enable <token> --headless` (bare `enable` fails without TTY in server context). Token validator min length 8 (v2 tokens 12 chars).
+
+**Reserved/persistent URLs (v2 namespaces+names).** Config keys `tunnel.zrok.reservedName` + `tunnel.zrok.persistent` (default false). Mint name: `zrok2 create name -n public <name>` (reuse-on-exists for same account; taken-by-other → warn + ephemeral). Share: `zrok2 share public --headless -n public:<name> localhost:<port>` → stable `<name>.shares.zrok.io`. Release: `zrok2 delete name <name>` invoked only by explicit forget (see below). Reserved name SURVIVES disconnect/restart; released ONLY by `POST /api/tunnel-disconnect {forget:true}`. Ephemeral (no name, default persistent=false) yields rotating `*.shares.zrok.io` URL. Legacy v1 `tunnel.reservedToken` preserved on read (downgrade) but IGNORED by v2 provider — never promoted to reservedName.
+
+**URL format + CORS.** v2 emits bare `<t>.shares.zrok.io` (plural, no scheme); provider prepends `https://`. urlRegex anchored so `*.shares.zrok.io.attacker.com` NOT matched as zrok host. CORS allows `*.shares.zrok.io`.
+
+**Doctor + version check.** "zrok API reachable" probes `api-v2.zrok.io` (or enrolled env `api_endpoint`). NEW check "zrok version compatible" warns when major < 2 (v1 = 0.4.x) — real root-cause detector for field 500s.
 
 ### Tunnel watchdog
 
@@ -1682,7 +1737,7 @@ This is separate from the main JSON dashboard WebSocket (`/ws`).
 1. Browser sends `create_terminal` on main WS → server spawns PTY via `node-pty`
 2. Server broadcasts `terminal_added` to all browsers
 3. Browser opens binary WS to `/ws/terminal/:id`, attaches `xterm.js`
-4. Shell exit → PTY `onExit` → server broadcasts `terminal_removed` → card removed
+4. Shell exit → PTY `onExit` → server broadcasts `terminal_removed` → `term:<id>` tab reconciled away (dropped from the pane).
 
 **Native binary permissions.** `node-pty`'s prebuilt `spawn-helper` (and `pty.node`) must be executable for `pty.spawn` to succeed on macOS/Linux. Three layers of defense ensure this:
 
@@ -1753,88 +1808,23 @@ Each terminal maintains a 256KB ring buffer of raw PTY output. When a new WebSoc
 
 Terminal xterm.js instances stay mounted in the DOM (CSS hidden/shown) for instant switching without replay flicker. The binary WebSocket stays open while mounted.
 
-### Folder-Scoped View
+### Terminals as Editor-Pane Tabs
 
-Terminals are displayed in a tabbed `TerminalsView` per folder, accessed via the folder action bar's `Terminals(N)` button. Terminal cards no longer appear in the sidebar — the sidebar shows only pi session cards. The tab bar supports switching, closing, renaming, and creating new terminals.
+Terminals host as virtual `term:<id>` tabs (`ViewerKind` `terminal`) inside the editor pane, not a standalone view. Open via `dispatch(openFile, path:"term:<id>", viewer:"terminal")`, mirrors `live:`/`diff:` idiom.
 
-## Embedded Editor (code-server)
+Two hosts. Session split (`/session/:id/editor`): terminal cwd = session cwd, terminals open opt-in on user action. Folder-scoped pane (`/folder/:cwd/editor`): terminal cwd = folder cwd, auto-surfaces every non-ephemeral cwd terminal via `autoSurfaceTerminals`.
 
-The dashboard supports embedding VS Code in the browser via code-server.
+Real xterm mount = keep-alive `TerminalPaneLayer` (single `TerminalView` per id, visibility-toggled) inside `EditorPane`. `viewer-registry` `terminal` entry = no-op placeholder.
 
-### Architecture
+Terminal-tab slice = `SplitWorkspaceContext` hook `useTerminalPaneTabs` (open/create/kill/rename/onTitle, D5 reconcile stale `term:` tabs, D3 auto-surface, D4 close-tab-kills-PTY). `closeByPath` reducer drops a `term:` tab by path.
 
-```
-Browser                     Dashboard Server              code-server
-┌──────────────┐         ┌─────────────────┐         ┌──────────────┐
-│  EditorView  │         │  EditorManager  │         │  VS Code     │
-│  (iframe)    │◄─HTTP──►│  EditorProxy    │◄─HTTP──►│  :10001      │
-│              │  same   │  /editor/:id/*  │  local  │  (per folder)│
-└──────────────┘  origin └─────────────────┘         └──────────────┘
-```
+Persisted `term:` tabs survive reload (`VALID_VIEWERS` includes `terminal`); reconciled against live terminals at that cwd on load, stale dropped.
 
-### Lifecycle
+Sidebar `[Terminals(N)]` retargets to `/folder/:cwd/editor`; badge count unchanged (non-ephemeral terminals at cwd). Standalone `TerminalsView` + route `/folder/:cwd/terminals` REMOVED.
 
-1. User clicks `Editor` button in folder action bar → navigates to `/folder/:encodedCwd/editor`
-2. `EditorView` sends `POST /api/editor/start` with `{ cwd }`
-3. `EditorManager` spawns code-server on a free port with `--auth none --bind-addr 127.0.0.1:<port>`
-4. Waits for TCP ready probe → returns `{ id, proxyPath }` → iframe loads
-5. Browser sends heartbeat every 30s → resets idle timer
-6. No heartbeat for 10 min → instance killed via SIGTERM
+Inline `!!` ephemeral cards (`InlineTerminalCard`) unchanged, excluded from tabs. Server PTY / WS protocol / `terminal-manager` unchanged.
 
-### Reverse Proxy
-
-All code-server traffic is proxied through `/editor/:id/*` on the dashboard server. This provides same-origin access (no CORS/iframe issues) and works transparently through zrok tunnels.
-
-### Orphan Cleanup
-
-`EditorManager` state is purely in-memory. On graceful shutdown, `editorManager.stopAll()` SIGTERMs every child. On non-graceful shutdown (SIGKILL, crash, OOM, force-quit), spawned code-server processes get reparented to init/launchd and continue holding their port and `--user-data-dir` lockfile.
-
-To recover, every spawn is recorded in `~/.pi/dashboard/editor-pids.json` (`editor-pid-registry.ts`). On the next server boot, `editorPidRegistry.cleanupOrphans()` runs at the top of `server.start()` (before `fastify.listen`) and:
-
-1. Reads the persisted PIDs.
-2. For each entry whose PID is alive AND whose OS-reported command line contains `--user-data-dir <~/.pi/dashboard/editors/...>`, sends `SIGTERM`.
-3. After a 1 second grace period, sends `SIGKILL` to any survivor.
-4. Rewrites the file empty.
-
-The cmdline ownership check prevents killing unrelated `code-server` instances the user may run themselves. Cleanup completes before any `POST /api/editor/start` request can be served, so a new spawn for the same folder cannot race with a surviving orphan on the same `--user-data-dir` lockfile.
-
-### Editor keeper sidecar
-
-Supersedes the orphan-kill model above. code-server now survives dashboard restart; `/editor/<id>/` URL stays stable across restarts.
-
-Per-editor keeper (`packages/server/src/editor-keeper/keeper.cjs`) spawns detached, CJS-pure. Owns the code-server child, the UDS / named pipe, and the PID sidecar. Outlives the dashboard.
-
-Identity: `editorId = sha256(cwd).slice(0,12)`. Same cwd → same id across restarts. Same id → same `/editor/<id>/` URL.
-
-Files under `~/.pi/dashboard/editors/`:
-- POSIX: socket `<id>.sock`, PID sidecar `<id>.sock.pid`, log `keeper-<id>.log`.
-- Windows: pipe `\\.\pipe\pi-editor-<id>`, PID sidecar `pi-editor-<id>.pid`, log `keeper-<id>.log`.
-
-PID sidecar payload: `{editorId, keeperPid, childPid, port, cwd, dataDir, binary, spawnedAt}`.
-
-Protocol: JSON lines over the socket / pipe. Cmds: `heartbeat`, `getStatus`, `stop`. Events: `ack`, `status`, `child_exit`.
-
-Boot order in `server.start()`: `editorPidRegistry.adoptOrphans()` reattaches every live keeper via `editorManager.adopt(...)`; `editorPidRegistry.cleanupOrphans()` then sweeps pre-keeper installs (cmdline match on `--user-data-dir <~/.pi/dashboard/editors/...>` with no sidecar).
-
-`editorManager.start(cwd)` 3-way: in-memory hit → `keeperManager.probe(editorId)` adopt → `keeperManager.spawnKeeperFor(cwd)`.
-
-Shutdown: `stopAll()` gated by `editor.stopOnDashboardExit` (default `false`). Default → local map cleanup only; keepers + code-server children + browser tabs all survive. `true` → broadcasts `{cmd:"stop"}` to every keeper.
-
-Spec: [`openspec/changes/add-editor-keeper-sidecar/specs/editor-keeper-sidecar/spec.md`](../openspec/changes/add-editor-keeper-sidecar/specs/editor-keeper-sidecar/spec.md).
-
-### Configuration
-
-```json
-{
-  "editor": {
-    "binary": "/usr/local/bin/code-server",
-    "idleTimeoutMinutes": 10,
-    "maxInstances": 3
-  }
-}
-```
-
-Binary auto-detection order: config override → `code-server` on PATH → `openvscode-server` on PATH.
+See change: terminals-in-tabbed-panes.
 
 ### Known Servers Configuration
 
@@ -1962,7 +1952,7 @@ Settings → General → **Tools** renders one row per registered tool: status b
 
 ### Migration path
 
-`ToolResolver` remains the low-level PATH search primitive. The registry calls `ToolResolver.which()` from its `where` strategy. Unregistered binary names (e.g., ad-hoc `code-server` detection) still flow through `ToolResolver` directly. This keeps `ToolResolver` useful for one-off lookups and lets the registry focus on tools the dashboard formally depends on.
+`ToolResolver` remains the low-level PATH search primitive. The registry calls `ToolResolver.which()` from its `where` strategy. Unregistered binary names (e.g., ad-hoc `ripgrep` detection) still flow through `ToolResolver` directly. This keeps `ToolResolver` useful for one-off lookups and lets the registry focus on tools the dashboard formally depends on.
 
 See change: `consolidate-tool-resolution`.
 

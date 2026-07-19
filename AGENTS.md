@@ -5,23 +5,26 @@
 
 Web-based dashboard for monitoring and interacting with pi agent sessions remotely. Three-component architecture: bridge extension + Node.js server + React web client.
 
-## STOP — Docs-First Gate
+## Docs-First Gate — kb before grep
 
-**For any project-specific factual / "where is X" / "how does Y work" question: call `kb_search` FIRST — before `ctx_search`, `memory_search`, `grep`, or any source read.** `kb_search` indexes the repo markdown (`docs/`, `openspec/`, `packages/`, `.pi/`). It is the fastest correct map of this codebase. Fall through to grep/source only when `kb_search` returns nothing relevant. (`ctx_search` = session capture, not repo docs; different corpus.)
+`kb_*` tools are faster and cheaper than raw search: they return a one-line purpose + key exports per file instead of raw bytes. **This gate fires on the ACTION, not the intent** — before you type `grep`/`rg` for a symbol, `cat`/Read a file to learn what it does, or chase an import, the kb call goes first. It fires **even mid-task when you already know the file**: executing a known edit still means kb the symbol/file first, then edit. Do not exclude yourself because you think you already know where X is. **When your reflex is the left column, run the right column instead:**
+
+| You're about to… | Do this FIRST instead |
+|---|---|
+| `grep -rn "SymbolName" packages/ src/` — find where a fn / type / const lives | `kb_search --doc-type agents "SymbolName"` — tree indexes key exports per file |
+| `grep -rn "feature\|topic" src/` — how does X work / where's X handled | `kb_search "feature topic"` |
+| `cat` / `Read` a file just to learn its purpose before editing | `kb agents <path>` — one-line purpose + exports + `See change:` history |
+| chase imports / callers across files | `kb_neighbors <path\|heading>` |
+| read one doc section in full | `kb_get <path> <section>` |
+| build / run / install / setup / release / "how do I X" answer | `grep -i <kw> docs/faq.md README.md docs/` — then quote the entry |
+
+`kb_search` indexes the repo markdown (`docs/`, `openspec/`, `packages/`, `.pi/`). (`ctx_search` / `memory_search` = session capture, NOT repo docs — different corpus.)
+
+**Fall-through (explicit):** if the kb call returns nothing relevant, `rg` / source read is allowed — then add the missing directory `AGENTS.md` row per the [Documentation Update Protocol](#documentation-update-protocol). kb does NOT replace grep; it goes first.
 
 > **"What files relate to X" / per-file lookups:**
 > - Any file that lives in a directory → the per-directory `AGENTS.md` tree is the per-file record. Covers `packages/**` source AND non-source areas (`docker/`, `scripts/`, `.pi/skills/`, `public/`, `qa/`, `tests/`, `.github/`). `kb agents <path>` returns the root→nearest chain (pull, on demand); `kb_search --doc-type agents` ranks tree rows by symbol/topic; or read the file's own directory `AGENTS.md` (small) for its siblings.
 > - `docs/` topic docs + the 3 root-level config files (`biome.json`, `playwright.config.ts`, `.pi-test-harness.json`) have no owner under `packages/` — they live in `docs/AGENTS.md` (same tree; `kb agents docs/<file>` / `kb_search --doc-type agents`). The `docs/file-index*.md` splits are RETIRED — the per-directory `AGENTS.md` tree is the sole per-file record. See change: migrate-file-index-to-agents-tree.
-
-**Before any build / run / install / setup / release / "how do I X" question: `grep -i <keyword> docs/faq.md README.md docs/` FIRST. No source reads until that returns nothing.**
-
-If you read a script, config, or source file before grepping docs on a how-to, what-is question, you violated the protocol. Re-grep, then answer.
-
-- ❌ User: "how do I ..." → read `<src files>` → guess answer
-- ✅ User: "how do I ..." → `grep -ni '<words>' docs/faq.md` → quote the FAQ entry
-
-- ❌ User: "what is ..." → read `scripts/build-installer.sh`, `forge.config.ts` → guess answer
-- ✅ User: "what is ..." → `grep -ni '<words>' docs/index-*.md` → quote the entry
 
 Full protocol (index-first for code questions, directory `AGENTS.md` tree, etc.) is in [Investigation Protocol — Index First](#investigation-protocol--index-first) below.
 
@@ -38,7 +41,7 @@ Before implementing:
 - If multiple interpretations exist, present them — don't pick silently.
 - If a simpler approach exists, say so. Push back when warranted.
 - If something is unclear, stop. Name what's confusing. Ask.
-- **Never speculate about code you have not opened.** If the user references a specific file, read it before answering. No claims about the codebase without investigation — grounded, hallucination-free answers only.
+- **Never speculate about code you have not opened.** Consult the doc tree first (`kb agents <path>` / `kb_search`), then read the specific file. No claims about the codebase without investigation — grounded, hallucination-free answers only.
 - Before any major change, check in with the user and confirm the plan.
 
 ### 2. Simplicity First
@@ -257,6 +260,17 @@ Delegate specialist work to the matching subagent instead of doing it inline. Su
 | `typescript-expert` | Type-system work, generics, strict-mode fixes, async/Promise typing, `.d.ts` authoring. |
 | `nodejs-expert` | Server-side async, streams, perf, Node API usage in `src/server/`, `packages/server/`, Electron main process. |
 | `tailwind-expert` | Utility-class refactors, responsive breakpoints, design-token audits, dark-mode plumbing. |
+| `Audit` | Deep security + performance risk pass on a specific diff (read-only, returns labelled findings; parent fixes inline). Wraps `security-hardening` + `performance-optimization` analysis. Narrow+deep — complements `review-code`'s broad per-change pass. |
+| `DocScribe` | Write `docs/` prose for a landed change in caveman style (the Rule-6 docs-delegation target). Self-contained: pass it the diff + target doc paths. Returns proposed non-docs tree rows for the parent to apply. |
+| `SessionGuideline` | Turn a pi session into a how-we-did-it playbook (wraps `/skill:session-to-guideline`). `@research` for quality (judgment-heavy writing on a pre-condensed facts sheet; `@compact` for bulk backfill). Best for batch-documenting MANY past sessions — one spawn per session id, each isolated. Pass session id + output path. |
+
+**Apply-loop spawn checkpoints** (openspec-apply / implement) — spawn via an explicit `Agent` call when the diff signal appears; keeps the builder inline (coherence) and offloads only read/write-light work:
+
+| Signal in the task / diff | Spawn |
+|---|---|
+| change touches auth, secrets, PII, untrusted input, webhooks, or a latency/throughput budget | `Audit` (before commit; fix findings inline) |
+| contextFiles list is large (many files / exceeds a comfortable read) | `Explore` (distill the spec; else read directly for coherence) |
+| a change landed and `docs/` prose needs updating | `DocScribe` (after the code + tree rows are settled) |
 
 Rules:
 - One specialist per task. Don't chain react-expert → typescript-expert if a single pass covers it.
@@ -320,14 +334,16 @@ npm run reload
 ```
 `full-rebuild.ts` = **deploy** the checked-out dev version to the local running instance. NOT a feature-implementation step; worktree / Docker-isolated work does not run it.
 
-### Code-review gate (implementation phase)
-At implementation completion, before commit, run the advisory CodeRabbit gate on the diff. **Server-independent + worktree-safe** (no build, no restart) — works in a git worktree and alongside the Docker-isolated instance:
+### Code-review gates (implementation phase) — two tiers
+Review is split by moment. Inner loop uses an unlimited engine; the cloud quota is reserved for the PR.
+- **Inner loop (during dev, per non-trivial change):** the `review-code` discipline (eng-disciplines). Engine-agnostic, runs on an unlimited model engine — review the diff, fix blocking findings surgically, re-review, before commit. No cloud quota spent.
+- **Ship gate (opt-in, PR-time):** the advisory CodeRabbit gate. **Server-independent + worktree-safe** (no build, no restart) — works in a git worktree and alongside the Docker-isolated instance. **Opt-in** so its rate-limited quota is unspent during dev:
 ```bash
-npx tsx .pi/skills/implement/scripts/review-changes.ts          # uncommitted diff (default)
-npx tsx .pi/skills/implement/scripts/review-changes.ts -t committed --base main
-SKIP_CR_REVIEW=1 npx tsx .pi/skills/implement/scripts/review-changes.ts   # skip
+RUN_CR_REVIEW=1 npx tsx .pi/skills/implement/scripts/review-changes.ts             # opt in (uncommitted)
+npx tsx .pi/skills/implement/scripts/review-changes.ts --ship -t committed --base main
+npx tsx .pi/skills/implement/scripts/review-changes.ts                             # default: skips, points to review-code
 ```
-Warn-and-continue, never blocks: CodeRabbit is cloud rate-limited (no local model); on limit / missing CLI / auth failure it defers to a later cycle and exits 0. Fix Critical/Warning, then commit. Triage + fix loop: `code-review` skill.
+Warn-and-continue, never blocks: CodeRabbit is cloud rate-limited (no local model); on limit / missing CLI / auth failure it defers to a later cycle and exits 0. Fix Critical/Warning, then commit. CodeRabbit triage + fix loop: `code-review` skill.
 
 ### Code-quality gate (Biome ratchet)
 Static analysis via Biome. `npm run quality:changed` = oracle (biome `--changed` + `tsc --noEmit` + `npm test`, single exit code; goal-loop drivable). Tier A `error` (hard-gates CI), Tier B/C `warn`. Procedure: `code-quality` skill. Full ref: [`docs/code-quality.md`](docs/code-quality.md).
@@ -343,9 +359,10 @@ During implementation, invoke the matching `eng-disciplines` skill when a task s
 | non-trivial/irreversible step (migration, public API, cross-boundary) BEFORE it stands | `doubt-driven-review` |
 | a bug surfaces mid-implementation | `systematic-debugging` |
 | runtime state opaque, `console.log` insufficient (jiti server, PTY workers, WS closures) | `node-inspect-debugger` |
+| non-trivial change written + tests pass, BEFORE commit | `review-code` |
 | feature works + tests pass but the implementation feels heavy | `code-simplification` |
 
-The end gates (`code-review`, `code-quality`) remain unchanged and run at completion before commit.
+Code review is two-tier: `review-code` inline during the loop, the CodeRabbit gate opt-in at PR (above). The `code-quality` gate runs at completion before commit.
 
 ### Check current mode
 ```bash

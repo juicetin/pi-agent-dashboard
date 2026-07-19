@@ -9,21 +9,22 @@ import type {
   SpawnFailureCode,
 } from "@blackbelt-technology/pi-dashboard-shared/browser-protocol.js";
 import type { DisplayPrefs } from "@blackbelt-technology/pi-dashboard-shared/display-prefs.js";
-import type { EditorInstanceStatus } from "@blackbelt-technology/pi-dashboard-shared/editor-types.js";
 import type { TerminalSession } from "@blackbelt-technology/pi-dashboard-shared/terminal-types.js";
 import type { CommandInfo, DashboardSession, FileEntry, ModelInfo, OpenSpecData, OpenSpecGroup, RoleInfo } from "@blackbelt-technology/pi-dashboard-shared/types.js";
 import { useCallback, useEffect, useRef } from "react";
-import type { DiscoveredServerInfo } from "../components/ServerSelector.js";
-import { foldLiveEvents, type QueuedLiveEvent } from "../lib/coalesce-live-events.js";
-import { isVisibleCwd } from "../lib/cwd-visibility.js";
-import { addInteractiveRequest, applyPromptReceived, createInitialState, dismissInteractiveRequest, reduceEvent, type SessionState } from "../lib/event-reducer.js";
-import { encodeFolderPath } from "../lib/folder-encoding.js";
-import { clearLoadingHistory, HYDRATE_CEILING_MS, rearmLoadingHistory } from "../lib/loading-history.js";
-import { clearRecoveryOffer, setRecoveryOffer } from "../lib/recovery-offer-bus.js";
-import type { ReplayPersister } from "../lib/replay-persist.js";
-import { inferPlatform, pathKey } from "../lib/session-grouping.js";
-import { pushSpawnErrorToast } from "../lib/spawn-error-toast-bus.js";
-import { dispatchInitEvent } from "../lib/worktree-init-bus.js";
+import type { DiscoveredServerInfo } from "../components/connectivity/ServerSelector.js";
+import type { ToastVariant } from "../components/primitives/Toast.js";
+import { EMPTY_CANVAS_STATE, reduceCanvasChip, reduceCanvasIntent } from "../lib/canvas/canvas-gate.js";
+import { foldLiveEvents, type QueuedLiveEvent } from "../lib/chat/coalesce-live-events.js";
+import { isVisibleCwd } from "../lib/util/cwd-visibility.js";
+import { addInteractiveRequest, applyPromptReceived, createInitialState, dismissInteractiveRequest, reduceEvent, type SessionState } from "../lib/chat/event-reducer.js";
+import { t } from "../lib/i18n/i18n.js";
+import { clearLoadingHistory, HYDRATE_CEILING_MS, rearmLoadingHistory } from "../lib/replay/loading-history.js";
+import { clearRecoveryOffer, setRecoveryOffer } from "../lib/state/recovery-offer-bus.js";
+import type { ReplayPersister } from "../lib/replay/replay-persist.js";
+import { inferPlatform, pathKey } from "../lib/session/session-grouping.js";
+import { pushSpawnErrorToast } from "../lib/state/spawn-error-toast-bus.js";
+import { dispatchInitEvent } from "../lib/git/worktree-init-bus.js";
 
 /**
  * Rich spawn error detail stored per cwd.
@@ -75,12 +76,18 @@ export interface MessageHandlerSetters {
   setSpawnResult: React.Dispatch<React.SetStateAction<{ success: boolean; message: string } | null>>;
   setSessionOrderMap: React.Dispatch<React.SetStateAction<Map<string, string[]>>>;
   setPinnedDirectories: React.Dispatch<React.SetStateAction<string[]>>;
+  /** Flipped true on the first `pinned_dirs_updated` (sent on connect). Gates
+   *  the DirectoryHomeView cold-load guard. See change: add-directory-home-page. */
+  setPinnedDirsLoaded: React.Dispatch<React.SetStateAction<boolean>>;
   /** Favorite model labels, synced via `favorite_models_updated`. See change: enrich-model-selector-capabilities-favorites. */
   setFavoriteModels: React.Dispatch<React.SetStateAction<string[]>>;
   /** folder-workspaces: full workspace list, kept in sync via `workspaces_updated`. */
   setWorkspaces: React.Dispatch<React.SetStateAction<import("@blackbelt-technology/pi-dashboard-shared/browser-protocol.js").Workspace[]>>;
+  /** Flipped true on the first `workspaces_updated` (sent on modern connect).
+      Gates DirectoryHomeView's cold-load guard for workspace-only cwds.
+      See change: enable-workspace-folder-home-page. */
+  setWorkspacesLoaded: React.Dispatch<React.SetStateAction<boolean>>;
   setTerminals: React.Dispatch<React.SetStateAction<Map<string, TerminalSession>>>;
-  setEditorStatuses: React.Dispatch<React.SetStateAction<Map<string, { id: string; status: EditorInstanceStatus }>>>;
   setDiscoveredServers: React.Dispatch<React.SetStateAction<DiscoveredServerInfo[]>>;
   setSpawnErrors: React.Dispatch<React.SetStateAction<Map<string, SpawnErrorDetail>>>;
   setResumeErrors: React.Dispatch<React.SetStateAction<Map<string, string>>>;
@@ -92,13 +99,19 @@ export interface MessageHandlerSetters {
    * rendered chat by timestamp at the App level.
    * See change: render-file-previews.
    */
-  setViewMessagesMap: React.Dispatch<React.SetStateAction<Map<string, import("../lib/event-reducer.js").ChatMessage[]>>>;
+
   /**
    * Per-session "history loading" flag. Cleared on the first content batch,
    * the terminal `event_replay{isLast:true}`, or `session_updated{dataUnavailable:true}`.
    * See change: show-chat-history-loading-indicator.
    */
   setLoadingHistory: React.Dispatch<React.SetStateAction<Map<string, boolean>>>;
+  /**
+   * Per-session auto-canvas state, folded from `canvas_intent` /
+   * `canvas_server_chip` broadcasts. Coexists with the URL-driven preview
+   * routes. See change: auto-canvas (Section 6).
+   */
+  setCanvasMap: React.Dispatch<React.SetStateAction<Map<string, import("../lib/canvas/canvas-gate.js").CanvasState>>>;
 }
 
 export interface MessageHandlerDeps {
@@ -141,6 +154,12 @@ export interface MessageHandlerDeps {
    * See change: reduce-session-replay-traffic.
    */
   replayPersister?: ReplayPersister;
+  /**
+   * Show a global toast. Used for `auto_name_error` (bridge could not
+   * auto-name a session). Optional for back-compat / lean test contexts.
+   * See change: add-auto-session-naming.
+   */
+  showToast?: (text: string, variant?: ToastVariant) => void;
 }
 
 export function useMessageHandler(
@@ -150,11 +169,14 @@ export function useMessageHandler(
   const {
     setSessions, setSessionStates, setSessionCommands,
     setFileResults, setChangedOnDisk, setOpenspecMap, setFolderGitMap, setOpenspecGroupsMap, setModelsMap, setRolesMap, setSpawnResult,
-    setSessionOrderMap, setPinnedDirectories, setFavoriteModels, setWorkspaces, setTerminals, setEditorStatuses,
+    setSessionOrderMap, setPinnedDirectories, setPinnedDirsLoaded, setFavoriteModels, setWorkspaces, setWorkspacesLoaded, setTerminals,
     setDiscoveredServers, setSpawnErrors, setResumeErrors,
-    setDisplayPrefs, setViewMessagesMap, setLoadingHistory,
+    setDisplayPrefs, setLoadingHistory, setCanvasMap,
   } = setters;
-  const { send, navigate, clearSpawningCwd, spawningCwdsRef, subscribedRef, pendingTerminalCwdRef, lastCreatedTerminalIdRef, maxSeqMapRef, selectedSessionIdRef, pendingSpawnsRef, loadingHistoryTimersRef, replayPersister } = deps;
+  const { send, navigate, clearSpawningCwd, spawningCwdsRef, subscribedRef, pendingTerminalCwdRef, lastCreatedTerminalIdRef, maxSeqMapRef, selectedSessionIdRef, pendingSpawnsRef, loadingHistoryTimersRef, replayPersister, showToast } = deps;
+  // One-shot per session: suppress a repeat auto-name toast for the same
+  // session id. See change: add-auto-session-naming.
+  const autoNameToastedRef = useRef<Set<string>>(new Set());
 
   // Phase 3 (change: reduce-chat-render-cpu-umbrella): live `event` bursts
   // arrive one-per-WS-frame in separate macrotasks, so React 18 automatic
@@ -483,6 +505,34 @@ export function useMessageHandler(
         });
         break;
 
+      case "canvas_intent": {
+        // Auto-canvas driver: fold the two-phase intent (eager/settle) into the
+        // session's canvas slot. The CanvasDriver component reacts to the
+        // resulting state (viewport-gated open / chip). See change: auto-canvas.
+        if (typeof msg.sessionId !== "string") break;
+        setCanvasMap((prev) => {
+          const next = new Map(prev);
+          next.set(msg.sessionId, reduceCanvasIntent(prev.get(msg.sessionId) ?? EMPTY_CANVAS_STATE, msg));
+          return next;
+        });
+        break;
+      }
+
+      case "canvas_server_chip": {
+        // Declared-server confirm chip (Decision 4). A normal broadcast surfaces
+        // the chip (no probe here — the probe happens on tap through
+        // LiveServerViewer); an `expire:true` broadcast drops it at the turn
+        // boundary / server-exit so it becomes non-actionable (S32). Both cases
+        // fold through `reduceCanvasChip`.
+        if (typeof msg.sessionId !== "string") break;
+        setCanvasMap((prev) => {
+          const next = new Map(prev);
+          next.set(msg.sessionId, reduceCanvasChip(prev.get(msg.sessionId) ?? EMPTY_CANVAS_STATE, msg));
+          return next;
+        });
+        break;
+      }
+
       case "models_list": {
         // Models are GLOBAL in pi-coding-agent (single ModelRegistry per pi
         // process). The bridge emits this on session_start using the same
@@ -519,6 +569,12 @@ export function useMessageHandler(
           roles: msg.roles,
           presets: msg.presets,
           activePreset: msg.activePreset,
+          // Carry the built-in role-name set into the roles plugin config so
+          // BuiltInRolesSettings renders the Built-in/Custom split and the
+          // "＋ Add custom role" control. Dropping it here (the original defect)
+          // forced the flat back-compat layout.
+          // See change: fix-builtin-role-names-relay.
+          builtinRoleNames: msg.builtinRoleNames,
         };
         setRolesMap((prev) => {
           const next = new Map(prev);
@@ -643,6 +699,20 @@ export function useMessageHandler(
         break;
       }
 
+      case "auto_name_error": {
+        // Bridge could not auto-name a session (e.g. @fast unconfigured).
+        // One-shot per session so a hard-config error toasts only once.
+        // See change: add-auto-session-naming.
+        if (!autoNameToastedRef.current.has(msg.sessionId)) {
+          autoNameToastedRef.current.add(msg.sessionId);
+          showToast?.(
+            t("session.autoNameError", { reason: msg.reason }, `Couldn't auto-name session: ${msg.reason}`),
+            "error",
+          );
+        }
+        break;
+      }
+
       case "recovery_offer":
         // Cold-start interrupted-session offer. Sticky top-right notification
         // (no auto-timeout). See change: reopen-sessions-after-shutdown.
@@ -664,7 +734,7 @@ export function useMessageHandler(
           });
           setResumeErrors((prev) => {
             const next = new Map(prev);
-            next.set(msg.sessionId, msg.message ?? "Resume failed");
+            next.set(msg.sessionId, msg.message ?? t("session.resumeFailed", undefined, "Resume failed"));
             return next;
           });
           // Drop the pending-spawn entry on failure so a stale entry can't
@@ -682,7 +752,7 @@ export function useMessageHandler(
           // toast via the existing spawn-result slot.
           // See change: fix-fork-empty-session-silent-timeout.
           if (msg.code === "FORK_DEGRADED_TO_NEW") {
-            setSpawnResult({ success: true, message: msg.message ?? "Started a fresh session." });
+            setSpawnResult({ success: true, message: msg.message ?? t("session.startedFresh", undefined, "Started a fresh session.") });
           }
           // For continue mode, the same sessionId is reused — navigate now
           // since session_added might not fire (status update only).
@@ -705,7 +775,7 @@ export function useMessageHandler(
           setSpawnErrors((prev) => {
             const next = new Map(prev);
             if (!next.has(msg.cwd)) {
-              next.set(msg.cwd, { kind: "error", message: msg.message ?? "+Session failed" });
+              next.set(msg.cwd, { kind: "error", message: msg.message ?? t("session.spawnFailed", undefined, "+Session failed") });
             }
             return next;
           });
@@ -808,6 +878,7 @@ export function useMessageHandler(
 
       case "pinned_dirs_updated":
         setPinnedDirectories(msg.paths);
+        setPinnedDirsLoaded(true);
         break;
 
       case "favorite_models_updated":
@@ -818,6 +889,9 @@ export function useMessageHandler(
         // folder-workspaces: server sends full snapshot on subscribe and
         // after every mutation. Replace, do not merge.
         setWorkspaces(msg.workspaces);
+        // enable-workspace-folder-home-page: first snapshot marks workspaces
+        // loaded so the directory-home cold-load guard can release.
+        setWorkspacesLoaded(true);
         break;
 
       case "extension_ui_request":
@@ -827,17 +901,6 @@ export function useMessageHandler(
           const updated = addInteractiveRequest(current, msg.requestId, msg.method, msg.params);
           if (updated === current) return prev;
           next.set(msg.sessionId, updated);
-          return next;
-        });
-        break;
-
-      case "view_messages_update":
-        // Full snapshot of `/view` preview rows for a session. Replace,
-        // not append. Merged into the rendered chat at the App level.
-        // See change: render-file-previews.
-        setViewMessagesMap((prev) => {
-          const next = new Map(prev);
-          next.set(msg.sessionId, msg.viewMessages.slice());
           return next;
         });
         break;
@@ -921,10 +984,16 @@ export function useMessageHandler(
           next.set(msg.terminal.id, msg.terminal);
           return next;
         });
+        // A newly-created terminal now surfaces as a `term:<id>` tab inside the
+        // pane that requested it (the pane's terminal slice watches the
+        // terminal set and opens the tab in-place). The standalone
+        // /folder/:cwd/terminals route was removed, so DO NOT navigate here —
+        // doing so deselected the session and landed on the empty state.
+        // We still clear the pending marker + record the id for parity.
+        // See change: terminals-in-tabbed-panes.
         if (pendingTerminalCwdRef.current === msg.terminal.cwd) {
           pendingTerminalCwdRef.current = null;
           lastCreatedTerminalIdRef.current = msg.terminal.id;
-          navigate(`/folder/${encodeFolderPath(msg.terminal.cwd)}/terminals`);
         }
         break;
 
@@ -986,18 +1055,6 @@ export function useMessageHandler(
       case "worktree_init_done":
       case "worktree_init_failed":
         dispatchInitEvent(msg);
-        break;
-
-      case "editor_status":
-        setEditorStatuses((prev) => {
-          const next = new Map(prev);
-          if (msg.status === "stopped") {
-            next.delete(msg.cwd);
-          } else {
-            next.set(msg.cwd, { id: msg.id, status: msg.status });
-          }
-          return next;
-        });
         break;
 
       case "servers_discovered":
@@ -1065,5 +1122,5 @@ export function useMessageHandler(
         break;
       }
     }
-  }, [send, clearSpawningCwd, navigate, setSessions, setSessionStates, setSessionCommands, setFileResults, setChangedOnDisk, setOpenspecMap, setModelsMap, setRolesMap, setSpawnResult, setSessionOrderMap, setPinnedDirectories, setFavoriteModels, setWorkspaces, setTerminals, setEditorStatuses, setDiscoveredServers, setLoadingHistory, spawningCwdsRef, subscribedRef, pendingTerminalCwdRef, maxSeqMapRef, selectedSessionIdRef, loadingHistoryTimersRef, replayPersister, flushLiveEvents, scheduleLiveFlush]);
+  }, [send, clearSpawningCwd, navigate, setSessions, setSessionStates, setSessionCommands, setFileResults, setChangedOnDisk, setOpenspecMap, setModelsMap, setRolesMap, setSpawnResult, setSessionOrderMap, setPinnedDirectories, setPinnedDirsLoaded, setFavoriteModels, setWorkspaces, setWorkspacesLoaded, setTerminals, setDiscoveredServers, setLoadingHistory, setCanvasMap, spawningCwdsRef, subscribedRef, pendingTerminalCwdRef, maxSeqMapRef, selectedSessionIdRef, loadingHistoryTimersRef, replayPersister, flushLiveEvents, scheduleLiveFlush]);
 }

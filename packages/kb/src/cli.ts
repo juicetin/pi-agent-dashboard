@@ -5,13 +5,15 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { loadConfig, type ResolvedConfig, type ResolvedSource } from "./config.js";
-import { kbInit } from "./init.js";
-import { SqliteFtsStore } from "./sqlite-store.js";
-import { indexSource } from "./indexer.js";
-import { evaluate, type GoldenItem } from "./eval.js";
-import { resolveAll, classifyRef, type ResolvedSource as RResolvedSource } from "./sources.js";
-import { defaultPromptTrust } from "./trust.js";
 import { agentsChain, doxInit, doxLint } from "./dox.js";
+import { evaluate, type GoldenItem } from "./eval.js";
+import { runIndexAtomic } from "./index-run.js";
+import { indexSource } from "./indexer.js";
+import { kbInit } from "./init.js";
+import { renderHits } from "./render.js";
+import { classifyRef, type ResolvedSource as RResolvedSource, resolveAll } from "./sources.js";
+import { SqliteFtsStore } from "./sqlite-store.js";
+import { defaultPromptTrust } from "./trust.js";
 import type { DocType, SearchOpts } from "./types.js";
 
 interface Flags {
@@ -176,14 +178,27 @@ async function runCmd(cmd: string, flags: Flags): Promise<void> {
   }
   const sources = await sourcesForRun(cfg, flags);
   if (!sources.length && isIndex) { console.error("no sources resolved"); process.exit(2); }
+
+  if (cmd === "index") {
+    // Atomic path: do NOT openStore(cfg) here — opening pre-creates the DB file
+    // at dbPath (the husk). runIndexAtomic owns store lifecycle (temp+rename on
+    // first index; in-place incremental). See change: harden-kb-index-failure-atomicity.
+    const explicit = !!(flags.source as string[] | undefined)?.length;
+    const t = performance.now();
+    const s = await runIndexAtomic({
+      dbPath: cfg.dbAbsPath,
+      sources: sources.map((x) => ({ id: x.id, dir: x.dir })),
+      indexOpts: { force: !!flags.force, indexAgentsFiles: cfg.indexAgentsFiles, includeSourceMarkdown: cfg.includeSourceMarkdown, include: cfg.include, exclude: cfg.exclude, extensions: cfg.extensions },
+      explicit,
+    });
+    console.log(`indexed ${s.scanned} files (${s.changed} changed, ${s.deleted} deleted, ${s.chunks} chunks) in ${(performance.now() - t).toFixed(0)}ms`);
+    console.log(JSON.stringify(s.counts));
+    return;
+  }
+
   const store = openStore(cfg);
   try {
-    if (cmd === "index") {
-      const t = performance.now();
-      const s = await runIndex(cfg, store, sources, !!flags.force);
-      console.log(`indexed ${s.scanned} files (${s.changed} changed, ${s.deleted} deleted, ${s.chunks} chunks) in ${(performance.now() - t).toFixed(0)}ms`);
-      console.log(JSON.stringify(store.counts()));
-    } else if (cmd === "search") {
+    if (cmd === "search") {
       const q = flags._[1];
       if (!q) { console.error("search needs a query"); process.exit(2); }
       const limit = posInt(flags.limit, "--limit");
@@ -204,7 +219,7 @@ async function runCmd(cmd: string, flags: Flags): Promise<void> {
       };
       const hits = store.search(q, so);
       if (flags.json) console.log(JSON.stringify(hits, null, 2));
-      else for (const h of hits) console.log(`${h.score.toFixed(2)}  ${h.path}  ::  ${h.headingPath}${h.akaPaths ? `  (+${h.akaPaths.length} dup)` : ""}${h.parent ? `  [parent: ${h.parent.headingPath}]` : ""}\n      ${h.snippet.replace(/\s+/g, " ").slice(0, 160)}`);
+      else if (hits.length) console.log(renderHits(hits, { leading: "score", parentGlyph: "[parent: ", multiline: false }));
     } else if (cmd === "neighbors") {
       const depth = posInt(flags.depth, "--depth") ?? 2;
       const rel = enumFlag(flags.rel, ["child_of", "links_to", "references", "has_tag"], "--rel");

@@ -14,7 +14,74 @@
  *
  * See change: platform-command-executor.
  */
-import { run, unwrap, type Recipe, type Result } from "./runner.js";
+import type { GitStatus } from "../types.js";
+import { type Recipe, type Result, run, runAsync, unwrap } from "./runner.js";
+
+/**
+ * Parse `git status --porcelain=v2 --branch` stdout into a `GitStatus`.
+ *
+ * Porcelain v2 line kinds:
+ *   `# branch.ab +A -B`  — ahead/behind header (absent when no upstream)
+ *   `1 <XY> ...`         — ordinary changed file (X=staged, Y=unstaged; `.`=clean)
+ *   `2 <XY> ...`         — renamed/copied file (same XY semantics)
+ *   `u <XY> ...`         — unmerged (conflict) file
+ *   `? <path>`           — untracked file
+ *   `! <path>`           — ignored file (not counted)
+ *
+ * `dirtyCount` = distinct changed files = (1|2|u lines) + (? lines). A file
+ * that is both staged and unstaged is one line → counted once toward
+ * `dirtyCount`, but toward both `staged` and `unstaged`. Pure/total — an
+ * empty or clean status yields all-zero counts.
+ *
+ * See change: add-session-uncommitted-indicator-and-commit.
+ */
+export function parseGitStatusV2(stdout: string): GitStatus {
+  let staged = 0;
+  let unstaged = 0;
+  let untracked = 0;
+  let tracked = 0; // 1|2|u lines
+  let ahead = 0;
+  let behind = 0;
+
+  for (const line of stdout.split("\n")) {
+    if (line.length === 0) continue;
+    const kind = line[0];
+    if (kind === "#") {
+      // `# branch.ab +A -B`
+      if (line.startsWith("# branch.ab ")) {
+        const m = /\+(-?\d+) -(-?\d+)/.exec(line);
+        if (m) {
+          ahead = Math.abs(parseInt(m[1], 10)) || 0;
+          behind = Math.abs(parseInt(m[2], 10)) || 0;
+        }
+      }
+      continue;
+    }
+    if (kind === "?") {
+      untracked++;
+      continue;
+    }
+    if (kind === "!") continue; // ignored
+    if (kind === "1" || kind === "2" || kind === "u") {
+      tracked++;
+      // Field 2 is the two-char XY status (e.g. "1 .M ..." or "1 M. ...").
+      const xy = line.split(" ", 2)[1] ?? "..";
+      const x = xy[0];
+      const y = xy[1];
+      if (x && x !== ".") staged++;
+      if (y && y !== ".") unstaged++;
+    }
+  }
+
+  return {
+    dirtyCount: tracked + untracked,
+    staged,
+    unstaged,
+    untracked,
+    ahead,
+    behind,
+  };
+}
 
 // ── Recipes (pure data) ─────────────────────────────────────────────────────
 
@@ -69,12 +136,45 @@ export const GIT_DIFF: Recipe<WithCwd & { path: string; ref?: string }, string> 
   tolerate: [1],
 };
 
+export const GIT_NUMSTAT: Recipe<WithCwd & { ref?: string }, string> = {
+  // `--relative` outputs pathnames relative to cwd (matching the cwd-relative
+  // FileDiffEntry keys) and excludes changes outside cwd. Tab-separated:
+  // `<adds>\t<dels>\t<path>`; binary files report `-` for the counts.
+  argv: ({ ref }) => ["git", "diff", "--numstat", "--relative", ref ?? "HEAD"],
+  parse: (out) => out,
+  timeout: GIT_TIMEOUT,
+  tolerate: [1],
+};
+
+/**
+ * Batched whole-worktree content diff: one `git diff --relative HEAD` over
+ * every changed file (no per-path arg). `--relative` yields cwd-relative
+ * header paths matching the cwd-relative FileDiffEntry keys (same as
+ * `GIT_NUMSTAT`). Callers split the patch per file on `diff --git ` header
+ * boundaries. Run via `runAsync` (non-blocking) — this is the batched
+ * replacement for the O(files) per-file `GIT_DIFF` spawn loop. See change:
+ * fix-session-diff-eventloop-block.
+ */
+export const GIT_DIFF_ALL: Recipe<WithCwd & { ref?: string }, string> = {
+  argv: ({ ref }) => ["git", "diff", "--relative", ref ?? "HEAD"],
+  parse: (out) => out,
+  timeout: GIT_TIMEOUT,
+  tolerate: [1],
+};
+
 export const GIT_STATUS_PORCELAIN: Recipe<WithCwd & { path?: string }, string> = {
   argv: ({ path }) =>
     path === undefined
       ? ["git", "status", "--porcelain"]
       : ["git", "status", "--porcelain", "--", path],
   parse: (out) => out,
+  timeout: GIT_TIMEOUT,
+};
+
+/** `git status --porcelain=v2 --branch` → parsed dirty/drift counts. */
+export const GIT_STATUS_V2: Recipe<WithCwd, GitStatus> = {
+  argv: () => ["git", "status", "--porcelain=v2", "--branch"],
+  parse: (out) => parseGitStatusV2(out),
   timeout: GIT_TIMEOUT,
 };
 
@@ -102,7 +202,10 @@ export const GIT_RECIPES = {
   GIT_COMMON_DIR,
   GIT_TOPLEVEL,
   GIT_DIFF,
+  GIT_DIFF_ALL,
+  GIT_NUMSTAT,
   GIT_STATUS_PORCELAIN,
+  GIT_STATUS_V2,
   GH_PR_NUMBER,
 } as const;
 
@@ -138,6 +241,15 @@ export function diff(input: WithCwd & { path: string; ref?: string }): Result<st
 
 export function statusPorcelain(input: WithCwd & { path?: string }): Result<string> {
   return run(GIT_STATUS_PORCELAIN, input, { cwd: input.cwd });
+}
+
+/** Parsed working-tree dirtiness + upstream drift. */
+export function gitStatusV2(input: WithCwd): Result<GitStatus> {
+  return run(GIT_STATUS_V2, input, { cwd: input.cwd });
+}
+
+export function numstat(input: WithCwd & { ref?: string }): Result<string> {
+  return run(GIT_NUMSTAT, input, { cwd: input.cwd });
 }
 
 export function prNumber(input: WithCwd): Result<number | undefined> {
@@ -180,6 +292,51 @@ export function statusPorcelainOr(input: WithCwd & { path?: string }, fallback =
   return unwrap(statusPorcelain(input), fallback);
 }
 
+export function numstatOr(input: WithCwd & { ref?: string }, fallback = ""): string {
+  return unwrap(numstat(input), fallback);
+}
+
 export function prNumberOr(input: WithCwd, fallback?: number): number | undefined {
   return unwrap(prNumber(input), fallback);
+}
+
+// ── Async (non-blocking) API — for hot request paths ────────────────────────
+// These spawn via `runAsync` so no `spawnSync` blocks the event loop. Use them
+// on server request paths (e.g. `/api/session-diff`) that must stay responsive
+// while git reads large blobs. See change: fix-session-diff-eventloop-block.
+
+/** Batched whole-worktree `git diff --relative HEAD` (async, one spawn). */
+export function diffAll(input: WithCwd & { ref?: string }): Promise<Result<string>> {
+  return runAsync(GIT_DIFF_ALL, input, { cwd: input.cwd });
+}
+
+/** Best-effort async batched diff — the raw patch or `fallback` on any error. */
+export async function diffAllOr(input: WithCwd & { ref?: string }, fallback = ""): Promise<string> {
+  return unwrap(await diffAll(input), fallback);
+}
+
+/** Async `git rev-parse --is-inside-work-tree` → boolean (fallback on error). */
+export async function isGitRepoOrAsync(input: WithCwd, fallback = false): Promise<boolean> {
+  return unwrap(await runAsync(GIT_IS_REPO, input, { cwd: input.cwd }), fallback);
+}
+
+/** Async `git status --porcelain` → raw stdout (fallback on error). */
+export async function statusPorcelainOrAsync(
+  input: WithCwd & { path?: string },
+  fallback = "",
+): Promise<string> {
+  return unwrap(await runAsync(GIT_STATUS_PORCELAIN, input, { cwd: input.cwd }), fallback);
+}
+
+/** Async `git diff --numstat --relative HEAD` → raw stdout (fallback on error). */
+export async function numstatOrAsync(input: WithCwd & { ref?: string }, fallback = ""): Promise<string> {
+  return unwrap(await runAsync(GIT_NUMSTAT, input, { cwd: input.cwd }), fallback);
+}
+
+/** Async `git rev-parse HEAD` → sha (fallback on error). */
+export async function headShaOrAsync(
+  input: WithCwd & { short?: boolean },
+  fallback?: string,
+): Promise<string | undefined> {
+  return unwrap(await runAsync(GIT_HEAD_SHA, input, { cwd: input.cwd }), fallback);
 }

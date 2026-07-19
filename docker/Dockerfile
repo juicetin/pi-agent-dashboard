@@ -2,7 +2,7 @@
 # ---------------------------------------------------------------------------
 # pi-dashboard all-in-one image.
 #
-# Stage `base`  — Debian Bookworm + Node 24 LTS, system tools, code-server, zrok.
+# Stage `base`  — Debian Bookworm + Node 24 LTS, system tools, zrok.
 # Stage `app`   — non-root `pi` user, global pi agent, built dashboard, cleanup.
 #
 # Debian (glibc), NOT Alpine (musl): node-pty needs glibc for correct PTY
@@ -13,8 +13,7 @@
 FROM node:24-bookworm-slim AS base
 
 # Pinned tool versions — override at build time with --build-arg.
-ARG CODE_SERVER_VERSION=4.96.4
-ARG ZROK_VERSION=1.0.6
+ARG ZROK_VERSION=2.0.4
 ARG GH_VERSION=2.62.0
 ARG JJ_VERSION=0.24.0
 
@@ -39,12 +38,7 @@ RUN apt-get update \
 # fd-find ships the binary as `fdfind` on Debian; expose `fd` too.
 RUN ln -s "$(command -v fdfind)" /usr/local/bin/fd || true
 
-# 1.2 code-server (pinned). Official installer auto-detects arch.
-RUN curl -fsSL https://code-server.dev/install.sh \
-      | sh -s -- --version "${CODE_SERVER_VERSION}" \
- && code-server --version
-
-# 1.3 zrok (pinned). Map Debian arch → zrok release arch.
+# 1.2 zrok (pinned). Map Debian arch → zrok release arch.
 RUN set -eux; \
     deb_arch="$(dpkg --print-architecture)"; \
     case "${deb_arch}" in \
@@ -60,8 +54,12 @@ RUN set -eux; \
     # Verify the downloaded tarball against the published checksum (fail build on mismatch).
     # Checksum lines prefix the asset with `./`; match either a space or slash before it.
     ( cd /tmp && grep -E "[ /]${asset}\$" zrok-checksums.sha256 | sha256sum -c - ); \
-    tar -xzf "/tmp/${asset}" -C /usr/local/bin zrok; \
+    # zrok v2 ships the binary as `zrok2`; extract it and symlink `zrok` so both
+    # names resolve (belt-and-suspenders with the dual-binary runtime resolver).
+    tar -xzf "/tmp/${asset}" -C /usr/local/bin zrok2; \
+    ln -sf zrok2 /usr/local/bin/zrok; \
     rm "/tmp/${asset}" /tmp/zrok-checksums.sha256; \
+    zrok2 version; \
     zrok version
 
 # 1.3b GitHub CLI (pinned). Spawned/probed by the dashboard git panel.
@@ -115,7 +113,7 @@ RUN if getent passwd 1000 >/dev/null; then userdel -r "$(getent passwd 1000 | cu
 # 1.4 Global pi coding agent + openspec (spawned/probed by the dashboard).
 # Install must be fatal; the version probes stay non-fatal (grouped so a
 # non-zero `--version` can't mask an `npm install -g` failure).
-RUN npm install -g @earendil-works/pi-coding-agent@0.80.6 openspec \
+RUN npm install -g @earendil-works/pi-coding-agent@0.80.10 openspec \
  && { pi --version || true; } \
  && { openspec --version || true; }
 

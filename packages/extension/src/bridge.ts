@@ -4,63 +4,68 @@
  * Global extension that connects to the dashboard server,
  * forwards all pi events, and relays commands back.
  */
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { Loader } from "@earendil-works/pi-tui";
-import { ConnectionManager } from "./connection.js";
-import { detectSessionSource } from "./source-detector.js";
-import { buildVisibilityRegisterFields } from "./visibility-intent.js";
-import { mapEventToProtocol } from "./event-forwarder.js";
-import { createCommandHandler, tryExecSlashTemplate } from "./command-handler.js";
-import { registerDashboardContextInjector } from "./dashboard-context-injector.js";
-import { shouldApplyDefaultModel } from "./bridge-default-model-gate.js";
-import { RetryTracker } from "./retry-tracker.js";
-import { AbortLatch } from "./abort-latch.js";
-import { classifyTurnActionability } from "./turn-actionability.js";
-import { EmptyActionableGuard, SURFACE_MESSAGE } from "./empty-actionable-guard.js";
-import { resolveGuardConfig } from "./empty-actionable-guard-config.js";
+
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { loadConfig, ensureConfig } from "@blackbelt-technology/pi-dashboard-shared/config.js";
-import { runDevBuild } from "./dev-build.js";
-import { isDashboardRunning } from "@blackbelt-technology/pi-dashboard-shared/server-identity.js";
+import { ensureConfig, loadConfig } from "@blackbelt-technology/pi-dashboard-shared/config.js";
 import { discoverDashboard } from "@blackbelt-technology/pi-dashboard-shared/mdns-discovery.js";
-import { launchServer } from "./server-launcher.js";
-import { autoStartServer } from "./server-auto-start.js";
 import type { ServerToExtensionMessage } from "@blackbelt-technology/pi-dashboard-shared/protocol.js";
-import { expandPromptTemplateFromDisk } from "./prompt-expander.js";
-
-import { PromptBus } from "./prompt-bus.js";
-import { createTuiPromptAdapter } from "./tui-prompt-adapter.js";
-import { DashboardDefaultAdapter } from "./dashboard-default-adapter.js";
-import { registerAskUserTool } from "./ask-user-tool.js";
-import { registerRoleModelTools } from "./role-model-tools.js";
-import { decodeMultiselectAnswer } from "./multiselect-decode.js";
-import { activate as activateProviderRegister, onProviderChanged, reloadProviders, buildProviderCatalogue, toModelInfo } from "./provider-register.js";
-import { activate as activateRoleManager } from "./role-manager.js";
-import type { FlowInfo } from "@blackbelt-technology/pi-dashboard-shared/types.js";
-import { startMetricsMonitor, stopMetricsMonitor, collectMetrics } from "./process-metrics.js";
-import { scanChildProcesses, getOwnPgid } from "./process-scanner.js";
-import type { BridgeContext } from "./bridge-context.js";
-import { filterHiddenCommands, extractFirstMessage, getCurrentModelString } from "./bridge-context.js";
-import { tryDispatchExtensionCommand } from "./slash-dispatch.js";
-import { flipHasUI } from "./hasui-flip.js";
-import { runGitPollTick } from "./git-poll.js";
-import { detectIsGitRepo } from "./vcs-info.js";
-import { sendStateSync as _sendStateSync, replaySessionEntries as _replaySessionEntries, handleSessionChange as _handleSessionChange } from "./session-sync.js";
-import { sendModelUpdateIfChanged as _sendModelUpdateIfChanged, sendSessionNameIfChanged as _sendSessionNameIfChanged, sendGitInfoIfChanged as _sendGitInfoIfChanged, sendCwdMissingIfChanged as _sendCwdMissingIfChanged, sendPiVersionIfChanged as _sendPiVersionIfChanged, resetReconnectCaches as _resetReconnectCaches } from "./model-tracker.js";
-import { registerFlowEventListeners, FLOW_EVENT_MAP, SUBAGENT_EVENT_MAP } from "./flow-event-wiring.js";
-import { refreshUiModules, subscribeUiInvalidate, handleUiManagement, type UiModulesBridgeCtx } from "./ui-modules.js";
-import { inlineMessageText, type ReadFileOutcome } from "./markdown-image-inliner.js";
-import { inlineToolResultImages } from "./tool-result-image-inliner.js";
-import { resolveArtifactRoots, isUnderArtifactRoot } from "./artifact-roots.js";
-import type { ImageContent } from "@blackbelt-technology/pi-dashboard-shared/types.js";
+import { isDashboardRunning } from "@blackbelt-technology/pi-dashboard-shared/server-identity.js";
+import type { FlowInfo, ImageContent } from "@blackbelt-technology/pi-dashboard-shared/types.js";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { Loader } from "@earendil-works/pi-tui";
+import { AbortLatch } from "./abort-latch.js";
+import { nativeAgentSettledSupported, settleFollowUp } from "./agent-settled.js";
+import { isUnderArtifactRoot, resolveArtifactRoots } from "./artifact-roots.js";
 import {
-  persistAttachment,
-  cleanupAttachmentsForSession,
   MAX_PER_MESSAGE_BYTES as ATTACH_MAX_PER_MESSAGE_BYTES,
+  cleanupAttachmentsForSession,
+  persistAttachment,
 } from "./ask-user-attachments.js";
+import { registerAskUserTool } from "./ask-user-tool.js";
+import { type AutoNamer, createAutoNamer, type StreamSimpleFn } from "./auto-session-namer.js";
+import type { BridgeContext } from "./bridge-context.js";
+import { extractFirstAssistantReply, extractFirstMessage, filterHiddenCommands, getCurrentModelString, isHeadlessRpcSession } from "./bridge-context.js";
+import { shouldApplyDefaultModel } from "./bridge-default-model-gate.js";
+import { registerCanvasTool } from "./canvas-tool.js";
+import { createCommandHandler, tryExecSlashTemplate } from "./command-handler.js";
+import { buildSessionContextText, runForkSubagentDraft } from "./commit-draft-agent.js";
+import { ConnectionManager } from "./connection.js";
+import { registerDashboardContextInjector } from "./dashboard-context-injector.js";
+import { DashboardDefaultAdapter } from "./dashboard-default-adapter.js";
+import { runDevBuild } from "./dev-build.js";
+import { EmptyActionableGuard, SURFACE_MESSAGE } from "./empty-actionable-guard.js";
+import { resolveGuardConfig } from "./empty-actionable-guard-config.js";
+import { mapEventToProtocol } from "./event-forwarder.js";
+import { FLOW_EVENT_MAP, registerFlowEventListeners, SUBAGENT_EVENT_MAP } from "./flow-event-wiring.js";
+import { runGitPollTick } from "./git-poll.js";
+import { flipHasUI } from "./hasui-flip.js";
+import { inlineMessageText, type ReadFileOutcome } from "./markdown-image-inliner.js";
+import { resetReconnectCaches as _resetReconnectCaches, sendCwdMissingIfChanged as _sendCwdMissingIfChanged, sendGitInfoIfChanged as _sendGitInfoIfChanged, sendModelUpdateIfChanged as _sendModelUpdateIfChanged, sendPiVersionIfChanged as _sendPiVersionIfChanged, sendSessionNameIfChanged as _sendSessionNameIfChanged, defaultReadPiVersion } from "./model-tracker.js";
+import { decodeMultiselectAnswer } from "./multiselect-decode.js";
+import { collectMetrics, startMetricsMonitor, stopMetricsMonitor } from "./process-metrics.js";
+import { getOwnPgid, scanChildProcesses } from "./process-scanner.js";
+import { decideProjectTrust, readEventCwd } from "./project-trust.js";
+import { PromptBus } from "./prompt-bus.js";
+import { expandPromptTemplateFromDisk } from "./prompt-expander.js";
+import { activate as activateProviderRegister, buildProviderCatalogue, onProviderChanged, reloadProviders, toModelInfo } from "./provider-register.js";
+import { RetryTracker } from "./retry-tracker.js";
+import { activate as activateRoleManager, lookupRole } from "./role-manager.js";
+import { registerRoleModelTools } from "./role-model-tools.js";
+import { autoStartServer } from "./server-auto-start.js";
+import { launchServer } from "./server-launcher.js";
+import { handleSessionChange as _handleSessionChange, replaySessionEntries as _replaySessionEntries, sendStateSync as _sendStateSync } from "./session-sync.js";
+import { tryDispatchExtensionCommand } from "./slash-dispatch.js";
+import { detectSessionSource } from "./source-detector.js";
+import { SubagentFrameBuffer } from "./subagent-frame-buffer.js";
+import { inlineToolResultImages } from "./tool-result-image-inliner.js";
+import { createTuiPromptAdapter } from "./tui-prompt-adapter.js";
+import { classifyTurnActionability } from "./turn-actionability.js";
+import { handleUiManagement, refreshUiModules, subscribeUiInvalidate, type UiModulesBridgeCtx } from "./ui-modules.js";
+import { detectIsGitRepo } from "./vcs-info.js";
+import { buildVisibilityRegisterFields } from "./visibility-intent.js";
 
 const HEARTBEAT_INTERVAL = 15_000;
 const GIT_POLL_INTERVAL = 30_000;
@@ -256,8 +261,16 @@ function initBridge(pi: ExtensionAPI) {
   let lastGitBranch: string | undefined;
   let lastGitPrNumber: number | undefined;
   let lastGitWorktreeJson: string | undefined; // see change: add-worktree-spawn-dialog
+  let lastGitStatusJson: string | undefined; // see change: add-session-uncommitted-indicator-and-commit
   let lastCwdMissing: boolean | undefined; // see change: add-worktree-lifecycle-actions
   let lastSessionName: string | undefined;
+  // ── add-auto-session-naming ────────────────────────────────────────────
+  // Global auto-naming toggle, relayed by the server via `preferences_update`.
+  // Default true so a bridge that registers before the first push still names.
+  let autoNameSessions = true;
+  let autoNamer: AutoNamer | undefined;
+  // Lazily-loaded pi-ai streamSimple (null = load attempted and failed).
+  let piAiStreamSimple: StreamSimpleFn | null | undefined;
   let cachedHasUI: boolean | undefined = prev.hasUI;
   let cachedModelRegistry: any | undefined = prev.modelRegistry;
   let cachedCtx: any | undefined = prev.ctx;
@@ -273,6 +286,24 @@ function initBridge(pi: ExtensionAPI) {
     prev.dashboardSpawned = !!process.env.PI_DASHBOARD_SPAWN_TOKEN;
   }
   const dashboardSpawned = prev.dashboardSpawned;
+
+  // Capture the cwd at bridge ACTIVATION (module scope). `project_trust` fires
+  // during resource-loader reload — BEFORE `session_start` reaches extension
+  // handlers — so a cwd captured at session_start would still be undefined
+  // when the trust handler runs. For a fresh headless spawn this IS the
+  // dashboard-provided spawn cwd. See change: adopt-pi-074-080-features (A.3).
+  const activationCwd = process.cwd();
+
+  // Does the running pi emit `agent_settled` natively (≥ 0.80.4)? Read once at
+  // activation. Floor pi → the bridge synthesizes a settle after each
+  // `agent_end`. Read failure → false → synthesize (safe default: the
+  // dashboard still gets exactly one terminal settle). See change:
+  // adopt-pi-074-080-features (A.1).
+  let piEmitsNativeSettled = false;
+  try {
+    piEmitsNativeSettled = nativeAgentSettledSupported(defaultReadPiVersion());
+  } catch { /* unknown version → synthesize */ }
+
   let promptBus: PromptBus | undefined;
 
   // Provider-retry synthesis tracker. pi's ExtensionAPI does not expose
@@ -292,6 +323,12 @@ function initBridge(pi: ExtensionAPI) {
   // on every observed resumption of the aborted turn. See change:
   // unify-error-retry-lifecycle (design D3b).
   const abortLatch = new AbortLatch();
+
+  // Subagent live-detail reliability: retain subagent frames emitted while the
+  // bridge is not ready (buffer-and-flush on re-register, D1) and keep the
+  // latest snapshot of each running subagent for the resync responder (D2).
+  // See change: fix-subagent-live-detail-reliability.
+  const subagentFrameBuffer = new SubagentFrameBuffer();
 
   // Bridge-owned queue structures with TWO different ownership models:
   //
@@ -738,6 +775,14 @@ function initBridge(pi: ExtensionAPI) {
         }
         return;
       }
+      // Auto-naming toggle relay: store the pushed value so the namer gates on
+      // the current preference. See change: add-auto-session-naming.
+      if (msg.type === "preferences_update") {
+        if (typeof (msg as any).autoNameSessions === "boolean") {
+          autoNameSessions = (msg as any).autoNameSessions;
+        }
+        return;
+      }
       // Graceful stop-after-turn: latch a per-session flag; the next turn_end
       // shuts the session down cleanly. Idempotent. See change:
       // adopt-pi-071-072-073-features.
@@ -896,6 +941,29 @@ function initBridge(pi: ExtensionAPI) {
         }
         return;
       }
+      // Subagent resync (D2): reply with the latest retained snapshot of a
+      // running subagent as a synthetic subagent_started event_forward. No-op
+      // for an unknown/finished agent (durable completed-case backfill covers
+      // those). See change: fix-subagent-live-detail-reliability.
+      if (msg.type === "subagent_resync_request") {
+        // The incoming id may be EITHER a v4 agentId or a v7 runner
+        // agentSessionId (from a deep-link route); resync() resolves both.
+        // See change: resolve-subagent-inspector-by-session-id (D3/D4).
+        const requestedId = (msg as { agentId?: unknown }).agentId;
+        if (typeof requestedId === "string" && requestedId.length > 0 && sessionReady && isActive()) {
+          const snap = subagentFrameBuffer.resync(requestedId);
+          if (snap) {
+            const resolvedAgentId = SubagentFrameBuffer.agentIdOf(snap.data) ?? requestedId;
+            sendEventForward("subagents:started", snap.data);
+            console.log(
+              `[dashboard] served subagent resync for id=${requestedId} (resolved agentId=${resolvedAgentId})`,
+            );
+          } else {
+            console.log(`[dashboard] subagent resync no-op (unknown/finished) id=${requestedId}`);
+          }
+        }
+        return;
+      }
       if (msg.type === "flow_control" && pi.events) {
         if (msg.action === "abort") {
           pi.events.emit("flow:abort", {});
@@ -1015,6 +1083,12 @@ function initBridge(pi: ExtensionAPI) {
         }
       } catch { /* probe failure non-fatal */ }
       replaySessionEntries();
+      // Flush subagent frames buffered while the socket was down (D1). Unlike
+      // session_start, a transient WS reconnect keeps `sessionReady` true, so
+      // the intercept routes those frames into the per-agent buffer; drain them
+      // now that the transport is open again. See change:
+      // fix-subagent-live-detail-reliability.
+      flushPendingSubagentFrames();
       // Re-send pending PromptBus requests so dashboard dialogs survive browser refresh.
       // Synchronous within this tick to prevent TUI respond() from interleaving.
       // Client-side dedup by requestId prevents double-rendering.
@@ -1055,6 +1129,12 @@ function initBridge(pi: ExtensionAPI) {
 
   const commandHandler = createCommandHandler(pi, () => sessionId, {
     getModelRegistry: () => cachedModelRegistry,
+    // AI-draft fork-subagent wiring (see change:
+    // add-session-uncommitted-indicator-and-commit). Both degrade silently
+    // to the draft ladder's lower rungs when unavailable.
+    getSessionContextText: () => buildSessionContextText(cachedCtx),
+    runDraftAgent: (seed: string, cwd: string) =>
+      runForkSubagentDraft(seed, cwd, () => cachedCtx?.model),
     // Mirror server attach/detach pushes into BridgeContext.attachedChange so
     // the before_agent_start injector exposes it. See change:
     // inject-session-context-into-agent.
@@ -1273,6 +1353,7 @@ function initBridge(pi: ExtensionAPI) {
       lastSessionFile, lastSessionDir, lastFirstMessage,
       lastGitBranch, lastGitPrNumber, lastSessionName,
       lastGitWorktreeJson,
+      lastGitStatusJson,
       lastCwdMissing,
       hasRegisteredOnce,
       dashboardSpawned,
@@ -1295,6 +1376,7 @@ function initBridge(pi: ExtensionAPI) {
     lastGitPrNumber = bc.lastGitPrNumber;
     lastSessionName = bc.lastSessionName;
     lastGitWorktreeJson = bc.lastGitWorktreeJson;
+    lastGitStatusJson = bc.lastGitStatusJson;
     lastCwdMissing = bc.lastCwdMissing;
     hasRegisteredOnce = bc.hasRegisteredOnce;
   }
@@ -1304,6 +1386,57 @@ function initBridge(pi: ExtensionAPI) {
   function replaySessionEntries() { _replaySessionEntries(syncBc()); }
   function sendModelUpdateIfChanged() { const bc = syncBc(); _sendModelUpdateIfChanged(bc); applyBc(bc); }
   function sendSessionNameIfChanged() { const bc = syncBc(); _sendSessionNameIfChanged(bc); applyBc(bc); }
+
+  // ── add-auto-session-naming ──────────────────────────────────────────────
+  // Lazily acquire pi-ai's streamSimple the way the server's model-proxy does.
+  async function loadStreamSimple(): Promise<StreamSimpleFn | undefined> {
+    if (piAiStreamSimple !== undefined) return piAiStreamSimple ?? undefined;
+    try {
+      const mod: any = await import("@earendil-works/pi-ai");
+      piAiStreamSimple = (mod.streamSimple as StreamSimpleFn) ?? null;
+    } catch {
+      piAiStreamSimple = null;
+    }
+    return piAiStreamSimple ?? undefined;
+  }
+
+  // One namer per bridge (a bridge is a single pi session). Built lazily so it
+  // captures the live `cachedCtx` / `cachedModelRegistry` at call time.
+  function getAutoNamer(): AutoNamer {
+    if (autoNamer) return autoNamer;
+    autoNamer = createAutoNamer({
+      getAutoNameSessions: () => autoNameSessions,
+      resolveFastModel: () => lookupRole("@fast"),
+      getRegistry: () => cachedModelRegistry,
+      loadStreamSimple,
+      getTranscript: () => ({
+        firstUserMsg: extractFirstMessage(cachedCtx),
+        firstAssistantReply: extractFirstAssistantReply(cachedCtx),
+      }),
+      applyName: (title: string) => {
+        try { pi.setSessionName(title); } catch { /* ignore */ }
+        lastSessionName = title; // suppress the redundant plain name_update poll
+        connection.send({ type: "session_name_update", sessionId, name: title, nameSource: "auto" });
+      },
+      reportUserRename: (name: string) => {
+        connection.send({ type: "session_name_update", sessionId, name, nameSource: "user" });
+      },
+      emitError: (reason: string) => {
+        connection.send({ type: "auto_name_error", sessionId, reason });
+      },
+    });
+    return autoNamer;
+  }
+
+  // Run one naming attempt after a terminal turn. Observing the current name
+  // first catches a pre-existing / in-pi rename (external → permanent "user"
+  // lockout) before attempting to auto-name.
+  function runAutoNameOnTurnEnd(): void {
+    if (!autoNameSessions) return;
+    const namer = getAutoNamer();
+    namer.onObservedName(pi.getSessionName() ?? "");
+    void namer.maybeName();
+  }
   function sendGitInfoIfChanged(cwd: string) { const bc = syncBc(); _sendGitInfoIfChanged(bc, cwd); applyBc(bc); }
   function sendCwdMissingIfChanged(cwd: string) { const bc = syncBc(); _sendCwdMissingIfChanged(bc, cwd); applyBc(bc); }
   function sendPiVersionIfChanged() { _sendPiVersionIfChanged(syncBc()); }
@@ -1313,6 +1446,7 @@ function initBridge(pi: ExtensionAPI) {
   const enrichedEventTypes = [
     "agent_start",
     "agent_end",
+    "agent_settled",
     "turn_start",
     "turn_end",
     "message_start",
@@ -1369,6 +1503,13 @@ function initBridge(pi: ExtensionAPI) {
           try { cachedCtx?.abort?.(); } catch { /* idempotent */ }
         }
       }
+      if (eventType === "agent_settled") {
+        // Terminal settle (native pi ≥ 0.80.4, fires once after the run loop).
+        // Clear streaming and forward as-is; no synth. On floor pi this branch
+        // never fires from a real event (pi does not emit it) — the synth path
+        // below handles it. See change: adopt-pi-074-080-features (A.1).
+        getBridgeState().isAgentStreaming = false;
+      }
       if (eventType === "agent_end") {
         getBridgeState().isAgentStreaming = false;
         // Abort latch settle: the turn terminally ended — clear the latch so a
@@ -1385,6 +1526,10 @@ function initBridge(pi: ExtensionAPI) {
         if (trackerSynth) {
           sendSyntheticRetryEvent(trackerSynth.eventType, trackerSynth.data);
         }
+        // Automatic session topic-naming: attempt on each terminal turn until
+        // the first success (or a permanent lockout). Non-blocking; all errors
+        // are handled inside the namer. See change: add-auto-session-naming.
+        runAutoNameOnTurnEnd();
         // Bridge shadow follow-up queue: the per-entry drain matcher in
         // the `message_start` handler removes each entry as pi delivers it
         // (mirrors pi's internal `_processAgentEvent`). No bulk clear here
@@ -1707,6 +1852,16 @@ function initBridge(pi: ExtensionAPI) {
 
       const msg = mapEventToProtocol(sessionId, event);
       connection.send(msg);
+
+      // Floor-pi settle synthesis: pi < 0.80.4 never emits `agent_settled`, so
+      // synthesize one synchronously right after each forwarded `agent_end`.
+      // The dashboard then receives exactly one terminal settle on every pi.
+      // Native pi returns null here (its real settle arrives on its own).
+      // See change: adopt-pi-074-080-features (A.1).
+      const synthSettle = settleFollowUp(eventType, piEmitsNativeSettled, Date.now());
+      if (synthSettle) {
+        connection.send({ type: "event_forward", sessionId, event: synthSettle });
+      }
     }));
   }
 
@@ -1720,6 +1875,48 @@ function initBridge(pi: ExtensionAPI) {
       connection.send(msg);
     }));
   }
+
+  // Push external renames the moment they happen (pi 0.80.3+ session_info_changed)
+  // instead of waiting for the turn-end name poll. The new name is routed
+  // through the auto-namer's self-filter: the bridge's OWN auto-name echoing
+  // back is classified self (no push, no lockout); a dashboard / in-pi rename
+  // is classified external → one session_name_update{nameSource:"user"} +
+  // permanent lockout. The turn-end poll (runAutoNameOnTurnEnd) stays as a
+  // fallback for pi builds that do not emit this event. See change:
+  // adopt-pi-074-080-features (A.2).
+  try {
+    pi.on("session_info_changed" as any, safe(async (event: any) => {
+      if (!isActive() || !sessionReady) return;
+      const name = typeof event?.name === "string" ? event.name : pi.getSessionName();
+      if (typeof name === "string" && name.length > 0) {
+        getAutoNamer().onObservedName(name);
+      }
+    }));
+  } catch { /* older pi: no session_info_changed — poll fallback covers it */ }
+
+  // Auto-decide project_trust for dashboard-spawned headless sessions (pi
+  // 0.79.0+). The event fires during resource-loader reload, BEFORE
+  // session_start reaches handlers, so the gate compares the event cwd to the
+  // ACTIVATION cwd (captured at module scope above). Reads eventCwd from the
+  // per-event ctx inside try/catch (ctx.cwd throws after session replacement).
+  // Any non-match — or a throw — defers to pi's default. See change:
+  // adopt-pi-074-080-features (A.3).
+  try {
+    pi.on("project_trust" as any, safe((event: any, ctx: any) => {
+      // Return the pi trust decision. A newer bridge taking over, or any
+      // non-match, defers. `remember:false` = trust for THIS run only.
+      if (!isActive()) return { trusted: "undecided" };
+      const decision = decideProjectTrust({
+        dashboardSpawned,
+        isHeadless: isHeadlessRpcSession(),
+        eventCwd: readEventCwd(event, ctx),
+        activationCwd,
+      });
+      return decision === "trust"
+        ? { trusted: "yes", remember: false }
+        : { trusted: "undecided" };
+    }));
+  } catch { /* older pi: no project_trust event — no-op */ }
 
   // Per-turn system-prompt injector: splice dashboard session context
   // (sessionId, cwd, attached OpenSpec change) into the system prompt. Reads
@@ -1743,6 +1940,33 @@ function initBridge(pi: ExtensionAPI) {
   // clear here — it would wipe entries the user adds DURING the drain.
   // See change: add-followup-edit-and-steer-cancel (per-entry-drain).
 
+  // Forward one EventBus frame as an `event_forward` message. Known channels
+  // get renamed via EVENT_BUS_MAP; unknown channels use the channel name.
+  function sendEventForward(channel: string, data: Record<string, unknown>): void {
+    const eventType = EVENT_BUS_MAP[channel] ?? channel;
+    connection.send({
+      type: "event_forward",
+      sessionId,
+      event: { eventType, timestamp: Date.now(), data },
+    });
+  }
+
+  // Flush subagent frames buffered while the bridge was not ready (D1). Called
+  // right after `sessionReady` flips true on (re-)register, in emission order.
+  // See change: fix-subagent-live-detail-reliability.
+  function flushPendingSubagentFrames(): void {
+    const drained = subagentFrameBuffer.drain();
+    if (drained.length === 0) return;
+    for (const { channel, data } of drained) {
+      try { sendEventForward(channel, data); } catch { /* keep flushing */ }
+    }
+    console.log(
+      `[dashboard] flushed ${drained.length} buffered subagent frame(s) on re-register` +
+        ` (forwarded=${subagentFrameBuffer.stats.forwarded} buffered=${subagentFrameBuffer.stats.buffered}` +
+        ` flushed=${subagentFrameBuffer.stats.flushed})`,
+    );
+  }
+
   // EventBus catch-all: intercept pi.events.emit to forward all EventBus
   // traffic (flow events, subagent events, custom extension events).
   // Known channels get renamed via EVENT_BUS_MAP; unknown channels use the
@@ -1751,17 +1975,30 @@ function initBridge(pi: ExtensionAPI) {
   if (pi.events) {
     origEventsEmit = pi.events.emit.bind(pi.events);
     pi.events.emit = (channel: string, data: unknown) => {
-      if (sessionReady && isActive()) {
-        try {
-          const eventType = EVENT_BUS_MAP[channel] ?? channel;
-          const eventData = (data && typeof data === "object" ? data : {}) as Record<string, unknown>;
-          connection.send({
-            type: "event_forward",
-            sessionId,
-            event: { eventType, timestamp: Date.now(), data: eventData },
-          });
-        } catch { /* forwarding failure must never break the original emit */ }
-      }
+      try {
+        const eventData = (data && typeof data === "object" ? data : {}) as Record<string, unknown>;
+        if (SubagentFrameBuffer.isSubagentChannel(channel)) {
+          // Subagent frames are reconcilable state, not fire-and-forget. Forward
+          // live only when the session is ready AND the transport is actually
+          // open; otherwise buffer the latest frame per agent (latest-wins,
+          // bounded) instead of letting it fall into the shared FIFO ring.
+          // `sessionReady` stays true across a transient WS drop, so gating on
+          // `connection.isConnected` routes reconnect-window frames into the
+          // per-agent buffer (flushed on session_start AND onReconnect) rather
+          // than risking eviction from the shared ring.
+          // See change: fix-subagent-live-detail-reliability (D1/D2).
+          if (sessionReady && isActive() && connection.isConnected) {
+            sendEventForward(channel, eventData);
+            subagentFrameBuffer.markForwarded(channel, eventData);
+          } else if (!subagentFrameBuffer.buffer(channel, eventData)) {
+            console.warn(
+              `[dashboard] subagent frame dropped (no agentId) channel=${channel} while not ready`,
+            );
+          }
+        } else if (sessionReady && isActive()) {
+          sendEventForward(channel, eventData);
+        }
+      } catch { /* forwarding failure must never break the original emit */ }
       origEventsEmit!(channel, data);
     };
   }
@@ -1800,6 +2037,11 @@ function initBridge(pi: ExtensionAPI) {
     // Register ask_user at runtime (not at load time) to avoid static
     // tool-name conflicts with other extensions like pi-flows.
     registerAskUserTool(pi);
+
+    // Register the canvas declare-tool (change: auto-canvas). Fire-and-forget
+    // UI intent; the server observes the forwarded tool call and drives the
+    // canvas. Runtime registration for the same conflict-avoidance reason.
+    registerCanvasTool(pi);
 
     // Register the agent-facing role/model tools (list_models, list_roles,
     // update_roles). list_models reads the in-process session registry via a
@@ -2150,6 +2392,11 @@ function initBridge(pi: ExtensionAPI) {
     // Allow event forwarding now that session_register is buffered
     sessionReady = true;
 
+    // Flush any subagent frames buffered during the not-ready window (D1) so a
+    // reconnect/discovery/reload gap self-heals instead of leaving a running
+    // subagent's detail empty. See change: fix-subagent-live-detail-reliability.
+    flushPendingSubagentFrames();
+
     // Replay full session history so the dashboard has all messages
     replaySessionEntries();
     connection.send({ type: "replay_complete", sessionId });
@@ -2360,6 +2607,10 @@ function initBridge(pi: ExtensionAPI) {
     // sessionId on its session_register. See change: inject-session-context-into-agent.
     attachedChange = null;
     getBridgeState().attachedChange = null;
+    // Drop retained subagent frames/snapshots on a real session switch — the
+    // new/fork/resumed session's subagents are unrelated to the outgoing one.
+    // See change: fix-subagent-live-detail-reliability.
+    subagentFrameBuffer.reset();
     // Clear the stop-after-turn latch so a new/fork/resumed session does not
     // inherit the previous session's pending graceful-stop and shut down on
     // its first turn_end. See change: adopt-pi-071-072-073-features.
@@ -2436,6 +2687,10 @@ function initBridge(pi: ExtensionAPI) {
       type: "session_unregister",
       sessionId,
     });
+
+    // Drop retained subagent frames/snapshots on shutdown.
+    // See change: fix-subagent-live-detail-reliability.
+    subagentFrameBuffer.reset();
 
     // Best-effort: remove this session's pasted ask_user attachments.
     // See change: add-ask-user-input-multiline-paste.

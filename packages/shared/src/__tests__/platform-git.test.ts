@@ -10,26 +10,30 @@
  *
  * See change: platform-command-executor.
  */
-import { describe, it, expect } from "vitest";
+
 import path from "node:path";
 import url from "node:url";
+import { describe, expect, it } from "vitest";
 import {
-  GIT_DIFF,
-  GIT_STATUS_PORCELAIN,
-  GIT_IS_REPO,
-  GIT_CURRENT_BRANCH,
-  GIT_HEAD_SHA,
-  GIT_REMOTE_URL,
-  GH_PR_NUMBER,
-  GIT_RECIPES,
-  isGitRepo,
   currentBranch,
-  headSha,
-  remoteUrl,
-  diff,
-  statusPorcelain,
-  isGitRepoOr,
   currentBranchOr,
+  diff,
+  GH_PR_NUMBER,
+  GIT_CURRENT_BRANCH,
+  GIT_DIFF,
+  GIT_DIFF_ALL,
+  GIT_HEAD_SHA,
+  GIT_IS_REPO,
+  GIT_RECIPES,
+  GIT_REMOTE_URL,
+  GIT_STATUS_PORCELAIN,
+  GIT_STATUS_V2,
+  headSha,
+  isGitRepo,
+  isGitRepoOr,
+  parseGitStatusV2,
+  remoteUrl,
+  statusPorcelain,
 } from "../platform/git.js";
 
 const here = path.dirname(url.fileURLToPath(import.meta.url));
@@ -60,6 +64,21 @@ describe("GIT_DIFF.argv", () => {
 
   it("tolerates exit code 1 (no-diff or empty repo)", () => {
     expect(GIT_DIFF.tolerate).toContain(1);
+  });
+});
+
+describe("GIT_DIFF_ALL.argv", () => {
+  it("produces a whole-worktree `git diff --relative HEAD` (no path arg)", () => {
+    expect(GIT_DIFF_ALL.argv({ cwd: "/tmp" })).toEqual([
+      "git", "diff", "--relative", "HEAD",
+    ]);
+  });
+
+  it("respects an explicit ref and tolerates exit code 1", () => {
+    expect(GIT_DIFF_ALL.argv({ cwd: "/tmp", ref: "main" })).toEqual([
+      "git", "diff", "--relative", "main",
+    ]);
+    expect(GIT_DIFF_ALL.tolerate).toContain(1);
   });
 });
 
@@ -120,10 +139,13 @@ describe("GIT_RECIPES registry", () => {
       "GIT_COMMON_DIR",
       "GIT_CURRENT_BRANCH",
       "GIT_DIFF",
+      "GIT_DIFF_ALL",
       "GIT_HEAD_SHA",
       "GIT_IS_REPO",
+      "GIT_NUMSTAT",
       "GIT_REMOTE_URL",
       "GIT_STATUS_PORCELAIN",
+      "GIT_STATUS_V2",
       "GIT_TOPLEVEL",
     ]);
   });
@@ -192,5 +214,87 @@ describe("git.* integration (runs against this repo)", () => {
 
   it("currentBranchOr returns a fallback when cwd is not a repo", () => {
     expect(currentBranchOr({ cwd: require("node:os").tmpdir() }, "no-repo")).toBe("no-repo");
+  });
+});
+
+describe("GIT_STATUS_V2.argv", () => {
+  it("is the branch-aware porcelain=v2 invocation", () => {
+    expect(GIT_STATUS_V2.argv({ cwd: "/x" })).toEqual([
+      "git",
+      "status",
+      "--porcelain=v2",
+      "--branch",
+    ]);
+  });
+});
+
+describe("parseGitStatusV2", () => {
+  it("clean tree in sync → all zeros", () => {
+    const out = [
+      "# branch.oid abc123",
+      "# branch.head main",
+      "# branch.upstream origin/main",
+      "# branch.ab +0 -0",
+    ].join("\n");
+    expect(parseGitStatusV2(out)).toEqual({
+      dirtyCount: 0, staged: 0, unstaged: 0, untracked: 0, ahead: 0, behind: 0,
+    });
+  });
+
+  it("empty output → all zeros", () => {
+    expect(parseGitStatusV2("")).toEqual({
+      dirtyCount: 0, staged: 0, unstaged: 0, untracked: 0, ahead: 0, behind: 0,
+    });
+  });
+
+  it("counts staged, unstaged, both, and untracked", () => {
+    const out = [
+      "# branch.head main",
+      "# branch.ab +0 -0",
+      "1 M. N... 100644 100644 100644 aaa bbb staged.ts", // staged only
+      "1 .M N... 100644 100644 100644 ccc ccc unstaged.ts", // unstaged only
+      "1 MM N... 100644 100644 100644 ddd eee both.ts", // staged + unstaged
+      "? untracked.ts",
+      "? another.ts",
+    ].join("\n");
+    expect(parseGitStatusV2(out)).toEqual({
+      dirtyCount: 5, // 3 tracked + 2 untracked
+      staged: 2, // M. and MM
+      unstaged: 2, // .M and MM
+      untracked: 2,
+      ahead: 0,
+      behind: 0,
+    });
+  });
+
+  it("reads ahead/behind from branch.ab", () => {
+    const out = ["# branch.head main", "# branch.ab +2 -1"].join("\n");
+    const r = parseGitStatusV2(out);
+    expect(r.ahead).toBe(2);
+    expect(r.behind).toBe(1);
+  });
+
+  it("no upstream → no branch.ab line → ahead/behind 0", () => {
+    const out = ["# branch.head feature", "# branch.upstream "].join("\n");
+    const r = parseGitStatusV2(out);
+    expect(r.ahead).toBe(0);
+    expect(r.behind).toBe(0);
+  });
+
+  it("counts renamed (2) and unmerged (u) entries as dirty", () => {
+    const out = [
+      "# branch.head main",
+      "2 R. N... 100644 100644 100644 aaa bbb R100 new.ts\told.ts",
+      "u UU N... 100644 100644 100644 100644 aaa bbb ccc conflict.ts",
+    ].join("\n");
+    const r = parseGitStatusV2(out);
+    expect(r.dirtyCount).toBe(2);
+    expect(r.staged).toBe(2); // R. → staged; UU → X=U staged
+    expect(r.unstaged).toBe(1); // UU → Y=U unstaged
+  });
+
+  it("ignores '!' ignored entries", () => {
+    const out = ["# branch.head main", "! ignored.ts"].join("\n");
+    expect(parseGitStatusV2(out).dirtyCount).toBe(0);
   });
 });

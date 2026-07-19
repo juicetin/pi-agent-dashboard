@@ -8,30 +8,32 @@ import { detectOpenSpecActivity, isValidOpenSpecChangeSlug } from "@blackbelt-te
 import { mergeSessionMeta, writeSessionMeta } from "@blackbelt-technology/pi-dashboard-shared/session-meta.js";
 import { extractTurnStats } from "@blackbelt-technology/pi-dashboard-shared/stats-extractor.js";
 import type { DashboardSession } from "@blackbelt-technology/pi-dashboard-shared/types.js";
-import type { BrowserGateway } from "./browser-gateway.js";
-import { decideDashboardSource } from "./dashboard-source-decision.js";
+import type { BrowserGateway } from "./pairing/browser-gateway.js";
+import { createCanvasAccumulator } from "./canvas/canvas-accumulator.js";
+import { readEffectiveCanvasTypes } from "./canvas/canvas-settings.js";
+import { decideDashboardSource } from "./lifecycle/dashboard-source-decision.js";
 import type { DirectoryService } from "./directory-service.js";
-import { extractSessionUpdates, isActivityEvent, isUnreadTrigger } from "./event-status-extraction.js";
-import { composeWorktreePayload } from "./git-worktree-compose.js";
-import { keeperOptsFromSpawnResult } from "./headless-pid-registry.js";
-import type { EventStore } from "./memory-event-store.js";
-import type { SessionManager } from "./memory-session-manager.js";
-import type { PendingForkRegistry } from "./pending-fork-registry.js";
-import type { PiGateway } from "./pi-gateway.js";
-import type { PreferencesStore } from "./preferences-store.js";
-import { buildPidIndex, classifyProcesses } from "./process-classifier.js";
-import { spawnPiSession } from "./process-manager.js";
-import { attachRenameTarget, isNameAutoSetFromAttachment } from "./proposal-attach-naming.js";
-import { setCatalogueForSession } from "./provider-catalogue-cache.js";
-import { resolveOrderKey } from "./resolve-order-key.js";
+import { extractSessionUpdates, isActivityEvent, isUnreadTrigger } from "./session/event-status-extraction.js";
+import { composeWorktreePayload } from "./git-worktree/git-worktree-compose.js";
+import { keeperOptsFromSpawnResult } from "./spawn-process/headless-pid-registry.js";
+import type { EventStore } from "./persistence/memory-event-store.js";
+import type { SessionManager } from "./session/memory-session-manager.js";
+import type { PendingForkRegistry } from "./pending/pending-fork-registry.js";
+import type { PiGateway } from "./pi/pi-gateway.js";
+import type { PreferencesStore } from "./persistence/preferences-store.js";
+import { buildPidIndex, classifyProcesses } from "./spawn-process/process-classifier.js";
+import { spawnPiSession } from "./spawn-process/process-manager.js";
+import { attachRenameTarget, isNameAutoSetFromAttachment } from "./openspec/proposal-attach-naming.js";
+import { setCatalogueForSession } from "./package/provider-catalogue-cache.js";
+import { resolveOrderKey } from "./session/resolve-order-key.js";
 import { handleDispatchExtensionCommand } from "./rpc-keeper/dispatch-router.js";
-import type { SessionOrderManager } from "./session-order-manager.js";
+import type { SessionOrderManager } from "./session/session-order-manager.js";
 import {
   buildEmptyActionableLogLine,
   buildModelErrorLogLine,
   extractModelTurnError,
-} from "./spawned-turn-log.js";
-import type { ViewedSessionTracker } from "./viewed-session-tracker.js";
+} from "./spawn-process/spawned-turn-log.js";
+import type { ViewedSessionTracker } from "./session/viewed-session-tracker.js";
 
 /**
  * `true` iff `changeName` appears in the cwd's authoritative OpenSpec poll
@@ -87,14 +89,14 @@ export interface EventWiringDeps {
    * pending intent on each `session_register` and applies the attach +
    * auto-rename. See change: add-folder-task-checker-and-spawn-attach.
    */
-  pendingAttachRegistry?: import("./pending-attach-registry.js").PendingAttachRegistry;
+  pendingAttachRegistry?: import("./pending/pending-attach-registry.js").PendingAttachRegistry;
   /**
    * Optional pending-initial-prompt registry. When provided, the wiring
    * consumes a pending prompt on each `session_register` and dispatches it as
    * the session's first `send_prompt` (e.g. `/skill:project-init` from the
    * no-hook Initialize button). See change: project-init-skill-and-profiles.
    */
-  pendingInitialPromptRegistry?: import("./pending-initial-prompt-registry.js").PendingInitialPromptRegistry;
+  pendingInitialPromptRegistry?: import("./pending/pending-initial-prompt-registry.js").PendingInitialPromptRegistry;
   /**
    * Optional pending-worktree-base registry. When provided, the wiring
    * consumes a pending base ref on each `session_register` and persists
@@ -103,7 +105,7 @@ export interface EventWiringDeps {
    * composes `gitWorktree.base` correctly.
    * See change: add-worktree-spawn-dialog.
    */
-  pendingWorktreeBaseRegistry?: import("./pending-worktree-base-registry.js").PendingWorktreeBaseRegistry;
+  pendingWorktreeBaseRegistry?: import("./pending/pending-worktree-base-registry.js").PendingWorktreeBaseRegistry;
   /**
    * Optional pending-automation-run registry. When provided, the wiring
    * consumes a pending run stamp on each `session_register` and stamps the
@@ -111,15 +113,15 @@ export interface EventWiringDeps {
    * persists both to the session's `.meta.json` sidecar.
    * See change: add-automation-plugin.
    */
-  pendingAutomationRunRegistry?: import("./pending-automation-run-registry.js").PendingAutomationRunRegistry;
+  pendingAutomationRunRegistry?: import("./pending/pending-automation-run-registry.js").PendingAutomationRunRegistry;
   /**
    * Optional pending-goal-link registry + goal store. When both provided, the
    * wiring consumes a pending goalId on each `session_register`, stamps
    * `.meta.json#goalId` + in-memory `DashboardSession.goalId`, and links the
    * new sessionId into its `GoalRecord`. See change: add-goals-folder-page.
    */
-  pendingGoalLinkRegistry?: import("./pending-goal-link-registry.js").PendingGoalLinkRegistry;
-  goalStore?: import("./goal-store.js").GoalStore;
+  pendingGoalLinkRegistry?: import("./pending/pending-goal-link-registry.js").PendingGoalLinkRegistry;
+  goalStore?: import("./goal/goal-store.js").GoalStore;
   /**
    * Optional goal-session primer. When provided, a session linked to a goal on
    * `session_register` is renamed to the objective and dispatched `/goal …` so
@@ -143,7 +145,7 @@ export interface EventWiringDeps {
    * letting the client auto-select / dismiss its placeholder by exact
    * correlation. See change: spawn-correlation-token.
    */
-  pendingClientCorrelations?: import("./pending-client-correlations.js").PendingClientCorrelations;
+  pendingClientCorrelations?: import("./pending/pending-client-correlations.js").PendingClientCorrelations;
   /**
    * Optional plugin pi-message dispatcher. When provided, every
    * `plugin_pi_message` envelope forwarded from a plugin bridge entry is
@@ -173,8 +175,14 @@ export interface EventWiringDeps {
    * eager (non-debounced) write path, so an unclean host shutdown leaves a
    * recoverable marker on disk. See change: reopen-sessions-after-shutdown.
    */
-  metaPersistence?: import("./meta-persistence.js").MetaPersistence;
+  metaPersistence?: import("./persistence/meta-persistence.js").MetaPersistence;
   liveEpoch?: number;
+  /**
+   * Settles pending `/api/git/commit-draft` requests when the bridge replies
+   * with `git_commit_draft_result`. See change:
+   * add-session-uncommitted-indicator-and-commit.
+   */
+  commitDraftRelay?: import("./commit-draft-relay.js").CommitDraftRelay;
 }
 
 /**
@@ -209,6 +217,7 @@ export function wireEvents(deps: EventWiringDeps): void {
     dispatchPluginRawEvent,
     metaPersistence,
     liveEpoch,
+    commitDraftRelay,
   } = deps;
 
   // Once-per-activation guard for the eager liveness marker: maps sessionId
@@ -382,6 +391,15 @@ export function wireEvents(deps: EventWiringDeps): void {
       }
     }
 
+    // Push the current auto-naming preference to the freshly-registered bridge
+    // so it gates naming on the right value from its first turn (config push,
+    // register arm). Change arm is the PATCH route broadcast.
+    // See change: add-auto-session-naming.
+    piGateway.sendToSession(sessionId, {
+      type: "preferences_update",
+      autoNameSessions: preferencesStore.getAutoNameSessions(),
+    });
+
     // NOTE: goal-driver linking moved to the onEvent `session_register` branch
     // (after `linkByToken`) so the strong token→goalId path can run — the
     // registry entry's `sessionId` is only set by `linkByToken`, which fires
@@ -434,6 +452,9 @@ export function wireEvents(deps: EventWiringDeps): void {
 
   // Broadcast session ended to browsers when sessions are unregistered
   sessionManager.onUnregister = (sessionId) => {
+    // Turn-boundary reset (change: auto-canvas): a terminated session must not
+    // leave stale candidates behind. No settle broadcast on termination.
+    canvasAccumulator.resetTurn(sessionId);
     const session = sessionManager.get(sessionId);
     if (session) {
       // Durably clear the liveness marker EAGERLY (atomic, not debounced).
@@ -466,6 +487,38 @@ export function wireEvents(deps: EventWiringDeps): void {
 
   // Track sessions replaying history — suppress status broadcasts to avoid card flicker
   const replayingSessions = new Set<string>();
+  // Auto-canvas driver (change: auto-canvas). Per-session per-turn candidate
+  // buffer + eager/settle/reset lifecycle. Broadcasts ride the existing
+  // browser fan-out; settings are read fresh per detect (no cache).
+  const canvasAccumulator = createCanvasAccumulator({
+    readCanvasTypes: (cwd) => readEffectiveCanvasTypes(cwd),
+    broadcastIntent: (sessionId, phase, target, mode, title) => {
+      browserGateway.broadcastToAll({
+        type: "canvas_intent",
+        sessionId,
+        phase,
+        target,
+        ...(mode ? { mode } : {}),
+        ...(title ? { title } : {}),
+      });
+    },
+    broadcastServerChip: (sessionId, port, title) => {
+      browserGateway.broadcastToAll({
+        type: "canvas_server_chip",
+        sessionId,
+        port,
+        ...(title ? { title } : {}),
+      });
+    },
+    broadcastServerChipExpire: (sessionId, port) => {
+      browserGateway.broadcastToAll({
+        type: "canvas_server_chip",
+        sessionId,
+        port,
+        expire: true,
+      });
+    },
+  });
   // Sessions whose replay should be discarded (canSkipWipe was true — events already in store)
   const skipReplayInsert = new Set<string>();
   // Debounce flows refresh to prevent infinite loop between sessions in same cwd
@@ -649,6 +702,15 @@ export function wireEvents(deps: EventWiringDeps): void {
           browserGateway.broadcastSessionUpdated(sessionId, { lastActivityAt: now });
         }
       }
+
+      // Auto-canvas accumulation (change: auto-canvas). Mirrors the replay +
+      // queue_state guards internally; drives eager/settle/reset off the same
+      // forwarded tool-event stream `detectOpenSpecActivity` reads. cwd comes
+      // from server session state, never the model (anti-traversal).
+      canvasAccumulator.onEvent(sessionId, msg.event, {
+        replaying: replayingSessions.has(sessionId),
+        cwd: sessionManager.get(sessionId)?.cwd ?? "",
+      });
 
       // Server-side OpenSpec activity detection from forwarded events
       // Skip during replay — replayed events from a forked session would set stale phase/change
@@ -1241,6 +1303,13 @@ export function wireEvents(deps: EventWiringDeps): void {
         gitPrNumber: msg.gitPrNumber,
         gitPrUrl: msg.gitPrUrl,
       };
+      // Working-tree dirtiness + drift (broadcast half of the hybrid).
+      // Omitted by the bridge on an inconclusive probe, so a missing field
+      // leaves the last known status untouched rather than clearing it.
+      // See change: add-session-uncommitted-indicator-and-commit.
+      if (msg.gitStatus !== undefined) {
+        gitUpdates.gitStatus = msg.gitStatus;
+      }
       // Refresh + persist the tri-state git-repo signal when the bridge
       // includes it (confirmed repo). Register remains the authority.
       // See change: gate-session-worktree-button-on-git.
@@ -1266,6 +1335,12 @@ export function wireEvents(deps: EventWiringDeps): void {
       sessionManager.update(sessionId, gitUpdates);
       browserGateway.broadcastSessionUpdated(sessionId, gitUpdates);
       maybeRekeyOrder(sessionId, oldOrderKey);
+    }
+
+    if (msg.type === "git_commit_draft_result") {
+      // Bridge replied to a `/api/git/commit-draft` relay. Settle the pending
+      // HTTP request. See change: add-session-uncommitted-indicator-and-commit.
+      commitDraftRelay?.resolve(msg);
     }
 
     if (msg.type === "cwd_missing") {
@@ -1332,6 +1407,11 @@ export function wireEvents(deps: EventWiringDeps): void {
         roles: (msg as any).roles,
         presets: (msg as any).presets,
         activePreset: (msg as any).activePreset,
+        // Forward the built-in role-name set so the Roles panel can render the
+        // Built-in/Custom split + "＋ Add custom role". Dropping it here (the
+        // original defect) collapsed the panel to its flat back-compat render.
+        // See change: fix-builtin-role-names-relay.
+        builtinRoleNames: (msg as any).builtinRoleNames,
       } as any);
     }
 
@@ -1446,9 +1526,26 @@ export function wireEvents(deps: EventWiringDeps): void {
     }
 
     if (msg.type === "session_name_update") {
-      const nameUpdates = { name: msg.name || undefined };
+      // Persist provenance when the bridge attributes the change (auto-name or
+      // an in-pi rename it did not originate). Absent → keep existing provenance.
+      // See change: add-auto-session-naming.
+      const nameUpdates = msg.nameSource
+        ? { name: msg.name || undefined, nameSource: msg.nameSource }
+        : { name: msg.name || undefined };
       sessionManager.update(sessionId, nameUpdates);
       browserGateway.broadcastSessionUpdated(sessionId, nameUpdates);
+    }
+
+    if (msg.type === "auto_name_error") {
+      // Forward the bridge's one-shot auto-naming failure to browser
+      // subscribers as a toast, and log one diagnostic line so "why unnamed"
+      // is answerable from the server log. See change: add-auto-session-naming.
+      console.error(`[dashboard] auto_name_error session=${sessionId}: ${msg.reason}`);
+      browserGateway.sendToSubscribers(sessionId, {
+        type: "auto_name_error",
+        sessionId,
+        reason: msg.reason,
+      });
     }
 
     if (msg.type === "spawn_new_session") {

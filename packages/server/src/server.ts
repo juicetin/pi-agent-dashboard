@@ -25,65 +25,62 @@ import compress from "@fastify/compress";
 import cors from "@fastify/cors";
 import fastifyStatic from "@fastify/static";
 import Fastify from "fastify";
-import { registerAuthPlugin, validateWsUpgrade } from "./auth-plugin.js";
-import { registerBearerAuth } from "./bearer-auth.js";
-import { type BrowserGateway, createBrowserGateway } from "./browser-gateway.js";
+import { registerAuthPlugin, validateWsUpgrade } from "./auth/auth-plugin.js";
+import { registerBearerAuth } from "./auth/bearer-auth.js";
+import { type BrowserGateway, createBrowserGateway } from "./pairing/browser-gateway.js";
+import { createCommitDraftRelay } from "./commit-draft-relay.js";
 import { writeConfigPartial } from "./config-api.js";
-import { isCorsOriginAllowed } from "./cors-origin.js";
-import { registerCsp, resolveCspMode } from "./csp.js";
+import { isCorsOriginAllowed } from "./auth/cors-origin.js";
+import { registerCsp, resolveCspMode } from "./auth/csp.js";
 // pending-load-manager removed — server loads sessions directly via DirectoryService
 import { createDirectoryService, type DirectoryService } from "./directory-service.js";
-import { detectCodeServerBinary } from "./editor-detection.js";
-import { createEditorManager, type EditorManager } from "./editor-manager.js";
-import { createEditorPidRegistry } from "./editor-pid-registry.js";
-import { handleEditorUpgrade, registerEditorProxy } from "./editor-proxy.js";
 import { wireEvents } from "./event-wiring.js";
-import { startEventLoopSampler } from "./eventloop-sampler.js";
-import { createEventLoopSpikeMetrics } from "./eventloop-spike-metrics.js";
+import { startEventLoopSampler } from "./metrics/eventloop-sampler.js";
+import { createEventLoopSpikeMetrics } from "./metrics/eventloop-spike-metrics.js";
 import { createFileWatchManager } from "./file-watch-manager.js";
-import { decideBudgetHalt } from "./goal-budget-guard.js";
-import { buildGoalReprime, primeGoalSession } from "./goal-session-primer.js";
-import { createGoalStatusProjector } from "./goal-status-projector.js";
-import { createGoalStore } from "./goal-store.js";
-import { createGoalSupervisor, type GoalDriverSpawnRequest, type GoalSupervisor } from "./goal-supervisor.js";
-import { createGoalVerdictAccumulator } from "./goal-verdict-accumulator.js";
-import { keeperOptsFromSpawnResult } from "./headless-pid-registry.js";
-import { createHydrationMetrics } from "./hydration-metrics.js";
-import { ensureServerIdentity } from "./identity.js";
-import { createIdleTimer } from "./idle-timer.js";
-import { createLiveServerManager } from "./live-server-manager.js";
-import { handleLiveServerUpgrade, registerLiveServerProxy } from "./live-server-proxy.js";
-import { ensureLocalToken, verifyLocalToken } from "./local-token.js";
-import { createNetworkGuard, isBypassedHost, isGenuinelyLocal } from "./localhost-guard.js";
-import { createMemoryEventStore, type EventStore } from "./memory-event-store.js";
-import { createMemorySessionManager, type SessionManager } from "./memory-session-manager.js";
-import { createMetaPersistence, type MetaPersistence } from "./meta-persistence.js";
-import { needsMigration, runMigration } from "./migrate-persistence.js";
+import { decideBudgetHalt } from "./goal/goal-budget-guard.js";
+import { buildGoalReprime, primeGoalSession } from "./goal/goal-session-primer.js";
+import { createGoalStatusProjector } from "./goal/goal-status-projector.js";
+import { createGoalStore } from "./goal/goal-store.js";
+import { createGoalSupervisor, type GoalDriverSpawnRequest, type GoalSupervisor } from "./goal/goal-supervisor.js";
+import { createGoalVerdictAccumulator } from "./goal/goal-verdict-accumulator.js";
+import { keeperOptsFromSpawnResult } from "./spawn-process/headless-pid-registry.js";
+import { createHydrationMetrics } from "./metrics/hydration-metrics.js";
+import { ensureServerIdentity } from "./auth/identity.js";
+import { createIdleTimer } from "./spawn-process/idle-timer.js";
+import { createLiveServerManager } from "./live-server/live-server-manager.js";
+import { handleLiveServerUpgrade, registerLiveServerProxy } from "./live-server/live-server-proxy.js";
+import { ensureLocalToken, verifyLocalToken } from "./auth/local-token.js";
+import { createNetworkGuard, isBypassedHost, isGenuinelyLocal } from "./auth/localhost-guard.js";
+import { createMemoryEventStore, type EventStore } from "./persistence/memory-event-store.js";
+import { createMemorySessionManager, type SessionManager } from "./session/memory-session-manager.js";
+import { createMetaPersistence, type MetaPersistence } from "./persistence/meta-persistence.js";
+import { needsMigration, runMigration } from "./persistence/migrate-persistence.js";
 import { createModelProxyAuthGate } from "./model-proxy/auth-gate.js";
 import { getModelRegistry, getStreamSimpleFn } from "./model-proxy/registry-singleton.js";
-import { createOpenSpecGroupStore, joinGroupIdsToOpenSpecData } from "./openspec-group-store.js";
-import { PackageManagerWrapper } from "./package-manager-wrapper.js";
-import { PairedDeviceRegistry } from "./paired-devices.js";
-import { PairingManager } from "./pairing.js";
-import { createPendingAttachRegistry } from "./pending-attach-registry.js";
-import { createPendingAutomationRunRegistry } from "./pending-automation-run-registry.js";
-import { createPendingClientCorrelations } from "./pending-client-correlations.js";
-import { createPendingForkRegistry, type PendingForkRegistry } from "./pending-fork-registry.js";
-import { createPendingGoalLinkRegistry } from "./pending-goal-link-registry.js";
-import { createPendingInitialPromptRegistry } from "./pending-initial-prompt-registry.js";
-import { createPendingResumeIntentRegistry } from "./pending-resume-intent-registry.js";
-import { createPendingWorktreeBaseRegistry } from "./pending-worktree-base-registry.js";
-import { PiCoreChecker } from "./pi-core-checker.js";
-import { PiCoreUpdater } from "./pi-core-updater.js";
-import { createPiGateway, type PiGateway } from "./pi-gateway.js";
+import { createOpenSpecGroupStore, joinGroupIdsToOpenSpecData } from "./openspec/openspec-group-store.js";
+import { PackageManagerWrapper } from "./package/package-manager-wrapper.js";
+import { PairedDeviceRegistry } from "./pairing/paired-devices.js";
+import { PairingManager } from "./pairing/pairing.js";
+import { createPendingAttachRegistry } from "./pending/pending-attach-registry.js";
+import { createPendingAutomationRunRegistry } from "./pending/pending-automation-run-registry.js";
+import { createPendingClientCorrelations } from "./pending/pending-client-correlations.js";
+import { createPendingForkRegistry, type PendingForkRegistry } from "./pending/pending-fork-registry.js";
+import { createPendingGoalLinkRegistry } from "./pending/pending-goal-link-registry.js";
+import { createPendingInitialPromptRegistry } from "./pending/pending-initial-prompt-registry.js";
+import { createPendingResumeIntentRegistry } from "./pending/pending-resume-intent-registry.js";
+import { createPendingWorktreeBaseRegistry } from "./pending/pending-worktree-base-registry.js";
+import { PiCoreChecker } from "./pi/pi-core-checker.js";
+import { PiCoreUpdater } from "./pi/pi-core-updater.js";
+import { createPiGateway, type PiGateway } from "./pi/pi-gateway.js";
 import { pluginIntentCache } from "./plugin-intent-cache.js";
-import { createPreferencesStore, type PreferencesStore } from "./preferences-store.js";
-import { spawnPiSession } from "./process-manager.js";
-import { applyReattachPolicy } from "./reattach-placement.js";
-import { reconcileSessionOrder } from "./reconcile-session-order.js";
-import { resolveOrderKey } from "./resolve-order-key.js";
+import { createPreferencesStore, type PreferencesStore } from "./persistence/preferences-store.js";
+import { spawnPiSession } from "./spawn-process/process-manager.js";
+import { applyReattachPolicy } from "./session/reattach-placement.js";
+import { reconcileSessionOrder } from "./session/reconcile-session-order.js";
+import { resolveOrderKey } from "./session/resolve-order-key.js";
+import { registerCanvasTypesRoutes } from "./routes/canvas-types-routes.js";
 import { registerDoctorRoutes } from "./routes/doctor-routes.js";
-import { registerEditorRoutes } from "./routes/editor-routes.js";
 import { registerFileRoutes } from "./routes/file-routes.js";
 import { registerGitRoutes } from "./routes/git-routes.js";
 import { registerGoalRoutes } from "./routes/goal-routes.js";
@@ -104,6 +101,7 @@ import { registerPiChangelogRoutes } from "./routes/pi-changelog-routes.js";
 import { registerPiCoreRoutes } from "./routes/pi-core-routes.js";
 import { registerPluginActivationRoutes } from "./routes/plugin-activation-routes.js";
 import { registerPluginConfigRoutes } from "./routes/plugin-config-routes.js";
+import { registerPreferencesAutoNameRoutes } from "./routes/preferences-auto-name-routes.js";
 import { registerPreferencesDisplayRoutes } from "./routes/preferences-display-routes.js";
 import { registerPreferencesWorktreeInitRoutes } from "./routes/preferences-worktree-init-routes.js";
 import { registerProviderAuthRoutes } from "./routes/provider-auth-routes.js";
@@ -113,18 +111,19 @@ import { registerResourceActivationRoutes } from "./routes/resource-activation-r
 import { registerSessionRoutes } from "./routes/session-routes.js";
 import { registerSystemRoutes } from "./routes/system-routes.js";
 import { registerToolRoutes } from "./routes/tool-routes.js";
-import { removePid, writePid } from "./server-pid.js";
-import { registerSessionApi } from "./session-api.js";
-import { discoverAndBroadcastSessions } from "./session-bootstrap.js";
-import { createSessionOrderManager, type SessionOrderManager } from "./session-order-manager.js";
-import { scanAllSessions } from "./session-scanner.js";
-import { mintSpawnToken } from "./spawn-token.js";
-import { createTerminalGateway, type TerminalGateway } from "./terminal-gateway.js";
-import { createTerminalManager, type TerminalManager } from "./terminal-manager.js";
-import { cleanupStaleZrok, createTunnel, deleteTunnel, detectZrokBinary, getTunnelUrl, scavengeOrphanZrokProcesses } from "./tunnel.js";
-import { startTunnelWatchdog, stopTunnelWatchdog } from "./tunnel-watchdog.js";
-import { createWorktreeInitRegistry } from "./worktree-init-registry.js";
-import { extractTicket, routeScopeForUrl, type WsRouteScope, WsTicketStore } from "./ws-ticket.js";
+import { removePid, writePid } from "./spawn-process/server-pid.js";
+import { registerSessionApi } from "./session/session-api.js";
+import { discoverAndBroadcastSessions } from "./session/session-bootstrap.js";
+import { createSessionOrderManager, type SessionOrderManager } from "./session/session-order-manager.js";
+import { scanAllSessions } from "./session/session-scanner.js";
+import { sessionToMeta } from "./session/session-to-meta.js";
+import { mintSpawnToken } from "./auth/spawn-token.js";
+import { createTerminalGateway, type TerminalGateway } from "./terminal/terminal-gateway.js";
+import { createTerminalManager, type TerminalManager } from "./terminal/terminal-manager.js";
+import { cleanupStaleZrok, createTunnel, deleteTunnel, detectZrokBinary, ensureReservedName, getTunnelUrl, scavengeOrphanZrokProcesses } from "./tunnel/tunnel.js";
+import { startTunnelWatchdog, stopTunnelWatchdog } from "./tunnel/tunnel-watchdog.js";
+import { createWorktreeInitRegistry } from "./git-worktree/worktree-init-registry.js";
+import { extractTicket, routeScopeForUrl, type WsRouteScope, WsTicketStore } from "./auth/ws-ticket.js";
 
 export interface ServerConfig {
   port: number;
@@ -140,7 +139,10 @@ export interface ServerConfig {
   autoShutdown: boolean;
   shutdownIdleSeconds: number;
   tunnel: boolean;
-  tunnelReservedToken?: string;
+  /** v2 reserved NAME sourced from `tunnel.zrok.reservedName`. */
+  tunnelReservedName?: string;
+  /** v2 persistence opt-in sourced from `tunnel.zrok.persistent`. */
+  tunnelPersistent?: boolean;
   tunnelWatchdog?: {
     enabled: boolean;
     intervalMs: number;
@@ -154,8 +156,6 @@ export interface ServerConfig {
   maxEventsPerSession?: number;
   maxStringFieldSize?: number;
   maxWsBufferBytes?: number;
-  /** Editor (code-server) config */
-  editor: import("@blackbelt-technology/pi-dashboard-shared/config.js").EditorConfig;
   /** OpenSpec polling config (interval, concurrency, change detection, jitter) */
   openspec?: import("@blackbelt-technology/pi-dashboard-shared/config.js").OpenSpecPollConfig;
   /** Session behavior — hydration worker offload toggle.
@@ -327,54 +327,13 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
     console.log(`[dashboard] Session scan: ${scanResult.sessions.length} sessions, ${scanResult.cacheUpdates} cache updates`);
   }
 
-  // Save per-session .meta.json on any change
+  // Save per-session .meta.json on any change. The meta payload is an EXPLICIT
+  // field enumeration (`sessionToMeta`) written as a FULL overwrite — omitting a
+  // field there wipes it on the next unrelated save. See change: add-session-tags.
   sessionManager.onChange = (sessionId: string, ctx) => {
     const session = sessionManager.get(sessionId);
     if (!session?.sessionFile) return;
-    metaPersistence.save(session.sessionFile, {
-      source: session.source,
-      name: session.name,
-      attachedProposal: session.attachedProposal,
-      displayPrefsOverride: session.displayPrefsOverride,
-      processDrawerCollapsed: session.processDrawerCollapsed,
-      hidden: session.hidden,
-      cwd: session.cwd,
-      status: session.status,
-      startedAt: session.startedAt,
-      endedAt: session.endedAt,
-      model: session.model,
-      thinkingLevel: session.thinkingLevel,
-      tokensIn: session.tokensIn,
-      tokensOut: session.tokensOut,
-      cacheRead: session.cacheRead,
-      cacheWrite: session.cacheWrite,
-      cost: session.cost,
-      contextTokens: session.contextTokens ?? undefined,
-      contextWindow: session.contextWindow,
-      firstMessage: session.firstMessage,
-      // Persist unread bit so it survives server restart.
-      // See change: session-card-unread-stripes.
-      unread: session.unread,
-      // Persist the worktree base ref so the WORKSPACE-subcard pill can
-      // render `created from <base>` after restart. The field is only set
-      // when a session was spawned via the dashboard's worktree dialog.
-      // See change: add-worktree-spawn-dialog.
-      gitWorktreeBase: session.gitWorktreeBase,
-      // Persist the owning goal id so the session-card goal chip resolves its
-      // goal after restart. MUST be listed here because this save does a full
-      // .meta.json overwrite (not a merge) — omitting it wipes the field set
-      // by event-wiring / goal routes. See change: add-goals-folder-page.
-      goalId: session.goalId,
-      // Persist the grouping-relevant worktree parentage so a rebooted
-      // (bridge-less) scan can collapse this session under its parent repo.
-      // Only the subset `resolveSessionGroupPath` needs is stored; volatile
-      // probe state (worktree base) is excluded.
-      // See change: fix-cold-start-worktree-session-grouping.
-      gitWorktree: session.gitWorktree
-        ? { mainPath: session.gitWorktree.mainPath, name: session.gitWorktree.name }
-        : undefined,
-      cachedAt: Date.now(),
-    });
+    metaPersistence.save(session.sessionFile, sessionToMeta(session));
     // Order-map key for this session: the RESOLVED group path (parent repo
     // for worktree sessions), the same key the client reads.
     // See change: simplify-session-card-ordering.
@@ -654,6 +613,10 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
     ...(config.pingInterval !== undefined ? { pingInterval: config.pingInterval } : {}),
   });
 
+  // Relay for AI-drafted commit messages (bridge fork-subagent ↔ HTTP).
+  // See change: add-session-uncommitted-indicator-and-commit.
+  const commitDraftRelay = createCommitDraftRelay();
+
   // Create event store with pinning callback and configurable limits
   const eventStore = createMemoryEventStore(
     (sessionId) =>
@@ -681,16 +644,6 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
 
   const terminalGateway = createTerminalGateway(terminalManager);
 
-  // Create editor manager for code-server instances
-  const editorDetection = detectCodeServerBinary(config.editor);
-  const editorManager = createEditorManager({
-    config: config.editor,
-    detection: editorDetection,
-    onStatusChange: (cwd, id, status) => {
-      browserGateway.broadcastToAll({ type: "editor_status", cwd, id, status });
-    },
-  });
-  const editorPidRegistry = createEditorPidRegistry({ editorManager });
   // Live-server-preview manager (loopback dev-server allowlist + proxy).
   const liveServerManager = createLiveServerManager(preferencesStore);
 
@@ -939,6 +892,7 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
     dispatchPluginSessionEnded,
     metaPersistence,
     liveEpoch,
+    commitDraftRelay,
   });
 
   // Auto-shutdown idle timer
@@ -1045,7 +999,11 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
   const networkGuard = createNetworkGuard(config.resolvedTrustedNetworks ?? [], { localToken });
 
   registerSessionRoutes(fastify, { sessionManager, eventStore, networkGuard });
-  registerGitRoutes(fastify, { networkGuard, sessionManager, browserGateway, worktreeInitRegistry });
+  registerGitRoutes(fastify, {
+    networkGuard, sessionManager, browserGateway, worktreeInitRegistry,
+    sendToSession: (id, msg) => piGateway.sendToSession(id, msg),
+    commitDraftRelay,
+  });
 
   // Browser channel for worktree-init event subscriptions. The dialog
   // sends `worktree_init_subscribe { requestId }` over its existing ws
@@ -1054,10 +1012,16 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
   browserGateway.registerHandler("worktree_init_subscribe", (msg, ws) => {
     const requestId = typeof msg?.requestId === "string" ? msg.requestId : undefined;
     if (requestId) worktreeInitRegistry.subscribe(requestId, ws);
+    // cwd-keyed fan-out: survives refresh, reaches every tab.
+    // See change: friendlier-worktree-init.
+    const cwd = typeof msg?.cwd === "string" ? msg.cwd : undefined;
+    if (cwd) worktreeInitRegistry.subscribeCwd(cwd, ws);
   });
-  browserGateway.registerHandler("worktree_init_unsubscribe", (msg) => {
+  browserGateway.registerHandler("worktree_init_unsubscribe", (msg, ws) => {
     const requestId = typeof msg?.requestId === "string" ? msg.requestId : undefined;
     if (requestId) worktreeInitRegistry.unsubscribe(requestId);
+    const cwd = typeof msg?.cwd === "string" ? msg.cwd : undefined;
+    if (cwd) worktreeInitRegistry.unsubscribeCwd(cwd, ws);
   });
   registerFileRoutes(fastify, { sessionManager, preferencesStore, networkGuard });
   registerGrepRoutes(fastify, { sessionManager, networkGuard });
@@ -1364,13 +1328,6 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
     packageManagerWrapper.listInstalled("local"),
   ]);
 
-  // Editor (code-server) routes and proxy.
-  // NOTE: routes are *registered* here but cannot dispatch until fastify.listen runs
-  // inside server.start(). The orphan sweep in editorPidRegistry.cleanupOrphans()
-  // runs at the top of server.start() BEFORE fastify.listen, so any
-  // POST /api/editor/start call is guaranteed to see a post-sweep clean state.
-  registerEditorRoutes(fastify, editorManager, { networkGuard });
-  registerEditorProxy(fastify, editorManager);
   // Live-server-preview routes + reverse proxy (main-origin /live/:id/*).
   registerLiveServerRoutes(fastify, liveServerManager, { networkGuard });
   registerLiveServerProxy(fastify, liveServerManager);
@@ -1404,7 +1361,7 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
     { preHandler: networkGuard },
     async (request, reply) => {
       const scope = request.body?.scope;
-      if (scope !== "browser" && scope !== "terminal" && scope !== "editor" && scope !== "live") {
+      if (scope !== "browser" && scope !== "terminal" && scope !== "live") {
         reply.code(400);
         return { success: false as const, error: "invalid scope" };
       }
@@ -1421,8 +1378,13 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
     networkGuard,
     broadcast: (msg) => browserGateway.broadcastToAll(msg),
   });
+  // Canvas-type registry read/write (auto-canvas task 5.2).
+  registerCanvasTypesRoutes(fastify, { networkGuard });
   // Opt-in worktree auto-init-on-spawn preference (auto-init-worktree-on-spawn).
   registerPreferencesWorktreeInitRoutes(fastify, { preferencesStore, networkGuard });
+  // Global auto-session-naming toggle (add-auto-session-naming). Broadcasts
+  // `preferences_update` to bridges on change.
+  registerPreferencesAutoNameRoutes(fastify, { preferencesStore, piGateway, networkGuard });
   registerPluginActivationRoutes(fastify, {
     networkGuard,
     broadcast: (msg) => browserGateway.broadcast(msg),
@@ -1629,36 +1591,19 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
       // surviving keepers after a server restart. Same instance the spawn
       // path uses. See change: add-rpc-stdin-dispatch-with-keeper-sidecar.
       try {
-        const { getKeeperManager } = await import("./process-manager.js");
+        const { getKeeperManager } = await import("./spawn-process/process-manager.js");
         browserGateway.headlessPidRegistry.setKeeperWriter(getKeeperManager());
         await browserGateway.headlessPidRegistry.cleanupKeeperOrphans();
       } catch (err) {
         console.warn("[dashboard] keeper-manager wire-up failed (RPC dispatch disabled):", err);
       }
 
-      // Editor lifecycle boot order:
-      //   1. Adopt surviving editor keepers (per-editor sidecars) → reattach.
-      //   2. Defensive cmdline sweep for pre-keeper installs (no sidecar).
-      // See change: add-editor-keeper-sidecar.
-      try {
-        const summary = await editorPidRegistry.adoptOrphans();
-        if (summary.adopted.length > 0) {
-          console.log(`[dashboard] adopted ${summary.adopted.length} editor${summary.adopted.length === 1 ? "" : "s"}`);
-          for (const a of summary.adopted) {
-            console.log(`[dashboard]   editor ${a.editorId} cwd=${a.cwd} port=${a.port}`);
-          }
-        }
-      } catch (err) {
-        console.warn("[dashboard] editor adoptOrphans failed:", err);
-      }
-      await editorPidRegistry.cleanupOrphans();
-
       // Spawned pi sessions must connect back to THIS server's gateway, not
       // the config-default piPort. Critical for multi-instance setups (e.g. a
       // git-worktree dashboard on a non-default --pi-port). See
       // setSpawnDashboardPiPort in process-manager.ts.
       {
-        const { setSpawnDashboardPiPort } = await import("./process-manager.js");
+        const { setSpawnDashboardPiPort } = await import("./spawn-process/process-manager.js");
         setSpawnDashboardPiPort(config.piPort);
       }
 
@@ -1751,6 +1696,9 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
                   const result = await spawnPiSession(opts.cwd, {
                     strategy: "headless",
                     ...(opts.model ? { model: opts.model } : {}),
+                    // Flow/automation runs know an intended name — set it at
+                    // creation via `--name`. See change: adopt-pi-074-080-features.
+                    ...(opts.automationRun?.name ? { name: opts.automationRun.name } : {}),
                   });
                   if (result.process && result.pid) {
                     browserGateway.headlessPidRegistry.register(
@@ -1831,10 +1779,18 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
                 }
                 return out;
               },
+              // plugin_action fans out by pluginId (manifest-authoritative, not
+              // self-declared) so multiple plugins coexist; other custom types
+              // stay single-owner. See change: fix-plugin-action-fanout-and-handlers.
               registerBrowserHandler: (type, handler) =>
-                browserGateway.registerHandler(type, (msg, ws) =>
-                  handler(msg, ws as unknown),
-                ),
+                type === "plugin_action"
+                  ? browserGateway.registerPluginActionHandler(
+                      plugin.manifest.id,
+                      (msg, ws) => handler(msg, ws as unknown),
+                    )
+                  : browserGateway.registerHandler(type, (msg, ws) =>
+                      handler(msg, ws as unknown),
+                    ),
               getPluginConfig: (id) => {
                 const cfg = loadConfig();
                 return getPluginConfigFromFile(cfg, id);
@@ -1909,9 +1865,6 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
             break;
           case "terminal":
             terminalGateway.handleUpgrade(request, socket, head);
-            break;
-          case "editor":
-            handleEditorUpgrade(editorManager, request, socket, head);
             break;
           case "live":
             handleLiveServerUpgrade(liveServerManager, request, socket, head);
@@ -2013,11 +1966,18 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
 
       if (config.tunnel) {
         if (hasZrok) {
-          const tunnelUrl = await createTunnel(config.port, config.tunnelReservedToken);
+          // v2: resolve the reserved NAME (stored or minted-when-persistent),
+          // cache it so watchdog recycles reuse the SAME name (stable URL).
+          const reservedName = ensureReservedName({
+            reservedName: config.tunnelReservedName,
+            persistent: config.tunnelPersistent,
+          });
+          config.tunnelReservedName = reservedName;
+          const tunnelUrl = await createTunnel(config.port, reservedName);
           if (tunnelUrl) {
             console.log(`🌐 Tunnel: ${tunnelUrl}`);
             // Start the watchdog so a stale zrok edge connection is detected
-            // and recycled automatically (preserves reserved token / URL).
+            // and recycled automatically (preserves reserved name / URL).
             const wd = config.tunnelWatchdog;
             if (wd?.enabled !== false) {
               startTunnelWatchdog(
@@ -2025,7 +1985,7 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
                   getUrl: getTunnelUrl,
                   recycle: async () => {
                     await deleteTunnel(config.port);
-                    return await createTunnel(config.port, config.tunnelReservedToken);
+                    return await createTunnel(config.port, config.tunnelReservedName);
                   },
                 },
                 wd,
@@ -2195,11 +2155,8 @@ export async function createServer(config: ServerConfig): Promise<DashboardServe
       for (const t of terminalManager.list()) {
         try { terminalManager.kill(t.id); } catch {}
       }
-      // Stop all code-server instances (config-gated; default no-op so
-      // keepers + tabs survive a dashboard restart).
-      try { await editorManager.stopAll(); } catch (err) { console.warn("[dashboard] editorManager.stopAll failed:", err); }
       // Close any pending OAuth callback servers
-      try { const { closeAllCallbackServers } = await import("./oauth-callback-server.js"); await closeAllCallbackServers(); } catch {}
+      try { const { closeAllCallbackServers } = await import("./auth/oauth-callback-server.js"); await closeAllCallbackServers(); } catch {}
       // Close second port before main server
       if (secondFastify) {
         try { await secondFastify.close(); } catch { /* ignore */ }

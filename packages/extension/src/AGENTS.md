@@ -49,6 +49,7 @@ Files in this directory. One row per source file.
 | `slash-dispatch.ts` | Extension slash-command dispatch (routing-step 9). Exports `tryDispatchExtensionCommand`, `FeedbackSink`,… → see `slash-dispatch.ts.AGENTS.md` |
 | `source-detector.ts` | Detects session source env. Exports `detectSessionSource(hasUI?, sessionFile?)` → `SessionSource`. → see `source-detector.ts.AGENTS.md` |
 | `tool-result-image-inliner.ts` | Bridge Fix B tool-result image inliner. On `tool_execution_end` scans result text for absolute image paths… → see `tool-result-image-inliner.ts.AGENTS.md` |
+| `tui-prompt-adapter.ts` | Production PromptBus adapter for Pi's TUI. Exports `createTuiPromptAdapter`, `TuiPromptUi`. Presents select/input/confirm/editor via captured unpatched UI; forwards confirm `metadata.message`; no multiselect arm. → see `tui-prompt-adapter.ts.AGENTS.md` |
 | `turn-actionability.ts` | Pure provider-agnostic classifier. Exports `classifyTurnActionability(turn)` →… → see `turn-actionability.ts.AGENTS.md` |
 | `ui-modules.ts` | Extension UI system bridge side. Exports `refreshUiModules`, `subscribeUiInvalidate`, `handleUiManagement`,… → see `ui-modules.ts.AGENTS.md` |
 | `vcs-info.ts` | Gathers git branch/remote/PR/worktree info via shared platform git helpers. → see `vcs-info.ts.AGENTS.md` |

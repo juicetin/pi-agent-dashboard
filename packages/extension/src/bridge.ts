@@ -61,6 +61,7 @@ import { tryDispatchExtensionCommand } from "./slash-dispatch.js";
 import { detectSessionSource } from "./source-detector.js";
 import { SubagentFrameBuffer } from "./subagent-frame-buffer.js";
 import { inlineToolResultImages } from "./tool-result-image-inliner.js";
+import { createTuiPromptAdapter } from "./tui-prompt-adapter.js";
 import { classifyTurnActionability } from "./turn-actionability.js";
 import { handleUiManagement, refreshUiModules, subscribeUiInvalidate, type UiModulesBridgeCtx } from "./ui-modules.js";
 import { detectIsGitRepo } from "./vcs-info.js";
@@ -2114,79 +2115,7 @@ function initBridge(pi: ExtensionAPI) {
     // Register TUI adapter — presents prompts in the terminal using original
     // (unpatched) ctx.ui methods. Must be registered BEFORE patching ctx.ui.
     if (ctx.hasUI) {
-      const activeControllers = new Map<string, AbortController>();
-      const bus = promptBus;
-
-      bus.registerAdapter({
-        name: "tui",
-
-        onRequest(prompt: any) {
-          const ac = new AbortController();
-          activeControllers.set(prompt.id, ac);
-
-          const present = async () => {
-            try {
-              let answer: string | boolean | undefined;
-
-              if (prompt.type === "select" && prompt.options && originals.select) {
-                answer = await originals.select(prompt.question, prompt.options, { signal: ac.signal });
-              } else if (prompt.type === "input" && originals.input) {
-                answer = await originals.input(prompt.question, prompt.defaultValue || "", { signal: ac.signal });
-              } else if (prompt.type === "confirm" && originals.confirm) {
-                answer = await originals.confirm(prompt.question, "", { signal: ac.signal });
-              } else if (prompt.type === "editor" && originals.editor) {
-                answer = await originals.editor(prompt.question, prompt.defaultValue || "", { signal: ac.signal });
-              } else {
-                // NOTE: there is intentionally no `else if` arm for the
-                // multiselect prompt type here. See change
-                // fix-multiselect-tui-arm-self-cancel — pi 0.70 RPC mode's
-                // ctx.ui.custom primitive is a no-op, so any TUI arm that
-                // awaits it auto-cancels the dashboard-rendered dialog. The
-                // bus-routed ctx.ui.multiselect patch below + the
-                // DashboardDefaultAdapter handle multiselect end-to-end.
-                return;
-              }
-
-              if (!ac.signal.aborted) {
-                const answerStr = typeof answer === "boolean" ? (answer ? "true" : "false") : answer;
-                bus.respond({
-                  id: prompt.id,
-                  answer: answerStr ?? undefined,
-                  cancelled: answerStr == null,
-                  source: "tui",
-                });
-              }
-            } catch {
-              if (!ac.signal.aborted) {
-                bus.respond({ id: prompt.id, cancelled: true, source: "tui" });
-              }
-            } finally {
-              activeControllers.delete(prompt.id);
-            }
-          };
-
-          present();
-          return {}; // Claim without component (TUI-only)
-        },
-
-        onResponse(response: any) {
-          if (response.source !== "tui") {
-            const ac = activeControllers.get(response.id);
-            if (ac) {
-              ac.abort();
-              activeControllers.delete(response.id);
-            }
-          }
-        },
-
-        onCancel(id: string) {
-          const ac = activeControllers.get(id);
-          if (ac) {
-            ac.abort();
-            activeControllers.delete(id);
-          }
-        },
-      });
+      promptBus.registerAdapter(createTuiPromptAdapter(originals, promptBus));
     }
 
     // Replace ctx.ui dialog methods with PromptBus wrappers.

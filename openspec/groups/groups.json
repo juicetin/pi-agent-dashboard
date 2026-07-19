@@ -195,7 +195,8 @@
     "slim-kb-search-output": "ui",
     "fix-empty-git-aggregate-diff-tab": "ui",
     "support-zrok-v2": "ui",
-    "distill-hermes-memory-into-skills": "next-phase"
+    "distill-hermes-memory-into-skills": "next-phase",
+    "fix-session-diff-eventloop-block": "ui"
   },
   "changeOrder": {
     "__ungrouped__": [],
@@ -207,9 +208,7 @@
       "memory-retrieval-injection"
     ],
     "ui": [
-      "slim-kb-search-output",
-      "support-zrok-v2",
-      "fix-empty-git-aggregate-diff-tab"
+      "fix-session-diff-eventloop-block"
     ],
     "next-phase": [
       "distill-hermes-memory-into-skills",

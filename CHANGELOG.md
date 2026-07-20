@@ -16,6 +16,30 @@ see [`docs/release-process.md`](docs/release-process.md).
 
 ### Fixed
 
+## [0.6.1] - 2026-07-20
+
+Completes the partial `0.6.0` release. `0.6.0` published 31 of 32 npm packages but
+could not publish `@blackbelt-technology/pi-dashboard-eng-disciplines` — its `0.6.0`
+version string was burned by an earlier independent publish + unpublish — which
+blocked the Electron installers and the GitHub Release. `0.6.1` re-cuts every
+workspace at a fresh, unburned version so all packages ship consistently and the
+installers + GitHub Release are produced. No functional changes beyond the
+release-pipeline fixes below; see `[0.6.0]` for the full feature set.
+
+### Fixed
+- **Release pipeline hardening (publish.yml).** Pinned the publish job's npm to
+  `11.12.1`: `npm@latest` now refuses the transitive `@electron/node-gyp` git
+  dependency (`EALLOWGIT`, via `@electron/rebuild` ← `@electron-forge/core`),
+  breaking `npm ci`; `npm@11.5.1` is too old and drops the `lightningcss-linux-x64-gnu`
+  optional native dep (client vite build fails). `11.12.1` resolves both while keeping
+  OIDC trusted publishing. Added a `repository` field to `pi-dashboard-bus-client`
+  and `pi-dashboard-kb` so their OIDC provenance bundles validate (was `E422`).
+  Wrapped the per-package publish loop in `set +e`/`set -e` so a single failure no
+  longer aborts before the Trusted-Publisher gap report enumerates.
+- **Windows introspection smoke.** Dropped an orphaned `defaultGetCmdline` probe
+  left behind when `editor-pid-registry.ts` was removed (kept the still-valid
+  `isVirtualMachine` + no-`wmic`-leak checks).
+
 ## [0.6.0] - 2026-07-20
 
 ### Added

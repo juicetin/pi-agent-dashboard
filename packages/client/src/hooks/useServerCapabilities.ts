@@ -6,7 +6,7 @@
  * (D9).
  */
 import { useEffect, useState } from "react";
-import { getApiBase } from "../lib/api-context.js";
+import { getApiBase } from "../lib/api/api-context.js";
 
 export interface ServerCapabilities {
   systemOpen: boolean;

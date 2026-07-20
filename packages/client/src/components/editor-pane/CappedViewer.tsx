@@ -16,8 +16,8 @@ import {
   type ViewerKind,
 } from "@blackbelt-technology/pi-dashboard-shared/file-kind.js";
 import { useEffect, useState } from "react";
-import { getApiBase } from "../../lib/api-context.js";
-import { useI18n } from "../../lib/i18n";
+import { getApiBase } from "../../lib/api/api-context.js";
+import { useI18n } from "../../lib/i18n/i18n.js";
 import { TooLargePreview } from "./TooLargePreview.js";
 import type { ViewerProps } from "./types.js";
 import { viewerRegistry } from "./viewer-registry.js";

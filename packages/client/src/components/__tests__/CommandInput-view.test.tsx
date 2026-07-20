@@ -5,10 +5,10 @@
 import { describe, it, expect, beforeAll, afterEach, vi } from "vitest";
 import { render, fireEvent, cleanup } from "@testing-library/react";
 import React from "react";
-import { CommandInput, DASHBOARD_LOCAL_COMMANDS, parseViewCommand } from "../CommandInput.js";
+import { CommandInput, DASHBOARD_LOCAL_COMMANDS, parseViewCommand } from "../chat/CommandInput.js";
 import type { CommandInfo } from "@blackbelt-technology/pi-dashboard-shared/types.js";
-import type { ChatMessage } from "../../lib/event-reducer.js";
-import { viewTargetToEditorPath } from "../../lib/view-route.js";
+import type { ChatMessage } from "../../lib/chat/event-reducer.js";
+import { viewTargetToEditorPath } from "../../lib/nav/view-route.js";
 
 afterEach(() => cleanup());
 

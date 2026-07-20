@@ -9,9 +9,9 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("../../../lib/api-context.js", () => ({ getApiBase: () => "" }));
+vi.mock("../../../lib/api/api-context.js", () => ({ getApiBase: () => "" }));
 vi.mock("../monaco-setup.js", () => ({}));
-vi.mock("../../../lib/monaco-theme.js", () => ({
+vi.mock("../../../lib/theme/monaco-theme.js", () => ({
   buildMonacoTheme: () => ({ name: "t", data: {} }),
 }));
 vi.mock("@monaco-editor/react", () => ({
@@ -25,7 +25,7 @@ vi.mock("../../preview/SpreadsheetPreview.js", () => ({
   SpreadsheetPreview: () => <div data-testid="sheet-grid">grid</div>,
 }));
 
-import { ThemeProvider } from "../../ThemeProvider.js";
+import { ThemeProvider } from "../../settings/ThemeProvider.js";
 import EditableSpreadsheetTab from "../EditableSpreadsheetTab.js";
 
 const originalFetch = globalThis.fetch;

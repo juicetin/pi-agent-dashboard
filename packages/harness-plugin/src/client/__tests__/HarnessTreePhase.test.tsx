@@ -1,6 +1,6 @@
 import type { DashboardSession } from "@blackbelt-technology/pi-dashboard-shared/types.js";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { HarnessTreePhase } from "../HarnessTreePhase.js";
 
 function makeSession(tooltip: string): DashboardSession {
@@ -53,5 +53,20 @@ describe("HarnessTreePhase", () => {
     expect(within(dialog).getByText("execute")).toBeDefined();
     expect(within(dialog).getByText("T2 (TASK.md)")).toBeDefined();
     expect(within(dialog).getByRole("link", { name: "example.test" }).getAttribute("href")).toBe("https://example.test");
+  });
+
+  it("does not bubble dialog clicks to the owning session card", () => {
+    const onSessionClick = vi.fn();
+    render(
+      <div onClick={onSessionClick}>
+        <HarnessTreePhase session={makeSession("Run: intake\nPhase: define\nSkill: grill")} />
+      </div>,
+    );
+
+    fireEvent.click(screen.getByTestId("harness-tree-phase"));
+    const dialog = screen.getByRole("dialog", { name: "Harness run status" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Close harness status" }));
+
+    expect(onSessionClick).not.toHaveBeenCalled();
   });
 });

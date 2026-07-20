@@ -1,6 +1,6 @@
 {
   "name": "@blackbelt-technology/pi-dashboard-harness-plugin",
-  "version": "0.5.4",
+  "version": "0.6.0",
   "private": true,
   "description": "Local Harness status plugin for pi-dashboard session cards.",
   "type": "module",
@@ -35,7 +35,7 @@
     "react-dom": ">=18.0.0"
   },
   "dependencies": {
-    "@blackbelt-technology/pi-dashboard-shared": "^0.5.4",
+    "@blackbelt-technology/pi-dashboard-shared": "^0.6.0",
     "@mdi/js": "^7.4.47",
     "@mdi/react": "^1.6.1"
   },

@@ -14,11 +14,11 @@ const openUrlTarget = vi.fn();
 const openLiveTarget = vi.fn();
 const ensureRevealed = vi.fn();
 
-vi.mock("../SplitWorkspaceContext.js", () => ({
+vi.mock("../split/SplitWorkspaceContext.js", () => ({
   useSplitWorkspace: () => ({ openInSplit, openUrlTarget, openLiveTarget, ensureRevealed }),
 }));
 
-import { SplitRouteSync } from "../SessionSplitView.js";
+import { SplitRouteSync } from "../split/SessionSplitView.js";
 
 afterEach(() => {
   cleanup();

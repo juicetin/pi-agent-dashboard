@@ -19,7 +19,6 @@ import { Loader } from "@earendil-works/pi-tui";
 import { AbortLatch } from "./abort-latch.js";
 import { nativeAgentSettledSupported, settleFollowUp } from "./agent-settled.js";
 import { isUnderArtifactRoot, resolveArtifactRoots } from "./artifact-roots.js";
-import { createTuiPromptAdapter } from "./tui-prompt-adapter.js";
 import {
   MAX_PER_MESSAGE_BYTES as ATTACH_MAX_PER_MESSAGE_BYTES,
   cleanupAttachmentsForSession,
@@ -57,11 +56,12 @@ import { activate as activateRoleManager, lookupRole } from "./role-manager.js";
 import { registerRoleModelTools } from "./role-model-tools.js";
 import { autoStartServer } from "./server-auto-start.js";
 import { launchServer } from "./server-launcher.js";
-import { handleSessionChange as _handleSessionChange, replaySessionEntries as _replaySessionEntries, sendStateSync as _sendStateSync } from "./session-sync.js";
+import { filterByEnabledModels, handleSessionChange as _handleSessionChange, replaySessionEntries as _replaySessionEntries, sendStateSync as _sendStateSync } from "./session-sync.js";
 import { tryDispatchExtensionCommand } from "./slash-dispatch.js";
 import { detectSessionSource } from "./source-detector.js";
 import { SubagentFrameBuffer } from "./subagent-frame-buffer.js";
 import { inlineToolResultImages } from "./tool-result-image-inliner.js";
+import { createTuiPromptAdapter } from "./tui-prompt-adapter.js";
 import { classifyTurnActionability } from "./turn-actionability.js";
 import { handleUiManagement, refreshUiModules, subscribeUiInvalidate, type UiModulesBridgeCtx } from "./ui-modules.js";
 import { detectIsGitRepo } from "./vcs-info.js";
@@ -767,7 +767,7 @@ function initBridge(pi: ExtensionAPI) {
         // Push updated models list to dashboard client
         if (cachedModelRegistry && sessionReady) {
           try {
-            const models = cachedModelRegistry.getAvailable().map(toModelInfo);
+            const models = filterByEnabledModels(cachedModelRegistry.getAvailable().map(toModelInfo));
             connection.send({ type: "models_list", sessionId, models });
             // See change: replace-hardcoded-provider-lists.
             connection.send({ type: "providers_list", sessionId, providers: buildProviderCatalogue() });
@@ -2420,7 +2420,7 @@ function initBridge(pi: ExtensionAPI) {
     cachedModelRegistry = (ctx as any).modelRegistry;
     if (cachedModelRegistry) {
       try {
-        const models = cachedModelRegistry.getAvailable().map(toModelInfo);
+        const models = filterByEnabledModels(cachedModelRegistry.getAvailable().map(toModelInfo));
         connection.send({ type: "models_list", sessionId, models });
         // See change: replace-hardcoded-provider-lists.
         connection.send({ type: "providers_list", sessionId, providers: buildProviderCatalogue() });
@@ -2706,7 +2706,7 @@ function initBridge(pi: ExtensionAPI) {
     if (!isActive()) return;
     if (cachedModelRegistry && sessionReady) {
       try {
-        const models = cachedModelRegistry.getAvailable().map(toModelInfo);
+        const models = filterByEnabledModels(cachedModelRegistry.getAvailable().map(toModelInfo));
         connection.send({ type: "models_list", sessionId, models });
         // See change: replace-hardcoded-provider-lists.
         connection.send({ type: "providers_list", sessionId, providers: buildProviderCatalogue() });

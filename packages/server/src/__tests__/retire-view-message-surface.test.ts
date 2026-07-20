@@ -21,7 +21,7 @@ describe("retired /view inline surface (X8)", () => {
   });
 
   it("browser-gateway no longer handles inject_view_message or emits view_messages_update", () => {
-    const gw = read("browser-gateway.ts");
+    const gw = read("pairing/browser-gateway.ts");
     expect(gw).not.toContain('case "inject_view_message"');
     expect(gw).not.toContain('type: "view_messages_update"');
     expect(gw).not.toContain("ViewMessageStore");

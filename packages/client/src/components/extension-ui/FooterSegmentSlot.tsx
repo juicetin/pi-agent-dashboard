@@ -7,11 +7,11 @@
  *
  * See change: add-extension-ui-decorations, design.md §6.
  */
-
 import type { DashboardSession } from "@blackbelt-technology/pi-dashboard-shared/types.js";
 import { Icon } from "@mdi/react";
-import { resolveMdiIcon } from "../../lib/mdi-icon-lookup.js";
+import { resolveMdiIcon } from "../../lib/preview/mdi-icon-lookup.js";
 import { decoratorsOfKind } from "./decorator-utils.js";
+
 
 export function FooterSegmentSlot({
   session,

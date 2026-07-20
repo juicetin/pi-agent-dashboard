@@ -247,13 +247,16 @@ jobs:
 
       # Trusted Publishing requires npm CLI ≥ 11.5.1. Node 24 ships a recent
       # npm, but upgrade explicitly to guarantee the feature is available.
-      # PINNED to 11.5.1 (not @latest): later npm defaults to refusing git-
+      # PINNED to 11.12.1 (not @latest): a LATER npm defaults to refusing git-
       # protocol dependency fetches (EALLOWGIT), which breaks `npm ci` on the
       # pre-existing transitive git dep @electron/node-gyp (via @electron/rebuild
-      # ← @electron-forge/core devDeps). 11.5.1 is the minimum that supports OIDC
-      # trusted publishing AND still resolves the git dep. See v0.6.0 release.
-      - name: Upgrade npm for trusted publishing (pinned; see EALLOWGIT note)
-        run: npm install -g npm@11.5.1
+      # ← @electron-forge/core devDeps). An EARLIER npm (11.5.1) has an optional
+      # platform-dep install bug that drops lightningcss-linux-x64-gnu, breaking
+      # the client vite build. 11.12.1 is the version that shipped v0.5.4
+      # successfully: supports OIDC trusted publishing, allows the git dep, and
+      # installs optional native deps. Do NOT float back to @latest.
+      - name: Upgrade npm for trusted publishing (pinned 11.12.1; see note)
+        run: npm install -g npm@11.12.1
 
       - run: npm ci
 

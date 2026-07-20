@@ -99,9 +99,6 @@ const ALLOWLIST: readonly string[] = [
   // electron/src/platform/tray-icon.ts in deferred consolidation.
   "packages/electron/src/lib/tray.ts",
 
-  // Server editor PID registry: per-OS process pattern matching for
-  // orphan detection on boot. Genuine data-table branching.
-  "packages/server/src/editor-pid-registry.ts",
   // Electron dependency installer: Windows npm is npm.cmd (batch wrapper);
   // spawn('npm') without .cmd extension fails ENOENT on Windows. The branch
   // routes around this by preferring bundled node+npm-cli.js on Windows.

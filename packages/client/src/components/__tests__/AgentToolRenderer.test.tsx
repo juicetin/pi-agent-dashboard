@@ -8,8 +8,8 @@ import { withUiPrimitiveProvider } from "@blackbelt-technology/dashboard-plugin-
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type React from "react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { createInitialState, type SessionState, type SubagentState } from "../../lib/event-reducer.js";
-import { ThemeProvider } from "../ThemeProvider.js";
+import { createInitialState, type SessionState, type SubagentState } from "../../lib/chat/event-reducer.js";
+import { ThemeProvider } from "../settings/ThemeProvider.js";
 import { AgentToolRenderer } from "../tool-renderers/AgentToolRenderer.js";
 import type { ToolContext } from "../tool-renderers/types.js";
 
@@ -171,7 +171,7 @@ describe("AgentToolRenderer — expand + popout", () => {
     expect(send).not.toHaveBeenCalledWith(
       expect.objectContaining({ type: "subagent_resync_request" }),
     );
-    fireEvent.keyDown(window, { key: "Escape" });
+    fireEvent.keyDown(document, { key: "Escape" });
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });
 
@@ -204,7 +204,7 @@ describe("AgentToolRenderer — expand + popout", () => {
     expect(open).not.toHaveBeenCalled();
     open.mockRestore();
     // Tear the portal down within the test (flush the scheduler).
-    fireEvent.keyDown(window, { key: "Escape" });
+    fireEvent.keyDown(document, { key: "Escape" });
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });
 
@@ -220,7 +220,7 @@ describe("AgentToolRenderer — expand + popout", () => {
     ));
     fireEvent.click(screen.getByTitle(/Open subagent detail/i));
     expect(await screen.findByRole("dialog")).toBeTruthy();
-    fireEvent.keyDown(window, { key: "Escape" });
+    fireEvent.keyDown(document, { key: "Escape" });
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });
 

@@ -9,9 +9,9 @@ import type React from "react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { Router } from "wouter";
 import { memoryLocation } from "wouter/memory-location";
-import { ChatView } from "../ChatView.js";
-import { PreviewCard } from "../PreviewCard.js";
-import { ThemeProvider } from "../ThemeProvider.js";
+import { ChatView } from "../chat/ChatView.js";
+import { PreviewCard } from "../preview/PreviewCard.js";
+import { ThemeProvider } from "../settings/ThemeProvider.js";
 import type { ToolContext } from "../tool-renderers/index.js";
 
 const defaultToolContext: ToolContext = {};

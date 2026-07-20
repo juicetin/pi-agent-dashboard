@@ -35,6 +35,7 @@ export function HarnessStatusDialog({ open, titleId, runLabel, details, onClose 
         aria-modal="true"
         aria-labelledby={titleId}
         className="relative w-full max-w-lg rounded-xl border border-blue-500/30 bg-[var(--bg-secondary)] p-4 text-[var(--text)] shadow-2xl shadow-black/40"
+        onClick={(event) => event.stopPropagation()}
       >
         <div className="flex items-start gap-3">
           <span className="mt-0.5 inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg border border-blue-500/30 bg-blue-500/10 text-blue-300">

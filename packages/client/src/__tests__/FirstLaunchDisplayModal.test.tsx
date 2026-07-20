@@ -2,11 +2,10 @@
  * Tests for FirstLaunchDisplayModal — preset PATCH on submit, default-to-
  * standard on dismiss. See change: configurable-chat-display.
  */
-
 import { DISPLAY_PRESETS } from "@blackbelt-technology/pi-dashboard-shared/display-prefs.js";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { FirstLaunchDisplayModal } from "../components/FirstLaunchDisplayModal.js";
+import { FirstLaunchDisplayModal } from "../components/settings/FirstLaunchDisplayModal.js";
 
 describe("FirstLaunchDisplayModal", () => {
   let fetchMock: ReturnType<typeof vi.fn>;

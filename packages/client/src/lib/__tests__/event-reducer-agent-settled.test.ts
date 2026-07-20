@@ -9,7 +9,7 @@
  * See change: adopt-pi-074-080-features (A.1 — F1, F2, F3, X2).
  */
 import { describe, expect, it } from "vitest";
-import { createInitialState, reduceEvent, type SessionState } from "../event-reducer.js";
+import { createInitialState, reduceEvent, type SessionState } from "../chat/event-reducer.js";
 import type { DashboardEvent } from "@blackbelt-technology/pi-dashboard-shared/types.js";
 
 let clock = 1000;

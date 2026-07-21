@@ -42,3 +42,8 @@ doc-example/
 # kb knowledge base index
 /.pi/dashboard/kb/index.db
 .reverse-spec-scratch/
+
+# Beads / Dolt files (added by bd init)
+.dolt/
+.beads-credential-key
+.beads/proxieddb/

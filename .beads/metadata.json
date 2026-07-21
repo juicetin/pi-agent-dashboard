@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "embedded",
+  "dolt_database": "pidash",
+  "project_id": "a8a97672-122c-498f-9cfe-af8a282c8ed0"
+}

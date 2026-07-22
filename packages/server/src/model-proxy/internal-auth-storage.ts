@@ -8,11 +8,11 @@
  * See change: add-dashboard-model-proxy, design §1.
  */
 import {
+  type AuthCredential,
+  type AuthData,
+  type OAuthCredential,
   readAuthJson,
   writeCredential,
-  type AuthData,
-  type AuthCredential,
-  type OAuthCredential,
 } from "../auth/provider-auth-storage.js";
 
 /** Minimal pi-ai OAuth module surface (runtime-resolved from pi-ai/oauth). */
@@ -120,7 +120,10 @@ export class InternalAuthStorage {
       throw new Error(`OAuth refresh needed for "${provider}" but pi-ai oauth module unavailable`);
     }
 
-    const oauthId = OAUTH_PROVIDER_MAP[provider] ?? provider;
+    const numberedBase = provider.match(/^(.*)-\d+$/)?.[1];
+    const oauthId = OAUTH_PROVIDER_MAP[provider]
+      ?? (numberedBase ? OAUTH_PROVIDER_MAP[numberedBase] : undefined)
+      ?? provider;
     let refreshed: any;
 
     // Try provider-specific refresh via getOAuthProvider

@@ -13,11 +13,13 @@
  *
  * Cap: 5s timeout.
  */
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+
 import fs from "node:fs";
-import path from "node:path";
 import os from "node:os";
-import { writeCredential, readAuthJson } from "../../auth/provider-auth-storage.js";
+import path from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { readAuthJson, writeCredential } from "../../auth/provider-auth-storage.js";
+import { InternalAuthStorage } from "../internal-auth-storage.js";
 
 const AUTH_DIR = path.join(os.homedir(), ".pi", "agent");
 const AUTH_PATH = path.join(AUTH_DIR, "auth.json");
@@ -94,5 +96,32 @@ describe("auth.json single-writer contract (task 2.12)", () => {
     expect((data["anthropic"] as any).refresh).toBe("r1");
     // gemini unchanged
     expect((data["gemini"] as any).key).toBe("gk-original");
+  });
+});
+
+describe("InternalAuthStorage numbered OAuth aliases", () => {
+  it("refreshes a numbered OAuth alias through its canonical provider", async () => {
+    writeCredential("openai-codex-3", { type: "oauth", refresh: "r0", access: "a0", expires: 1 });
+    const refreshToken = vi.fn(async () => ({
+      refreshToken: "r1",
+      accessToken: "a1",
+      expiresAt: Date.now() + 3600_000,
+    }));
+    const getOAuthProvider = vi.fn((provider: string) => provider === "openai-codex"
+      ? { refreshToken }
+      : undefined);
+    const storage = new InternalAuthStorage({
+      getOAuthProvider,
+      refreshOAuthToken: vi.fn(async () => {
+        throw new Error("unexpected generic refresh");
+      }),
+    });
+
+    const result = await storage.getApiKeyAndHeaders({ provider: "openai-codex-3" });
+
+    expect(result.apiKey).toBe("a1");
+    expect(getOAuthProvider).toHaveBeenCalledWith("openai-codex");
+    expect(refreshToken).toHaveBeenCalledOnce();
+    expect((readAuthJson()["openai-codex-3"] as any).access).toBe("a1");
   });
 });

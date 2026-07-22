@@ -65,6 +65,24 @@ describe("InternalRegistry.getAvailable — credential-kind filtering", () => {
     expect(await reg.find("anthropic", "claude-haiku-4-5")).not.toBeNull();
   });
 
+  it("numbered OAuth aliases preserve canonical compatibility filtering", async () => {
+    const reg = makeRegistry({
+      builtins: { anthropic: anthropicBuiltins },
+      auth: { "anthropic-2": OAUTH },
+    });
+
+    const available = await reg.getAvailable();
+    expect(available).toMatchObject([
+      { id: "claude-haiku-4-5", provider: "anthropic-2" },
+    ]);
+    const aliasAnnotations = reg.getAllAnnotated()
+      .filter(({ model }) => model.provider === "anthropic-2");
+    expect(aliasAnnotations).toMatchObject([
+      { model: { id: "claude-3-5-haiku-20241022" }, excludedReason: "oauth-incompatible" },
+      { model: { id: "claude-haiku-4-5" }, excludedReason: null },
+    ]);
+  });
+
   it("api_key credential routes every model of its provider", async () => {
     const reg = makeRegistry({ builtins: { anthropic: anthropicBuiltins }, auth: { anthropic: API_KEY } });
     const available = await reg.getAvailable();

@@ -14,7 +14,11 @@
 
 import Fastify from "fastify";
 import { describe, expect, it } from "vitest";
-import { registerModelsIntrospectionRoute } from "../routes/models-introspection-routes.js";
+import { InternalRegistry } from "../model-proxy/internal-registry.js";
+import {
+  type ModelsIntrospectionRegistry,
+  registerModelsIntrospectionRoute,
+} from "../routes/models-introspection-routes.js";
 
 // ── Fake registry ──────────────────────────────────────────────────────────
 
@@ -45,7 +49,7 @@ function makeFakeRegistry() {
   };
 }
 
-async function buildApp(registry: ReturnType<typeof makeFakeRegistry> | null = makeFakeRegistry()) {
+async function buildApp(registry: ModelsIntrospectionRegistry | null = makeFakeRegistry()) {
   const app = Fastify({ logger: false });
   registerModelsIntrospectionRoute(app, { getRegistry: async () => registry });
   await app.ready();
@@ -87,6 +91,56 @@ describe("GET /api/models", () => {
     expect(excluded.excludedReason).toBe("no-credential");
     const included = body.data.find((r: any) => r.id === "anthropic/claude-3-5-sonnet");
     expect(included.excludedReason).toBeNull();
+  });
+
+  it("exposes configured numbered OAuth aliases without inventing others", async () => {
+    const model = {
+      id: "gpt-5.2-codex",
+      provider: "openai-codex",
+      contextWindow: 128000,
+      maxTokens: 8192,
+      reasoning: true,
+    };
+    const registry = new InternalRegistry(
+      {
+        registerBuiltInApiProviders: () => {},
+        getProviders: () => ["openai-codex"],
+        getModels: (provider: string) => provider === "openai-codex" ? [model] : [],
+        getModel: () => undefined,
+        registerApiProvider: () => {},
+        unregisterApiProviders: () => {},
+        streamSimple: async function* () {},
+      },
+      {
+        getApiKeyAndHeaders: async () => ({ apiKey: "x", headers: {} }),
+        reload: async () => {},
+      } as any,
+      {
+        readProviders: () => ({}),
+        readModels: () => [],
+        readAuth: () => ({
+          "openai-codex": { type: "oauth", access: "canonical-token" },
+          "openai-codex-3": { type: "oauth", access: "alias-token" },
+        }),
+      },
+    );
+    const app = await buildApp(registry);
+
+    for (const url of ["/api/models", "/api/models?annotated=1"]) {
+      const res = await app.inject({ method: "GET", url });
+      expect(res.statusCode).toBe(200);
+      const rows = JSON.parse(res.body).data;
+      const ids = rows.map((row: any) => row.id);
+      expect(ids).toHaveLength(2);
+      expect(ids).toEqual(expect.arrayContaining([
+        "openai-codex/gpt-5.2-codex",
+        "openai-codex-3/gpt-5.2-codex",
+      ]));
+      expect(ids.some((id: string) => id.startsWith("openai-codex-2/"))).toBe(false);
+      const alias = rows.find((row: any) => row.provider === "openai-codex-3");
+      expect(alias).toBeDefined();
+      if (url.includes("annotated=1")) expect(alias.excludedReason).toBeNull();
+    }
   });
 
   it("no credential material in either payload", async () => {

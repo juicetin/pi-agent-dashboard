@@ -172,17 +172,32 @@ export class InternalRegistry {
     if (this.cachedAllModels) return this.cachedAllModels;
 
     const models: any[] = [];
+    const builtInModels = new Map<string, typeof models>();
 
     // 1. Built-in models from pi-ai (shallow-copied so we can annotate
     //    oauthCompatible without mutating pi-ai's shared model objects).
     for (const provider of this.piAi.getProviders()) {
       try {
-        for (const model of this.piAi.getModels(provider)) {
-          models.push({ ...model, oauthCompatible: !isOauthIncompatible(provider, model.id) });
-        }
+        const providerModels = this.piAi.getModels(provider).map((model) => ({
+          ...model,
+          oauthCompatible: !isOauthIncompatible(provider, model.id),
+        }));
+        builtInModels.set(provider, providerModels);
+        models.push(...providerModels);
       } catch {
         // Provider may not have models registered
       }
+    }
+
+    // Pi supports multiple OAuth accounts by storing numbered credential keys
+    // such as openai-codex-3. Mirror each configured alias from its canonical
+    // built-in provider without mutating or replacing the canonical models.
+    for (const [provider, credential] of Object.entries(this.deps.readAuth())) {
+      if (credential?.type !== "oauth" || builtInModels.has(provider)) continue;
+      const canonicalProvider = provider.match(/^(.*)-\d+$/)?.[1];
+      const canonicalModels = canonicalProvider ? builtInModels.get(canonicalProvider) : undefined;
+      if (!canonicalModels) continue;
+      models.push(...canonicalModels.map((model) => ({ ...model, provider })));
     }
 
     // 2. Custom-provider models. Two sources, both keyed by providers.json:

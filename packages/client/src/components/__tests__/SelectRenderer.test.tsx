@@ -1,6 +1,6 @@
-import { describe, it, expect, vi, afterEach, beforeAll } from "vitest";
-import { render, screen, fireEvent, cleanup } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import React from "react";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { SelectRenderer } from "../interactive-renderers/SelectRenderer.js";
 import { ThemeProvider } from "../settings/ThemeProvider.js";
 
@@ -28,8 +28,8 @@ describe("SelectRenderer", () => {
   describe("pending state", () => {
     it("renders one full-width row per option", () => {
       render(<SelectRenderer {...baseProps} status="pending" onRespond={vi.fn()} onCancel={vi.fn()} />);
-      // 3 options + 1 synthetic Cancel row = 4 buttons.
-      expect(screen.getAllByRole("button")).toHaveLength(4);
+      // 3 options + custom submit + synthetic Cancel row = 5 buttons.
+      expect(screen.getAllByRole("button")).toHaveLength(5);
       expect(screen.getByText("TypeScript")).toBeTruthy();
       expect(screen.getByText("Python")).toBeTruthy();
       expect(screen.getByText("Go")).toBeTruthy();
@@ -63,6 +63,18 @@ describe("SelectRenderer", () => {
       render(<SelectRenderer {...baseProps} status="pending" onRespond={vi.fn()} onCancel={onCancel} />);
       fireEvent.click(screen.getByText("Cancel"));
       expect(onCancel).toHaveBeenCalled();
+    });
+
+
+    it("always offers a visible free-form custom answer", () => {
+      const onRespond = vi.fn();
+      render(<SelectRenderer {...baseProps} status="pending" onRespond={onRespond} onCancel={vi.fn()} />);
+
+      expect(screen.getByPlaceholderText("Type custom answer…")).toBeTruthy();
+      fireEvent.change(screen.getByPlaceholderText("Type custom answer…"), { target: { value: "  Rust  " } });
+      fireEvent.click(screen.getByText("Use custom answer"));
+
+      expect(onRespond).toHaveBeenCalledWith({ value: "Rust" });
     });
 
     it("inline Cancel option calls onCancel (not onRespond) and suppresses synthetic Cancel row", () => {
@@ -101,6 +113,22 @@ describe("SelectRenderer", () => {
       expect(screen.getByText("TypeScript")).toBeTruthy();
       expect(screen.getByText("Python")).toBeTruthy();
       expect(screen.getByText("Go")).toBeTruthy();
+    });
+
+
+    it("shows a resolved custom answer even when it is not in the original option list", () => {
+      render(
+        <SelectRenderer
+          {...baseProps}
+          status="resolved"
+          result={{ value: "Rust" }}
+          onRespond={vi.fn()}
+          onCancel={vi.fn()}
+        />,
+      );
+
+      expect(screen.getByText("Rust")).toBeTruthy();
+      expect(screen.getByText("Custom response")).toBeTruthy();
     });
 
     it("renders all options with no +N more for a 10-option list", () => {

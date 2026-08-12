@@ -2,7 +2,7 @@ import type { ImageContent } from "@blackbelt-technology/pi-dashboard-shared/typ
 import { mdiCheck, mdiCheckCircle, mdiImageMultiple, mdiViewListOutline } from "@mdi/js";
 import { Icon } from "@mdi/react";
 import type React from "react";
-import { useState } from "react";
+import { useId, useState } from "react";
 import { t as i18nT } from "../../lib/i18n/i18n.js";
 import { InlineMarkdown } from "./InlineMarkdown.js";
 import { InputComposer } from "./InputComposer.js";
@@ -184,6 +184,7 @@ export function BatchRenderer({ params, status, result, onRespond, onCancel }: I
           </div>
         ) : (
           <StepBody
+            key={step}
             question={current}
             answer={answers[step]}
             onChange={setAnswer}
@@ -268,6 +269,9 @@ function StepBody({
   answer: Answer | undefined;
   onChange: (a: Answer) => void;
 }) {
+  const [customValue, setCustomValue] = useState("");
+  const selectCustomId = useId();
+
   return (
     <div>
       <div className="text-sm font-medium text-[var(--text-primary)] mb-1">{question.title}</div>
@@ -329,6 +333,34 @@ function StepBody({
               </button>
             );
           })}
+          <form
+            className="flex flex-col gap-2 px-3 py-2 rounded-lg border border-blue-500/30 bg-blue-500/5"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const trimmed = customValue.trim();
+              if (trimmed) onChange({ value: trimmed });
+            }}
+          >
+            <label className="text-xs font-medium text-[var(--text-primary)]" htmlFor={selectCustomId}>
+              {i18nT("common.otherCustomResponse", undefined, "Other / custom response")}
+            </label>
+            <div className="flex gap-2">
+              <input
+                id={selectCustomId}
+                value={customValue}
+                onChange={(event) => setCustomValue(event.currentTarget.value)}
+                className="min-w-0 flex-1 px-2 py-1 rounded bg-[var(--bg-primary)] border border-[var(--border-secondary)] text-xs text-[var(--text-primary)]"
+                placeholder={i18nT("common.typeCustomAnswer", undefined, "Type custom answer…")}
+              />
+              <button
+                type="submit"
+                disabled={customValue.trim().length === 0}
+                className="px-3 py-1 text-xs rounded bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-colors"
+              >
+                {i18nT("common.use", undefined, "Use")}
+              </button>
+            </div>
+          </form>
         </div>
       )}
       {question.method === "multiselect" && (
@@ -351,9 +383,22 @@ function MultiselectStep({
   values: string[];
   onChange: (values: string[]) => void;
 }) {
+  const [customValue, setCustomValue] = useState("");
+  const customId = useId();
+
   function toggle(option: string) {
     onChange(values.includes(option) ? values.filter((v) => v !== option) : [...values, option]);
   }
+
+  function addCustomValue() {
+    const trimmed = customValue.trim();
+    if (!trimmed) return;
+    onChange(values.includes(trimmed) ? values : [...values, trimmed]);
+    setCustomValue("");
+  }
+
+  const customValues = values.filter((value) => !options.includes(value));
+
   return (
     <div className="flex flex-col gap-1">
       {options.map((option) => {
@@ -372,6 +417,45 @@ function MultiselectStep({
           </label>
         );
       })}
+      <form
+        className="flex flex-col gap-2 mt-1 px-3 py-2 rounded-lg border border-blue-500/30 bg-blue-500/5"
+        onSubmit={(event) => {
+          event.preventDefault();
+          addCustomValue();
+        }}
+      >
+        <label className="text-xs font-medium text-[var(--text-primary)]" htmlFor={customId}>
+          {i18nT("common.otherCustomResponse", undefined, "Other / custom response")}
+        </label>
+        <div className="flex gap-2">
+          <input
+            id={customId}
+            value={customValue}
+            onChange={(event) => setCustomValue(event.currentTarget.value)}
+            className="min-w-0 flex-1 px-2 py-1 rounded bg-[var(--bg-primary)] border border-[var(--border-secondary)] text-xs text-[var(--text-primary)]"
+            placeholder={i18nT("common.typeCustomAnswer", undefined, "Type custom answer…")}
+          />
+          <button
+            type="submit"
+            disabled={customValue.trim().length === 0}
+            className="px-3 py-1 text-xs rounded bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-colors"
+          >
+            {i18nT("common.add", undefined, "Add")}
+          </button>
+        </div>
+      </form>
+      {customValues.map((value) => (
+        <label
+          key={value}
+          className="flex items-center gap-2.5 px-3 py-2 rounded-lg border border-blue-500/40 bg-blue-500/10 text-[var(--text-primary)] text-xs cursor-pointer"
+        >
+          <input type="checkbox" checked onChange={() => toggle(value)} className="accent-blue-500" />
+          <span>{value}</span>
+          <span className="text-[10px] text-[var(--text-tertiary)]">
+            {i18nT("common.custom", undefined, "Custom")}
+          </span>
+        </label>
+      ))}
     </div>
   );
 }

@@ -3,7 +3,7 @@
  * Tests the production adapter used by bridge.ts.
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PromptBus } from "../prompt-bus.js";
 import { createTuiPromptAdapter } from "../tui-prompt-adapter.js";
 import { settlePrompts } from "./helpers/settle-prompts.js";
@@ -50,7 +50,11 @@ describe("Bridge TUI adapter", () => {
     bus.registerAdapter(createTuiPromptAdapter(mockUi, bus));
     const pending = bus.request({ pipeline: "command", type: "select", question: "Pick:", options: ["A", "B"] });
 
-    expect(mockUi.select).toHaveBeenCalledWith("Pick:", ["A", "B"], expect.objectContaining({ signal: expect.any(AbortSignal) }));
+    expect(mockUi.select).toHaveBeenCalledWith(
+      "Pick:",
+      ["A", "B", "Other / custom response"],
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
     await settlePrompts(bus, pending);
   });
 
@@ -136,6 +140,63 @@ describe("Bridge TUI adapter", () => {
     const result = await promise;
     expect(result.answer).toBe("A");
     expect(result.source).toBe("tui");
+  });
+
+  it("keeps a listed option that matches the custom label selectable", async () => {
+    bus.registerAdapter(createTuiPromptAdapter(mockUi, bus));
+    const promise = bus.request({
+      pipeline: "command",
+      type: "select",
+      question: "Q",
+      options: ["Other / custom response"],
+    });
+
+    expect(mockUi.select).toHaveBeenCalledWith(
+      "Q",
+      ["Other / custom response", "Other / custom response (2)"],
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+    mockUi._resolve("select", "Other / custom response");
+    await vi.advanceTimersByTimeAsync(0);
+
+    await expect(promise).resolves.toMatchObject({ answer: "Other / custom response", source: "tui" });
+    expect(mockUi.input).not.toHaveBeenCalled();
+  });
+
+  it("does not offer a custom option when text input is unavailable", async () => {
+    const { input: _input, ...uiWithoutInput } = mockUi;
+    bus.registerAdapter(createTuiPromptAdapter(uiWithoutInput, bus));
+    const pending = bus.request({ pipeline: "command", type: "select", question: "Q", options: ["A"] });
+
+    expect(mockUi.select).toHaveBeenCalledWith(
+      "Q",
+      ["A"],
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+    await settlePrompts(bus, pending);
+  });
+
+  it("accepts a trimmed custom answer for select prompts", async () => {
+    bus.registerAdapter(createTuiPromptAdapter(mockUi, bus));
+    const promise = bus.request({ pipeline: "command", type: "select", question: "Q", options: ["A"] });
+
+    expect(mockUi.select).toHaveBeenCalledWith(
+      "Q",
+      ["A", "Other / custom response"],
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+    mockUi._resolve("select", "Other / custom response");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(mockUi.input).toHaveBeenCalledWith(
+      "Type custom response:",
+      undefined,
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+
+    mockUi._resolve("input", "  B  ");
+    await vi.advanceTimersByTimeAsync(0);
+
+    await expect(promise).resolves.toMatchObject({ answer: "B", source: "tui" });
   });
 
   it("responds cancelled when user dismisses dialog", async () => {

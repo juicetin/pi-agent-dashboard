@@ -244,6 +244,8 @@ Pi owns the retry loop. Dashboard configures + observes + renders it. Attempts f
 
 **Multiselect note:** pi's upstream `ExtensionUIContext` has no native `multiselect`, so bridge attaches `ctx.ui.multiselect` during `session_start`. `ask_user` dispatches multiselect through `polyfillMultiselect`, which delegates to that patched PromptBus method when present + falls back to `ctx.ui.custom` + `MultiSelectList` for legacy / non-bridge contexts (fallback is no-op in pi 0.70 RPC mode — dashboard headless — because pi-coding-agent defines `custom` as `async () => undefined` there). Bridge intentionally registers NO TUI adapter arm for multiselect; routing bus-only. Browser responses encode `{ values: string[] }` as `JSON.stringify(values)` in `prompt_response.answer`, preserving `[]` as real empty selection distinct from cancellation.
 
+**Custom answers:** Browser select and multiselect renderers accept trimmed free text. Batch select and multiselect steps use same controls. Resolved cards and persisted `AskUserToolRenderer` summaries show custom values; multiselect summaries preserve listed selections. `ask_user` prompt guidance tells agents not to synthesize `Other`, custom-answer, or `Select all` options. TUI select adds `Other / custom response` only when text input exists, then opens input; generated label gains numeric suffix when it collides with a listed option. TUI multiselect remains bus-only.
+
 **First-response-wins (multi-adapter):**
 - Multiple adapters can claim the same prompt (e.g. TUI + dashboard)
 - The first adapter to respond wins; the bus sends `prompt_dismiss` to the server for the losing adapter's dashboard component

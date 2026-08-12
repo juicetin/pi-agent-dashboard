@@ -153,14 +153,14 @@ export function registerAskUserTool(pi: ExtensionAPI): void {
     name: "ask_user",
     label: "Ask User",
     description:
-      "Ask the user a question interactively. Use this when you need clarification, confirmation, or a choice from the user before proceeding. UI provides a Select all toggle; do not add one.",
+      "Ask the user a question interactively. Use this when you need clarification, confirmation, or a choice from the user before proceeding. Select and multiselect questions accept a custom answer, and multiselect provides a Select all toggle; do not add either as an option.",
     promptSnippet:
       "Ask the user interactive questions (confirm, select, multiselect, input, or batch — multiple related questions at once)",
     promptGuidelines: [
       "When you need to ask the user a question, ALWAYS use the ask_user tool instead of writing the question as plain text.",
       "Use method 'confirm' for yes/no questions, 'select' when offering specific choices, 'multiselect' when the user should pick multiple items from a list, and 'input' for open-ended questions.",
       "Use method 'batch' with a `questions` array to ask multiple related questions in one call (e.g. project setup: name + language + init git). Prefer single-method calls for standalone questions.",
-      "Do not nest batches. Send `options` as a plain string[] — not [{label, value}].",
+      "Do not add an 'Other', custom-answer, or 'Select all' option. The UI provides those controls. Send `options` as a plain string[] — not [{label, value}]. Do not nest batches.",
       "This applies to all workflows including OpenSpec, planning, and any situation where you need user input before proceeding.",
     ],
     // Flat object schema (root: type=object) for OpenAI strict-mode

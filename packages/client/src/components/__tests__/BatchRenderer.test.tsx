@@ -1,6 +1,5 @@
-import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, screen, fireEvent, cleanup } from "@testing-library/react";
-import React from "react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { BatchRenderer } from "../interactive-renderers/BatchRenderer.js";
 
 afterEach(cleanup);
@@ -84,6 +83,49 @@ describe("BatchRenderer", () => {
     fireEvent.click(screen.getByText(/Submit all 3/));
     expect(onRespond).toHaveBeenCalledWith({
       answers: [{ value: "pi-plugin" }, { value: "Go" }, { values: ["Prettier"] }],
+    });
+  });
+
+  it("does not carry a custom draft into the next question", () => {
+    render(
+      <BatchRenderer
+        {...baseProps}
+        params={{
+          title: "Two choices",
+          questions: [
+            { method: "select", title: "First", options: ["A"] },
+            { method: "select", title: "Second", options: ["B"] },
+          ],
+        }}
+        status="pending"
+        onRespond={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+
+    fireEvent.change(screen.getByPlaceholderText("Type custom answer…"), { target: { value: "custom first" } });
+    fireEvent.click(screen.getByText("Use"));
+    fireEvent.click(screen.getByText("Next →"));
+
+    expect((screen.getByPlaceholderText("Type custom answer…") as HTMLInputElement).value).toBe("");
+  });
+
+  it("allows custom select and multiselect answers", () => {
+    const { onRespond } = renderPending();
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "pi-plugin" } });
+    fireEvent.click(screen.getByText("Next →"));
+
+    fireEvent.change(screen.getByPlaceholderText("Type custom answer…"), { target: { value: "Rust" } });
+    fireEvent.click(screen.getByText("Use"));
+    fireEvent.click(screen.getByText("Next →"));
+
+    fireEvent.change(screen.getByPlaceholderText("Type custom answer…"), { target: { value: "Biome" } });
+    fireEvent.click(screen.getByText("Add"));
+    fireEvent.click(screen.getByText("Next →"));
+    fireEvent.click(screen.getByText(/Submit all 3/));
+
+    expect(onRespond).toHaveBeenCalledWith({
+      answers: [{ value: "pi-plugin" }, { value: "Rust" }, { values: ["Biome"] }],
     });
   });
 

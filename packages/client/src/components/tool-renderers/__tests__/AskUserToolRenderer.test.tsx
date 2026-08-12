@@ -32,6 +32,37 @@ const questions = [
   { method: "multiselect", title: "Tooling", options: ["ESLint", "Prettier", "Vitest"] },
 ];
 
+describe("AskUserToolRenderer — custom answers", () => {
+  it("shows a custom select answer when listed options exist", () => {
+    renderWithTheme(
+      <AskUserToolRenderer
+        toolName="ask_user"
+        args={{ method: "select", title: "Language", options: ["TypeScript", "Go"] }}
+        status="complete"
+        result={'User responded: "Rust"'}
+        context={ctx}
+      />,
+    );
+
+    expect(screen.getByText("Rust")).toBeTruthy();
+  });
+
+  it("highlights listed multiselect answers and shows custom answers", () => {
+    renderWithTheme(
+      <AskUserToolRenderer
+        toolName="ask_user"
+        args={{ method: "multiselect", title: "Tooling", options: ["ESLint", "Vitest"] }}
+        status="complete"
+        result={'User responded: ["ESLint","Biome"]'}
+        context={ctx}
+      />,
+    );
+
+    expect(screen.getByText("ESLint").className).toContain("text-green-400");
+    expect(screen.getByText("Biome")).toBeTruthy();
+  });
+});
+
 describe("AskUserToolRenderer — batch", () => {
   it("renders every sub-question title and answer on reload (from toolDetails.results)", () => {
     renderWithTheme(

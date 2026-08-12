@@ -5,6 +5,15 @@ import type {
   PromptResponse,
 } from "./prompt-bus.js";
 
+const CUSTOM_OPTION = "Other / custom response";
+
+function customOptionLabel(options: string[]): string {
+  let label = CUSTOM_OPTION;
+  let suffix = 2;
+  while (options.includes(label)) label = `${CUSTOM_OPTION} (${suffix++})`;
+  return label;
+}
+
 export interface TuiPromptUi {
   select?: (
     question: string,
@@ -53,9 +62,17 @@ export function createTuiPromptAdapter(
           let answer: string | boolean | undefined;
 
           if (prompt.type === "select" && prompt.options && ui.select) {
-            answer = await ui.select(prompt.question, prompt.options, {
-              signal: controller.signal,
-            });
+            const customOption = customOptionLabel(prompt.options);
+            answer = await ui.select(
+              prompt.question,
+              ui.input ? [...prompt.options, customOption] : prompt.options,
+              { signal: controller.signal },
+            );
+            if (answer === customOption && ui.input) {
+              answer = (await ui.input("Type custom response:", undefined, {
+                signal: controller.signal,
+              }))?.trim() || undefined;
+            }
           } else if (prompt.type === "input" && ui.input) {
             answer = await ui.input(
               prompt.question,

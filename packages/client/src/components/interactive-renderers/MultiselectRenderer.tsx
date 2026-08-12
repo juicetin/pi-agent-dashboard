@@ -1,6 +1,6 @@
 import { mdiCheckboxMarkedOutline, mdiCheckCircle } from "@mdi/js";
 import { Icon } from "@mdi/react";
-import React, { useState } from "react";
+import { useId, useState } from "react";
 import { t as i18nT } from "../../lib/i18n/i18n.js";
 import { MarkdownContent } from "../preview/MarkdownContent.js";
 import { AnsweredOption } from "./AnsweredOption.js";
@@ -14,10 +14,12 @@ export function MultiselectRenderer({ params, status, result, onRespond, onCance
   const selectedValues = (result as any)?.values as string[] | undefined;
 
   const [checked, setChecked] = useState<Set<string>>(new Set());
+  const [customValue, setCustomValue] = useState("");
+  const customInputId = useId();
 
-  // Derived: are all real options currently checked? Drives the synthetic
-  // "Select all" row's checkbox state and its click behavior.
-  const allChecked = options.length > 0 && checked.size === options.length;
+  // Custom values must not affect the synthetic row's real-option count.
+  const checkedOptionCount = options.filter((option) => checked.has(option)).length;
+  const allChecked = options.length > 0 && checkedOptionCount === options.length;
 
   function toggle(option: string) {
     setChecked((prev) => {
@@ -29,8 +31,17 @@ export function MultiselectRenderer({ params, status, result, onRespond, onCance
   }
 
   function toggleAll() {
-    if (allChecked) setChecked(new Set());
-    else setChecked(new Set(options));
+    setChecked((prev) => {
+      const custom = [...prev].filter((value) => !options.includes(value));
+      return new Set(allChecked ? custom : [...options, ...custom]);
+    });
+  }
+
+  function addCustomValue() {
+    const trimmed = customValue.trim();
+    if (!trimmed) return;
+    setChecked((prev) => new Set([...prev, trimmed]));
+    setCustomValue("");
   }
 
   if (status === "cancelled" || status === "dismissed") {
@@ -47,13 +58,15 @@ export function MultiselectRenderer({ params, status, result, onRespond, onCance
 
   if (status === "resolved") {
     const picks = selectedValues ?? [];
+    const customPicks = picks.filter((value) => !options.includes(value));
+    const totalOptions = options.length + customPicks.length;
     return (
       <div className="mx-4 my-1 p-3 bg-[var(--bg-hover)] rounded-lg text-xs">
         <div className="flex items-center gap-2 mb-2">
           <Icon path={mdiCheckboxMarkedOutline} size={0.55} className="text-[var(--text-secondary)] shrink-0" />
           <span className="text-[var(--text-primary)] font-medium"><InlineMarkdown content={title} /></span>
           <span className="ml-auto inline-flex items-center gap-0.5 text-green-400">
-            <Icon path={mdiCheckCircle} size={0.5} /> {picks.length} of {options.length}
+            <Icon path={mdiCheckCircle} size={0.5} /> {picks.length} of {totalOptions}
           </span>
         </div>
         {message && (
@@ -63,10 +76,20 @@ export function MultiselectRenderer({ params, status, result, onRespond, onCance
           {options.map((option) => (
             <AnsweredOption key={option} title={option} picked={picks.includes(option)} />
           ))}
+          {customPicks.map((value) => (
+            <AnsweredOption
+              key={value}
+              title={value}
+              description={i18nT("common.customResponse", undefined, "Custom response")}
+              picked
+            />
+          ))}
         </div>
       </div>
     );
   }
+
+  const customChecked = [...checked].filter((value) => !options.includes(value));
 
   return (
     <div className="mx-4 my-2 p-3 bg-[var(--bg-hover)] border border-[var(--border-secondary)] rounded-lg">
@@ -107,6 +130,50 @@ export function MultiselectRenderer({ params, status, result, onRespond, onCance
               className="accent-blue-500"
             />
             <span className="text-[var(--text-primary)]">{option}</span>
+          </label>
+        ))}
+        <form
+          className="flex flex-col gap-2 mt-1 px-2 py-2 rounded-lg border border-blue-500/30 bg-blue-500/5"
+          onSubmit={(event) => {
+            event.preventDefault();
+            addCustomValue();
+          }}
+        >
+          <label className="text-xs font-medium text-[var(--text-primary)]" htmlFor={customInputId}>
+            {i18nT("common.otherCustomResponse", undefined, "Other / custom response")}
+          </label>
+          <div className="flex gap-2">
+            <input
+              id={customInputId}
+              value={customValue}
+              onChange={(event) => setCustomValue(event.currentTarget.value)}
+              className="min-w-0 flex-1 px-2 py-1 rounded bg-[var(--bg-primary)] border border-[var(--border-secondary)] text-xs text-[var(--text-primary)]"
+              placeholder={i18nT("common.typeCustomAnswer", undefined, "Type custom answer…")}
+            />
+            <button
+              type="submit"
+              disabled={customValue.trim().length === 0}
+              className="px-3 py-1 text-xs rounded bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-colors"
+            >
+              {i18nT("common.add", undefined, "Add")}
+            </button>
+          </div>
+        </form>
+        {customChecked.map((value) => (
+          <label
+            key={value}
+            className="flex items-center gap-2 text-xs cursor-pointer hover:bg-[var(--bg-surface)] rounded px-2 py-1 transition-colors"
+          >
+            <input
+              type="checkbox"
+              checked
+              onChange={() => toggle(value)}
+              className="accent-blue-500"
+            />
+            <span className="text-[var(--text-primary)]">{value}</span>
+            <span className="text-[10px] text-[var(--text-tertiary)]">
+              {i18nT("common.custom", undefined, "Custom")}
+            </span>
           </label>
         ))}
       </div>

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 // Mock modules before importing
 vi.mock("typebox", () => ({
@@ -44,11 +44,13 @@ describe("registerAskUserTool", () => {
     expect(tool.promptGuidelines.length).toBeGreaterThan(0);
   });
 
-  it("description instructs agents not to add a Select all option", () => {
+  it("description instructs agents not to add synthetic UI options", () => {
     const pi = createMockPi();
     registerAskUserTool(pi as any);
     const tool = pi.registerTool.mock.calls[0][0];
-    expect(tool.description).toMatch(/UI provides a Select all/i);
+    expect(tool.description).toMatch(/custom answer/i);
+    expect(tool.description).toMatch(/Select all/i);
+    expect(tool.promptGuidelines.join("\n")).toMatch(/custom-answer/i);
   });
 
   describe("message passthrough", () => {

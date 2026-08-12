@@ -12,7 +12,7 @@ import { gotoDashboard, spawnFreshGitSession, sendPrompt } from "./helpers/index
 // Scenario args: qa/fixtures/faux-scenarios.ts → askScenario("select", { options }).
 
 test.describe("faux round-trip — interactive ask_user", () => {
-  test("select widget mounts for a faux ask_user tool call", async ({ page }) => {
+  test("select widget accepts a custom answer", async ({ page }) => {
     const card = await spawnFreshGitSession(page);
     await card.click();
 
@@ -21,6 +21,10 @@ test.describe("faux round-trip — interactive ask_user", () => {
     await expect(
       page.getByRole("button", { name: /alpha/i }).first(),
     ).toBeVisible({ timeout: 30_000 });
+    await page.getByRole("textbox", { name: /other \/ custom response/i }).fill("gamma");
+    await page.getByRole("button", { name: /use custom answer/i }).click();
+
+    await expect(page.getByText("gamma", { exact: true })).toBeVisible({ timeout: 30_000 });
   });
 });
 

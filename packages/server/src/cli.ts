@@ -24,7 +24,7 @@ import {
   startRecoveryServer,
   isModuleNotFoundError,
   parseModuleNotFoundError,
-} from "./recovery-server.js";
+} from "./lifecycle/recovery-server.js";
 import { loadConfig, ensureConfig } from "@blackbelt-technology/pi-dashboard-shared/config.js";
 import {
   launchDashboardServer,
@@ -35,7 +35,7 @@ import {
 import { fileURLToPath } from "node:url";
 import os from "node:os";
 import path from "node:path";
-import { readPid, removePid, isServerRunning } from "./server-pid.js";
+import { readPid, removePid, isServerRunning } from "./spawn-process/server-pid.js";
 import {
   findPortHolders as platformFindPortHolders,
   isProcessAlive as platformIsProcessAlive,
@@ -54,7 +54,8 @@ export function findPortHolders(
 import { isDashboardRunning } from "@blackbelt-technology/pi-dashboard-shared/server-identity.js";
 import { discoverDashboard } from "@blackbelt-technology/pi-dashboard-shared/mdns-discovery.js";
 
-import { assertNodeVersionSupported } from "./node-guard.js";
+import { assertNodeVersionSupported } from "./auth/node-guard.js";
+import { recordExitIntent } from "./persistence/boot-state.js";
 import { getDefaultRegistry } from "@blackbelt-technology/pi-dashboard-shared/tool-registry/index.js";
 import {
   findBundledExtension,
@@ -107,20 +108,64 @@ export function parseArgs(args: string[]): ParsedArgs {
   return { subcommand, flags };
 }
 
+/** Production default HTTP port. A temp/faux HOME must never bind it. */
+export const PRODUCTION_DEFAULT_PORT = 8000;
+
+/**
+ * A dashboard started with a temp/faux HOME (a test or isolated run — HOME
+ * under `os.tmpdir()`) must NEVER bind the production default port 8000. On
+ * macOS a `127.0.0.1:8000` bind is MORE SPECIFIC than the real server's
+ * `*:8000`, so it silently SHADOWS the live dashboard for every localhost
+ * request — the real dashboard appears to "lose" all its sessions while it is
+ * in fact still running. Remap to an ephemeral port (0) and warn. Fires even on
+ * an explicit `--port 8000`, because a temp-HOME instance has no business on
+ * the production port (the live incident was launched with an explicit
+ * `--port 8000` from a worktree + faux HOME). Non-8000 ports (test servers use
+ * random ones) pass through untouched. See change: guard-temp-home-production-port.
+ */
+// Generic over the input so a non-null `port` stays non-null for the caller:
+// every return path yields either the input itself or the ephemeral `0`, so
+// `T | 0` is exact. A flat `number | null` return widened `buildConfig`'s
+// already-resolved port and broke `ServerConfig.port: number`.
+// See change: cleanup-client-plugin-promises (unblocking a develop type error).
+export function guardTempHomePort<T extends number | null>(
+  port: T,
+  homeDir: string,
+  tmpDir: string,
+  warn: (msg: string) => void = console.warn,
+): T | 0 {
+  if (port !== PRODUCTION_DEFAULT_PORT) return port;
+  const home = path.resolve(homeDir);
+  const tmp = path.resolve(tmpDir);
+  if (home !== tmp && !home.startsWith(tmp + path.sep)) return port;
+  warn(
+    `[isolation] HOME (${home}) is under the temp dir (${tmp}); refusing to bind ` +
+      `production port ${PRODUCTION_DEFAULT_PORT} (a 127.0.0.1 bind would shadow a real ` +
+      `dashboard on localhost). Using an ephemeral port instead.`,
+  );
+  return 0;
+}
+
 /**
  * Build the full server config from CLI flags, env vars, and config file.
  */
 export function buildConfig(flags: Partial<ServerConfig>): ServerConfig {
   const fileConfig = loadConfig();
+  const resolvedPort =
+    flags.port ?? (parseInt(process.env.PI_DASHBOARD_PORT ?? "") || null) ?? fileConfig.port;
   return {
-    port: flags.port ?? (parseInt(process.env.PI_DASHBOARD_PORT ?? "") || null) ?? fileConfig.port,
+    port: guardTempHomePort(resolvedPort, os.homedir(), os.tmpdir()),
     piPort: flags.piPort ?? (parseInt(process.env.PI_DASHBOARD_PI_PORT ?? "") || null) ?? fileConfig.piPort,
     host: flags.host ?? (process.env.PI_DASHBOARD_HOST || null) ?? fileConfig.bindHost,
     dev: flags.dev ?? false,
     autoShutdown: fileConfig.autoShutdown,
     shutdownIdleSeconds: fileConfig.shutdownIdleSeconds,
     tunnel: flags.tunnel ?? fileConfig.tunnel.enabled,
-    tunnelReservedToken: fileConfig.tunnel.reservedToken,
+    // v2 (support-zrok-v2): source the reserved NAME + persistence from the
+    // zrok sub-config. The legacy v1 `reservedToken` is NOT passed to the v2
+    // provider (a v1 token is meaningless to a v2 account).
+    tunnelReservedName: fileConfig.tunnel.zrok?.reservedName,
+    tunnelPersistent: fileConfig.tunnel.zrok?.persistent,
     tunnelWatchdog: fileConfig.tunnel.watchdog,
     authConfig: fileConfig.auth,
     maxEventsPerSession: fileConfig.memoryLimits.maxEventsPerSession,
@@ -209,6 +254,28 @@ async function runForeground(config: ServerConfig): Promise<void> {
   } catch {
     /* advisory only — never block startup */
   }
+
+  // OS-initiated shutdown (systemd stop, `kill`, a reboot, Ctrl-C). Without a
+  // handler the process died with no trace, so the next boot could not tell an
+  // OS shutdown from a crash AND pending `.meta.json` writes were lost. Record
+  // the intent (recovery ALLOWED — after a reboot those sessions are gone and
+  // will never reattach), flush, exit.
+  //
+  // Write-once semantics keep this from fighting `spawnRestart`'s
+  // SIGTERM→SIGKILL ladder: `/api/restart` already recorded `"restart"` before
+  // the ladder runs, so the later `"signal"` is a no-op.
+  // See change: fix-recovery-exit-intent (D4).
+  let signalHandled = false;
+  const onExitSignal = (signal: NodeJS.Signals): void => {
+    if (signalHandled) return;
+    signalHandled = true;
+    console.log(`[dashboard] ${signal} received — flushing and exiting`);
+    try { recordExitIntent("signal"); } catch { /* best-effort */ }
+    try { server.flush(); } catch { /* best-effort */ }
+    process.exit(0);
+  };
+  process.on("SIGTERM", onExitSignal);
+  process.on("SIGINT", onExitSignal);
 
   await server.start();
 }

@@ -80,6 +80,8 @@ export interface AuthConfig {
   allowedUsers?: string[];
   bypassUrls?: string[];
   bypassHosts?: string[];
+  /** Base URL for OAuth redirect URIs — overrides the tunnel URL when set. */
+  redirectBaseUrl?: string;
   /** Admin email override — can list/revoke every user's proxy API keys. */
   admin?: string;
 }
@@ -176,6 +178,47 @@ export interface KeeperLogConfig {
 
 export const DEFAULT_KEEPER_LOG: KeeperLogConfig = {
   capturePiOutput: false,
+};
+
+// ── Embed session lifecycle ─────────────────────────────────────────
+
+/**
+ * Server-side lifecycle controls for machine-fronted (`ephemeral`) sessions:
+ * idempotent acquire, the idle reaper, and active-session caps. Disabled by
+ * default (D8) — every numeric threshold is inert while `enabled` is false, so
+ * an upgrade is byte-for-byte behavior-preserving until an operator opts in.
+ * Thresholds are seconds on the wire; the reaper converts to ms. Lives under
+ * `~/.pi/dashboard/config.json` `embedLifecycle`.
+ * See change: add-embed-session-lifecycle.
+ */
+export interface EmbedLifecycleConfig {
+  /** Master toggle. Default false — reaper, caps, and server-side acquire dormant. */
+  enabled: boolean;
+  /** Idle reap threshold: reap a quiescent ephemeral session after this idle. */
+  idleTimeoutSeconds: number;
+  /** Phantom force-reap ceiling: a run streaming longer than this without settling is wedged. */
+  hardCeilingSeconds: number;
+  /** Post-spawn/resume grace window before a fresh session is reap-eligible. */
+  graceWindowSeconds: number;
+  /** Reaper sweep cadence. */
+  sweepIntervalSeconds: number;
+  /** Bounded acquire-coalescing timeout: reject if `session_register` never arrives. */
+  registerTimeoutSeconds: number;
+  /** Per-visitor active-ephemeral cap (fairness bound for trusted identities). */
+  maxActiveEmbedSessionsPerVisitor: number;
+  /** Global active-ephemeral cap (the HARD security bound against spoofed identities). */
+  maxActiveEmbedSessionsGlobal: number;
+}
+
+export const DEFAULT_EMBED_LIFECYCLE: EmbedLifecycleConfig = {
+  enabled: false,
+  idleTimeoutSeconds: 1800,
+  hardCeilingSeconds: 3600,
+  graceWindowSeconds: 30,
+  sweepIntervalSeconds: 60,
+  registerTimeoutSeconds: 30,
+  maxActiveEmbedSessionsPerVisitor: 5,
+  maxActiveEmbedSessionsGlobal: 50,
 };
 
 export interface KnownServer {
@@ -275,7 +318,14 @@ export interface DashboardConfig {
      * safety; the normalized shape also carries it under `zrok.reservedToken`.
      */
     reservedToken?: string;
-    zrok?: { reservedToken?: string };
+    /**
+     * zrok sub-config. `reservedToken` is the legacy v1 token (preserved for
+     * downgrade, ignored by the v2 provider). `reservedName` is the v2 reserved
+     * name (namespaces+names) yielding a stable `<name>.shares.zrok.io` URL;
+     * `persistent` (default false) opts in to minting/serving a reserved name.
+     * See change: support-zrok-v2.
+     */
+    zrok?: { reservedToken?: string; reservedName?: string; persistent?: boolean };
     ngrok?: { authtoken?: string; domain?: string };
     tailscale?: { authKey?: string };
     zerotier?: { networkId?: string };
@@ -294,6 +344,8 @@ export interface DashboardConfig {
   openspec: OpenSpecPollConfig;
   /** Session behavior — hydration worker offload toggle. */
   sessions: SessionsConfig;
+  /** Embed/ephemeral session lifecycle controls (reaper, caps, acquire). Off by default. */
+  embedLifecycle: EmbedLifecycleConfig;
   /** Keeper log behavior — gates capture of pi stdout/stderr into keeper-<id>.log. */
   keeperLog: KeeperLogConfig;
   /**
@@ -311,6 +363,29 @@ export interface DashboardConfig {
   cors: CorsConfig;
   /** Device-pairing configuration (server keypair identity + QR pairing). */
   pairing: PairingConfig;
+  /**
+   * Every public base URL this dashboard answers on (reverse proxy, gateway,
+   * operator-designated host). Top-level promotion of the legacy
+   * `pairing.publicBaseUrls`; read through {@link resolvePublicBaseUrls}, which
+   * falls back to the legacy key when this one is absent.
+   *
+   * Optional on purpose and NOT in `DEFAULTS`: absence is what selects the
+   * legacy fallback, so an empty-array default would silently orphan existing
+   * `pairing.publicBaseUrls` entries.
+   *
+   * Feeds the pairing / endpoint surfaces only — never OAuth redirect
+   * resolution, which needs a scalar the operator states explicitly in
+   * `auth.redirectBaseUrl` (D7).
+   * See change: config-override-oauth-redirect-base.
+   */
+  publicBaseUrls?: string[];
+  /**
+   * Operator-declared gateway URLs plus the provenance of what the "add gateway
+   * URL" action wrote for each, so removal reverses exactly that (D12).
+   * Absent until the action runs once; never defaulted.
+   * See change: config-override-oauth-redirect-base.
+   */
+  gateways?: GatewayRecord[];
   /** Last-used server address (host:port) for reconnection */
   lastServer?: string;
   /**
@@ -397,6 +472,75 @@ export interface CorsConfig {
   allowedOrigins: string[];
 }
 
+/** How a gateway URL is allowed to be reached. At least one is mandatory. */
+export type GatewayAuthMode = "oauth" | "pairing" | "trusted-network";
+
+/**
+ * Exactly what the "add gateway URL" action wrote, so removal reverses that and
+ * nothing else. Removal cannot be DERIVED: three of the four keys look
+ * re-derivable from the URL but deriving would delete an entry the operator
+ * authored before ever running the action, and `trustedNetworks` (a CIDR list)
+ * is not on the URL at all. See design D12.
+ */
+export interface GatewayWroteRecord {
+  publicBaseUrls?: string[];
+  corsAllowedOrigins?: string[];
+  /** Present iff the `oauth` mode was selected. */
+  authRedirectBaseUrl?: string;
+  /** Present iff the `trusted-network` mode was selected. */
+  trustedNetworks?: string[];
+}
+
+/** One operator-declared gateway URL plus the provenance of its config writes. */
+export interface GatewayRecord {
+  url: string;
+  authModes: GatewayAuthMode[];
+  wrote: GatewayWroteRecord;
+}
+
+const GATEWAY_AUTH_MODES: GatewayAuthMode[] = ["oauth", "pairing", "trusted-network"];
+
+function parseGateways(raw: any): GatewayRecord[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const strings = (v: unknown): string[] | undefined =>
+    Array.isArray(v) ? v.filter((e: unknown): e is string => typeof e === "string") : undefined;
+  return raw
+    .filter((e: any) => e && typeof e === "object" && typeof e.url === "string")
+    .map((e: any) => {
+      const wrote: GatewayWroteRecord = {};
+      const pbu = strings(e.wrote?.publicBaseUrls);
+      if (pbu) wrote.publicBaseUrls = pbu;
+      const cors = strings(e.wrote?.corsAllowedOrigins);
+      if (cors) wrote.corsAllowedOrigins = cors;
+      if (typeof e.wrote?.authRedirectBaseUrl === "string") {
+        wrote.authRedirectBaseUrl = e.wrote.authRedirectBaseUrl;
+      }
+      const tn = strings(e.wrote?.trustedNetworks);
+      if (tn) wrote.trustedNetworks = tn;
+      return {
+        url: e.url,
+        authModes: Array.isArray(e.authModes)
+          ? e.authModes.filter((m: unknown): m is GatewayAuthMode =>
+              GATEWAY_AUTH_MODES.includes(m as GatewayAuthMode),
+            )
+          : [],
+        wrote,
+      };
+    });
+}
+
+/**
+ * Public base URLs for the pairing / endpoint surfaces: the top-level
+ * `publicBaseUrls` when present, else the legacy `pairing.publicBaseUrls`.
+ * Deliberately not an OAuth source — see `DashboardConfig.publicBaseUrls`.
+ * See change: config-override-oauth-redirect-base.
+ */
+export function resolvePublicBaseUrls(
+  config: Pick<DashboardConfig, "publicBaseUrls"> & { pairing?: Partial<PairingConfig> },
+): string[] {
+  return config.publicBaseUrls ?? config.pairing?.publicBaseUrls ?? [];
+}
+
 /** Device-pairing configuration (server keypair identity + QR pairing). */
 export interface PairingConfig {
   /**
@@ -434,6 +578,7 @@ const DEFAULTS: DashboardConfig = {
   spawnStrategy: "headless",
   tunnel: {
     enabled: true,
+    zrok: { persistent: false },
     watchdog: {
       enabled: true,
       intervalMs: 60000,
@@ -446,6 +591,7 @@ const DEFAULTS: DashboardConfig = {
   memoryLimits: { ...DEFAULT_MEMORY_LIMITS },
   openspec: { ...DEFAULT_OPENSPEC_POLL },
   sessions: { ...DEFAULT_SESSIONS },
+  embedLifecycle: { ...DEFAULT_EMBED_LIFECYCLE },
   keeperLog: { ...DEFAULT_KEEPER_LOG },
   trustedNetworks: [],
   resolvedTrustedNetworks: [],
@@ -522,6 +668,9 @@ function parseAuthConfig(raw: any): AuthConfig | undefined {
     ...(Array.isArray(raw.allowedUsers) ? { allowedUsers: raw.allowedUsers } : Array.isArray(raw.allowedEmails) ? { allowedUsers: raw.allowedEmails } : {}),
     bypassUrls: Array.isArray(raw.bypassUrls) ? raw.bypassUrls.filter((u: unknown) => typeof u === "string") : [],
     bypassHosts: Array.isArray(raw.bypassHosts) ? raw.bypassHosts.filter((u: unknown) => typeof u === "string") : [],
+    ...(typeof raw.redirectBaseUrl === "string" && raw.redirectBaseUrl.trim()
+      ? { redirectBaseUrl: raw.redirectBaseUrl.trim() }
+      : {}),
     ...(typeof raw.admin === "string" && raw.admin ? { admin: raw.admin } : {}),
   };
 }
@@ -531,6 +680,31 @@ function clampNumber(raw: any, fallback: number, min: number, max: number): numb
   if (n < min) return min;
   if (n > max) return max;
   return n;
+}
+
+export function parseEmbedLifecycleConfig(raw: any): EmbedLifecycleConfig {
+  if (!raw || typeof raw !== "object") return { ...DEFAULT_EMBED_LIFECYCLE };
+  const d = DEFAULT_EMBED_LIFECYCLE;
+  return {
+    enabled: typeof raw.enabled === "boolean" ? raw.enabled : d.enabled,
+    idleTimeoutSeconds: clampNumber(raw.idleTimeoutSeconds, d.idleTimeoutSeconds, 1, 86_400),
+    hardCeilingSeconds: clampNumber(raw.hardCeilingSeconds, d.hardCeilingSeconds, 1, 604_800),
+    graceWindowSeconds: clampNumber(raw.graceWindowSeconds, d.graceWindowSeconds, 0, 3_600),
+    sweepIntervalSeconds: clampNumber(raw.sweepIntervalSeconds, d.sweepIntervalSeconds, 1, 3_600),
+    registerTimeoutSeconds: clampNumber(raw.registerTimeoutSeconds, d.registerTimeoutSeconds, 1, 600),
+    maxActiveEmbedSessionsPerVisitor: clampNumber(
+      raw.maxActiveEmbedSessionsPerVisitor,
+      d.maxActiveEmbedSessionsPerVisitor,
+      1,
+      10_000,
+    ),
+    maxActiveEmbedSessionsGlobal: clampNumber(
+      raw.maxActiveEmbedSessionsGlobal,
+      d.maxActiveEmbedSessionsGlobal,
+      1,
+      100_000,
+    ),
+  };
 }
 
 function parseSessionsConfig(raw: any): SessionsConfig {
@@ -734,17 +908,26 @@ export function normalizeTunnelConfig(
       : undefined;
   const mode = rawMode ?? (provider === "zrok" && !rawProvider ? ("public" as TunnelMode) : undefined);
 
-  const zrok =
-    raw?.zrok?.reservedToken || legacyToken
-      ? { reservedToken: raw?.zrok?.reservedToken ?? legacyToken }
-      : undefined;
+  // v2 (support-zrok-v2): preserve the legacy reservedToken for downgrade but
+  // NEVER promote it to reservedName (a name is not a token). Surface the v2
+  // reservedName + persistent when present; persistent defaults to false.
+  const rawZrok = raw?.zrok;
+  const zrokToken =
+    typeof rawZrok?.reservedToken === "string" ? rawZrok.reservedToken : legacyToken;
+  const zrokReservedName = typeof rawZrok?.reservedName === "string" ? rawZrok.reservedName : undefined;
+  const zrokPersistent = typeof rawZrok?.persistent === "boolean" ? rawZrok.persistent : false;
+  const zrok = {
+    ...(zrokToken ? { reservedToken: zrokToken } : {}),
+    ...(zrokReservedName ? { reservedName: zrokReservedName } : {}),
+    persistent: zrokPersistent,
+  };
 
   const out: DashboardConfig["tunnel"] = {
     enabled: raw?.enabled ?? defaults.enabled,
     ...(provider ? { provider } : {}),
     ...(mode ? { mode } : {}),
     ...(legacyToken ? { reservedToken: legacyToken } : {}),
-    ...(zrok ? { zrok } : {}),
+    zrok,
     ...(raw?.ngrok && typeof raw.ngrok === "object" ? { ngrok: { ...raw.ngrok } } : {}),
     ...(raw?.tailscale && typeof raw.tailscale === "object" ? { tailscale: { ...raw.tailscale } } : {}),
     ...(raw?.zerotier && typeof raw.zerotier === "object" ? { zerotier: { ...raw.zerotier } } : {}),
@@ -827,6 +1010,7 @@ export function loadConfig(): DashboardConfig {
       memoryLimits: parseMemoryLimits(parsed.memoryLimits),
       openspec: parseOpenSpecPollConfig(parsed.openspec),
       sessions: parseSessionsConfig(parsed.sessions),
+      embedLifecycle: parseEmbedLifecycleConfig(parsed.embedLifecycle),
       keeperLog: parseKeeperLogConfig(parsed.keeperLog),
       trustedNetworks: parseTrustedNetworks(parsed.trustedNetworks),
       resolvedTrustedNetworks: [],
@@ -840,6 +1024,13 @@ export function loadConfig(): DashboardConfig {
           ? parsed.pairing.publicBaseUrls.filter((o: unknown) => typeof o === "string")
           : defaults.pairing.publicBaseUrls,
       },
+      // Top-level promotion of `pairing.publicBaseUrls` (D7). Absent stays
+      // absent — a `[]` default would make "unset" and "set but empty"
+      // indistinguishable and kill the legacy fallback.
+      ...(Array.isArray(parsed.publicBaseUrls)
+        ? { publicBaseUrls: parsed.publicBaseUrls.filter((o: unknown) => typeof o === "string") }
+        : {}),
+      ...(parseGateways(parsed.gateways) ? { gateways: parseGateways(parsed.gateways) } : {}),
       ...(typeof parsed.lastServer === "string" ? { lastServer: parsed.lastServer } : {}),
       ...(typeof parsed.dashboardName === "string" && parsed.dashboardName.trim()
         ? { dashboardName: parsed.dashboardName }

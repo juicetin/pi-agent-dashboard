@@ -1,8 +1,8 @@
 import { mdiFormatListBulleted } from "@mdi/js";
 import { Icon } from "@mdi/react";
-import React from "react";
-import { t as i18nT } from "../../lib/i18n";
-import { MarkdownContent } from "../MarkdownContent.js";
+import { useId, useState } from "react";
+import { t as i18nT } from "../../lib/i18n/i18n.js";
+import { MarkdownContent } from "../preview/MarkdownContent.js";
 import { AnsweredOption } from "./AnsweredOption.js";
 import { InlineMarkdown } from "./InlineMarkdown.js";
 import { isCancelOption, parseOption } from "./parseOption.js";
@@ -13,6 +13,7 @@ export function SelectRenderer({ params, status, result, onRespond, onCancel }: 
   const message = params.message as string | undefined;
   const options = (params.options as string[]) ?? [];
   const selectedValue = (result as any)?.value as string | undefined;
+  const [customValue, setCustomValue] = useState("");
 
   if (status === "cancelled" || status === "dismissed") {
     return (
@@ -27,6 +28,7 @@ export function SelectRenderer({ params, status, result, onRespond, onCancel }: 
   }
 
   if (status === "resolved") {
+    const customSelected = selectedValue !== undefined && !options.includes(selectedValue);
     return (
       <div className="mx-4 my-1 p-3 bg-[var(--bg-hover)] rounded-lg text-xs">
         <div className="flex items-center gap-2 mb-2">
@@ -48,6 +50,13 @@ export function SelectRenderer({ params, status, result, onRespond, onCancel }: 
               />
             );
           })}
+          {customSelected && (
+            <AnsweredOption
+              title={selectedValue}
+              description={i18nT("common.customResponse", undefined, "Custom response")}
+              picked
+            />
+          )}
         </div>
       </div>
     );
@@ -78,11 +87,59 @@ export function SelectRenderer({ params, status, result, onRespond, onCancel }: 
             />
           );
         })}
+        <CustomSelectRow
+          value={customValue}
+          onChange={setCustomValue}
+          onSubmit={() => {
+            const trimmed = customValue.trim();
+            if (trimmed) onRespond({ value: trimmed });
+          }}
+        />
         {!hasCancelOption && (
           <OptionRow title={i18nT("common.cancel", undefined, "Cancel")} cancel onClick={onCancel} />
         )}
       </div>
     </div>
+  );
+}
+
+function CustomSelectRow({
+  value,
+  onChange,
+  onSubmit,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  onSubmit: () => void;
+}) {
+  const disabled = value.trim().length === 0;
+  const inputId = useId();
+  return (
+    <form
+      className="flex flex-col gap-2 px-3 py-2 rounded-lg border border-blue-500/40 bg-blue-500/10"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (!disabled) onSubmit();
+      }}
+    >
+      <label className="text-xs font-medium text-[var(--text-primary)]" htmlFor={inputId}>
+        {i18nT("common.otherCustomResponse", undefined, "Other / custom response")}
+      </label>
+      <input
+        id={inputId}
+        value={value}
+        onChange={(event) => onChange(event.currentTarget.value)}
+        className="w-full px-2 py-1 rounded bg-[var(--bg-primary)] border border-[var(--border-secondary)] text-xs text-[var(--text-primary)]"
+        placeholder={i18nT("common.typeCustomAnswer", undefined, "Type custom answer…")}
+      />
+      <button
+        type="submit"
+        disabled={disabled}
+        className="self-start px-3 py-1 text-xs rounded bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-colors"
+      >
+        {i18nT("common.useCustomAnswer", undefined, "Use custom answer")}
+      </button>
+    </form>
   );
 }
 

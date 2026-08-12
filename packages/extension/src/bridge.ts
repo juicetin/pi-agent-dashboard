@@ -17,6 +17,7 @@ import type { FlowInfo, ImageContent } from "@blackbelt-technology/pi-dashboard-
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Loader } from "@earendil-works/pi-tui";
 import { AbortLatch } from "./abort-latch.js";
+import { nativeAgentSettledSupported, settleFollowUp } from "./agent-settled.js";
 import { isUnderArtifactRoot, resolveArtifactRoots } from "./artifact-roots.js";
 import {
   MAX_PER_MESSAGE_BYTES as ATTACH_MAX_PER_MESSAGE_BYTES,
@@ -26,7 +27,7 @@ import {
 import { registerAskUserTool } from "./ask-user-tool.js";
 import { type AutoNamer, createAutoNamer, type StreamSimpleFn } from "./auto-session-namer.js";
 import type { BridgeContext } from "./bridge-context.js";
-import { extractFirstAssistantReply, extractFirstMessage, filterHiddenCommands, getCurrentModelString } from "./bridge-context.js";
+import { extractFirstAssistantReply, extractFirstMessage, filterHiddenCommands, getCurrentModelString, isHeadlessRpcSession, safeCwd } from "./bridge-context.js";
 import { shouldApplyDefaultModel } from "./bridge-default-model-gate.js";
 import { registerCanvasTool } from "./canvas-tool.js";
 import { createCommandHandler, tryExecSlashTemplate } from "./command-handler.js";
@@ -38,14 +39,24 @@ import { runDevBuild } from "./dev-build.js";
 import { EmptyActionableGuard, SURFACE_MESSAGE } from "./empty-actionable-guard.js";
 import { resolveGuardConfig } from "./empty-actionable-guard-config.js";
 import { mapEventToProtocol } from "./event-forwarder.js";
-import { FLOW_EVENT_MAP, registerFlowEventListeners, SUBAGENT_EVENT_MAP } from "./flow-event-wiring.js";
+import {
+  FLOW_EVENT_MAP,
+  registerEventBusForwarding,
+  registerFlowEventListeners,
+  SUBAGENT_EVENT_MAP,
+} from "./flow-event-wiring.js";
 import { runGitPollTick } from "./git-poll.js";
 import { flipHasUI } from "./hasui-flip.js";
 import { inlineMessageText, type ReadFileOutcome } from "./markdown-image-inliner.js";
-import { resetReconnectCaches as _resetReconnectCaches, sendCwdMissingIfChanged as _sendCwdMissingIfChanged, sendGitInfoIfChanged as _sendGitInfoIfChanged, sendModelUpdateIfChanged as _sendModelUpdateIfChanged, sendPiVersionIfChanged as _sendPiVersionIfChanged, sendSessionNameIfChanged as _sendSessionNameIfChanged } from "./model-tracker.js";
+import { reportRefresh } from "./model-refresh.js";
+import { resetReconnectCaches as _resetReconnectCaches, sendCwdMissingIfChanged as _sendCwdMissingIfChanged, sendGitInfoIfChanged as _sendGitInfoIfChanged, sendModelUpdateIfChanged as _sendModelUpdateIfChanged, sendPiVersionIfChanged as _sendPiVersionIfChanged, sendSessionNameIfChanged as _sendSessionNameIfChanged, defaultReadPiVersion } from "./model-tracker.js";
 import { decodeMultiselectAnswer } from "./multiselect-decode.js";
+import { createNotifyProxy } from "./notify-proxy.js";
+import { provisionOpenspecCli } from "./openspec-cli-shim.js";
+import { readPiRetrySettings } from "./pi-retry-settings.js";
 import { collectMetrics, startMetricsMonitor, stopMetricsMonitor } from "./process-metrics.js";
 import { getOwnPgid, scanChildProcesses } from "./process-scanner.js";
+import { decideProjectTrust, readEventCwd } from "./project-trust.js";
 import { PromptBus } from "./prompt-bus.js";
 import { expandPromptTemplateFromDisk } from "./prompt-expander.js";
 import { activate as activateProviderRegister, buildProviderCatalogue, onProviderChanged, reloadProviders, toModelInfo } from "./provider-register.js";
@@ -54,13 +65,15 @@ import { activate as activateRoleManager, lookupRole } from "./role-manager.js";
 import { registerRoleModelTools } from "./role-model-tools.js";
 import { autoStartServer } from "./server-auto-start.js";
 import { launchServer } from "./server-launcher.js";
-import { handleSessionChange as _handleSessionChange, replaySessionEntries as _replaySessionEntries, sendStateSync as _sendStateSync } from "./session-sync.js";
+import { handleSessionChange as _handleSessionChange, replaySessionEntries as _replaySessionEntries, sendStateSync as _sendStateSync, consumeSpawnToken, filterByEnabledModels } from "./session-sync.js";
 import { tryDispatchExtensionCommand } from "./slash-dispatch.js";
 import { detectSessionSource } from "./source-detector.js";
 import { SubagentFrameBuffer } from "./subagent-frame-buffer.js";
 import { inlineToolResultImages } from "./tool-result-image-inliner.js";
+import { createTuiPromptAdapter } from "./tui-prompt-adapter.js";
 import { classifyTurnActionability } from "./turn-actionability.js";
 import { handleUiManagement, refreshUiModules, subscribeUiInvalidate, type UiModulesBridgeCtx } from "./ui-modules.js";
+import { runUiSafely } from "./ui-stale-guard.js";
 import { detectIsGitRepo } from "./vcs-info.js";
 import { buildVisibilityRegisterFields } from "./visibility-intent.js";
 
@@ -283,13 +296,33 @@ function initBridge(pi: ExtensionAPI) {
     prev.dashboardSpawned = !!process.env.PI_DASHBOARD_SPAWN_TOKEN;
   }
   const dashboardSpawned = prev.dashboardSpawned;
+
+  // Capture the cwd at bridge ACTIVATION (module scope). `project_trust` fires
+  // during resource-loader reload — BEFORE `session_start` reaches extension
+  // handlers — so a cwd captured at session_start would still be undefined
+  // when the trust handler runs. For a fresh headless spawn this IS the
+  // dashboard-provided spawn cwd. See change: adopt-pi-074-080-features (A.3).
+  const activationCwd = process.cwd();
+
+  // Does the running pi emit `agent_settled` natively (≥ 0.80.4)? Read once at
+  // activation. Floor pi → the bridge synthesizes a settle after each
+  // `agent_end`. Read failure → false → synthesize (safe default: the
+  // dashboard still gets exactly one terminal settle). See change:
+  // adopt-pi-074-080-features (A.1).
+  let piEmitsNativeSettled = false;
+  try {
+    piEmitsNativeSettled = nativeAgentSettledSupported(defaultReadPiVersion());
+  } catch { /* unknown version → synthesize */ }
+
   let promptBus: PromptBus | undefined;
 
   // Provider-retry synthesis tracker. pi's ExtensionAPI does not expose
   // `auto_retry_*` events, so the bridge synthesizes them by OBSERVING pi's
-  // own retry behavior (error message_end → fresh assistant message_start →
-  // auto_retry_start). See change: simplify-error-retry-single-card.
-  const retryTracker = new RetryTracker();
+  // real event shape: one full agent_start…agent_end cycle PER attempt, with a
+  // single agent_settled as the sole terminal signal. `maxAttempts`/`delayMs`
+  // are sourced READ-ONLY from pi's retry settings for the display countdown;
+  // the bridge never writes them. See change: retry-forever-with-stop-control.
+  const retryTracker = new RetryTracker(readPiRetrySettings({ cwd: activationCwd }));
   // Empty-actionable-turn guard: when a terminal turn is a clean-but-empty
   // `stop` (thinking-only, no text, no tool call), continue-or-surface instead
   // of idling silently. Provider-agnostic. See change:
@@ -398,7 +431,10 @@ function initBridge(pi: ExtensionAPI) {
    * `executor` returns, pi's `finishRun()` flips `isStreaming = false` and
    * `activeRun = undefined`. After that point, anything queued into pi's
    * internal followUpQueue NEVER drains — pi has stopped reading it.
-   * (Verified at pi-coding-agent pi-agent-core/agent.js:307-330.)
+   * (Verified at pi-coding-agent pi-agent-core/agent.js: `finishRun()` clears
+   * `isStreaming` + `activeRun`, and `getFollowUpMessages` is only supplied to
+   * the loop while a run is active. Re-verified against pi 0.84.1 — behaviour
+   * unchanged, line numbers moved. See change: update-pi-core-0-84-adopt-apis.)
    *
    * Two retry loops handle the transition window correctly:
    *  - retryCount tracks how many setTimeout retries we've done
@@ -741,12 +777,26 @@ function initBridge(pi: ExtensionAPI) {
             );
           }
           cachedModelRegistry?.authStorage?.reload?.();
-          cachedModelRegistry?.refresh?.();
+          // pi 0.84.0: refresh() takes ModelsRefreshOptions and returns
+          // { aborted, errors }. Await + inspect it so getAvailable() below
+          // sees the refreshed catalogue and a per-provider failure is
+          // reported rather than silently dropped. Scope the refresh to the
+          // providers this reload actually touched -- an unrelated provider's
+          // catalogue has no reason to be re-fetched because one credential
+          // changed. Empty scope (removals only) => refresh nothing.
+          // See change: update-pi-core-0-84-adopt-apis.
+          const touched = [...new Set([...diff.added, ...diff.changed])];
+          if (touched.length > 0) {
+            await reportRefresh(
+              cachedModelRegistry?.refresh?.({ providers: touched }),
+              `credentials reload refresh (${touched.join(", ")})`,
+            );
+          }
         } catch (err) { console.error("[dashboard] credentials reload failed:", err); }
         // Push updated models list to dashboard client
         if (cachedModelRegistry && sessionReady) {
           try {
-            const models = cachedModelRegistry.getAvailable().map(toModelInfo);
+            const models = filterByEnabledModels(cachedModelRegistry.getAvailable().map(toModelInfo));
             connection.send({ type: "models_list", sessionId, models });
             // See change: replace-hardcoded-provider-lists.
             connection.send({ type: "providers_list", sessionId, providers: buildProviderCatalogue() });
@@ -925,14 +975,20 @@ function initBridge(pi: ExtensionAPI) {
       // for an unknown/finished agent (durable completed-case backfill covers
       // those). See change: fix-subagent-live-detail-reliability.
       if (msg.type === "subagent_resync_request") {
-        const agentId = (msg as { agentId?: unknown }).agentId;
-        if (typeof agentId === "string" && agentId.length > 0 && sessionReady && isActive()) {
-          const snap = subagentFrameBuffer.resync(agentId);
+        // The incoming id may be EITHER a v4 agentId or a v7 runner
+        // agentSessionId (from a deep-link route); resync() resolves both.
+        // See change: resolve-subagent-inspector-by-session-id (D3/D4).
+        const requestedId = (msg as { agentId?: unknown }).agentId;
+        if (typeof requestedId === "string" && requestedId.length > 0 && sessionReady && isActive()) {
+          const snap = subagentFrameBuffer.resync(requestedId);
           if (snap) {
+            const resolvedAgentId = SubagentFrameBuffer.agentIdOf(snap.data) ?? requestedId;
             sendEventForward("subagents:started", snap.data);
-            console.log(`[dashboard] served subagent resync for agentId=${agentId}`);
+            console.log(
+              `[dashboard] served subagent resync for id=${requestedId} (resolved agentId=${resolvedAgentId})`,
+            );
           } else {
-            console.log(`[dashboard] subagent resync no-op (unknown/finished) agentId=${agentId}`);
+            console.log(`[dashboard] subagent resync no-op (unknown/finished) id=${requestedId}`);
           }
         }
         return;
@@ -1419,6 +1475,7 @@ function initBridge(pi: ExtensionAPI) {
   const enrichedEventTypes = [
     "agent_start",
     "agent_end",
+    "agent_settled",
     "turn_start",
     "turn_end",
     "message_start",
@@ -1474,6 +1531,29 @@ function initBridge(pi: ExtensionAPI) {
         if (abortLatch.shouldAbort(sessionId)) {
           try { cachedCtx?.abort?.(); } catch { /* idempotent */ }
         }
+        // Provider-retry synthesis: when this agent_start is the awaited retry
+        // attempt (a chain is armed), emit auto_retry_start so the surface
+        // flips waiting → in-flight. Deferred via setTimeout(0) so it lands on
+        // the wire AFTER this agent_start (the reducer defensively clears
+        // retryState on agent_start, so the synth must arrive next to re-set
+        // it). See change: retry-forever-with-stop-control (design D4).
+        const retryStart = retryTracker.observeAgentStart(sessionId);
+        if (retryStart) {
+          setTimeout(() => sendSyntheticRetryEvent(retryStart.eventType, retryStart.data), 0);
+        }
+      }
+      if (eventType === "agent_settled") {
+        // Terminal settle (native pi ≥ 0.80.4, fires once after the run loop).
+        // Clear streaming. This is the SOLE terminal signal for a retry chain:
+        // close it with auto_retry_end BEFORE forwarding the settle. On floor
+        // pi this branch never fires from a real event — the synth path below
+        // fires it after agent_end, and this handler re-runs for that synth.
+        // See changes: adopt-pi-074-080-features (A.1), retry-forever-with-stop-control.
+        getBridgeState().isAgentStreaming = false;
+        const retryEnd = retryTracker.observeAgentSettled(sessionId);
+        if (retryEnd) {
+          sendSyntheticRetryEvent(retryEnd.eventType, retryEnd.data);
+        }
       }
       if (eventType === "agent_end") {
         getBridgeState().isAgentStreaming = false;
@@ -1481,12 +1561,12 @@ function initBridge(pi: ExtensionAPI) {
         // later, unrelated turn is not aborted. See change:
         // unify-error-retry-lifecycle.
         abortLatch.clear(sessionId);
-        // Provider-retry synthesis: forward auto_retry_end BEFORE agent_end
-        // when a retry chain was in flight, so the dashboard's retry sub-line
-        // clears before the settled error renders. A terminal error pi never
-        // re-attempted (no chain) yields nothing here — the reducer's own
-        // agent_end arm surfaces lastError.
-        // See change: simplify-error-retry-single-card.
+        // Provider-retry synthesis: an error agent_end means an attempt just
+        // failed and (optimistically) another is coming — emit the WAITING
+        // signal (attempt + computed delay + nextAttemptAt) so the surface
+        // shows a live countdown during pi's sleep. The chain is NOT closed
+        // here; only agent_settled (above) terminates it. A non-error agent_end
+        // returns null. See change: retry-forever-with-stop-control (design D4).
         const trackerSynth = retryTracker.observeAgentEnd(sessionId, event as any);
         if (trackerSynth) {
           sendSyntheticRetryEvent(trackerSynth.eventType, trackerSynth.data);
@@ -1646,14 +1726,10 @@ function initBridge(pi: ExtensionAPI) {
           } else if (abortLatch.shouldAbort(sessionId)) {
             try { cachedCtx?.abort?.(); } catch { /* idempotent */ }
           }
-          // Observe-based retry: an assistant message_start that follows an
-          // error message_end in the same turn (no user prompt between) is pi
-          // re-attempting — emit auto_retry_start so the dashboard shows the
-          // live retry sub-line. See change: simplify-error-retry-single-card.
-          if (role !== "user") {
-            const retrySynth = retryTracker.observeMessageStart(sessionId, messageRef as any);
-            if (retrySynth) sendSyntheticRetryEvent(retrySynth.eventType, retrySynth.data);
-          }
+          // NOTE: retry synthesis moved off `message_start`. pi ends a full
+          // agent turn per attempt, so the retry lifecycle is now driven by
+          // agent_start (in-flight) / agent_end (waiting) / agent_settled
+          // (terminal). See change: retry-forever-with-stop-control.
           if (role === "user") {
             // Per-entry shadow-queue drain matcher: mirror pi's internal
             // logic (`_processAgentEvent` in pi-coding-agent
@@ -1817,6 +1893,16 @@ function initBridge(pi: ExtensionAPI) {
 
       const msg = mapEventToProtocol(sessionId, event);
       connection.send(msg);
+
+      // Floor-pi settle synthesis: pi < 0.80.4 never emits `agent_settled`, so
+      // synthesize one synchronously right after each forwarded `agent_end`.
+      // The dashboard then receives exactly one terminal settle on every pi.
+      // Native pi returns null here (its real settle arrives on its own).
+      // See change: adopt-pi-074-080-features (A.1).
+      const synthSettle = settleFollowUp(eventType, piEmitsNativeSettled, Date.now());
+      if (synthSettle) {
+        connection.send({ type: "event_forward", sessionId, event: synthSettle });
+      }
     }));
   }
 
@@ -1830,6 +1916,48 @@ function initBridge(pi: ExtensionAPI) {
       connection.send(msg);
     }));
   }
+
+  // Push external renames the moment they happen (pi 0.80.3+ session_info_changed)
+  // instead of waiting for the turn-end name poll. The new name is routed
+  // through the auto-namer's self-filter: the bridge's OWN auto-name echoing
+  // back is classified self (no push, no lockout); a dashboard / in-pi rename
+  // is classified external → one session_name_update{nameSource:"user"} +
+  // permanent lockout. The turn-end poll (runAutoNameOnTurnEnd) stays as a
+  // fallback for pi builds that do not emit this event. See change:
+  // adopt-pi-074-080-features (A.2).
+  try {
+    pi.on("session_info_changed" as any, safe(async (event: any) => {
+      if (!isActive() || !sessionReady) return;
+      const name = typeof event?.name === "string" ? event.name : pi.getSessionName();
+      if (typeof name === "string" && name.length > 0) {
+        getAutoNamer().onObservedName(name);
+      }
+    }));
+  } catch { /* older pi: no session_info_changed — poll fallback covers it */ }
+
+  // Auto-decide project_trust for dashboard-spawned headless sessions (pi
+  // 0.79.0+). The event fires during resource-loader reload, BEFORE
+  // session_start reaches handlers, so the gate compares the event cwd to the
+  // ACTIVATION cwd (captured at module scope above). Reads eventCwd from the
+  // per-event ctx inside try/catch (ctx.cwd throws after session replacement).
+  // Any non-match — or a throw — defers to pi's default. See change:
+  // adopt-pi-074-080-features (A.3).
+  try {
+    pi.on("project_trust" as any, safe((event: any, ctx: any) => {
+      // Return the pi trust decision. A newer bridge taking over, or any
+      // non-match, defers. `remember:false` = trust for THIS run only.
+      if (!isActive()) return { trusted: "undecided" };
+      const decision = decideProjectTrust({
+        dashboardSpawned,
+        isHeadless: isHeadlessRpcSession(),
+        eventCwd: readEventCwd(event, ctx),
+        activationCwd,
+      });
+      return decision === "trust"
+        ? { trusted: "yes", remember: false }
+        : { trusted: "undecided" };
+    }));
+  } catch { /* older pi: no project_trust event — no-op */ }
 
   // Per-turn system-prompt injector: splice dashboard session context
   // (sessionId, cwd, attached OpenSpec change) into the system prompt. Reads
@@ -1880,41 +2008,27 @@ function initBridge(pi: ExtensionAPI) {
     );
   }
 
-  // EventBus catch-all: intercept pi.events.emit to forward all EventBus
-  // traffic (flow events, subagent events, custom extension events).
-  // Known channels get renamed via EVENT_BUS_MAP; unknown channels use the
-  // channel name directly as the eventType.
-  let origEventsEmit: ((channel: string, data: unknown) => void) | undefined;
-  if (pi.events) {
-    origEventsEmit = pi.events.emit.bind(pi.events);
-    pi.events.emit = (channel: string, data: unknown) => {
-      try {
-        const eventData = (data && typeof data === "object" ? data : {}) as Record<string, unknown>;
-        if (SubagentFrameBuffer.isSubagentChannel(channel)) {
-          // Subagent frames are reconcilable state, not fire-and-forget. Forward
-          // live only when the session is ready AND the transport is actually
-          // open; otherwise buffer the latest frame per agent (latest-wins,
-          // bounded) instead of letting it fall into the shared FIFO ring.
-          // `sessionReady` stays true across a transient WS drop, so gating on
-          // `connection.isConnected` routes reconnect-window frames into the
-          // per-agent buffer (flushed on session_start AND onReconnect) rather
-          // than risking eviction from the shared ring.
-          // See change: fix-subagent-live-detail-reliability (D1/D2).
-          if (sessionReady && isActive() && connection.isConnected) {
-            sendEventForward(channel, eventData);
-            subagentFrameBuffer.markForwarded(channel, eventData);
-          } else if (!subagentFrameBuffer.buffer(channel, eventData)) {
-            console.warn(
-              `[dashboard] subagent frame dropped (no agentId) channel=${channel} while not ready`,
-            );
-          }
-        } else if (sessionReady && isActive()) {
-          sendEventForward(channel, eventData);
-        }
-      } catch { /* forwarding failure must never break the original emit */ }
-      origEventsEmit!(channel, data);
-    };
-  }
+  // EventBus forwarding: ONE `pi.events.on` subscription per declared channel
+  // (every key of EVENT_BUS_MAP). NOT an `emit` intercept — pi hands each
+  // extension its own `events` facade, so patching OUR `emit` never observed
+  // pi-flows' or pi-subagents' emissions, and every live flow_*/subagent_*
+  // event was silently dropped (automation runs then hung until the max-age
+  // reaper). The gating + subagent-buffer semantics live in `forwardBusEvent`.
+  // See change: fix-automation-run-lifecycle.
+  const disposeEventBusForwarding = registerEventBusForwarding(
+    pi.events,
+    {
+      sendEventForward,
+      isSessionReady: () => sessionReady,
+      isActive,
+      isConnected: () => connection.isConnected,
+      subagent: {
+        isSubagentChannel: (channel) => SubagentFrameBuffer.isSubagentChannel(channel),
+        markForwarded: (channel, data) => subagentFrameBuffer.markForwarded(channel, data),
+        buffer: (channel, data) => subagentFrameBuffer.buffer(channel, data),
+      },
+    },
+  );
 
   pi.on("session_start", safe(async (_event: any, ctx: any) => {
 
@@ -1938,6 +2052,32 @@ function initBridge(pi: ExtensionAPI) {
     cachedCtx = ctx;
     sessionId = newSessionId;
 
+    // Provision the openspec CLI: drop a shim on process.env.PATH so the
+    // generated openspec-* skills' bare `openspec` resolves in-session. Runs on
+    // init AND /reload (re-points the shim on extension upgrade); the PATH
+    // prepend is idempotent. Fail-soft: on hard failure, surface a
+    // dashboard-visible missing-tool signal. See change:
+    // provision-openspec-cli-in-sessions.
+    provisionOpenspecCli({
+      onMissingTool: (reason) => {
+        connection.send({
+          type: "event_forward",
+          sessionId,
+          event: {
+            eventType: "bash_output",
+            timestamp: Date.now(),
+            data: {
+              command: "openspec (session provisioning)",
+              output: reason,
+              exitCode: 127,
+              excludeFromContext: true,
+              missingTool: { kind: "missing-tool", toolName: "openspec" },
+            },
+          },
+        });
+      },
+    });
+
     // Wrap sessionManager.appendMessage so that future message_end events can
     // recover the just-generated entry id, even when their setTimeout(0)
     // fires before pi has finished mutating event.message in place. The
@@ -1960,7 +2100,13 @@ function initBridge(pi: ExtensionAPI) {
     // update_roles). list_models reads the in-process session registry via a
     // live getter so its refs match the human Model Selector exactly.
     // See change: add-agent-role-model-tools.
-    registerRoleModelTools(pi, { getRegistry: () => cachedModelRegistry });
+    registerRoleModelTools(pi, {
+      getRegistry: () => cachedModelRegistry,
+      // Live scope read at call time from the latest captured ctx (dynamic via
+      // Ctrl+P cycling). Absent on older pi / empty when unscoped → no filter.
+      // See change: update-pi-core-0-83-adopt-apis.
+      getScopedModels: () => (cachedCtx as any)?.scopedModels,
+    });
 
     // Extract session file/dir early — needed for source detection and UI proxy
     const sessionFile = ctx.sessionManager.getSessionFile?.() ?? undefined;
@@ -2028,79 +2174,7 @@ function initBridge(pi: ExtensionAPI) {
     // Register TUI adapter — presents prompts in the terminal using original
     // (unpatched) ctx.ui methods. Must be registered BEFORE patching ctx.ui.
     if (ctx.hasUI) {
-      const activeControllers = new Map<string, AbortController>();
-      const bus = promptBus;
-
-      bus.registerAdapter({
-        name: "tui",
-
-        onRequest(prompt: any) {
-          const ac = new AbortController();
-          activeControllers.set(prompt.id, ac);
-
-          const present = async () => {
-            try {
-              let answer: string | boolean | undefined;
-
-              if (prompt.type === "select" && prompt.options && originals.select) {
-                answer = await originals.select(prompt.question, prompt.options, { signal: ac.signal });
-              } else if (prompt.type === "input" && originals.input) {
-                answer = await originals.input(prompt.question, prompt.defaultValue || "", { signal: ac.signal });
-              } else if (prompt.type === "confirm" && originals.confirm) {
-                answer = await originals.confirm(prompt.question, "", { signal: ac.signal });
-              } else if (prompt.type === "editor" && originals.editor) {
-                answer = await originals.editor(prompt.question, prompt.defaultValue || "", { signal: ac.signal });
-              } else {
-                // NOTE: there is intentionally no `else if` arm for the
-                // multiselect prompt type here. See change
-                // fix-multiselect-tui-arm-self-cancel — pi 0.70 RPC mode's
-                // ctx.ui.custom primitive is a no-op, so any TUI arm that
-                // awaits it auto-cancels the dashboard-rendered dialog. The
-                // bus-routed ctx.ui.multiselect patch below + the
-                // DashboardDefaultAdapter handle multiselect end-to-end.
-                return;
-              }
-
-              if (!ac.signal.aborted) {
-                const answerStr = typeof answer === "boolean" ? (answer ? "true" : "false") : answer;
-                bus.respond({
-                  id: prompt.id,
-                  answer: answerStr ?? undefined,
-                  cancelled: answerStr == null,
-                  source: "tui",
-                });
-              }
-            } catch {
-              if (!ac.signal.aborted) {
-                bus.respond({ id: prompt.id, cancelled: true, source: "tui" });
-              }
-            } finally {
-              activeControllers.delete(prompt.id);
-            }
-          };
-
-          present();
-          return {}; // Claim without component (TUI-only)
-        },
-
-        onResponse(response: any) {
-          if (response.source !== "tui") {
-            const ac = activeControllers.get(response.id);
-            if (ac) {
-              ac.abort();
-              activeControllers.delete(response.id);
-            }
-          }
-        },
-
-        onCancel(id: string) {
-          const ac = activeControllers.get(id);
-          if (ac) {
-            ac.abort();
-            activeControllers.delete(id);
-          }
-        },
-      });
+      promptBus.registerAdapter(createTuiPromptAdapter(originals, promptBus));
     }
 
     // Replace ctx.ui dialog methods with PromptBus wrappers.
@@ -2250,18 +2324,13 @@ function initBridge(pi: ExtensionAPI) {
           }
         });
 
-      // Notify is fire-and-forget: call original + forward to dashboard
-      (ctx.ui as any).notify = (message: string, level?: string) => {
-        originalNotify?.(message, level);
-        connection.send({
-          type: "prompt_request" as any,
-          sessionId,
-          promptId: crypto.randomUUID(),
-          prompt: { question: message, type: "notify" },
-          component: { type: "notify", props: { message, level } },
-          placement: "inline",
-        });
-      };
+      // Notify is fire-and-forget: call original + forward to dashboard on the
+      // dedicated `notify` channel. See change: split-notify-from-prompt-request.
+      (ctx.ui as any).notify = createNotifyProxy({
+        sessionId,
+        send: (msg) => connection.send(msg),
+        originalNotify,
+      });
     }
 
     // Flip ctx.hasUI=true now that ctx.ui.* has been patched to route
@@ -2353,10 +2422,16 @@ function initBridge(pi: ExtensionAPI) {
     // register so server can re-stamp source after restart. Derived from the
     // capture-once boolean (token may already be scrubbed). See change:
     // fix-spawn-token-env-leak.
+    // ctx.cwd is the guarded getter that throws once the session is replaced.
+    // Read it once, defensively — a throw here would skip session_register +
+    // the heartbeat/git timers, leaving a resumed session dead in the UI.
+    // See change: fix-bridge-resume-disconnect.
+    const startCwd = safeCwd(ctx);
+    const spawnToken = consumeSpawnToken();
     connection.send({
       type: "session_register",
       sessionId,
-      cwd: ctx.cwd,
+      cwd: startCwd,
       name: lastSessionName || undefined,
       source: detectSessionSource(cachedHasUI, sessionFile),
       model: initialModel,
@@ -2365,10 +2440,27 @@ function initBridge(pi: ExtensionAPI) {
       sessionDir,
       firstMessage,
       eventCount,
+      // The ONLY channel by which the server learns this session's process for a
+      // non-headless spawn: `tmux new-window` returns tmux's own pid, not pi's,
+      // so without this the server's record has no `pid` and shutdown has
+      // nothing to escalate to — the session was unregistered while a ~127 MB
+      // pi kept running (#452). The two `session_register` sends in
+      // session-sync.ts already carry it; this one, the FIRST register of a
+      // fresh session, did not.
+      // See change: fix-tmux-session-shutdown-leak (D6).
+      pid: process.pid,
+      // The spawn correlation token, echoed back so the server can match THIS
+      // register to the spawn that produced it. This is a fresh session's FIRST
+      // register, and it omitted the token entirely: tier-1 correlation never
+      // fired for a dashboard spawn, so the spawn watchdog could only match by
+      // cwd and reported false register-timeouts for concurrent spawns into one
+      // directory. Single-use — `consumeSpawnToken` scrubs the env.
+      // See change: fix-tmux-session-shutdown-leak (D5).
+      ...(spawnToken ? { spawnToken } : {}),
       ...(dashboardSpawned ? { dashboardSpawned: true } : {}),
       // Tri-state git-repo signal, computed at register time (authority).
       // See change: gate-session-worktree-button-on-git.
-      isGitRepo: detectIsGitRepo(ctx.cwd),
+      isGitRepo: detectIsGitRepo(startCwd),
       // Fact-forwarding: server decides auto-hide. See change:
       // auto-hide-headless-worker-sessions.
       ...buildVisibilityRegisterFields(cachedHasUI, process.env),
@@ -2405,7 +2497,7 @@ function initBridge(pi: ExtensionAPI) {
     cachedModelRegistry = (ctx as any).modelRegistry;
     if (cachedModelRegistry) {
       try {
-        const models = cachedModelRegistry.getAvailable().map(toModelInfo);
+        const models = filterByEnabledModels(cachedModelRegistry.getAvailable().map(toModelInfo));
         connection.send({ type: "models_list", sessionId, models });
         // See change: replace-hardcoded-provider-lists.
         connection.send({ type: "providers_list", sessionId, providers: buildProviderCatalogue() });
@@ -2463,25 +2555,31 @@ function initBridge(pi: ExtensionAPI) {
     let spinnerStart = 0;
     let activeLoader: Loader | null = null;
     const stopSpinner = () => {
+      // Release the interval BEFORE the guarded ctx.ui call, so a stale ctx
+      // still stops the 1s label refresh instead of leaking it.
       if (spinnerTimer) {
         clearInterval(spinnerTimer);
         spinnerTimer = null;
       }
       activeLoader = null;
-      ctx.ui.setWidget("pi-dashboard-launch", undefined);
+      // This runs from `onLaunchEnd` AND from the terminal .then()/.catch()
+      // below, either of which can land after a session replacement/reload has
+      // invalidated `ctx`. See ui-stale-guard.ts.
+      runUiSafely(() => ctx.ui.setWidget("pi-dashboard-launch", undefined));
     };
     autoStartServer(config, {
       discoverDashboard,
       isDashboardRunning,
       launchServer,
-      notify: (msg, level) => ctx.ui.notify(msg, level),
+      notify: (msg, level) => runUiSafely(() => ctx.ui.notify(msg, level)),
       onLaunchStart: () => {
         spinnerStart = Date.now();
         const buildMessage = () => {
           const elapsed = Math.floor((Date.now() - spinnerStart) / 1000);
           return `starting dashboard server … (${elapsed}s)`;
         };
-        ctx.ui.setWidget(
+        runUiSafely(() =>
+          ctx.ui.setWidget(
           "pi-dashboard-launch",
           (tui: unknown, theme: { fg: (role: string, s: string) => string }) => {
             const loader = new Loader(
@@ -2497,6 +2595,7 @@ function initBridge(pi: ExtensionAPI) {
             return loader;
           },
           { placement: "aboveEditor" },
+          ),
         );
         // Refresh the elapsed-seconds label every second. Frame animation is
         // driven by the Loader's own 80ms interval.
@@ -2528,8 +2627,8 @@ function initBridge(pi: ExtensionAPI) {
     }).catch(() => { stopSpinner(); });
 
     // Send initial git info + the session's pi version
-    sendGitInfoIfChanged(ctx.cwd);
-    sendCwdMissingIfChanged(ctx.cwd);
+    sendGitInfoIfChanged(startCwd);
+    sendCwdMissingIfChanged(startCwd);
     sendPiVersionIfChanged();
 
     // Start metrics monitor and heartbeat
@@ -2542,7 +2641,11 @@ function initBridge(pi: ExtensionAPI) {
         // Fold the bridge→server ring-buffer eviction count into the heartbeat
         // so it reaches `/api/health`. See change:
         // fix-stuck-tool-card-on-dropped-event.
-        metrics: { ...collectMetrics(), droppedBufferedFrames: connection.getDroppedBufferedCount() },
+        metrics: {
+          ...collectMetrics(),
+          droppedBufferedFrames: connection.getDroppedBufferedCount(),
+          refusedInboundFrames: connection.getDroppedInboundCount(),
+        },
       });
     }, HEARTBEAT_INTERVAL);
     getBridgeState().timers!.push(heartbeatTimer);
@@ -2620,7 +2723,10 @@ function initBridge(pi: ExtensionAPI) {
   // Caches ctx.cwd (the throwing getter) and clears any prior timer first.
   function startGitPollTimer(ctx: any) {
     if (gitPollTimer) clearInterval(gitPollTimer);
-    cachedCwd = ctx.cwd;
+    // safeCwd: startGitPollTimer runs inside handleSessionChange BEFORE
+    // connection.connect(); an un-guarded ctx.cwd throw here skips connect()
+    // (#393). See change: fix-bridge-resume-disconnect.
+    cachedCwd = safeCwd(ctx);
     gitPollTimer = setInterval(() => runGitPollTick({
       isActive,
       cachedCwd: () => cachedCwd,
@@ -2691,7 +2797,7 @@ function initBridge(pi: ExtensionAPI) {
     if (!isActive()) return;
     if (cachedModelRegistry && sessionReady) {
       try {
-        const models = cachedModelRegistry.getAvailable().map(toModelInfo);
+        const models = filterByEnabledModels(cachedModelRegistry.getAvailable().map(toModelInfo));
         connection.send({ type: "models_list", sessionId, models });
         // See change: replace-hardcoded-provider-lists.
         connection.send({ type: "providers_list", sessionId, providers: buildProviderCatalogue() });
@@ -2724,10 +2830,9 @@ function initBridge(pi: ExtensionAPI) {
       runDevBuild({ packageRoot, serverPort: config.port });
     }
 
-    // Restore original pi.events.emit (EventBus catch-all cleanup)
-    if (origEventsEmit && pi.events) {
-      pi.events.emit = origEventsEmit;
-    }
+    // Release our EventBus subscriptions. Nothing to "restore": the bridge no
+    // longer replaces any host function. See change: fix-automation-run-lifecycle.
+    disposeEventBusForwarding();
     connection.disconnect();
   };
 

@@ -7,6 +7,7 @@ import type {
   PluginIntentsMessage,
 } from "./dashboard-plugin/intent-types.js";
 import type { DisplayPrefs, PartialDisplayPrefs } from "./display-prefs.js";
+import type { NotifyLevel } from "./protocol.js";
 import type { TerminalSession } from "./terminal-types.js";
 import type {
   CommandInfo,
@@ -32,6 +33,7 @@ export type {
   BatchQuestion,
   BatchResult,
   InteractiveMethod,
+  NotifyLevel,
 } from "./protocol.js";
 
 // ── Configurable chat display ───────────────────────────────────────
@@ -78,6 +80,18 @@ export interface SetSessionTagsBrowserMessage {
   tags: string[];
 }
 
+/**
+ * Browser → server: strip a single user tag from every session that carries
+ * it. The server normalizes the inbound tag first; a blank/whitespace-only
+ * tag (normalizes to empty) is a no-op. Fan-out reuses the per-session
+ * normalize → update → broadcast path (one `session_updated` per changed
+ * session). Bridges never send this. See change: sidebar-tag-collapse-and-delete.
+ */
+export interface RemoveTagGloballyBrowserMessage {
+  type: "remove_tag_globally";
+  tag: string;
+}
+
 // ── Server → Browser ────────────────────────────────────────────────
 
 export interface SessionAddedMessage {
@@ -102,6 +116,24 @@ export interface SessionUpdatedMessage {
 export interface SessionRemovedMessage {
   type: "session_removed";
   sessionId: string;
+}
+
+/**
+ * A session's process outlived its shutdown.
+ *
+ * Emitted alongside `session_removed`, never instead of it: the record IS
+ * released (retaining it would wedge the session in the UI and stall the E2E
+ * reap, which awaits `session_removed` per session), but the client must not be
+ * told the shutdown was clean when a ~127 MB `pi` is still resident. Only
+ * reachable when a process survives SIGTERM → SIGKILL.
+ *
+ * See change: fix-tmux-session-shutdown-leak.
+ */
+export interface SessionOrphanedMessage {
+  type: "session_orphaned";
+  sessionId: string;
+  /** The process still resident after the full escalation ladder. */
+  pid: number;
 }
 
 export interface EventMessage {
@@ -467,6 +499,19 @@ export interface BrowserPromptRequestMessage {
   placement: string;
 }
 
+/**
+ * Server → Browser notification. Render-only: the client appends an
+ * `interactiveUi` row to `messages` and never an `interactiveRequests` entry.
+ * See change: split-notify-from-prompt-request.
+ */
+export interface BrowserNotifyMessage {
+  type: "notify";
+  sessionId: string;
+  notifyId: string;
+  message: string;
+  level?: NotifyLevel;
+}
+
 export interface BrowserPromptDismissMessage {
   type: "prompt_dismiss";
   sessionId: string;
@@ -767,6 +812,15 @@ export interface RecoveryCandidate {
 export interface RecoveryOfferMessage {
   type: "recovery_offer";
   candidates: RecoveryCandidate[];
+  /**
+   * Epoch-ms deadline until which each candidate's process liveness is still
+   * being resolved (the Class-2 bridge-reattach grace window). While
+   * `Date.now() < graceUntil` the offer is shown but Reopen is NOT actionable —
+   * a still-alive bridge may reattach and retract the candidate, and reopening
+   * it early would double-spawn pi for one sessionId. Absent/past ⇒ liveness is
+   * finalized and Reopen is active. See change: fix-recovery-offer-bridge-liveness-gate.
+   */
+  graceUntil?: number;
 }
 
 /**
@@ -803,6 +857,7 @@ export type ServerToBrowserMessage =
   | SessionAddedMessage
   | SessionUpdatedMessage
   | SessionRemovedMessage
+  | SessionOrphanedMessage
   | EventMessage
   | EventReplayMessage
   | BrowserCommandsListMessage
@@ -840,6 +895,7 @@ export type ServerToBrowserMessage =
   | ServersDiscoveredMessage
   | ServersUpdatedMessage
   | BrowserPromptRequestMessage
+  | BrowserNotifyMessage
   | BrowserPromptDismissMessage
   | BrowserPromptCancelMessage
   | ModelsRefreshedMessage
@@ -857,7 +913,6 @@ export type ServerToBrowserMessage =
   | DisplayPrefsUpdatedMessage
   | QueueUpdateToBrowserMessage
   | PromptReceivedToBrowserMessage
-  | ViewMessagesUpdateMessage
   | CanvasIntentMessage
   | CanvasServerChipMessage
   | FileChangedMessage;
@@ -1012,25 +1067,10 @@ export interface PromptReceivedToBrowserMessage {
   fresh: boolean;
 }
 
-/**
- * Server → browser: full snapshot of a session's `/view` preview rows.
- * Sent on subscribe (as a snapshot) and on every change (append). Each
- * entry is a minimal ChatMessage shape with `view` set; the client merges
- * them into its rendered chat by timestamp. View messages live in a
- * separate server-side store, NEVER in pi's events.jsonl — the agent does
- * not observe them. See change: render-file-previews.
- */
-export interface ViewMessagesUpdateMessage {
-  type: "view_messages_update";
-  sessionId: string;
-  viewMessages: Array<{
-    id: string;
-    role: "user";
-    content: "";
-    timestamp: number;
-    view: import("./types.js").ViewTarget;
-  }>;
-}
+// The `/view` inline surface is retired (change:
+// open-view-command-in-editor-pane): `/view` opens the editor pane, so the
+// server no longer emits `view_messages_update` nor accepts
+// `inject_view_message`. Both message types removed.
 
 export interface RequestCommandsToBrowserMessage {
   type: "request_commands";
@@ -1362,6 +1402,20 @@ export interface ReorderWorkspacesMessage {
   ids: string[];
 }
 
+/**
+ * Move a folder into a workspace, or eject it from all workspaces.
+ * `toWorkspaceId: null` ejects the folder and pins it.
+ * `index` is the insert position in the target (omitted = append); it is
+ * clamped server-side and ignored when the target is null.
+ * See change: drag-folders-across-workspaces.
+ */
+export interface MoveFolderToWorkspaceMessage {
+  type: "move_folder_to_workspace";
+  path: string;
+  toWorkspaceId: string | null;
+  index?: number;
+}
+
 export interface OpenSpecBulkArchiveBrowserMessage {
   type: "openspec_bulk_archive";
   cwd: string;
@@ -1545,19 +1599,6 @@ export interface UiManagementBrowserMessage {
   params?: Record<string, unknown>;
 }
 
-/**
- * Browser → server: inject a `/view` preview row into the session. The
- * server persists it in a per-session view-messages store (separate from
- * pi's events.jsonl so the agent never observes it) and broadcasts the
- * updated list via `view_messages_update`.
- * See change: render-file-previews.
- */
-export interface InjectViewMessageBrowserMessage {
-  type: "inject_view_message";
-  sessionId: string;
-  target: import("./types.js").ViewTarget;
-}
-
 export type BrowserToServerMessage =
   | SubscribeMessage
   | UnsubscribeMessage
@@ -1598,6 +1639,7 @@ export type BrowserToServerMessage =
   | RemoveFolderFromWorkspaceMessage
   | ReorderWorkspaceFoldersMessage
   | ReorderWorkspacesMessage
+  | MoveFolderToWorkspaceMessage
   | OpenSpecBulkArchiveBrowserMessage
   | CreateTerminalBrowserMessage
   | KillTerminalBrowserMessage
@@ -1630,7 +1672,7 @@ export type BrowserToServerMessage =
   | SetSessionDisplayPrefsBrowserMessage
   | SetSessionProcessDrawerBrowserMessage
   | SetSessionTagsBrowserMessage
-  | InjectViewMessageBrowserMessage
+  | RemoveTagGloballyBrowserMessage
   | RecoveryDismissMessage
   | SubagentResyncRequestBrowserMessage
   | WatchFilesBrowserMessage;

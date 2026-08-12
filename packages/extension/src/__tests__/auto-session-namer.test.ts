@@ -18,6 +18,7 @@ import {
   isEligible,
   type NamerRegistry,
   parseTitle,
+  sanitizeSessionName,
   type StreamSimpleFn,
   shouldSkipByPrefilter,
 } from "../auto-session-namer.js";
@@ -108,6 +109,25 @@ describe("classifyNameChange", () => {
   it("external when different or never self-applied", () => {
     expect(classifyNameChange("Hand Typed", "Auth Refactor")).toBe("external");
     expect(classifyNameChange("Hand Typed", undefined)).toBe("external");
+  });
+  // F5: a self-applied title with an internal newline still matches the
+  // newline-collapsed name pi carries in session_info_changed.
+  it("F5: self when a newline-bearing self-title matches the sanitized event name", () => {
+    expect(classifyNameChange("Foo Bar", "Foo\nBar")).toBe("self");
+    expect(classifyNameChange("Foo Bar", "Foo\r\nBar")).toBe("self");
+    expect(classifyNameChange("  Foo Bar  ", "Foo\nBar")).toBe("self");
+  });
+  // F4: a genuine external rename is still external.
+  it("F4: external for a hand-typed rename that is not the self title", () => {
+    expect(classifyNameChange("Bar", "Foo")).toBe("external");
+  });
+});
+
+describe("sanitizeSessionName", () => {
+  it("collapses internal newlines to single spaces and trims", () => {
+    expect(sanitizeSessionName("Foo\nBar")).toBe("Foo Bar");
+    expect(sanitizeSessionName("Foo\r\n\nBar")).toBe("Foo Bar");
+    expect(sanitizeSessionName("  Foo Bar  ")).toBe("Foo Bar");
   });
 });
 
@@ -291,11 +311,112 @@ describe("createAutoNamer", () => {
     expect(namer._state()).toMatchObject({ nameSource: "user", hardStopped: true });
   });
 
+  it("F5: a newline-bearing self-name echoing back (sanitized) does NOT lock out", async () => {
+    // The bridge self-applies "Foo\nBar"; pi sanitizes + broadcasts "Foo Bar"
+    // via session_info_changed. The self-filter must classify it self.
+    const hooks = makeHooks({
+      loadStreamSimple: async () =>
+        fakeStream([{ type: "text_delta", delta: "Foo\nBar" }, { type: "done", message: { content: [] } }]),
+    });
+    const namer = createAutoNamer(hooks);
+    await namer.maybeName();
+    expect(hooks.applyName).toHaveBeenCalledWith("Foo\nBar");
+    expect(namer._state().nameSource).toBe("auto");
+
+    // The sanitized echo comes back through session_info_changed → self, no push.
+    namer.onObservedName("Foo Bar");
+    expect(hooks.reportUserRename).not.toHaveBeenCalled();
+    expect(namer._state()).toMatchObject({ nameSource: "auto", hardStopped: false });
+  });
+
   it("seeds a user lockout restored from meta", async () => {
     const hooks = makeHooks();
     const namer = createAutoNamer(hooks);
     namer.seed("user");
     await namer.maybeName();
     expect(hooks.applyName).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * pi 0.84.0 BREAKING: `ModelRegistry.getApiKeyAndHeaders()` returns
+ * `ProviderHeaders` with `string | null` values, preserving null header-deletion
+ * markers. The markers exist so placeholder OpenAI credentials are not sent
+ * through Cloudflare AI Gateway — coercing or dropping them re-opens that hole.
+ *
+ * Two distinct concerns: FORWARDING nulls to pi-ai unchanged (correctness), and
+ * COUNTING them as absent in the usable-credentials gate (see design D4).
+ *
+ * See change: update-pi-core-0-84-adopt-apis (test-plan #E9, #E10, #E11).
+ */
+describe("generateTitle — null-bearing provider headers (pi 0.84.x)", () => {
+  function captureOptions() {
+    const seen: any[] = [];
+    const streamSimple: StreamSimpleFn = (_m, _c, options) => {
+      seen.push(options);
+      return (async function* () {
+        yield { type: "done", message: { content: [{ type: "text", text: "T" }] } };
+      })();
+    };
+    return { seen, streamSimple };
+  }
+
+  it("E9: a null deletion marker reaches pi-ai as null, never the string 'null'", async () => {
+    const { seen, streamSimple } = captureOptions();
+    const res = await generateTitle({
+      registry: {
+        find: () => ({ provider: "openai", id: "gpt" }),
+        getApiKeyAndHeaders: async () =>
+          ({ apiKey: "sk-test", headers: { "x-del": null, "x-keep": "v" } }),
+      },
+      streamSimple,
+      modelRef: "openai/gpt",
+      transcript: "x",
+    });
+
+    expect(res).toEqual({ ok: true, text: "T" });
+    expect(seen).toHaveLength(1);
+    const headers = seen[0].headers;
+    expect(headers).toHaveProperty("x-del");
+    expect(headers["x-del"]).toBeNull();
+    expect(headers["x-del"]).not.toBe("null");
+    expect(headers["x-keep"]).toBe("v");
+  });
+
+  it("E10: a null-only header map counts as NO usable credentials", async () => {
+    // Key count is 2, usable count is 0 — the old
+    // `Object.keys(headers).length > 0` gate wrongly passed here.
+    const { streamSimple } = captureOptions();
+    const res = await generateTitle({
+      registry: {
+        find: () => ({ provider: "openai", id: "gpt" }),
+        getApiKeyAndHeaders: async () =>
+          ({ headers: { a: null, b: null } }),
+      },
+      streamSimple,
+      modelRef: "openai/gpt",
+      transcript: "x",
+    });
+
+    expect(res.ok).toBe(false);
+    expect((res as { hardError: boolean }).hardError).toBe(true);
+    expect((res as { reason: string }).reason).toMatch(/no usable credentials/i);
+  });
+
+  it("E11: a mixed header map counts as usable credentials", async () => {
+    const { seen, streamSimple } = captureOptions();
+    const res = await generateTitle({
+      registry: {
+        find: () => ({ provider: "openai", id: "gpt" }),
+        getApiKeyAndHeaders: async () =>
+          ({ headers: { a: null, b: "v" } }),
+      },
+      streamSimple,
+      modelRef: "openai/gpt",
+      transcript: "x",
+    });
+
+    expect(res).toEqual({ ok: true, text: "T" });
+    expect(seen[0].headers).toEqual({ a: null, b: "v" });
   });
 });

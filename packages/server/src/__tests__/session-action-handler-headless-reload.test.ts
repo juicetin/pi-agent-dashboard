@@ -6,7 +6,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // Mock spawnPiSession BEFORE importing the handler.
-vi.mock("../process-manager.js", () => ({
+vi.mock("../spawn-process/process-manager.js", () => ({
   spawnPiSession: vi.fn(),
 }));
 vi.mock("@blackbelt-technology/pi-dashboard-shared/config.js", () => ({
@@ -17,7 +17,7 @@ import {
   handleHeadlessReload,
   handleSendPrompt,
 } from "../browser-handlers/session-action-handler.js";
-import { spawnPiSession } from "../process-manager.js";
+import { spawnPiSession } from "../spawn-process/process-manager.js";
 
 type SentMessage = { type: string; [k: string]: unknown };
 type InsertedEvent = {
@@ -54,6 +54,12 @@ function makeCtx(
     },
     piGateway: {
       sendToSession: vi.fn().mockReturnValue(true),
+      // A live bridge. `handleSendPrompt` / `handleResumeSession` probe this via
+      // `isSessionProcessGone` to tell a genuinely-running session from a
+      // crash-orphaned zombie (change: resume-zombie-active-session). These
+      // tests all assert the FORWARD-to-bridge path, which is exactly the
+      // "process is live" branch, so it must report connected.
+      isSessionConnected: vi.fn().mockReturnValue(true),
     },
     headlessPidRegistry: {
       getPid: (sid: string) => pidBySession[sid],

@@ -17,6 +17,8 @@ import { draftCommitMessage } from "./commit-draft.js";
 import { killProcessByPgid } from "./process-scanner.js";
 import { expandPromptTemplateFromDisk, loadPromptTemplate } from "./prompt-expander.js";
 import { buildProviderCatalogue, toModelInfo } from "./provider-register.js";
+import { errText, reportRefresh } from "./model-refresh.js";
+import { filterByEnabledModels } from "./session-sync.js";
 import { tryDispatchExtensionCommand } from "./slash-dispatch.js";
 
 const IGNORE_DIRS = new Set([".git", "node_modules", ".next", "dist", "build", ".cache", "__pycache__", ".venv"]);
@@ -765,10 +767,18 @@ export function createCommandHandler(
           if (registry) {
             try {
               registry.authStorage?.reload?.();
-              registry.refresh();
-              const models = registry.getAvailable().map(toModelInfo);
+              // pi 0.84.0: refresh() is async and returns { aborted, errors }.
+              // Await it -- the pre-0.84 fire-and-forget read the catalogue
+              // before the refresh resolved. Report the outcome instead of
+              // discarding it: a partly-failed refresh still yields a usable
+              // (stale) catalogue, so we log and continue rather than throw.
+              // See change: update-pi-core-0-84-adopt-apis.
+              await reportRefresh(registry.refresh({}));
+              const models = filterByEnabledModels(registry.getAvailable().map(toModelInfo));
               return { type: "models_list", sessionId, models };
-            } catch { /* ignore */ }
+            } catch (err) {
+              console.warn("[dashboard] request_models failed:", errText(err));
+            }
           }
           return { type: "models_list", sessionId, models: [] };
         }

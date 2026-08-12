@@ -133,45 +133,207 @@ buffer length SHALL never exceed `cap + TRIM_SLACK`.
   `insertEvent` in a loop
 - **THEN** the total trim work SHALL be O(events) (amortized), NOT O(events × cap)
 
-
 ### Requirement: Per-event total-serialized-size ceiling
 The in-memory event store SHALL bound the total serialized size of every
 individual event's `data` to `MAX_EVENT_DATA_SIZE` (default 20000 bytes,
-constructor-injectable, `0` = disabled). After the existing per-string-field
-truncation runs, the store SHALL estimate the serialized size of `event.data`;
-if it still exceeds the ceiling, the store SHALL replace `event.data` with a
-bounded placeholder that preserves `eventType` and records the truncation. The
-size estimation SHALL be bounded-cost and SHALL NOT serialize the entire object
-to measure it (an early-exit walk that stops once the running total crosses the
-ceiling). The ceiling SHALL be enforced at ingest (inside the truncator) so that
-both persistence (`insertEvent`) and broadcast (`broadcastEvent`) operate on the
+constructor-injectable, `0` = disabled). If an event's `data` exceeds the
+ceiling, the store SHALL bound the event as follows:
+
+- **Subagent-timeline events** — an event is a subagent-timeline event ONLY when
+  it is TYPE-scoped as one (`data.toolName === "Agent"`, or an event type of
+  `tool_execution_update`/`tool_execution_end` carrying a `details.agentId`) AND
+  an `entries[]` array is reachable at `data.partialResult.details.entries` or
+  `data.details.entries`. A bare array at those paths on an unrelated event SHALL
+  NOT qualify. Such an event SHALL be DETECTED on the original event BEFORE the
+  generic per-string-field pass, and the generic pass SHALL be SKIPPED for it (so
+  the generic "array longer than the array-length limit collapses to a string"
+  rule can NEVER clobber `entries[]`, independent of the per-string-field cap
+  value). It SHALL be reduced by a **head+tail** strategy rather than replaced
+  wholesale: keep the first-K + last-K entries, splice the removed middle into a
+  single `text` **sentinel** entry (e.g. `{ kind: "text", text: "⋯ N steps hidden ⋯", ts }`)
+  — NOT a new wire kind, so every client version renders it as plain text — and
+  shrink oversized kept entries by a **per-ENTRY** budget enforced at the ENTRY
+  level (each kept entry's total serialized bytes ≤ its budget), NOT by a
+  per-string-leaf cap (so a `tool` entry whose `input` is an object with many
+  string leaves cannot exceed its budget). Because large strings OUTSIDE
+  `entries[]` would otherwise consume the whole ceiling and starve the timeline —
+  the subagent task `data.args.prompt`, `details.description`, AND every string
+  inside `data.partialResult.content[*]` (both `.text` AND base64 image `.data`,
+  recursing container blocks) — the reduction SHALL first head+tail-cap ALL of
+  them to bounded caps (NO image preservation on this path), then derive the
+  per-entry budget from the MEASURED post-cap envelope. The reduction SHALL return
+  a NEW event object with the touched paths cloned; it SHALL NOT mutate the
+  in-flight `event`. All non-timeline `data` fields (other than the capped
+  strings) SHALL be left intact. If the event cannot be brought under the ceiling
+  this way (e.g. an empty `entries[]` with an already-capped but still-oversized
+  envelope), the store SHALL fall back to the bounded `{ __truncated }`
+  placeholder.
+- **All other events** — the store SHALL replace `event.data` with a bounded
+  placeholder that preserves `eventType` and records the truncation.
+
+The per-string-field truncation SHALL preserve BOTH the head and the tail of an
+over-long string (first half + a `…hidden…` marker + last half), not the head
+only. All size measurement — both step-wise pruning AND the final bound proof —
+SHALL use a byte-accurate, bounded-cost, early-exit walk that (a) counts each
+string's ACTUAL JSON-serialized byte length (UTF-8 width + escape expansion), not
+its code-unit length; (b) counts a base64 image `data` string at its real size,
+not a fixed constant; (c) short-circuits a huge string via the code-unit lower
+bound (UTF-8 bytes ≥ UTF-16 units) so it need not scan it; and (d) stops once the
+running total crosses the ceiling. The store SHALL NOT materialize a full
+`JSON.stringify` of `event.data` anywhere on the persist/broadcast path (including
+any terminal bound check). The ceiling SHALL be enforced at ingest so both
+persistence (`insertEvent`) and broadcast (`broadcastEvent`) operate on the
 already-bounded event.
 
 #### Scenario: Oversized subagent event is bounded before storage
 - **GIVEN** an event whose `data` embeds a subagent's full timeline and exceeds
   `MAX_EVENT_DATA_SIZE` after per-field truncation
 - **WHEN** the event is inserted
+- **THEN** the stored event's serialized size SHALL be ≤ `MAX_EVENT_DATA_SIZE`
+  plus a small constant — achieved by the head+tail reduction (keeping the first
+  and last entries + a `text` sentinel) or, when the event is unreducible, the
+  bounded `{ __truncated }` placeholder
+
+#### Scenario: Oversized subagent event keeps first and last entries
+- **GIVEN** an event whose `data` embeds a subagent's full timeline of many
+  entries and exceeds `MAX_EVENT_DATA_SIZE` after per-field truncation
+- **WHEN** the event is inserted
+- **THEN** the stored event's `data` SHALL still carry an `entries[]` array
+  containing the first entries, a `text` sentinel entry whose text names the hidden
+  count, and the last entries (including the final result), NOT a scalar
+  `{ __truncated }` placeholder
+- **AND** the stored event's ACTUAL serialized byte size SHALL be
+  ≤ `MAX_EVENT_DATA_SIZE` plus a small constant
+
+#### Scenario: Large non-entries string does not starve the timeline
+- **GIVEN** an over-ceiling subagent event where any of `data.args.prompt`,
+  `details.description`, or `data.partialResult.content[*].text` is large enough
+  that, uncapped, it would leave no room for `entries[]`
+- **WHEN** the event is inserted
+- **THEN** each of those strings SHALL be head+tail-capped to its bounded cap, the
+  reduced `entries[]` SHALL still retain the first and last entries (the timeline
+  is not starved), and the serialized `data` SHALL be ≤ `MAX_EVENT_DATA_SIZE` plus
+  a small constant
+
+#### Scenario: Shape-only match does not trigger reduction (no false positive)
+- **GIVEN** an over-ceiling event that is NOT a subagent tool event (no
+  `toolName === "Agent"`, no `details.agentId`) but happens to carry an array at
+  `data.details.entries`
+- **WHEN** the event is inserted
+- **THEN** the store SHALL NOT head+tail-reduce that array or cap its strings, and
+  SHALL bound the event via the `{ __truncated }` placeholder like any other
+  non-subagent event
+
+#### Scenario: Byte-accurate bound holds for escape/multi-byte-heavy input
+- **GIVEN** an over-ceiling subagent event whose entries/strings are dominated by
+  characters that expand under JSON serialization (quotes, backslashes, control
+  chars) or UTF-8 multi-byte characters (CJK, emoji)
+- **WHEN** the event is inserted
+- **THEN** the stored event's ACTUAL serialized byte size
+  (`Buffer.byteLength(JSON.stringify(data))`, computed by the TEST) SHALL be
+  ≤ `MAX_EVENT_DATA_SIZE` plus a small constant — a code-unit-only estimate SHALL
+  NOT be relied on as the bound
+
+#### Scenario: Base64 image does not OOM the reduction or broadcast
+- **GIVEN** an over-ceiling subagent event carrying a multi-megabyte base64 image
+  (an `{ data, mimeType }` block) inside `data.partialResult.content[*]` or inside
+  a kept entry
+- **WHEN** the event is inserted
+- **THEN** the image `data` string SHALL be head+tail-capped (or the event SHALL
+  fall back to `{ __truncated }`), the store SHALL NOT materialize a full
+  `JSON.stringify` of the multi-megabyte payload, and the stored event's actual
+  serialized byte size SHALL be ≤ `MAX_EVENT_DATA_SIZE` plus a small constant
+
+#### Scenario: Image-bearing NON-subagent event is bounded (byte-accurate detection)
+- **GIVEN** a non-subagent event whose `data` embeds a large base64 image such
+  that a code-unit estimate would under-count it below the ceiling
+- **WHEN** the event is inserted
+- **THEN** the byte-accurate walk SHALL count the image at its real size, detect
+  the event as over-ceiling, and replace `data` with the `{ __truncated }`
+  placeholder — the event SHALL NOT be stored at full size
+
+#### Scenario: Unreducible subagent event falls back to the placeholder
+- **GIVEN** an over-ceiling subagent-timeline event with an empty `entries[]` and
+  an envelope that remains over the ceiling even after all non-entries strings are
+  capped
+- **WHEN** the event is inserted
+- **THEN** the store SHALL replace `data` with the bounded `{ __truncated }`
+  placeholder and the stored serialized size SHALL be ≤ `MAX_EVENT_DATA_SIZE` plus
+  a small constant
+
+#### Scenario: Reduction does not mutate the in-flight event
+- **GIVEN** an over-ceiling subagent event whose `data` object is also referenced
+  by another observer (bridge / logger)
+- **WHEN** the store reduces it at ingest
+- **THEN** the store SHALL return a NEW event object and the caller's original
+  `event.data` (its `args`, `details`, and `entries`) SHALL be unchanged
+
+#### Scenario: Timeline array longer than the array-length limit is not clobbered
+- **GIVEN** a subagent timeline event whose `entries[]` has more than 20 entries
+- **WHEN** the event is truncated at ingest
+- **THEN** `entries[]` SHALL be reduced head+tail (kept entries + `text` sentinel),
+  and SHALL NOT be replaced with the string `"[array truncated]"`
+
+#### Scenario: Per-field truncation keeps head and tail
+- **GIVEN** a kept timeline entry whose stringified tool output exceeds the
+  per-field cap
+- **WHEN** the entry's fields are truncated
+- **THEN** the resulting string SHALL contain both the head and the tail of the
+  original separated by a `…hidden…` marker, and its length SHALL be bounded by
+  the per-field cap plus the marker
+
+#### Scenario: capString head+tail keeps a skill-invocation envelope parseable
+- **GIVEN** an over-long string that is a `<skill name=".." location="..">…</skill>`
+  invocation envelope
+- **WHEN** `capString` truncates it
+- **THEN** the closing `</skill>` tag (and the header + trailing args) SHALL remain
+  intact so the client's skill-block parser still parses it — the head+tail change
+  SHALL NOT sever the envelope
+
+#### Scenario: An entry whose input is a many-leaf object stays within its per-ENTRY budget
+- **GIVEN** a kept `tool` entry whose `input` is an OBJECT with many large string
+  leaves (plus a large `output`)
+- **WHEN** the entry is shrunk to its per-entry budget
+- **THEN** the entry's TOTAL serialized bytes SHALL be bounded by its per-entry
+  budget (the budget is enforced at the entry level, NOT as an independent
+  per-string-leaf cap that would sum to leafCount × cap)
+
+#### Scenario: Non-subagent oversized event is bounded by placeholder
+- **GIVEN** an over-ceiling event whose `data` does NOT carry a subagent
+  `entries[]` timeline
+- **WHEN** the event is inserted
 - **THEN** the stored event's `data` SHALL be replaced with a bounded placeholder
   (e.g. `{ __truncated: true, reason, approxBytes, eventType }`) and the stored
   event's serialized size SHALL be ≤ `MAX_EVENT_DATA_SIZE` plus a small constant
+
+#### Scenario: Pathological single huge final entry still bounded
+- **GIVEN** a subagent timeline whose reduction floor is reached (`K_TAIL` at its
+  minimum) and the single kept final entry's stringified form is still large
+- **WHEN** the event is inserted
+- **THEN** the per-entry head+tail floor SHALL apply to that entry so the stored
+  event's byte-accurate serialized size SHALL be ≤ `MAX_EVENT_DATA_SIZE` plus a
+  small constant (falling back to the placeholder if even that is insufficient)
 
 #### Scenario: Broadcast of an oversized event serializes a bounded message
 - **GIVEN** an over-ceiling event arriving via `event_forward`
 - **WHEN** the server broadcasts it to subscribers
 - **THEN** the serialized broadcast message SHALL be bounded (built from the
-  truncated stored event) and SHALL NOT trigger an unbounded `JSON.stringify`
+  reduced/truncated stored event) and SHALL NOT trigger an unbounded `JSON.stringify`
 
 #### Scenario: Size estimation does not itself allocate an unbounded string
-- **GIVEN** an event `data` of arbitrarily large aggregate size
-- **WHEN** the store measures whether it exceeds the ceiling
+- **GIVEN** an event `data` of arbitrarily large aggregate size (including a
+  single multi-megabyte string field)
+- **WHEN** the store measures whether it exceeds the ceiling (for detection, for
+  the entries budget, AND for the terminal bound proof)
 - **THEN** the measurement SHALL stop as soon as the running total crosses the
-  ceiling and SHALL NOT materialize a full serialization of the object
+  ceiling — short-circuiting a huge string via its code-unit lower bound — and
+  SHALL NOT materialize a full `JSON.stringify` of the object at any point
 
 #### Scenario: Under-ceiling events are stored unchanged
 - **GIVEN** an event whose `data` is within `MAX_EVENT_DATA_SIZE` after per-field
   truncation
 - **WHEN** the event is inserted
-- **THEN** the event SHALL be stored without the size-ceiling placeholder
+- **THEN** the event SHALL be stored without any reduction or placeholder
 
 ### Requirement: Depth-limited truncation does not return deep sub-trees raw
 The event store string truncation SHALL NOT return a value untruncated solely
@@ -193,3 +355,293 @@ whole. Base64 image data preservation (a `"data"` key with a sibling
   nested beyond the depth limit
 - **WHEN** the event is truncated
 - **THEN** the image `data` SHALL be preserved and NOT collapsed
+
+### Requirement: Superseded `tool_execution_update` events are collapsed at retention
+
+The in-memory event buffer SHALL drop a retained `tool_execution_update` for a
+`toolCallId` when a later update for the same `toolCallId` **subsumes** it, so
+that in the common case exactly one update per `toolCallId` is retained.
+
+Collapse SHALL be keyed strictly on `data.toolCallId`. An update event carrying
+no `toolCallId` SHALL be retained unconditionally (fail-open).
+
+**Subsumption test.** Let `p` be the currently retained update for a
+`toolCallId` and `s` the incoming one. Resolve each event's subagent details as
+`data.partialResult.details` ONLY — matching how the consumer reads an update. A
+top-level `data.details` SHALL NOT be used to resolve an update's details.
+
+- If NEITHER event carries resolved details, `s` SHALL subsume `p`
+  (the consumer path is an unconditional overwrite).
+- Otherwise `s` SHALL subsume `p` only when ALL of the following hold:
+  - every key present in `p`'s details is also present in `s`'s details AND holds
+    a value of the same JS type, because the consumer extracts each detail field
+    type-conditionally;
+  - when `p`'s `details.entries` is a non-empty array, `s`'s `details.entries` is
+    also a non-empty array;
+  - when `p` sets the rendered result, `s` SHALL also set it. An update sets the
+    rendered result either by yielding extractable text from
+    `partialResult.content` (a SIBLING of `details`) or by carrying a non-object
+    `partialResult`, which the consumer renders directly. Both sources SHALL be
+    considered; `content` is NOT the only one.
+- When `s` does not subsume `p`, BOTH SHALL be retained.
+
+The subsumption test SHALL compare the key SET generically. It SHALL NOT
+enumerate a hardcoded list of detail field names, so a field added to the
+consumer later is covered without changing this policy.
+
+**Creating-tick retention.** The FIRST update per `toolCallId` carrying
+`details.agentId` SHALL be retained and SHALL NOT be collapsed away, because the
+consumer derives some subagent fields on a FIRST-wins basis from whichever event
+creates the map entry. Retention per tool call is therefore at most the creating
+update plus the newest update, plus any non-subsumed intermediates.
+
+Collapse SHALL apply at RETENTION only. The event being inserted SHALL always be
+stored, so a caller that re-reads it by the returned `seq` (the broadcast path)
+observes it unchanged. Collapse SHALL NOT renumber surviving events; `getEvents`
+filters by seq and already tolerates seq gaps.
+
+Collapse SHALL NOT remove the highest-seq event in the buffer, so `getMaxSeq`
+never regresses.
+
+The retained-update index SHALL be keyed by sequence number, NEVER by array
+position, because the per-session trim rebuilds the event array wholesale and
+`tool_execution_update` is not an essential chat event. Removal SHALL be
+performed only after VERIFYING that the located entry still exists, is a
+`tool_execution_update`, and carries the same `toolCallId`; a failed lookup SHALL
+be a no-op. A negative or unresolved index SHALL NEVER be passed to an array
+removal.
+
+The index SHALL track the pinned creating sequence and the current newest
+sequence as INDEPENDENT values per `toolCallId`. A single sequence per
+`toolCallId` is insufficient: when the creating update is also the current
+newest, a subsuming successor would otherwise be free to collapse the very event
+the creating-tick rule pins.
+
+Collapse SHALL be understood as conditional on events retaining a `toolCallId`.
+An event reduced to the bounded truncation placeholder carries no `toolCallId`
+and SHALL therefore be retained unconditionally, yielding no collapse for that
+event.
+
+#### Scenario: Successive subsuming updates for one tool call retain only the newest
+
+- **GIVEN** a session buffer containing `tool_execution_start` for `toolCallId`
+  "t1" followed by `tool_execution_update` events for "t1" at seq 2, 3 and 4,
+  each carrying the same detail keys
+- **WHEN** a further subsuming `tool_execution_update` for "t1" is inserted at
+  seq 5
+- **THEN** the buffer SHALL contain exactly ONE `tool_execution_update` for "t1"
+- **AND** it SHALL be the seq-5 event
+- **AND** the `tool_execution_start` at seq 1 SHALL still be present
+
+#### Scenario: A non-subsuming tick retains both events
+
+- **GIVEN** a retained `tool_execution_update` for "t1" whose details carry
+  `agentSessionId`
+- **WHEN** a later `tool_execution_update` for "t1" arrives WITHOUT
+  `agentSessionId`
+- **THEN** BOTH updates SHALL be retained
+- **AND** a subsequent update that carries `agentSessionId` again SHALL subsume
+  only the update it is compared against, never a non-subsumed earlier one
+
+#### Scenario: An empty `entries` tick does not evict a populated timeline
+
+- **GIVEN** a retained `tool_execution_update` for "t1" whose
+  `details.entries` is a non-empty array
+- **WHEN** a later `tool_execution_update` for "t1" arrives with
+  `details.entries` as an EMPTY array
+- **THEN** BOTH updates SHALL be retained
+
+#### Scenario: Updates for different tool calls do not collapse each other
+
+- **GIVEN** interleaved `tool_execution_update` events for `toolCallId` "t1" and
+  "t2"
+- **WHEN** all of them are inserted
+- **THEN** the buffer SHALL retain the newest update for "t1" AND the newest
+  update for "t2"
+
+#### Scenario: Replaying the collapsed buffer yields the same client state
+
+- **GIVEN** a sequence of `tool_execution_update` events for one `toolCallId`
+  that INCLUDES non-subsuming ticks — one omitting `agentSessionId`, one whose
+  `details.entries` is empty, one carrying no extractable
+  `partialResult.content`, and one whose `partialResult` is a plain string
+  followed by a structured update that sets no rendered result
+- **AND** the folded subsequence contains NO `tool_execution_end` carrying
+  `result` or `details`, because such an event overwrites both fields and would
+  satisfy the assertion independently of the collapsed updates
+- **WHEN** the full uncollapsed sequence is folded by the client event reducer,
+  and separately the collapsed buffer is folded by the same reducer
+- **THEN** the resulting message `result`, message `toolDetails`, and `subagents`
+  map entries SHALL be equivalent
+- **AND** the subagent entry's `type` and `description` SHALL be equal by VALUE,
+  not merely present
+- **AND** the `subagents` map SHALL still be reachable under BOTH the agent id
+  and the `agentSessionId` key
+- **AND** this scenario SHALL fail if the subsumption gate or the creating-tick
+  retention is removed — a fixture of uniform full snapshots does NOT satisfy
+  this scenario
+
+#### Scenario: The entry-creating update is never collapsed away
+
+- **GIVEN** the first `tool_execution_update` for "t1" carrying `details.agentId`
+  with a given `subagentType` and `description`
+- **WHEN** many later subsuming updates for "t1" are inserted, including some
+  carrying a different `subagentType`
+- **THEN** the creating update SHALL still be present in the buffer
+- **AND** the folded subagent entry's `type` and `description` SHALL match the
+  creating update's values
+
+#### Scenario: Update without a toolCallId is retained
+
+- **WHEN** a `tool_execution_update` carrying no `data.toolCallId` is inserted
+- **THEN** the store SHALL retain it and SHALL NOT drop any other event on its
+  behalf
+
+#### Scenario: A trim that removed the retained update does not corrupt a later collapse
+
+- **GIVEN** a retained `tool_execution_update` for "t1" that the per-session trim
+  subsequently drops (updates are non-essential and the trim rebuilds the array)
+- **WHEN** a later `tool_execution_update` for "t1" is inserted
+- **THEN** the stale index entry SHALL resolve to nothing and the insert SHALL
+  proceed as a no-op collapse
+- **AND** no other event SHALL be removed — in particular the buffer's highest-seq
+  event SHALL still be present and `getMaxSeq(sessionId)` SHALL be unchanged by
+  the collapse step
+
+#### Scenario: The newest event in the buffer is never collapsed away
+
+- **GIVEN** a buffer whose highest-seq event is a `tool_execution_update`
+- **WHEN** collapse runs
+- **THEN** `getMaxSeq(sessionId)` SHALL return that event's seq, unchanged
+
+#### Scenario: Inserted event is readable by its returned seq
+
+- **WHEN** `insertEvent` returns `seq` for a `tool_execution_update` that
+  superseded an earlier one
+- **THEN** `getEvent(sessionId, seq)` SHALL return that event, so the broadcast
+  path re-reads it successfully
+
+#### Scenario: Collapse does not scan the whole buffer per insert
+
+- **GIVEN** a session buffer already holding a large tail of NON-update events
+- **WHEN** many subsuming `tool_execution_update` events are inserted,
+  INTERLEAVED across many distinct `toolCallId`s so the buffer length stays large
+- **THEN** the buffer SHALL hold at most the creating and newest update per
+  `toolCallId` at every observable point
+- **AND** the total collapse work SHALL NOT be proportional to
+  `events × buffer length`
+- **AND** the lookup SHALL NOT be a forward linear scan from the head of the
+  buffer — a single-`toolCallId` fixture keeps the buffer short and CANNOT
+  detect this, so it does not satisfy this scenario
+
+#### Scenario: A pinned creating update is not collapsed when it is also the newest
+
+- **GIVEN** a `toolCallId` whose only retained update is the entry-creating one
+- **WHEN** a subsuming `tool_execution_update` for that `toolCallId` is inserted
+- **THEN** the creating update SHALL still be retained
+- **AND** the newly inserted update SHALL also be retained
+
+#### Scenario: The collapse index does not outlive its session buffer
+
+- **GIVEN** sessions whose buffers are removed by LRU eviction and by
+  `deleteEventsForSession`
+- **WHEN** many such sessions are cycled through the store
+- **THEN** the per-session collapse index SHALL be released with each buffer, so
+  it SHALL NOT retain an entry per `toolCallId` of every evicted session
+- **AND** a session re-ingested after eviction SHALL NOT act on any index entry
+  left over from its previous residency
+
+#### Scenario: Non-update event types are unaffected
+
+- **GIVEN** a buffer containing `message_start`, `message_end`,
+  `tool_execution_start` and `tool_execution_end` events
+- **WHEN** collapse runs
+- **THEN** none of those events SHALL be dropped by the collapse policy
+
+#### Scenario: The essential chat head still survives with collapse enabled
+
+- **GIVEN** a session whose first stored events are `message_start` and
+  `message_end`
+- **WHEN** a subagent flood of `tool_execution_update` events is inserted with
+  collapse enabled and the buffer is driven past the per-session cap
+- **THEN** the essential head SHALL still be present and the buffer length SHALL
+  still be bounded by `cap + TRIM_SLACK`
+
+### Requirement: Collapse instrumentation
+
+The in-memory event store SHALL make the collapse path observable. `getTrimStats()`
+SHALL expose a cumulative process-lifetime count of `tool_execution_update`
+events dropped by collapse, alongside the existing trim and eviction counters.
+The counter SHALL NOT reset on read.
+
+`getTrimStats()` is serialized onto the `/api/health` response as `storeTrim`.
+The new counter SHALL be an ADDITIVE field: no existing field of that payload
+changes name, type, or meaning.
+
+The health route's declaration of the store-stats shape SHALL be DERIVED from the
+store's exported stats type rather than restated inline, so the route cannot
+typecheck against a stale shape when the stats payload gains a field.
+
+#### Scenario: Collapsed updates are counted
+
+- **WHEN** N superseded `tool_execution_update` events are dropped by collapse
+- **THEN** `getTrimStats()` SHALL report a cumulative collapsed count of N
+
+#### Scenario: Non-subsuming ticks are not counted as collapsed
+
+- **WHEN** an update is retained because it does not subsume its predecessor
+- **THEN** the collapsed count SHALL NOT increment
+
+#### Scenario: Counter is independent of trim and eviction counters
+
+- **WHEN** collapse drops an update AND a per-session trim drops a different
+  event
+- **THEN** the collapsed count and the trimmed count SHALL each reflect only
+  their own policy
+
+#### Scenario: The health payload carries the new counter additively
+
+- **WHEN** `/api/health` is requested
+- **THEN** `storeTrim` SHALL include the collapsed counter
+- **AND** every previously present `storeTrim` field SHALL still be present with
+  its original name and type
+
+### Requirement: A collapsed buffer yields a transmissible catch-up replay frame
+
+The catch-up `event_replay` frame built from a collapsed session buffer SHALL
+serialize below `MAX_WS_BUFFER` for a buffer whose superseded
+`tool_execution_update` events have been collapsed.
+
+Collapse reduces the buffer that the reconnect catch-up path reads
+(`clearReplaying` → `getEvents(sessionId, lastReplayedSeq + 1)` → a single
+`event_replay` frame). That reduction is a CONSEQUENCE of the retention policy,
+not a transport mechanism, and this requirement exists so the consequence is
+asserted rather than assumed — an unasserted side effect regresses silently.
+
+This requirement does NOT introduce a byte budget on the transport. Bounding the
+frame by construction (chunking the catch-up tail, measuring serialized frame
+bytes at send) is a separate transport change; see design D9.
+
+#### Scenario: The catch-up frame for a collapsed buffer fits the socket budget
+
+- **WHEN** a session buffer has received many superseded `tool_execution_update`
+  events across a small number of `toolCallId`s
+- **AND** a subscriber reconnects such that the catch-up tail is built from that
+  buffer
+- **THEN** the serialized `event_replay` frame SHALL be smaller than
+  `MAX_WS_BUFFER`
+
+#### Scenario: The same fixture exceeds the budget without collapse
+
+- **WHEN** the identical event sequence is retained with collapse disabled
+- **THEN** the serialized catch-up frame SHALL exceed `MAX_WS_BUFFER`
+- **AND** this scenario SHALL fail if collapse is made a no-op — a frame-size
+  assertion that passes in both configurations proves nothing
+
+#### Scenario: Collapse does not alter which events the catch-up tail selects
+
+- **WHEN** the catch-up tail is built after collapse
+- **THEN** it SHALL contain every event with `seq > lastReplayedSeq` that the
+  buffer still retains
+- **AND** the newest update per `toolCallId` SHALL be among them
+

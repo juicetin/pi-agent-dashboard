@@ -1,8 +1,9 @@
 import type { OpenSpecArtifact } from "@blackbelt-technology/pi-dashboard-shared/types.js";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { PreviewTab } from "../components/MarkdownPreviewView.js";
-import { getApiBase } from "../lib/api-context.js";
-import { t } from "../lib/i18n";
+import type { PreviewTab } from "../components/preview/MarkdownPreviewView.js";
+import { getApiBase } from "../lib/api/api-context.js";
+import { t } from "../lib/i18n/i18n.js";
+import { logRejection } from "../lib/report-error.js";
 
 const LETTER_MAP: Record<string, string> = {
   proposal: "P",
@@ -118,7 +119,9 @@ export function useOpenSpecReader(
   }, [cwd, changeName, archive]);
 
   useEffect(() => {
-    loadContent(activeTab);
+    // Effect callbacks must return void/cleanup, so the promise is discarded
+    // with a stated handler. See change: cleanup-client-plugin-promises.
+    void loadContent(activeTab).catch(logRejection("useOpenSpecReader.loadContent"));
     return () => { abortRef.current?.abort(); };
   }, [activeTab, loadContent]);
 

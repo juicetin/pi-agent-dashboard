@@ -1,4 +1,4 @@
-import { useT, useUiPrimitive } from "@blackbelt-technology/dashboard-plugin-runtime";
+import { useT, useUiPrimitive, useUiPrimitiveOrNull } from "@blackbelt-technology/dashboard-plugin-runtime";
 // AgentMetricSlot is a slot CONSUMER (Phase-2 decorator slot), not a primitive
 // — it stays as a direct import. See add-plugin-ui-primitive-registry Decision 4.
 import { AgentMetricSlot } from "@blackbelt-technology/pi-dashboard-client-utils/extension-ui/AgentMetricSlot";
@@ -8,6 +8,7 @@ import { mdiCallSplit, mdiCodeBraces, mdiCodeTags, mdiEyeOffOutline, mdiEyeOutli
 import { Icon } from "@mdi/react";
 import React, { useEffect, useState } from "react";
 import { FlowAgentDetail } from "./FlowAgentDetail.js";
+import { formatCost } from "./format-cost.js";
 
 /**
  * State of the agent-source fetch for the document-icon popover.
@@ -19,14 +20,6 @@ import { FlowAgentDetail } from "./FlowAgentDetail.js";
  *
  * See change: add-ui-popover-primitive.
  */
-/**
- * Format an accumulated USD cost, matching the pi-flows TUI precision
- * (`agent-card.ts`): two decimals at or above $1, four decimals sub-dollar.
- * Exported so `FlowAgentDetail` renders identical values (DRY, D4).
- */
-export function formatCost(n: number): string {
-  return `$${n >= 1 ? n.toFixed(2) : n.toFixed(4)}`;
-}
 
 type AgentSourceState =
   | { kind: "idle" }
@@ -53,6 +46,9 @@ export function FlowAgentCard({
   const stepId = agent.stepId || agent.agentName;
   const t = useT();
   const AgentCardShell = useUiPrimitive(UI_PRIMITIVE_KEYS.agentCard);
+  // Soft lookup: production registers `logBlock` (main.tsx); when absent the
+  // code-node preview falls back to the padded placeholder below.
+  const LogBlock = useUiPrimitiveOrNull(UI_PRIMITIVE_KEYS.logBlock);
   const formatTokens = useUiPrimitive(UI_PRIMITIVE_KEYS.formatTokens);
   const formatDuration = useUiPrimitive(UI_PRIMITIVE_KEYS.formatDuration);
   const Dialog = useUiPrimitive(UI_PRIMITIVE_KEYS.dialog);
@@ -219,14 +215,22 @@ export function FlowAgentCard({
         {/* Body: code nodes show a Log preview (program logs); agent nodes
             show their recent tool calls. */}
         {isCodeKind ? (
-          <div className="mt-1 space-y-0">
-            {logLines.slice(-3).map((line, i) => (
-              <div key={i} className="text-[10px] text-[var(--text-tertiary)] truncate font-mono" title={line}>{line}</div>
-            ))}
-            {Array.from({ length: Math.max(0, 3 - Math.min(3, logLines.length)) }).map((_, i) => (
-              <div key={`pad-${i}`} className="text-[10px]">&nbsp;</div>
-            ))}
-          </div>
+          logLines.length > 0 && LogBlock ? (
+            <div className="mt-1">
+              <LogBlock
+                label={t("programLog", undefined, "Program log")}
+                text={logLines.join("\n")}
+                preview
+                previewLines={3}
+              />
+            </div>
+          ) : (
+            <div className="mt-1 space-y-0">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <div key={`pad-${i}`} className="text-[10px]">&nbsp;</div>
+              ))}
+            </div>
+          )
         ) : (
           <div className="mt-1 space-y-0">
             {agent.recentTools.map((tool, i) => (

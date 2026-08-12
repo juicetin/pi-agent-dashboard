@@ -1,8 +1,8 @@
-import { describe, it, expect, vi, afterEach, beforeAll } from "vitest";
-import { render, screen, fireEvent, cleanup } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import React from "react";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { MultiselectRenderer } from "../interactive-renderers/MultiselectRenderer.js";
-import { ThemeProvider } from "../ThemeProvider.js";
+import { ThemeProvider } from "../settings/ThemeProvider.js";
 
 afterEach(cleanup);
 
@@ -81,6 +81,21 @@ describe("MultiselectRenderer", () => {
       expect(onRespond).toHaveBeenCalledWith({ values: ["a.ts", "c.ts"] });
     });
 
+
+    it("always offers a visible free-form custom answer", () => {
+      const onRespond = vi.fn();
+      render(<MultiselectRenderer {...baseProps} status="pending" onRespond={onRespond} onCancel={vi.fn()} />);
+
+      expect(screen.getByPlaceholderText("Type custom answer…")).toBeTruthy();
+      fireEvent.change(screen.getByPlaceholderText("Type custom answer…"), { target: { value: "  d.ts  " } });
+      fireEvent.click(screen.getByText("Add"));
+      fireEvent.change(screen.getByPlaceholderText("Type custom answer…"), { target: { value: "d.ts" } });
+      fireEvent.click(screen.getByText("Add"));
+      fireEvent.click(screen.getByText("Submit (1)"));
+
+      expect(onRespond).toHaveBeenCalledWith({ values: ["d.ts"] });
+    });
+
     it("submits empty array when nothing selected", () => {
       const onRespond = vi.fn();
       render(
@@ -134,6 +149,23 @@ describe("MultiselectRenderer", () => {
       expect(screen.getByText("c.ts")).toBeTruthy();
       // Count summary present.
       expect(screen.getByText(/2 of 3/)).toBeTruthy();
+    });
+
+
+    it("shows resolved custom answers and counts them", () => {
+      render(
+        <MultiselectRenderer
+          {...baseProps}
+          status="resolved"
+          result={{ values: ["a.ts", "d.ts"] }}
+          onRespond={vi.fn()}
+          onCancel={vi.fn()}
+        />,
+      );
+
+      expect(screen.getByText("d.ts")).toBeTruthy();
+      expect(screen.getByText("Custom response")).toBeTruthy();
+      expect(screen.getByText(/2 of 4/)).toBeTruthy();
     });
 
     it("shows a 0 of N count when nothing selected", () => {

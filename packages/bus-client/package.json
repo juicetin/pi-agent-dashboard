@@ -1,6 +1,11 @@
 {
   "name": "@blackbelt-technology/pi-dashboard-bus-client",
-  "version": "0.5.4",
+  "version": "0.7.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/BlackBeltTechnology/pi-agent-dashboard",
+    "directory": "packages/bus-client"
+  },
   "description": "Headless, ticket-authenticated WebSocket bus client for the pi-dashboard control plane. Typed command send, correlated awaits, bus-consistent reads.",
   "type": "module",
   "main": "src/index.ts",
@@ -10,7 +15,11 @@
     "./*": "./src/*"
   },
   "files": [
-    "src/"
+    "src/",
+    "!**/__tests__",
+    "!**/*.test.ts",
+    "!**/*.test.tsx",
+    "!src/codegen"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
@@ -19,11 +28,14 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@blackbelt-technology/pi-dashboard-shared": "^0.5.4",
+    "@blackbelt-technology/pi-dashboard-shared": "^0.7.0",
     "ws": "^8.18.0"
   },
   "devDependencies": {
     "@types/ws": "^8.18.1",
     "typescript": "^5.9.3"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

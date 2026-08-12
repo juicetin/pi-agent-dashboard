@@ -1,5 +1,25 @@
 /** Source environment where a pi session is running */
-export type SessionSource = "tui" | "zed" | "tmux" | "dashboard" | "terminal" | "unknown";
+export type SessionSource =
+  | "tui"
+  | "zed"
+  | "tmux"
+  | "dashboard"
+  | "terminal"
+  | "embed"
+  | "unknown";
+
+/**
+ * Orthogonal disposability marker for a session, independent of `source`.
+ * `"ephemeral"` = a machine-fronted session the server MAY reclaim (idle
+ * reaper + active-session caps act ONLY on these); `"durable"` = an
+ * interactive session that keeps today's forever-alive semantics. Absent is
+ * treated as `"durable"` (see `effectiveLifecyclePolicy` / `isEphemeral`), so
+ * legacy bridges and pre-change `.meta.json` load unchanged. Any front (embed
+ * widget, chat gateway, automation) may set it. Persisted to `.meta.json` and
+ * restored on cold start so a restart never reclassifies an ephemeral session.
+ * See change: add-embed-session-lifecycle.
+ */
+export type LifecyclePolicy = "ephemeral" | "durable";
 
 /** Current status of a session */
 export type SessionStatus = "active" | "idle" | "streaming" | "ended";
@@ -58,6 +78,16 @@ export interface GitStatus {
   behind: number;
 }
 
+/** Severity a notification may carry. See change: split-notify-from-prompt-request. */
+export type NotifyLevel = "info" | "success" | "warning" | "error";
+
+/** One retained notification row. See change: split-notify-from-prompt-request. */
+export interface NotifyLogEntry {
+  notifyId: string;
+  message: string;
+  level?: NotifyLevel;
+}
+
 /** A dashboard session representing a connected pi instance */
 export interface DashboardSession {
   id: string;
@@ -70,6 +100,14 @@ export interface DashboardSession {
    */
   nameSource?: "auto" | "user";
   source: SessionSource;
+  /**
+   * Disposability marker. Absent ⇒ `"durable"`. Only `"ephemeral"` sessions
+   * are governed by the idle reaper and active-session caps. Read via
+   * `effectiveLifecyclePolicy` / `isEphemeral`, never compared raw (so absent
+   * defaults correctly). Persisted to `.meta.json`; restored on cold start.
+   * See change: add-embed-session-lifecycle.
+   */
+  lifecyclePolicy?: LifecyclePolicy;
   status: SessionStatus;
   model?: string;
   thinkingLevel?: string;
@@ -85,6 +123,23 @@ export interface DashboardSession {
    * See change: session-card-last-activity-badge.
    */
   lastActivityAt?: number;
+  /**
+   * Epoch ms of the latest bridge-normalized `agent_settled` (the version-
+   * agnostic "run at rest" mark — native on pi ≥ 0.80.4, synthesized on the
+   * floor). Server-captured in `event-wiring.ts`; NOT persisted; cold-start
+   * seeded from `events.jsonl` mtime in `session-scanner.ts` so a rehydrated
+   * quiescent session is evaluable without waiting for a fresh run to settle.
+   * Read by the lifecycle quiescence gate (never an inferred `status`).
+   * See change: add-embed-session-lifecycle.
+   */
+  lastSettledAt?: number;
+  /**
+   * Epoch ms of the latest `agent_start`. Newer than `lastSettledAt` ⇒ the
+   * session is mid-run (not at rest). Server-captured in `event-wiring.ts`; NOT
+   * persisted and NOT cold-start seeded (a rehydrated session has no run in
+   * flight ⇒ at rest). See change: add-embed-session-lifecycle.
+   */
+  lastRunStartedAt?: number;
   /**
    * Server-managed per-session unread bit. `true` when an attention-worthy
    * event (turn finished, ask_user appeared, agent_end with error) fired
@@ -147,6 +202,16 @@ export interface DashboardSession {
    * See change: gate-session-worktree-button-on-git.
    */
   isGitRepo?: boolean;
+  /**
+   * Server-internal: the bridge has reported worktree state at least once,
+   * INCLUDING the cleared (`null`) case for a non-worktree session. Makes
+   * "not a worktree" distinguishable from "not yet reported", which the
+   * OpenSpec auto-attach locality gate needs to be reject-capable. In-memory
+   * only — NEVER persisted to `.meta.json` and NEVER included in a
+   * `broadcastSessionUpdated` payload.
+   * See change: scope-openspec-auto-attach-to-session-cwd (design D8).
+   */
+  gitWorktreeReported?: boolean;
   /**
    * Server-managed flag set by any of three probe sites: (1) the bridge's
    * 30 s VCS tick (`existsSync(cwd) === false`), (2) the server's session
@@ -264,6 +329,14 @@ export interface DashboardSession {
    * See change: chat-markdown-local-images-and-math.
    */
   assets?: Record<string, { data: string; mimeType: string }>;
+  /**
+   * Bounded per-session notification history (cap 50, oldest evicted).
+   * Transcript history only — NEVER a pending ask: it does not feed
+   * `hasPendingPromptRequests`, `hasPendingAsk` or the `currentTool` fold, and
+   * it is retained after the session ends.
+   * See change: split-notify-from-prompt-request.
+   */
+  notifyLog?: NotifyLogEntry[];
   /**
    * Mirror of pi's native steering + follow-up queues for this session.
    * Populated from pi's `queue_update` event, forwarded by the bridge.
@@ -767,6 +840,12 @@ export interface GoalRecord {
   driverSessionId?: string;
   createdAt: number;
   updatedAt: number;
+  /** Total USD spend across this goal's linked sessions, **server-derived at
+   *  read time** (Σ `DashboardSession.cost` over `sessionIds`). Never persisted
+   *  to the goals file, never bridge-sent — same server-join convention as
+   *  `groupId`. Optional; absent on legacy records / pre-scan cold start.
+   *  See change: fix-goal-detail-turns-and-spend. */
+  totalSpendUsd?: number;
 }
 
 /** Shape of the on-disk goals file under the dashboard data dir.

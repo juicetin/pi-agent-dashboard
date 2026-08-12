@@ -1,8 +1,8 @@
 import { mdiAlertCircle, mdiCheckboxMarkedOutline, mdiCheckCircle, mdiCommentQuestion, mdiFormatListBulleted, mdiFormTextbox, mdiRadioboxMarked, mdiViewListOutline } from "@mdi/js";
 import { Icon } from "@mdi/react";
 import type React from "react";
-import { t as i18nT } from "../../lib/i18n";
-import { MarkdownContent } from "../MarkdownContent.js";
+import { t as i18nT } from "../../lib/i18n/i18n.js";
+import { MarkdownContent } from "../preview/MarkdownContent.js";
 import type { ToolRendererProps } from "./types.js";
 
 const methodIcons: Record<string, string> = {
@@ -139,6 +139,7 @@ export function AskUserToolRenderer(props: ToolRendererProps) {
 
   // Parse the result to extract the user's response
   let userResponse: string | undefined;
+  let userResponses: string[] | undefined;
   if (result) {
     const match = result.match(/User responded:\s*(.*)/s);
     if (match) {
@@ -148,6 +149,8 @@ export function AskUserToolRenderer(props: ToolRendererProps) {
           userResponse = parsed ? "Yes" : "No";
         } else if (typeof parsed === "string") {
           userResponse = parsed;
+        } else if (Array.isArray(parsed)) {
+          userResponses = parsed.map(String);
         } else if (parsed && typeof parsed === "object" && "value" in parsed) {
           userResponse = String(parsed.value);
         } else {
@@ -161,6 +164,10 @@ export function AskUserToolRenderer(props: ToolRendererProps) {
 
   const isError = status === "error";
   const isComplete = status === "complete";
+  const responses = userResponses ?? (userResponse === undefined ? [] : [userResponse]);
+  const unmatchedResponses = options
+    ? responses.filter((response) => !options.includes(response))
+    : responses;
 
   return (
     <div className="space-y-2">
@@ -188,7 +195,7 @@ export function AskUserToolRenderer(props: ToolRendererProps) {
       {options && options.length > 0 && status !== "running" && (
         <div className="flex flex-wrap gap-1">
           {options.map((opt, i) => {
-            const isSelected = isComplete && userResponse === opt;
+            const isSelected = isComplete && responses.includes(opt);
             return (
               <span
                 key={i}
@@ -205,12 +212,12 @@ export function AskUserToolRenderer(props: ToolRendererProps) {
         </div>
       )}
 
-      {/* Response (for non-select methods like input/confirm) */}
-      {isComplete && userResponse !== undefined && !(options && options.length > 0) && (
+      {/* Responses not represented by a listed option, including custom answers. */}
+      {isComplete && unmatchedResponses.length > 0 && (
         <div className="flex items-center gap-1.5 text-xs">
           <Icon path={mdiCheckCircle} size={0.45} className="text-green-400 shrink-0" />
           <span className="text-green-400 font-medium">{i18nT("common.response", undefined, "Response:")}</span>
-          <span className="text-[var(--text-primary)]">{userResponse}</span>
+          <span className="text-[var(--text-primary)]">{unmatchedResponses.join(", ")}</span>
         </div>
       )}
 

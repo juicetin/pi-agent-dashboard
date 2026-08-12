@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { PreferencesStore } from "../preferences-store.js";
-import { createSessionOrderManager } from "../session-order-manager.js";
+import type { PreferencesStore } from "../persistence/preferences-store.js";
+import { createSessionOrderManager } from "../session/session-order-manager.js";
 
 function createMockPreferencesStore(initialOrder: Record<string, string[]> = {}): PreferencesStore {
   let order = { ...initialOrder };
@@ -23,6 +23,7 @@ function createMockPreferencesStore(initialOrder: Record<string, string[]> = {})
     setWorkspaceCollapsed: vi.fn(() => false),
     addFolderToWorkspace: vi.fn(() => false),
     removeFolderFromWorkspace: vi.fn(() => false),
+    moveFolderToWorkspace: vi.fn(() => false),
     reorderWorkspaceFolders: vi.fn(() => false),
     reorderWorkspaces: vi.fn(() => false),
     flush: vi.fn(),

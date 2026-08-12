@@ -95,15 +95,32 @@ export function isEligible(state: {
 }
 
 /**
+ * Normalize a name with pi's own session-name sanitization: collapse internal
+ * newlines to single spaces and trim. pi applies this before it stores /
+ * broadcasts a name, so `session_info_changed` carries the sanitized form. The
+ * bridge records the raw title it self-applied, so both sides MUST be
+ * normalized before comparison or a newline-bearing self-title would look
+ * external. See change: adopt-pi-074-080-features (A.2).
+ */
+export function sanitizeSessionName(name: string): string {
+  return name.replace(/[\r\n]+/g, " ").trim();
+}
+
+/**
  * Classify an observed session-name value as self-applied (the bridge's own
  * auto-name) or external (a dashboard / in-pi rename). The bridge records the
  * exact title it self-applied; anything else is external → provenance `"user"`.
+ * Both sides are sanitized (newline-collapsed + trimmed) so a self-applied
+ * title containing internal newlines still matches the sanitized name pi
+ * carries in `session_info_changed`. See change: adopt-pi-074-080-features (A.2).
  */
 export function classifyNameChange(
   observed: string,
   lastSelfApplied: string | undefined,
 ): "self" | "external" {
-  if (lastSelfApplied !== undefined && observed === lastSelfApplied) return "self";
+  if (lastSelfApplied !== undefined && sanitizeSessionName(observed) === sanitizeSessionName(lastSelfApplied)) {
+    return "self";
+  }
   return "external";
 }
 
@@ -114,10 +131,29 @@ export type GenerateResult =
 /** streamSimple's minimal shape (a subset of pi-ai's export). */
 export type StreamSimpleFn = (model: unknown, context: unknown, options: unknown) => AsyncIterable<any>;
 
+/**
+ * Provider headers as pi 0.84.0+ returns them: a `null` value is a deletion
+ * MARKER, not a missing header. pi-ai consumes markers to suppress a header it
+ * would otherwise inject (e.g. a placeholder OpenAI key that must not reach
+ * Cloudflare AI Gateway), so markers are forwarded unchanged rather than
+ * stripped or stringified. See change: update-pi-core-0-84-adopt-apis.
+ */
+export type ProviderHeaders = Record<string, string | null>;
+
+/**
+ * True when at least one header carries a usable value. Distinct from
+ * `Object.keys(headers).length > 0`, which counts deletion markers as
+ * credentials and stays true for a null-only map. See design D4.
+ */
+export function hasUsableHeaders(headers: ProviderHeaders | undefined): boolean {
+  if (!headers) return false;
+  return Object.values(headers).some((v) => typeof v === "string" && v.length > 0);
+}
+
 /** The registry surface the namer needs (subset of pi's ModelRegistry). */
 export interface NamerRegistry {
   find(provider: string, modelId: string): unknown;
-  getApiKeyAndHeaders(model: unknown): Promise<{ apiKey?: string; headers?: Record<string, string> }>;
+  getApiKeyAndHeaders(model: unknown): Promise<{ apiKey?: string; headers?: ProviderHeaders }>;
 }
 
 function errMsg(e: unknown): string {
@@ -158,7 +194,7 @@ export async function generateTitle(deps: {
   if (!model) return { ok: false, hardError: true, reason: `model '${modelRef}' not found in registry` };
 
   let apiKey: string | undefined;
-  let headers: Record<string, string> | undefined;
+  let headers: ProviderHeaders | undefined;
   try {
     ({ apiKey, headers } = await registry.getApiKeyAndHeaders(model));
   } catch (e) {
@@ -166,7 +202,7 @@ export async function generateTitle(deps: {
     // not wire → cannot authenticate → hard error (no crash, no tight loop).
     return { ok: false, hardError: true, reason: `cannot authenticate '${modelRef}': ${errMsg(e)}` };
   }
-  if (!apiKey && !(headers && Object.keys(headers).length > 0)) {
+  if (!apiKey && !hasUsableHeaders(headers)) {
     return { ok: false, hardError: true, reason: `no usable credentials for '${modelRef}' (OAuth-only?)` };
   }
 

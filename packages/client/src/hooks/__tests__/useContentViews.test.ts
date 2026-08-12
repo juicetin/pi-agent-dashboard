@@ -8,15 +8,15 @@
 
 import { act, renderHook } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { encodeFolderPath } from "../../lib/folder-encoding.js";
+import { encodeFolderPath } from "../../lib/util/folder-encoding.js";
 import { useContentViews } from "../useContentViews.js";
 
 describe("useContentViews", () => {
-  it("handleOpenPiResources navigates to the Directory Settings page", () => {
+  it("handleOpenDirectorySettings navigates to the Directory Settings page", () => {
     const navigate = vi.fn();
     const { result } = renderHook(() => useContentViews({ navigate }));
 
-    act(() => result.current.handleOpenPiResources("/some/cwd"));
+    act(() => result.current.handleOpenDirectorySettings("/some/cwd"));
 
     expect(navigate).toHaveBeenCalledOnce();
     expect(navigate).toHaveBeenCalledWith(`/folder/${encodeFolderPath("/some/cwd")}/settings`);

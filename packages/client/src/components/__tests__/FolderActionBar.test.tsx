@@ -9,12 +9,12 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { WorktreeInitStatus } from "../../lib/git-api.js";
-import { FolderActionBar } from "../FolderActionBar.js";
+import type { WorktreeInitStatus } from "../../lib/git/git-api.js";
+import { FolderActionBar } from "../folder/FolderActionBar.js";
 
 const { fetchWorktreeInitStatus } = vi.hoisted(() => ({ fetchWorktreeInitStatus: vi.fn() }));
-vi.mock("../../lib/git-api.js", async () => {
-  const actual = await vi.importActual<typeof import("../../lib/git-api.js")>("../../lib/git-api.js");
+vi.mock("../../lib/git/git-api.js", async () => {
+  const actual = await vi.importActual<typeof import("../../lib/git/git-api.js")>("../../lib/git/git-api.js");
   return { ...actual, fetchWorktreeInitStatus };
 });
 
@@ -31,10 +31,6 @@ beforeEach(() => {
 function renderBar(overrides: Partial<React.ComponentProps<typeof FolderActionBar>> = {}) {
   const props: React.ComponentProps<typeof FolderActionBar> = {
     cwd: "/repo",
-    terminalCount: 0,
-    onOpenTerminals: () => {},
-    onOpenEditor: () => {},
-    onOpenPiResources: () => {},
     ...overrides,
   };
   return render(<FolderActionBar {...props} />);
@@ -53,9 +49,14 @@ describe("FolderActionBar — spawn buttons relocated", () => {
     expect(screen.queryByTestId("folder-spawn-worktree-btn")).toBeNull();
   });
 
-  it("still renders the Terminals button", () => {
-    renderBar({ terminalCount: 3 });
-    expect(screen.getByText(/Terminals\(3\)/)).toBeTruthy();
+  it("does NOT render the Terminals button (removed — reachable from Directory home / ChatView)", () => {
+    renderBar();
+    expect(screen.queryByText(/Terminals\(/)).toBeNull();
+  });
+
+  it("does NOT render the Editor button (removed — reachable from Directory home / ChatView)", () => {
+    renderBar();
+    expect(screen.queryByText(/Editor/)).toBeNull();
   });
 });
 
@@ -94,5 +95,35 @@ describe("FolderActionBar — init controls per state (single shared probe)", ()
     renderBar({ onInitializeProject: vi.fn() });
     await waitFor(() => expect(fetchWorktreeInitStatus).toHaveBeenCalled());
     expect(fetchWorktreeInitStatus).toHaveBeenCalledTimes(1);
+  });
+});
+
+// add-folder-actions-menu — the Directory Settings cog moves into the folder
+// actions menu, so a configured folder with no pending init and no broken
+// sessions leaves the bar with nothing to show. Scenarios E8, E9.
+describe("FolderActionBar — empty bar does not render", () => {
+  const setStatus = (s: WorktreeInitStatus) => fetchWorktreeInitStatus.mockResolvedValue(s);
+
+  it("E8: state ③ with 0 broken sessions renders nothing at all", async () => {
+    setStatus({ hasHook: false, configured: true });
+    const { container } = renderBar({ onInitializeProject: vi.fn(), brokenSessionCount: 0 });
+    await waitFor(() => expect(fetchWorktreeInitStatus).toHaveBeenCalled());
+    expect(container.firstChild).toBeNull();
+  });
+
+  it("E8: the Directory Settings cog is gone from the bar", async () => {
+    setStatus({ hasHook: true, needsInit: true, trusted: true });
+    renderBar({ onInitializeProject: vi.fn() });
+    await waitFor(() => screen.getByTestId("worktree-init-btn"));
+    expect(screen.queryByLabelText(/directory settings/i)).toBeNull();
+  });
+
+  it("E9: a folder with 2 broken sessions still renders its own cleanup control", async () => {
+    setStatus({ hasHook: false, configured: true });
+    const { container } = renderBar({ brokenSessionCount: 2, onCleanUpBroken: vi.fn() });
+    await waitFor(() => expect(fetchWorktreeInitStatus).toHaveBeenCalled());
+    expect(container.firstChild).not.toBeNull();
+    expect(screen.getByTestId("folder-cleanup-broken-btn").textContent).toContain("2");
+    expect(screen.queryByLabelText(/directory settings/i)).toBeNull();
   });
 });

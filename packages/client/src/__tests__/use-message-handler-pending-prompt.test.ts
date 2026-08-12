@@ -12,7 +12,7 @@
 import { act, renderHook } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { type MessageHandlerDeps, type MessageHandlerSetters, useMessageHandler } from "../hooks/useMessageHandler.js";
-import { createInitialState, type SessionState } from "../lib/event-reducer.js";
+import { createInitialState, type SessionState } from "../lib/chat/event-reducer.js";
 
 function makeRefs() {
   return {
@@ -24,9 +24,10 @@ function makeRefs() {
     selectedSessionIdRef: { current: undefined },
     pendingSpawnsRef: { current: new Map<string, { cwd: string; kind: "spawn" | "resume" }>() },
     loadingHistoryTimersRef: { current: new Map<string, ReturnType<typeof setTimeout>>() },
+    replayInFlightTimersRef: { current: new Map<string, ReturnType<typeof setTimeout>>() },
   } satisfies Pick<
     MessageHandlerDeps,
-    "spawningCwdsRef" | "subscribedRef" | "pendingTerminalCwdRef" | "lastCreatedTerminalIdRef" | "maxSeqMapRef" | "selectedSessionIdRef" | "pendingSpawnsRef" | "loadingHistoryTimersRef"
+    "spawningCwdsRef" | "subscribedRef" | "pendingTerminalCwdRef" | "lastCreatedTerminalIdRef" | "maxSeqMapRef" | "selectedSessionIdRef" | "pendingSpawnsRef" | "loadingHistoryTimersRef" | "replayInFlightTimersRef"
   >;
 }
 
@@ -51,15 +52,15 @@ function makeHarness(initialState: Map<string, SessionState>) {
     setRolesMap: noop,
     setSpawnResult: noop,
     setSessionOrderMap: noop,
-    setPinnedDirectories: noop, setPinnedDirsLoaded: noop, setFavoriteModels: noop,
-    setWorkspaces: noop, setWorkspacesLoaded: noop,
+    setPinnedDirectories: noop, setFavoriteModels: noop,
+    setWorkspaces: noop,
     setTerminals: noop,
     setDiscoveredServers: noop,
     setSpawnErrors: noop,
     setResumeErrors: noop,
     setDisplayPrefs: noop,
-    setViewMessagesMap: noop,
     setLoadingHistory: noop,
+    setReplayInFlight: noop,
     setCanvasMap: noop,
   };
 

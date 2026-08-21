@@ -178,20 +178,20 @@ describe("GET /api/git/worktree/init-status", () => {
   });
 
   // test-plan #E3
-  it("config-root resolution: a worktree resolves its checklist against the main checkout", async () => {
+  it("config-root resolution: a worktree resolves its checklist against its own checkout", async () => {
     repo = makePlainRepo(); // committed README only, no tracked .pi/
     const wt = realpathSync(mkdtempSync(join(tmpdir(), "git-wt-linked-")));
     rmSync(wt, { recursive: true, force: true });
     execSync(`git worktree add ${wt} -b feat-checklist`, { cwd: repo, stdio: ["pipe", "pipe", "pipe"] });
-    // Write .pi/settings.json ONLY in the main checkout, untracked, so the
-    // linked worktree genuinely lacks it while its config root has it.
+    // Write .pi/settings.json ONLY in the main checkout, untracked.
+    // The linked worktree must not inherit the main checkout's checklist.
     mkdirSync(join(repo, ".pi"), { recursive: true });
     writeFileSync(join(repo, ".pi", "settings.json"), JSON.stringify({ toolset: {} }));
     try {
       expect(existsSync(join(wt, ".pi", "settings.json"))).toBe(false);
       const res = await app.inject({ method: "GET", url: `/api/git/worktree/init-status?cwd=${encodeURIComponent(wt)}` });
       const list = res.json().data.checklist as Array<{ id: string; present: boolean }>;
-      expect(list.find((a) => a.id === "settings")?.present).toBe(true);
+      expect(list.find((a) => a.id === "settings")?.present).toBe(false);
     } finally {
       execSync(`git worktree remove --force ${wt}`, { cwd: repo, stdio: ["pipe", "pipe", "pipe"] });
     }
@@ -233,6 +233,68 @@ describe("GET /api/git/worktree/init-status", () => {
     writeFileSync(join(repo, ".pi", "settings.json"), JSON.stringify({ toolset: {} }));
     const after = await app.inject({ method: "GET", url: `/api/git/worktree/init-status?cwd=${encodeURIComponent(repo)}` });
     expect((after.json().data.checklist as Array<{ id: string; present: boolean }>).find((a) => a.id === "settings")?.present).toBe(true);
+  });
+});
+
+describe("linked worktree config isolation", () => {
+  let app: FastifyInstance;
+  let repo = "";
+  let worktree = "";
+
+  beforeEach(async () => { app = await makeApp(); });
+  afterEach(async () => {
+    if (repo && worktree && existsSync(worktree)) {
+      try { git(`worktree remove --force ${JSON.stringify(worktree)}`, repo); } catch { /* already removed */ }
+    }
+    if (repo) rmSync(repo, { recursive: true, force: true });
+    await app.close();
+  });
+
+  function addLinkedWorktree(): string {
+    const target = mkdtempSync(join(tmpdir(), "git-wt-linked-"));
+    rmSync(target, { recursive: true, force: true });
+    git(`worktree add -b linked-config ${JSON.stringify(target)}`, repo);
+    return target;
+  }
+
+  it("uses the linked hook for trust hashing, gate evaluation, and execution", async () => {
+    const mainHook = scriptHook("false", "touch MAIN_MARKER");
+    const linkedHook = scriptHook("test ! -f LINKED_MARKER", "touch LINKED_MARKER");
+    repo = makeHookRepo(mainHook);
+    worktree = addLinkedWorktree();
+    writeFileSync(join(worktree, ".pi", "settings.json"), JSON.stringify({ worktreeInit: linkedHook }));
+
+    const untrusted = await app.inject({ method: "POST", url: "/api/git/worktree/init", payload: { cwd: worktree } });
+    expect(untrusted.json()).toMatchObject({
+      success: false,
+      code: "init_untrusted",
+      data: { hook: linkedHook, hash: hookDefHash(linkedHook) },
+    });
+    expect(existsSync(join(repo, "MAIN_MARKER"))).toBe(false);
+    expect(existsSync(join(worktree, "LINKED_MARKER"))).toBe(false);
+
+    const confirmed = await app.inject({
+      method: "POST",
+      url: "/api/git/worktree/init",
+      payload: { cwd: worktree, confirmHash: hookDefHash(linkedHook), scope: "session" },
+    });
+    expect(confirmed.json()).toMatchObject({ success: true, data: { ran: true } });
+    expect(existsSync(join(worktree, "LINKED_MARKER"))).toBe(true);
+    expect(existsSync(join(repo, "MAIN_MARKER"))).toBe(false);
+  });
+
+  it("does not inherit uncommitted primary-checkout settings when the linked worktree has none", async () => {
+    repo = makePlainRepo();
+    mkdirSync(join(repo, ".pi"), { recursive: true });
+    writeFileSync(join(repo, ".pi", "settings.json"), JSON.stringify({ worktreeInit: scriptHook("true", "touch MAIN_MARKER") }));
+    worktree = addLinkedWorktree();
+
+    const status = await app.inject({ method: "GET", url: `/api/git/worktree/init-status?cwd=${encodeURIComponent(worktree)}` });
+    expect(status.json().data).toEqual({ hasHook: false, configured: false, checklist: expectedChecklist([]) });
+
+    const run = await app.inject({ method: "POST", url: "/api/git/worktree/init", payload: { cwd: worktree } });
+    expect(run.json().data).toEqual({ ran: false, skippedReason: "no_hook" });
+    expect(existsSync(join(repo, "MAIN_MARKER"))).toBe(false);
   });
 });
 

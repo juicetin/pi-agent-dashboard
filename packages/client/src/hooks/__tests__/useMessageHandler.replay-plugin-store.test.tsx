@@ -13,7 +13,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook } from "@testing-library/react";
 import { useMessageHandler } from "../useMessageHandler.js";
-import { type SessionState } from "../../lib/event-reducer.js";
+import { type SessionState } from "../../lib/chat/event-reducer.js";
 import { getSessionEvents, clearSessionEvents } from "@blackbelt-technology/dashboard-plugin-runtime";
 import { reduceFlowsSessionState } from "@blackbelt-technology/pi-dashboard-flows-plugin/client";
 import type { DashboardEvent } from "@blackbelt-technology/pi-dashboard-shared/types.js";
@@ -53,6 +53,7 @@ function setup() {
     setFavoriteModels: vi.fn(), setTerminals: vi.fn(), setEditorStatuses: vi.fn(),
     setDiscoveredServers: vi.fn(), setSpawnErrors: vi.fn(), setResumeErrors: vi.fn(),
     setLoadingHistory: vi.fn(),
+    setReplayInFlight: vi.fn(),
   };
   const deps: any = {
     send: vi.fn(), navigate: vi.fn(), clearSpawningCwd: vi.fn(),
@@ -60,6 +61,7 @@ function setup() {
     pendingTerminalCwdRef: { current: null }, lastCreatedTerminalIdRef: { current: null },
     maxSeqMapRef: { current: maxSeqMap }, selectedSessionIdRef: { current: undefined },
     loadingHistoryTimersRef: { current: new Map() },
+    replayInFlightTimersRef: { current: new Map() },
   };
   const { result } = renderHook(() => useMessageHandler(setters, deps));
   return { dispatch: (msg: ServerToBrowserMessage) => result.current(msg) };

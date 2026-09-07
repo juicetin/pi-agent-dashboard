@@ -15,7 +15,7 @@ import type { ServerToBrowserMessage } from "@blackbelt-technology/pi-dashboard-
 import type { DashboardEvent } from "@blackbelt-technology/pi-dashboard-shared/types.js";
 import { renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { clearLoadingHistory, HYDRATE_CEILING_MS, SUBSCRIBE_ACK_MS } from "../../lib/loading-history.js";
+import { clearLoadingHistory, HYDRATE_CEILING_MS, SUBSCRIBE_ACK_MS } from "../../lib/replay/loading-history.js";
 import { useMessageHandler } from "../useMessageHandler.js";
 
 function makeEvt(toolCallId: string, ts: number): DashboardEvent {
@@ -53,6 +53,10 @@ function setup() {
     setSpawnErrors: vi.fn(),
     setResumeErrors: vi.fn(),
     setLoadingHistory,
+    // Second replay flag, unasserted here — supplied so the handler's
+    // `replayInFlight` edges have a setter to call.
+    // See change: show-replay-in-flight-indicator.
+    setReplayInFlight: vi.fn(),
   };
 
   const deps: any = {
@@ -67,6 +71,7 @@ function setup() {
     selectedSessionIdRef: { current: undefined },
     pendingSpawnsRef: { current: new Map() },
     loadingHistoryTimersRef: timersRef,
+    replayInFlightTimersRef: { current: new Map<string, ReturnType<typeof setTimeout>>() },
   };
 
   const { result } = renderHook(() => useMessageHandler(setters, deps));

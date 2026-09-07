@@ -5,10 +5,12 @@ import { readFile } from "node:fs/promises";
 import { isAbsolute, relative, resolve } from "node:path";
 import type { ApiResponse } from "@blackbelt-technology/pi-dashboard-shared/types.js";
 import type { FastifyInstance } from "fastify";
-import type { EventStore } from "../memory-event-store.js";
-import type { SessionManager } from "../memory-session-manager.js";
-import { buildSessionDiff } from "../session-diff.js";
-import { findSessionToolCallPayload } from "../session-file-reader.js";
+import type { EventStore } from "../persistence/memory-event-store.js";
+import type { SessionManager } from "../session/memory-session-manager.js";
+import { buildSessionDiffCached, type SessionDiffResult } from "../session/session-diff.js";
+import { SessionDiffCache } from "../session/session-diff-cache.js";
+import { findSessionToolCallPayload } from "../session/session-file-reader.js";
+import { originOf } from "../session/session-origin.js";
 import type { NetworkGuard } from "./route-deps.js";
 
 export function registerSessionRoutes(
@@ -20,6 +22,12 @@ export function registerSessionRoutes(
   },
 ) {
   const { sessionManager, eventStore, networkGuard } = deps;
+
+  // Per-server session-diff result cache + single-flight coordinator. Short TTL
+  // so repeated UI polls of an unchanged session skip recompute, and concurrent
+  // identical requests coalesce onto one git computation. See change:
+  // fix-session-diff-eventloop-block.
+  const sessionDiffCache = new SessionDiffCache<SessionDiffResult>();
 
   fastify.get("/api/sessions", async () => {
     const sessions = sessionManager.listAll();
@@ -99,7 +107,7 @@ export function registerSessionRoutes(
         return { success: false, error: "session not found" } satisfies ApiResponse;
       }
       const events = eventStore.getEvents(sessionId, 0).map((e) => e.event);
-      const result = buildSessionDiff(events, session.cwd);
+      const result = await buildSessionDiffCached(sessionId, events, session.cwd, sessionDiffCache);
       return {
         success: true,
         data: {
@@ -130,6 +138,21 @@ export function registerSessionRoutes(
       if (!session) {
         reply.code(404);
         return { success: false, error: "session not found" } satisfies ApiResponse;
+      }
+      // A REMOTE session's `cwd` is a path on ANOTHER host. Confining to it
+      // here is a check that does not travel: two machines with the same
+      // username produce the same path, so this would happily serve an
+      // unrelated local file as if it were the remote workspace's. Correctness
+      // first, security second — and the origin comes from the credential the
+      // bridge registered with, never from anything it claimed.
+      // See change: add-pi-gateway-transport-identity (#E15, task 11.8).
+      const origin = originOf(session);
+      if (!origin.local) {
+        reply.code(403);
+        return {
+          success: false,
+          error: `session ${sessionId} was registered by remote device ${origin.deviceId ?? "unknown"}; its files are not on this host`,
+        } satisfies ApiResponse;
       }
       // Resolve and ensure path is within cwd
       const absPath = isAbsolute(filePath) ? filePath : resolve(session.cwd, filePath);

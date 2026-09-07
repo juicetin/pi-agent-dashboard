@@ -9,19 +9,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const challengeIdentity = vi.fn();
 const postJson = vi.fn();
-vi.mock("../../lib/pair-protocol.js", () => ({
+vi.mock("../../lib/pairing/pair-protocol.js", () => ({
   challengeIdentity: (...a: any[]) => challengeIdentity(...a),
   postJson: (...a: any[]) => postJson(...a),
 }));
 
 const storeDeviceBearer = vi.fn();
-vi.mock("../../lib/device-auth.js", () => ({
+vi.mock("../../lib/pairing/device-auth.js", () => ({
   storeDeviceBearer: (...a: any[]) => storeDeviceBearer(...a),
 }));
 
-import { encodePayloadString } from "../../lib/pairing-qr.js";
-import type { PairingPayload } from "../../lib/pairing-api.js";
-import { PairLanding } from "../PairLanding.js";
+import { encodePayloadString } from "../../lib/pairing/pairing-qr.js";
+import type { PairingPayload } from "../../lib/pairing/pairing-api.js";
+import { PairLanding } from "../connectivity/PairLanding.js";
 
 const PAYLOAD: PairingPayload = {
   v: 1,
@@ -50,7 +50,9 @@ describe("PairLanding", () => {
       if (path === "/api/pair/redeem") return { pendingId: "p1", confirmCode: "77 88 99" };
       if (path === "/api/pair/poll") {
         // Yield a macrotask so React commits the polling/confirm-code render
-        // before approval flips the phase to done.
+        // before approval flips the phase to done. This is a mock-internal
+        // yield, not an assertion barrier — hence the opt-out below.
+        // fixed-tick-waits: opt-out — mock-internal macrotask yield, gates no assertion
         await new Promise((r) => setTimeout(r, 0));
         return { status: "approved", token: "BEARER-XYZ" };
       }

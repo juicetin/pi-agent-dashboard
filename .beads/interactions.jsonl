@@ -1,0 +1,1 @@
+{"id":"int-08d3d5896af1fc32ed924caa417cce30","kind":"field_change","created_at":"2026-09-07T05:42:53.102286511Z","actor":"Justin Ting","issue_id":"pidash-u3c","extra":{"field":"status","new_value":"closed","old_value":"in_progress","reason":"Upgrade activated and saved conversations restored; browser send/reply verified and requested ntfy delivered to notification server."}}

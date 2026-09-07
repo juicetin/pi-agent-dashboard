@@ -12,8 +12,8 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Redirect, Route, Router, Switch, useLocation } from "wouter";
 import { memoryLocation } from "wouter/memory-location";
-import { decodeFolderPath, encodeFolderPath } from "../../lib/folder-encoding.js";
-import { buildFolderSettingsUrl } from "../../lib/route-builders.js";
+import { decodeFolderPath, encodeFolderPath } from "../../lib/util/folder-encoding.js";
+import { buildFolderSettingsUrl } from "../../lib/nav/route-builders.js";
 import { DirectorySettings } from "../DirectorySettings/DirectorySettings.js";
 
 const CWD = "/path/to/project";
@@ -54,7 +54,7 @@ function renderAt(page: "instructions" | "packages" | "skills" | "agents", path 
   const { hook, history } = memoryLocation({ path, record: true });
   const utils = render(
     <Router hook={hook}>
-      <DirectorySettings cwd={CWD} page={page} onBack={vi.fn()} onViewFile={vi.fn()} />
+      <DirectorySettings cwd={CWD} page={page} onBack={vi.fn()} />
     </Router>,
   );
   return { ...utils, history };

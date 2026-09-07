@@ -45,6 +45,32 @@ describe("normalizeTunnelConfig — legacy back-compat", () => {
     );
     expect(out.tailscale?.authKey).toBe("tskey-auth-x");
   });
+
+  // support-zrok-v2 (E19/E20): v1 token preserved but NOT promoted; v2 fields.
+  it("E19: legacy reservedToken preserved, NOT promoted to reservedName, idempotent", () => {
+    const out = normalizeTunnelConfig({ tunnel: { reservedToken: "v1tok" } }.tunnel, defaults);
+    expect(out.provider).toBe("zrok");
+    expect(out.mode).toBe("public");
+    expect(out.zrok?.reservedToken).toBe("v1tok");
+    expect(out.zrok?.reservedName).toBeUndefined();
+    // running again yields the same shape
+    expect(normalizeTunnelConfig(out, defaults)).toEqual(out);
+  });
+
+  it("E20: fresh config → zrok.persistent defaults false, reservedName unset", () => {
+    const out = normalizeTunnelConfig({ enabled: true }, defaults);
+    expect(out.zrok?.persistent).toBe(false);
+    expect(out.zrok?.reservedName).toBeUndefined();
+  });
+
+  it("surfaces an explicit v2 reservedName + persistent when present", () => {
+    const out = normalizeTunnelConfig(
+      { enabled: true, provider: "zrok", mode: "public", zrok: { reservedName: "pi-dash-abcd1234", persistent: true } },
+      defaults,
+    );
+    expect(out.zrok?.reservedName).toBe("pi-dash-abcd1234");
+    expect(out.zrok?.persistent).toBe(true);
+  });
 });
 
 describe("validateTunnelForConnect — mode gating", () => {
@@ -81,5 +107,53 @@ describe("validateTunnelForConnect — mode gating", () => {
     expect(validateTunnelForConnect({ ...defaults, provider: "tailscale", mode: "private" }).ok).toBe(true);
     expect(validateTunnelForConnect({ ...defaults, provider: "tailscale", mode: "public" }).ok).toBe(true);
     expect(validateTunnelForConnect({ ...defaults, provider: "zerotier", mode: "private" }).ok).toBe(true);
+  });
+});
+
+/**
+ * Per-provider `enabled`/`mode` (the concurrency layer, D3) must SURVIVE a load.
+ *
+ * `zrok` is not spread from raw like the other providers — it is RECONSTRUCTED
+ * from reservedToken/reservedName/persistent. So the two keys the gateway UI
+ * writes were dropped on the way back in: the config round-tripped to a
+ * zrok that had never been enabled, and the operator's second tunnel simply
+ * never connected, with nothing in the config to show why.
+ */
+describe("per-provider enabled/mode survive normalization", () => {
+  const defaults = { enabled: false, zrok: { persistent: false }, watchdog: { enabled: true, intervalMs: 30_000 } };
+
+  it("keeps zrok.enabled and zrok.mode", () => {
+    const out = normalizeTunnelConfig({ zrok: { enabled: true, mode: "public", persistent: true } }, defaults as never);
+    expect(out.zrok).toMatchObject({ enabled: true, mode: "public", persistent: true });
+  });
+
+  it("keeps enabled/mode for every other provider", () => {
+    const out = normalizeTunnelConfig(
+      {
+        ngrok: { enabled: true, mode: "public" },
+        tailscale: { enabled: true, mode: "private" },
+        zerotier: { enabled: true, mode: "private", networkId: "abc" },
+      },
+      defaults as never,
+    );
+    expect(out.ngrok).toMatchObject({ enabled: true, mode: "public" });
+    expect(out.tailscale).toMatchObject({ enabled: true, mode: "private" });
+    expect(out.zerotier).toMatchObject({ enabled: true, mode: "private", networkId: "abc" });
+  });
+
+  it("drops junk rather than letting it reach the resolver", () => {
+    const out = normalizeTunnelConfig(
+      { zrok: { enabled: "yes", mode: "sideways" }, ngrok: { enabled: 1, mode: "nonsense" } },
+      defaults as never,
+    );
+    expect(out.zrok?.enabled).toBeUndefined();
+    expect(out.zrok?.mode).toBeUndefined();
+    expect(out.ngrok?.enabled).toBeUndefined();
+    expect(out.ngrok?.mode).toBeUndefined();
+  });
+
+  it("leaves an absent flag absent — absent means false, never true", () => {
+    const out = normalizeTunnelConfig({ zrok: { persistent: false } }, defaults as never);
+    expect(out.zrok?.enabled).toBeUndefined();
   });
 });

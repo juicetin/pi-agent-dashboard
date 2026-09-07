@@ -38,7 +38,7 @@ export const SUBAGENT_CHANNELS = new Set<string>([
 ]);
 
 /** Channels that terminate a subagent run (drop it from the resync snapshots). */
-const TERMINAL_CHANNELS = new Set<string>(["subagents:completed", "subagents:failed"]);
+export const TERMINAL_CHANNELS = new Set<string>(["subagents:completed", "subagents:failed"]);
 
 export interface SubagentFrameStats {
   /** Frames forwarded live (ready path). */
@@ -55,8 +55,20 @@ export interface SubagentFrameStats {
   resyncRequests: number;
   /** Resync requests answered with a snapshot. */
   resyncServed: number;
+  /** Resync requests served via the fast `agentId` key. */
+  resyncByAgentId: number;
+  /** Resync requests served via the derived `agentSessionId` values-scan. */
+  resyncByAgentSessionId: number;
   /** Resync requests for an unknown/finished agent (no-op). */
   resyncNoop: number;
+  /**
+   * Resync requests issued by the open-inspector PULL LOOP rather than by a
+   * user opening a view. Sits beside the counters above so the D4 v1 cadence is
+   * provably not a new firehose: `resyncCadence / resyncRequests` is the share
+   * of the pull traffic the loop is responsible for.
+   * See change: reduce-subagent-details-payload (D6, task 9.4).
+   */
+  resyncCadence: number;
 }
 
 export class SubagentFrameBuffer {
@@ -73,10 +85,24 @@ export class SubagentFrameBuffer {
     overflowEvicted: 0,
     resyncRequests: 0,
     resyncServed: 0,
+    resyncByAgentId: 0,
+    resyncByAgentSessionId: 0,
     resyncNoop: 0,
+    resyncCadence: 0,
   };
 
-  /** @param maxAgents bound on distinct buffered agents (drop-oldest beyond it). */
+  /**
+   * @param maxAgents bound on distinct buffered agents (drop-oldest beyond it).
+   *
+   * The bound stays 64 now that resync is the ONLY mid-run timeline source
+   * (task 7.1). Raising it was considered and rejected: 64 concurrent RUNNING
+   * subagents in one session is already far past any observed workload, and a
+   * higher ceiling would trade a bounded, counted loss for unbounded retention
+   * on the bridge. The ceiling is instead made observable — `overflowEvicted`
+   * counts every eviction, and an evicted still-running agent answers with an
+   * explicit `resyncNoop` so the client keeps its last rendered state rather
+   * than blanking (C3). See change: reduce-subagent-details-payload.
+   */
   constructor(private readonly maxAgents = 64) {}
 
   static isSubagentChannel(channel: string): boolean {
@@ -85,6 +111,16 @@ export class SubagentFrameBuffer {
 
   static agentIdOf(data: Record<string, unknown> | undefined): string | undefined {
     return data && typeof data.id === "string" ? data.id : undefined;
+  }
+
+  /**
+   * The runner session id (v7) a frame carries on its `details`, if any. The
+   * producer (>= 0.2.3) sets `agentSessionId` on `AgentDetails` = the frame
+   * `data.details` payload. Absent → undefined (older producer).
+   */
+  static agentSessionIdOf(data: Record<string, unknown> | undefined): string | undefined {
+    const details = data?.details as Record<string, unknown> | undefined;
+    return details && typeof details.agentSessionId === "string" ? details.agentSessionId : undefined;
   }
 
   /**
@@ -163,13 +199,33 @@ export class SubagentFrameBuffer {
   /**
    * Resync (D2): the latest retained snapshot for a running subagent, or
    * undefined for an unknown/finished agent (caller replies with nothing).
+   *
+   * The incoming `id` may be EITHER the v4 `agentId` (fast-path key lookup) or
+   * the v7 runner `agentSessionId` carried on a frame's `details` (derived
+   * values-scan fallback). The mapping is a pure function of the already-bounded
+   * (≤ maxAgents) `snapshots` map — no separate alias index, no `finished` set —
+   * so it cannot leak or diverge. The scan is O(≤ maxAgents) on a rare,
+   * user-initiated cold path. Terminal/evicted runs retain no snapshot, so both
+   * ids resolve to nothing. See change: resolve-subagent-inspector-by-session-id (D3).
    */
-  resync(agentId: string): SubagentFrame | undefined {
+  resync(id: string, reason?: "open" | "cadence"): SubagentFrame | undefined {
     this.stats.resyncRequests += 1;
-    const snap = this.snapshots.get(agentId);
-    if (snap) this.stats.resyncServed += 1;
-    else this.stats.resyncNoop += 1;
-    return snap;
+    if (reason === "cadence") this.stats.resyncCadence += 1;
+    const byAgentId = this.snapshots.get(id);
+    if (byAgentId) {
+      this.stats.resyncServed += 1;
+      this.stats.resyncByAgentId += 1;
+      return byAgentId;
+    }
+    for (const snap of this.snapshots.values()) {
+      if (SubagentFrameBuffer.agentSessionIdOf(snap.data) === id) {
+        this.stats.resyncServed += 1;
+        this.stats.resyncByAgentSessionId += 1;
+        return snap;
+      }
+    }
+    this.stats.resyncNoop += 1;
+    return undefined;
   }
 
   /** Drop all retained state (session change / shutdown). */

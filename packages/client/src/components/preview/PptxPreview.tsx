@@ -9,7 +9,7 @@
  * pptx) degrades to `FallbackPreview` (download). See change: render-pptx-preview.
  */
 import React, { lazy, Suspense, useState } from "react";
-import { t as i18nT } from "../../lib/i18n";
+import { t as i18nT } from "../../lib/i18n/i18n.js";
 import { FallbackPreview } from "./FallbackPreview.js";
 import { renderedPdfUrl, renderUrl } from "./raw-url.js";
 
@@ -74,7 +74,7 @@ export function PptxPreview({ target }: Props) {
         type="button"
         data-testid="pptx-render-slides"
         onClick={activate}
-        className="rounded bg-[var(--accent)] px-4 py-2 text-sm text-[var(--accent-fg,#fff)] hover:opacity-90"
+        className="rounded bg-[var(--accent-solid)] px-4 py-2 text-sm text-white hover:opacity-90"
       >
         {i18nT("preview.pptxRenderSlides", undefined, "Render slides")}
       </button>

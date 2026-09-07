@@ -143,6 +143,10 @@ The client SHALL provide a shared `<RichDiff>` component that encapsulates the s
 
 The **git-aggregate-diff path** of `DiffPanel` (the branch that consumes the raw `data` prop of `<DiffView>` with `{ oldFile, newFile, hunks }` derived from `file.gitDiff`) is OUT OF SCOPE for this delegation and SHALL continue to render `<DiffView>` inline within `DiffPanel`. This is intentional: `<RichDiff>`'s API is narrowly scoped to `(oldText, newText, filePath)` and does not accept the raw hunks shape.
 
+The git-aggregate path SHALL supply `<DiffView>`'s `data.hunks` a **header-preserving** unified diff — i.e. a diff string that retains its `diff --git`/`---`/`+++` file header — so that `@git-diff-view` reconstructs diff lines when the `data.oldFile`/`data.newFile` `content` fields are empty. Because `file.gitDiff` is already a complete header-bearing unified diff for the file, `DiffPanel` SHALL pass it whole and SHALL NOT strip its file header before handing it to `<DiffView>`. Rendering a non-empty `file.gitDiff` through this path SHALL produce a non-empty diff view (at least one rendered diff line).
+
+The change-derived fallback (the branch used when no specific change is selected and no `file.gitDiff` is present) SHALL select the file's most recent change whose payload yields renderable texts (an `edit` with a non-empty `edits[]`, or a `write` with `content`), scanning newest-to-oldest; a detected-on-disk-only change (`type:"tool"`, which yields no texts) SHALL be skipped rather than rendered as an empty panel. The "No diff data available" note SHALL appear only when neither a git-aggregate diff nor any renderable change exists.
+
 #### Scenario: DiffPanel split toggle still works for change-derived diffs
 - **WHEN** the user toggles `DiffPanel`'s mode control from unified to split for a change-derived diff (Edit or Write)
 - **THEN** the underlying `<RichDiff>` SHALL re-render with `mode="split"` and the diff SHALL be displayed side-by-side
@@ -154,6 +158,14 @@ The **git-aggregate-diff path** of `DiffPanel` (the branch that consumes the raw
 #### Scenario: Git-aggregate diff path remains inline
 - **WHEN** `DiffPanel` renders a file whose diff is sourced from `file.gitDiff` (no specific change selected, no change-derived `DiffFile` built)
 - **THEN** `<DiffView>` SHALL be rendered inline within `DiffPanel` using the `data` prop — NOT through `<RichDiff>`
+
+#### Scenario: Git-aggregate diff renders non-empty for a git-tracked file
+- **WHEN** `DiffPanel` renders a file whose `file.gitDiff` is a non-empty unified diff and no specific change is selected (e.g. a `diff:` tab opened from the change-list, `selection.changeIndex === null`)
+- **THEN** the `hunks` payload handed to `<DiffView>`'s `data` prop SHALL retain the diff's `diff --git`/`+++` file header, and the rendered diff view SHALL contain at least one diff line (SHALL NOT be empty)
+
+#### Scenario: Fallback skips a detected-on-disk-only change
+- **WHEN** `DiffPanel` has no selected change and no `file.gitDiff`, and `file.changes` ends with a `type:"tool"` (detected-on-disk-only) event preceded by an `edit` or `write` event on the same file
+- **THEN** `DiffPanel` SHALL render the diff of that earlier `edit`/`write` change and SHALL NOT show the "No diff data available" note
 
 ### Requirement: WriteToolRenderer
 The Write renderer SHALL display the file path as a header with an "Open in editor" button. The written content SHALL be displayed in a syntax-highlighted code block. The syntax highlighting style SHALL be resolved using the active theme name.
@@ -263,6 +275,32 @@ A pure module SHALL expose `parseCtxResult(toolName, result, isError)` returning
 
 The parser SHALL first strip a leading noise line matching the context-mode upgrade banner (`⚠️ context-mode v… outdated …`) before classifying the result. Every parse branch SHALL return `{ kind: "raw", text }` when its expected header does not match, and SHALL NOT throw on malformed input.
 
+For a `runtime` error whose body has the context-mode execution shape — a fenced code block followed by an `Exit code: <n>` line and optional `stdout:` / `stderr:` sections — the parser SHALL additionally capture those parts into structured fields (`command`, `language`, `exitCode`, `stdout`, `stderr`) on the error struct. When the body does not have that shape, the parser SHALL leave the fields undefined and the renderer SHALL fall back to the flat `message` body. Field extraction SHALL NOT throw on a partial or malformed body.
+
+#### Scenario: Classifies validation error
+- **GIVEN** `isError` is true and the result starts with `Validation failed for tool "ctx_batch_execute":`
+- **WHEN** the parser runs
+- **THEN** it SHALL return `{ kind: "error", variant: "validation" }` with the `Received arguments:` JSON captured into `receivedArgs`
+
+#### Scenario: Classifies timeout error
+- **GIVEN** `isError` is true and the result is `MCP request timeout after 120000ms: tools/call`
+- **WHEN** the parser runs
+- **THEN** it SHALL return `{ kind: "error", variant: "timeout" }`
+
+#### Scenario: Structures a runtime execution error into fields
+- **GIVEN** `isError` is true and the body is a fenced ```shell block followed by `Exit code: 1`, a `stdout:` section and a `stderr:` section
+- **WHEN** the parser runs
+- **THEN** it SHALL return `{ kind: "error", variant: "runtime" }`
+- **AND** the fenced block SHALL be captured into `command` with `language: "shell"`
+- **AND** `exitCode` SHALL be `1`
+- **AND** the two streams SHALL be captured into `stdout` and `stderr`
+
+#### Scenario: Runtime error without execution shape stays flat
+- **GIVEN** `isError` is true and the body is a plain sentence with no fenced block or exit-code line
+- **WHEN** the parser runs
+- **THEN** it SHALL return `{ kind: "error", variant: "runtime" }` with `command` / `exitCode` / `stdout` / `stderr` undefined
+- **AND** the original text SHALL remain available in `message`
+
 #### Scenario: Strips upgrade banner
 - **GIVEN** a result whose first line is `⚠️ context-mode v1.0.161 outdated → v1.0.162 available. Upgrade: npm run build`
 - **WHEN** the parser runs
@@ -278,16 +316,6 @@ The parser SHALL first strip a leading noise line matching the context-mode upgr
 - **WHEN** the parser runs
 - **THEN** it SHALL return `{ kind: "index", sections: 830, withCode: 169, source: "docs/" }`
 
-#### Scenario: Classifies validation error
-- **GIVEN** `isError` is true and the result starts with `Validation failed for tool "ctx_batch_execute":`
-- **WHEN** the parser runs
-- **THEN** it SHALL return `{ kind: "error", variant: "validation" }` with the `Received arguments:` JSON captured into `receivedArgs`
-
-#### Scenario: Classifies timeout error
-- **GIVEN** `isError` is true and the result is `MCP request timeout after 120000ms: tools/call`
-- **WHEN** the parser runs
-- **THEN** it SHALL return `{ kind: "error", variant: "timeout" }`
-
 #### Scenario: Malformed result falls back to raw
 - **GIVEN** a `ctx_search` result whose body does not match the expected `## <query>` grammar
 - **WHEN** the parser runs
@@ -296,14 +324,32 @@ The parser SHALL first strip a leading noise line matching the context-mode upgr
 ### Requirement: CtxToolRenderer
 A single `CtxToolRenderer` component SHALL render all `ctx_*` tool calls. It SHALL call `parseCtxResult`, render a per-tool header chip, and select a body layout by result kind. When a result is present the chip and body SHALL be derived from the parsed struct. When no result is present (the call is still running) or the parse degrades to `{ kind: "raw" }`, the chip SHALL be derived from the tool `args` (never the bare tool name), and the running body SHALL preview the pending work from `args`. The renderer SHALL NOT render the tool arguments as raw JSON for the recognized kinds, and the header chip SHALL NOT equal the tool-name subtitle for any recognized `ctx_*` tool.
 
-#### Scenario: Header chip per tool
-- **WHEN** a `ctx_batch_execute` result parses to a batch summary with 6 commands, 31 sections, 5 queries
-- **THEN** the collapsed card header SHALL show a chip summarizing command count, section count, and query count (e.g. `6 cmds · 31 sections · 5 queries`)
+The error card SHALL carry its severity signal on the container chrome (border, fill, label) and SHALL NOT render its body in a raw severity-coloured `<pre>`. When the parser has structured a runtime error into fields, the card SHALL render the `command` through the same `CodeBlock` used by the success path (syntax-highlighted when a language is present), an `exit <n>` badge, and each non-empty stream (`stdout`, `stderr`) as its own labelled section. The success and error paths SHALL therefore share the same code-block and section presentation; a failing ctx call SHALL NOT render as a flat, unstructured wall while a passing one is highlighted and sectioned.
 
 #### Scenario: Execute body shows code and stdout
 - **WHEN** a `ctx_execute` tool call has `args.language = "shell"` and a non-empty `code` argument and a stdout result
 - **THEN** the card SHALL render the `code` argument as a code block and the stdout below it
 - **AND** the card SHALL NOT render `JSON.stringify(args)`
+
+#### Scenario: Runtime error card renders structured sections
+- **GIVEN** a `ctx_execute` error parsed with `command`, `language: "shell"`, `exitCode: 1`, and empty streams
+- **THEN** the card SHALL render the command through `CodeBlock` with shell syntax highlighting
+- **AND** SHALL render an `exit 1` badge
+- **AND** SHALL render `stdout` and `stderr` as labelled sections
+- **AND** SHALL NOT render the fenced ```` ``` ```` markers or the `Exit code:` label as literal body text
+
+#### Scenario: Error card chrome carries the severity signal
+- **WHEN** any error card renders
+- **THEN** its border, fill and label SHALL use `--severity-error-*` tokens
+- **AND** its body SHALL NOT be a `<pre>` coloured by a raw `red-<NNN>` literal
+
+#### Scenario: Unstructured runtime error falls back to a neutral body
+- **GIVEN** a runtime error the parser could not structure into fields
+- **THEN** the card SHALL render the flat `message` in `--text-secondary` on `--bg-code`
+- **AND** the chrome SHALL still carry the severity signal
+#### Scenario: Header chip per tool
+- **WHEN** a `ctx_batch_execute` result parses to a batch summary with 6 commands, 31 sections, 5 queries
+- **THEN** the collapsed card header SHALL show a chip summarizing command count, section count, and query count (e.g. `6 cmds · 31 sections · 5 queries`)
 
 #### Scenario: Execute_file body shows path header
 - **WHEN** a `ctx_execute_file` tool call has a `path` argument

@@ -20,7 +20,7 @@ import type {
   TunnelProvider,
 } from "@blackbelt-technology/pi-dashboard-shared/tunnel-provider.js";
 import { providerSupportsMode } from "@blackbelt-technology/pi-dashboard-shared/tunnel-provider.js";
-import { type ChildProviderSpec, ChildTunnelRuntime } from "../tunnel-core.js";
+import { type ChildProviderSpec, ChildTunnelRuntime } from "../tunnel/tunnel-core.js";
 
 const ngrokResolver = new ToolResolver({ processExecPath: process.execPath, useLoginShell: true });
 
@@ -38,6 +38,20 @@ function getNgrokBinary(): string {
   if (ngrokBinaryPath) return ngrokBinaryPath;
   detectNgrokBinary();
   return ngrokBinaryPath ?? "ngrok";
+}
+
+/**
+ * PUBLIC invalidation of the module-scope binary memo.
+ *
+ * `ngrokAvailable` is memoized once and never re-consulted, so an install or
+ * removal done in a terminal is invisible for the life of the process.
+ * `ToolRegistry.rescan()` clears the registry's cache, not this one. Readiness
+ * needs a supported entry point rather than the test-only
+ * `_resetNgrokBinaryCache`. See change: add-zrok-custom-reserved-name (D6.2).
+ */
+function invalidateNgrokBinaryCache(): void {
+  ngrokAvailable = null;
+  ngrokBinaryPath = null;
 }
 
 export function _resetNgrokBinaryCache(): void {
@@ -110,6 +124,14 @@ export class NgrokProvider implements TunnelProvider {
   }
   detectBinary(): boolean {
     return detectNgrokBinary();
+  }
+  /**
+   * Drop the module-scope binary memo so the NEXT `detectBinary()` re-resolves.
+   * Readiness calls this before probing, because `ToolRegistry.rescan()` cannot
+   * reach a memo this module holds. See change: add-zrok-custom-reserved-name.
+   */
+  invalidateBinaryCache(): void {
+    invalidateNgrokBinaryCache();
   }
   isEnrolled(): boolean {
     return isNgrokEnrolled();

@@ -10,7 +10,7 @@ import {
   type AuthCodeHandler,
   type DeviceCodeHandler,
   type PKCEPair,
-} from "../provider-auth-handlers.js";
+} from "../auth/provider-auth-handlers.js";
 import {
   writeCredential,
   removeCredential,
@@ -18,11 +18,11 @@ import {
   getOAuthProvidersMeta,
   resolveAuthJsonKey,
   type ApiKeyCredential,
-} from "../provider-auth-storage.js";
-import { getLatestCatalogue } from "../provider-catalogue-cache.js";
-import { startCallbackServer } from "../oauth-callback-server.js";
-import type { PiGateway } from "../pi-gateway.js";
-import type { BrowserGateway } from "../browser-gateway.js";
+} from "../auth/provider-auth-storage.js";
+import { getLatestCatalogue } from "../package/provider-catalogue-cache.js";
+import { startCallbackServer } from "../auth/oauth-callback-server.js";
+import type { PiGateway } from "../pi/pi-gateway.js";
+import type { BrowserGateway } from "../pairing/browser-gateway.js";
 import { refreshModelRegistry } from "../model-proxy/registry-singleton.js";
 
 // ── In-memory flow store (short-lived PKCE + device code state) ──────────────
@@ -240,12 +240,19 @@ export function registerProviderAuthRoutes(
     },
   );
 
-  // Remove credential
+  // Remove credential. A refusal (corrupt auth.json whose bytes could not be
+  // backed up) maps to the SAME { error } shape PUT returns, so the Settings UI
+  // can show why. See change: fix-corrupt-auth-json-500.
   fastify.delete<{ Params: { provider: string } }>(
     "/api/provider-auth/:provider",
-    async (request) => {
-      const authJsonKey = resolveAuthJsonKey(request.params.provider);
-      removeCredential(authJsonKey);
+    async (request, reply) => {
+      try {
+        const authJsonKey = resolveAuthJsonKey(request.params.provider);
+        removeCredential(authJsonKey);
+      } catch (err: any) {
+        request.log.error(err, "Failed to remove credential");
+        return reply.code(500).send({ error: err.message || "Failed to remove credential" });
+      }
       notifyBridges();
       return { ok: true };
     },

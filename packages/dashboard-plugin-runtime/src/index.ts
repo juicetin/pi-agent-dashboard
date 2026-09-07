@@ -7,6 +7,25 @@
 // See change: fix-plugin-and-scoped-back-navigation.
 export { claimsToRouteDescriptors } from "@blackbelt-technology/pi-dashboard-shared/dashboard-plugin/route-descriptor.js";
 export * from "./dependency-graph.js";
+export type {
+  FolderMenuContribution,
+  FolderMenuGroup,
+  FolderMenuStore,
+  RegisteredFolderMenuItem,
+} from "./folder-menu-contributions.js";
+export {
+  createFolderMenuStore,
+  FOLDER_MENU_GROUPS,
+  FolderMenuProvider,
+  isFolderMenuGroup,
+  isValidFolderMenuContribution,
+  selectFolderMenuItems,
+  useFolderMenuItem,
+  useFolderMenuItems,
+  useFolderMenuRefresher,
+  useFolderMenuRefreshRunner,
+  useFolderMenuStore,
+} from "./folder-menu-contributions.js";
 export type { IntentActionSender, IntentRendererProps } from "./intent-renderer.js";
 export { IntentRenderer, isIntentNode, UnknownPrimitive } from "./intent-renderer.js";
 export type { IntentKey, IntentStoreEntry } from "./intent-store.js";
@@ -17,6 +36,7 @@ export {
   CurrentPluginLayer,
   PluginContextProvider,
   useAllSessions,
+  useCurrentPluginId,
   useLanguage,
   usePluginConfig,
   usePluginLogger,
@@ -31,6 +51,8 @@ export {
   useT,
 } from "./plugin-context.js";
 export * from "./prompt-component-registry.js";
+export type { SlotAccent, SlotPillProps, SlotSurface } from "./SlotPill.js";
+export { SlotPill } from "./SlotPill.js";
 export {
   __resetSessionDataStoreForTests,
   clearSessionData,
@@ -45,7 +67,9 @@ export type {
   SettingsDraftSource,
 } from "./settings-draft-context.js";
 export {
+  PluginSettingsPageProvider,
   SettingsDraftProvider,
+  usePluginSettingsPageId,
   useSettingsDraftSource,
 } from "./settings-draft-context.js";
 export {

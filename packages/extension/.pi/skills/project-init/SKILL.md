@@ -1,12 +1,6 @@
 ---
 name: project-init
-description: >
-  Scaffold an unconfigured directory into a configured pi project. Interactive,
-  profile-driven: lists project profiles (coding, docs, plus user profiles),
-  asks which to use, previews the planned writes, and on confirmation writes
-  AGENTS.md, .pi/settings.json (with a worktreeInit hook + toolset), and prompt
-  files. Use when a bare directory needs turning into a working pi project, or
-  when the dashboard's "Initialize" button spawns this session.
+description: 'Scaffold an unconfigured directory into a configured pi project. Interactive, profile-driven: previews the planned writes, then writes AGENTS.md, .pi/settings.json and prompt files — optionally also a knowledge base, an openspec/ scaffold, and user-global ~/.pi/agent/settings.json. Use on a bare directory, or when the dashboard''s "Initialize" button spawns this session.'
 license: MIT
 metadata:
   author: pi-dashboard
@@ -223,7 +217,11 @@ Compose the seeded block as:
 1. The marker line `<!-- dox-doctrine -->`
 2. The WRITE discipline — the text between `<!-- dox:write:start -->` and
    `<!-- dox:write:end -->` in `dox-doctrine.md`.
-3. ONE READ discipline variant:
+3. ONE READ discipline variant — **skip this item entirely when the chosen
+   profile's `AGENTS.md.tmpl` already embeds a `## Finding docs (READ
+   discipline)` section** (the shipped `coding` profile does; seeding it again
+   would duplicate the gate). Seed only the WRITE discipline in that case.
+   Otherwise:
    - If the kb toolset is wired (this profile writes
      `knowledge_base.json` with `indexAgentsFiles`/`directoryLevelAgents`),
      use the text between `<!-- dox:read:kb:start -->` and

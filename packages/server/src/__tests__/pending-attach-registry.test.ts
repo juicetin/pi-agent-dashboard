@@ -2,12 +2,14 @@
  * Unit tests for the in-memory pending-attach registry.
  * See change: add-folder-task-checker-and-spawn-attach.
  */
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, it, expect, vi } from "vitest";
 import {
   createPendingAttachRegistry,
   PENDING_ATTACH_QUEUE_CAP,
   PENDING_ATTACH_TTL_MS,
-} from "../pending-attach-registry.js";
+} from "../pending/pending-attach-registry.js";
 
 function fakeNow() {
   let t = 1_000_000;
@@ -119,5 +121,18 @@ describe("pending-attach-registry", () => {
     // "old" is now stale; "new" is fresh.
     expect(reg.consume("/p")).toBe("new");
     expect(reg.consume("/p")).toBeNull();
+  });
+
+  // E12 — this TTL is an ANTI-STRAND bound, not a recovery window: raising
+  // `spawnRegisterTimeoutMs` must NOT widen it, or a dead spawn's intent gets a
+  // longer window to attach to an unrelated session.
+  // See change: fix-spawn-correlation-ttl-coupling (D1a).
+  it("keeps its 60s anti-strand bound, independent of spawnRegisterTimeoutMs", () => {
+    expect(PENDING_ATTACH_TTL_MS).toBe(60_000);
+    const src = readFileSync(
+      fileURLToPath(new URL("../pending/pending-attach-registry.ts", import.meta.url)),
+      "utf-8",
+    );
+    expect(src).not.toMatch(/spawn-recovery-window|spawnRegisterTimeoutMs/);
   });
 });

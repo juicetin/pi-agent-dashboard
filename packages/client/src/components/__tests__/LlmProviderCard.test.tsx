@@ -1,11 +1,11 @@
-import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
-import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, act } from "@testing-library/react";
 import React from "react";
-import { LlmProviderCard } from "../SettingsPanel.js";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { LlmProviderCard } from "../settings/SettingsPanel.js";
 
 const mockTestProvider = vi.fn();
 
-vi.mock("../../lib/providers-api.js", () => ({
+vi.mock("../../lib/api/providers-api.js", () => ({
   testProvider: (...args: any[]) => mockTestProvider(...args),
 }));
 
@@ -96,43 +96,35 @@ describe("LlmProviderCard Test button", () => {
     expect(pill.textContent).toMatch(/^\s*Connected\s*$/);
   });
 
-  it("shows error pill with HTTP status", async () => {
+  it("shows yellow error pill with HTTP status + verbatim error line", async () => {
     mockTestProvider.mockResolvedValue({ ok: false, status: 401, error: "Invalid API key\nsome detail" });
     renderCard();
     fireEvent.click(screen.getByTestId("test-provider-button"));
     const pill = await waitFor(() => screen.getByTestId("test-pill"));
-    expect(pill.getAttribute("data-state")).toBe("err");
+    expect(pill.getAttribute("data-state")).toBe("error");
     expect(pill.textContent).toMatch(/401/);
-    expect(pill.textContent).toMatch(/Invalid API key/);
-    // only first line shown
-    expect(pill.textContent).not.toMatch(/some detail/);
+    // verbatim error rendered on the second line (all of it, not just line one)
+    expect(screen.getByTestId("provider-error-line").textContent).toBe("Invalid API key\nsome detail");
   });
 
-  it("shows error pill without status when network error", async () => {
+  it("shows red unreachable pill when there is no status", async () => {
     mockTestProvider.mockResolvedValue({ ok: false, error: "fetch failed: ECONNREFUSED" });
     renderCard();
     fireEvent.click(screen.getByTestId("test-provider-button"));
     const pill = await waitFor(() => screen.getByTestId("test-pill"));
-    expect(pill.getAttribute("data-state")).toBe("err");
-    expect(pill.textContent).toMatch(/ECONNREFUSED/);
+    expect(pill.getAttribute("data-state")).toBe("unreachable");
+    expect(screen.getByTestId("provider-error-line").textContent).toMatch(/ECONNREFUSED/);
   });
 
-  it("clears pill when baseUrl is edited after a result", async () => {
+  it("falls back to the not-tested register when edited with no cached health", async () => {
     mockTestProvider.mockResolvedValue({ ok: true, status: 200, modelCount: 1, sample: ["m1"] });
     const onChange = vi.fn();
     renderCard({}, onChange);
     fireEvent.click(screen.getByTestId("test-provider-button"));
-    await waitFor(() => screen.getByTestId("test-pill"));
+    await waitFor(() => expect(screen.getByTestId("test-pill").getAttribute("data-state")).toBe("ok"));
 
-    // Edit baseUrl via the input — simulate parent passing the updated value by
-    // re-rendering through the onChange handler.
-    const inputs = screen.getAllByRole("textbox") as HTMLInputElement[];
-    const baseUrlInput = inputs.find((i) => i.value.startsWith("https://")) as HTMLInputElement;
-    fireEvent.change(baseUrlInput, { target: { value: "https://new.example.com/v1" } });
-
-    // onChange fires with new url; pill should be cleared on subsequent render.
-    // In this unit test we verify the onChange was called AND the pill cleared
-    // for the re-render that the parent would do. Simulate that:
+    // Re-render with the edited baseUrl and no cached health: the live result is
+    // cleared and the pill drops back to the neutral not-tested register.
     cleanup();
     render(
       <LlmProviderCard
@@ -141,14 +133,14 @@ describe("LlmProviderCard Test button", () => {
         onRemove={vi.fn()}
       />,
     );
-    expect(screen.queryByTestId("test-pill")).toBeNull();
+    expect(screen.getByTestId("test-pill").getAttribute("data-state")).toBe("not-tested");
   });
 
   it("does not call testProvider when disabled", async () => {
     renderCard({ baseUrl: "" });
     fireEvent.click(screen.getByTestId("test-provider-button"));
-    // Give any microtask a chance
-    await new Promise((r) => setTimeout(r, 5));
+    // Flush microtasks so a (buggy) async call path would have surfaced.
+    await act(async () => {});
     expect(mockTestProvider).not.toHaveBeenCalled();
   });
 });

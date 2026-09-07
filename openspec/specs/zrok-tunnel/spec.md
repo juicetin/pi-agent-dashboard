@@ -1,5 +1,8 @@
-## ADDED Requirements
+# zrok-tunnel Specification
 
+## Purpose
+Create zrok public tunnels (ephemeral + v2 reserved-name persistence) and manage the reserved-name lifecycle, binary detection, and status.
+## Requirements
 ### Requirement: Zrok enrollment detection
 The tunnel module SHALL detect whether zrok is enrolled on the current machine by checking for the existence and validity of `~/.zrok2/environment.json` (v2) or `~/.zrok/environment.json` (v1), preferring v2. If the file exists and contains valid JSON with `api_endpoint`, `ziti_identity`, and `zrok_token` fields, zrok is considered enrolled.
 
@@ -16,18 +19,37 @@ The tunnel module SHALL detect whether zrok is enrolled on the current machine b
 - **THEN** the module SHALL report zrok as not enrolled and not throw
 
 ### Requirement: Public share creation
-The tunnel module SHALL create a public proxy share by spawning `zrok share public --headless localhost:{port}` as a child process. The module SHALL parse the public URL from the process stdout and store the child process reference for cleanup.
+The tunnel module SHALL create a public proxy share by spawning the resolved zrok binary
+(`zrok2` preferred, `zrok` fallback) as a child process. For an **ephemeral** share it SHALL
+spawn `zrok2 share public --headless localhost:{port}`. For a **reserved/persistent** share
+(`tunnel.zrok.persistent === true` with a `tunnel.zrok.reservedName`) it SHALL spawn, flags
+first, `zrok2 share public --headless -n public:{name} localhost:{port}`. The module SHALL parse the
+public host from process output — which under zrok v2 is a **bare hostname**
+`{token-or-name}.shares.zrok.io` with no scheme — normalize it to an `https://` URL, and
+store the child process reference for cleanup.
+
+#### Scenario: Successful ephemeral share creation
+- **WHEN** the `zrok share public` process starts and prints a bare host `abc.shares.zrok.io`
+- **THEN** the module SHALL normalize it to `https://abc.shares.zrok.io`, return that URL, and store the process reference
+
+#### Scenario: Successful reserved share creation
+- **WHEN** a `tunnel.zrok.reservedName` `myname` is set and the process is spawned with `-n public:myname`
+- **THEN** the module SHALL return the stable URL `https://myname.shares.zrok.io`
 
 #### Scenario: Successful share creation
-- **WHEN** the `zrok share public` process starts and prints a public URL to stdout
+- **WHEN** the `zrok share public` process starts and prints a public URL (v2 bare host, or a v1 schemed URL) to stdout
 - **THEN** the module SHALL return the public URL and store the process reference for cleanup
+
+#### Scenario: v1 URL still parsed (back-compat)
+- **WHEN** a v1 client prints `https://abc.share.zrok.io` (singular, schemed)
+- **THEN** the module SHALL parse and return it unchanged
 
 #### Scenario: Share creation fails
 - **WHEN** the `zrok share public` process fails to start or exits with an error
 - **THEN** the module SHALL log a warning and return null (server continues without tunnel)
 
 #### Scenario: Subprocess crashes during operation
-- **WHEN** the `zrok share public` process exits unexpectedly after initial URL was obtained
+- **WHEN** the `zrok share public` process exits unexpectedly after an initial URL was obtained
 - **THEN** the module SHALL log a warning and update tunnel status to inactive
 
 ### Requirement: Share cleanup
@@ -76,14 +98,29 @@ The tunnel module SHALL expose the active tunnel URL so that the auth module can
 - **THEN** `getTunnelUrl()` SHALL return null
 
 ### Requirement: Zrok binary detection
-The tunnel module SHALL detect whether the `zrok` binary is available on the system PATH using `which zrok` (Unix) or `where zrok` (Windows).
+The tunnel module SHALL detect whether a zrok binary is available on the system PATH by
+resolving the first of `zrok2` (v2, tarball/Windows/Linux packages) then `zrok` (v1, or the
+Homebrew v2 bottle) via the login-shell tool resolver. Detection SHALL succeed if either
+name resolves.
+
+#### Scenario: Only zrok2 present (tarball/Windows/Linux package install)
+- **WHEN** `zrok2` resolves on PATH and `zrok` does not
+- **THEN** the module SHALL report zrok as available and use `zrok2` for all invocations
+
+#### Scenario: Only zrok present (Homebrew, or a v1 install)
+- **WHEN** `zrok` resolves on PATH and `zrok2` does not
+- **THEN** the module SHALL report zrok as available and use `zrok`
 
 #### Scenario: Zrok binary is available
-- **WHEN** `which zrok` (or `where zrok`) succeeds
+- **WHEN** either `zrok2` or `zrok` resolves on PATH
 - **THEN** the module SHALL report zrok as available
 
 #### Scenario: Zrok binary is not available
-- **WHEN** `which zrok` (or `where zrok`) fails
+- **WHEN** neither name resolves on PATH
+- **THEN** the module SHALL report zrok as unavailable
+
+#### Scenario: Neither present
+- **WHEN** neither `zrok2` nor `zrok` resolves
 - **THEN** the module SHALL report zrok as unavailable
 
 ### Requirement: Stale process cleanup
@@ -145,3 +182,164 @@ The server SHALL expose `POST /api/tunnel-disconnect` to stop the active tunnel.
 #### Scenario: Disconnect when not active
 - **WHEN** `POST /api/tunnel-disconnect` is called and no tunnel is running
 - **THEN** the server SHALL return `{ ok: true }` (idempotent)
+
+### Requirement: Reserved-name lifecycle
+The tunnel module SHALL manage zrok v2 reserved **names** (which replace v1 reserved
+tokens). "A persistent tunnel is requested" means `tunnel.zrok.persistent === true`. When a
+persistent tunnel is requested and no name is stored, the module SHALL generate a DNS-safe name
+(`pi-dash-<random>`), reserve it with `zrok2 create name -n public <name>` (treating an already-exists-for-this-account result as success), and persist it as
+`tunnel.zrok.reservedName`. A reserved name SHALL **survive** disconnect and server restart
+(that is the purpose of reservation); the module SHALL release the name with
+`zrok2 delete name <name>` ONLY on an explicit user "forget reserved URL" action, or when the
+user REPLACES the stored name with a different one, never on a normal
+`deleteTunnel`/disconnect. The v1 verbs `reserve`/`share reserved`/`release` SHALL NOT
+be used.
+
+A user MAY supply the reserved name instead of accepting a generated one. A user-supplied name
+SHALL be validated against the DNS-safe allow-list before it reaches zrok argv, and SHALL be
+served verbatim when valid. Reservation outcomes SHALL be reported as a typed result
+(`ok` / `taken` / `invalid` / `write-failed`) rather than collapsing every failure into a bare
+null, so a caller can state WHY a persistent name was not used.
+
+#### Scenario: Reserve a new name
+- **WHEN** a persistent tunnel is requested and no `reservedName` is stored
+- **THEN** the module SHALL run `zrok2 create name -n public <generated>`, persist the name, and serve it → `https://<generated>.shares.zrok.io`
+
+#### Scenario: Reuse an existing name across restart
+- **WHEN** a `reservedName` is already stored (e.g. after a server restart)
+- **THEN** the module SHALL skip generation and serve the stored name (stable URL); if `create name` reports it already exists for this account, the module SHALL proceed to serve without error
+
+#### Scenario: Name taken by another account
+- **WHEN** `create name` fails because the name is owned by a different account
+- **THEN** the module SHALL log a warning and fall back to an ephemeral share (NOT silently rotate a persisted name)
+
+#### Scenario: Disconnect preserves the reserved name
+- **WHEN** a reserved tunnel is disconnected via `deleteTunnel`
+- **THEN** the module SHALL kill the share process but SHALL NOT delete the name; a later reconnect serves the same URL
+
+#### Scenario: Explicit forget releases the name
+- **WHEN** the user explicitly forgets the reserved URL via `POST /api/tunnel-disconnect` with body `{ forget: true }`
+- **THEN** the module SHALL run `zrok2 delete name <name>`, clear `tunnel.zrok.reservedName`, and set `tunnel.zrok.persistent` to false
+
+#### Scenario: User supplies a custom name
+- **WHEN** the user supplies a DNS-safe name `robson-home-mac` and no name is stored
+- **THEN** the module SHALL run `zrok2 create name -n public robson-home-mac`, persist it as `tunnel.zrok.reservedName`, set `tunnel.zrok.persistent` to true, and return an `ok` outcome
+
+#### Scenario: Replacing a stored name releases the old one
+- **WHEN** a `reservedName` `old-name` is stored and the user sets a different name `new-name` that reserves successfully
+- **THEN** the module SHALL persist `new-name` AND run `zrok2 delete name old-name`, so the account accumulates no orphaned reservation
+
+#### Scenario: Replacement failure leaves the old name intact
+- **WHEN** a `reservedName` `old-name` is stored and the user sets `new-name` but its reservation fails
+- **THEN** the module SHALL keep `old-name` stored and SHALL NOT release it, so a failed edit cannot destroy a working URL
+
+#### Scenario: User-supplied name is not DNS-safe
+- **WHEN** the user supplies a name that fails the DNS-safe allow-list (e.g. a leading hyphen or an underscore)
+- **THEN** the module SHALL reject it with an `invalid` outcome, SHALL NOT invoke zrok, and SHALL leave any stored name unchanged
+
+#### Scenario: Reservation succeeds but the config write fails
+- **WHEN** `create name` succeeds but persisting `tunnel.zrok.reservedName` fails
+- **THEN** the module SHALL return a `write-failed` outcome and SHALL NOT serve the unpersisted name (it would be lost on restart and orphaned remotely)
+
+#### Scenario: stderr classification is pinned
+- **WHEN** `create name` fails with stderr that matches neither the already-exists-for-this-account form nor a recognised taken-by-another form
+- **THEN** the module SHALL report a generic reservation failure rather than misclassifying it as a reusable existing name
+
+### Requirement: Tunnel disconnect preserves reserved names by default
+The `POST /api/tunnel-disconnect` endpoint SHALL accept an optional `{ forget?: boolean }` body.
+Without `forget: true` it SHALL stop the share process but PRESERVE any reserved name (so a
+later reconnect yields the same URL). With `forget: true` it SHALL additionally release the
+reserved name and clear the persisted name.
+
+#### Scenario: Plain disconnect preserves the name
+- **WHEN** `POST /api/tunnel-disconnect` is called with no body (or `{ forget: false }`) while a reserved tunnel is active
+- **THEN** the server SHALL stop the tunnel, keep `tunnel.zrok.reservedName`, and return `{ ok: true }`
+
+#### Scenario: Forget disconnect releases the name
+- **WHEN** `POST /api/tunnel-disconnect` is called with `{ forget: true }`
+- **THEN** the server SHALL stop the tunnel, run `zrok2 delete name <name>`, clear the persisted name, and return `{ ok: true }`
+
+#### Scenario: Transient serve failure does not recycle the name
+- **WHEN** `share public` for a reserved name fails transiently and the core retries
+- **THEN** the module SHALL retry the SAME name and SHALL NOT `delete name` + regenerate (URL stays stable)
+
+### Requirement: Reserved-name configuration endpoint
+The server SHALL expose an endpoint that sets, replaces or clears the zrok reserved name
+independently of connecting a tunnel, so a user learns whether their chosen name is usable at
+the moment they choose it rather than after a later connect. Setting a name SHALL also set
+`tunnel.zrok.persistent` to true. The endpoint SHALL return the typed reservation outcome so
+the client can render the specific reason for a rejection.
+
+The endpoint mutates persisted config **and** creates or destroys a remote resource on the
+operator's zrok account. It SHALL therefore sit behind the same network guard and
+authentication gate as the other config-mutating routes; it SHALL NOT be reachable
+unauthenticated merely because it is read-shaped from the client's perspective.
+
+Setting a name while a tunnel is already live SHALL NOT silently leave the live tunnel
+serving a different URL than the one now stored. The endpoint SHALL either apply the name
+by reconnecting, or return the reservation outcome together with an explicit indication
+that the running tunnel still serves the previous URL until it is reconnected. Storing a
+name that the live tunnel does not serve, with no such indication, is the exact silent
+divergence this change exists to remove.
+
+#### Scenario: Set a name while the tunnel is disconnected
+- **WHEN** the user sets a valid, available name and no tunnel is active
+- **THEN** the server SHALL reserve and persist it, set `persistent` to true, and return an `ok` outcome without starting a tunnel
+
+#### Scenario: Set a name that is taken by another account
+- **WHEN** the user sets a name owned by a different zrok account
+- **THEN** the server SHALL return a `taken` outcome naming the cause, and SHALL leave the stored name and `persistent` flag unchanged
+
+#### Scenario: Clear the configured name
+- **WHEN** the user clears the reserved name
+- **THEN** the server SHALL release the stored name, clear `tunnel.zrok.reservedName`, and set `tunnel.zrok.persistent` to false
+
+#### Scenario: A release never pulls the reservation out from under a live share
+- **GIVEN** a tunnel is actively serving the URL of the name about to be released (on clear, or on the old name during a replace)
+- **WHEN** the release is performed
+- **THEN** the live share SHALL be torn down **before** `delete name` is issued, matching the existing forget path which calls `deleteTunnel()` first
+- **AND** the server SHALL NOT issue `delete name` against a name whose share is still running
+
+#### Scenario: A stored name is used by the next connect
+- **WHEN** a name was set via the endpoint and the user subsequently connects
+- **THEN** the connect SHALL serve that name without re-prompting or re-validating interactively
+
+#### Scenario: The endpoint is guarded
+- **WHEN** a request reaches the reserved-name endpoint without passing the network guard and auth gate applied to config-mutating routes
+- **THEN** the server SHALL refuse it
+- **AND** SHALL NOT reserve, release, or persist anything
+
+#### Scenario: Setting a name while a tunnel is live is not silently divergent
+- **GIVEN** a tunnel is active and serving some URL
+- **WHEN** the user sets a different reserved name
+- **THEN** the response SHALL either reflect a reconnect onto the new name, or state that the live tunnel still serves the previous URL until reconnected
+- **AND** the stored name SHALL NOT be left differing from the served URL with no indication
+
+#### Scenario: A failed reservation while live leaves the tunnel untouched
+- **GIVEN** a tunnel is active
+- **WHEN** setting a new name returns `taken`, `invalid` or `write-failed`
+- **THEN** the running tunnel SHALL be undisturbed and SHALL continue serving its current URL
+
+### Requirement: Degraded persistence reporting
+When a `reservedName` is stored and `persistent` is true, but a connect nevertheless serves an
+ephemeral share, the tunnel status SHALL carry a signal distinguishing that outcome from a
+normal active tunnel. A tunnel that was never configured to be persistent SHALL NOT be reported
+as degraded. The signal SHALL be derived from stored-name-versus-effective-name so that a
+watchdog recycle does not generate a distinct notification per cycle.
+
+#### Scenario: Connect falls back despite a stored name
+- **WHEN** `tunnel.zrok.reservedName` is stored with `persistent: true` but the share is serving an ephemeral URL
+- **THEN** the tunnel status SHALL report the tunnel as active AND carry a degraded signal identifying the configured name that was not used
+
+#### Scenario: Ephemeral by configuration is not degraded
+- **WHEN** `tunnel.zrok.persistent` is false and an ephemeral share is active
+- **THEN** the tunnel status SHALL report a normal active tunnel with no degraded signal
+
+#### Scenario: Degraded signal clears on a successful reserved connect
+- **WHEN** a previously degraded tunnel reconnects and successfully serves the stored name
+- **THEN** the tunnel status SHALL report a normal active tunnel with no degraded signal
+
+#### Scenario: Watchdog recycle does not re-notify
+- **WHEN** the watchdog recycles a degraded tunnel and the same fallback recurs
+- **THEN** the status SHALL continue to report the same degraded signal without emitting a new notification per recycle
+

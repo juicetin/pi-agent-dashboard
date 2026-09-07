@@ -12,9 +12,9 @@ import { EventEmitter } from "node:events";
 import { mkdtempSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { createHeadlessPidRegistry } from "../headless-pid-registry.js";
-import { createPendingForkRegistry } from "../pending-fork-registry.js";
-import { mintSpawnToken } from "../spawn-token.js";
+import { createHeadlessPidRegistry } from "../spawn-process/headless-pid-registry.js";
+import { createPendingForkRegistry } from "../pending/pending-fork-registry.js";
+import { mintSpawnToken } from "../auth/spawn-token.js";
 
 function mockProc() {
   return new EventEmitter() as any;
@@ -69,8 +69,8 @@ describe("spawn-correlation-token: kill-fork-doesn't-kill-parent regression", ()
 
     // Two forks issued in the same cwd, each with its own token. Pre-fix
     // (cwd-keyed registry) the second recordFork would overwrite the first.
-    forkRegistry.recordFork(tokenA, "parent-A");
-    forkRegistry.recordFork(tokenB, "parent-B");
+    forkRegistry.recordFork(tokenA, "parent-A", 95_000);
+    forkRegistry.recordFork(tokenB, "parent-B", 95_000);
 
     // Bridge connect order arbitrary; each token resolves to its OWN parent.
     expect(forkRegistry.consumeFork(tokenB)).toBe("parent-B");

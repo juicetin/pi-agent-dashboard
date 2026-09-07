@@ -2,13 +2,18 @@
  * FolderOpenSpecSection — slim navigation entry to the full-page OpenSpec
  * board. The inline accordion (change tree, group pills, search, DnD, session
  * rows) moved to OpenSpecBoardView. See change: redesign-openspec-board.
+ *
+ * The section is now STATE-ONLY: Refresh / Specs / Archive are folder-actions-menu
+ * items contributed host-side by `SessionList`, so this file asserts their
+ * ABSENCE here and `SessionList.folder-menu.test.tsx` asserts their presence
+ * there. See change: move-slot-actions-to-menu.
  */
-import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, screen, fireEvent, cleanup } from "@testing-library/react";
-import React from "react";
 
-import { FolderOpenSpecSection } from "../FolderOpenSpecSection.js";
 import type { OpenSpecData } from "@blackbelt-technology/pi-dashboard-shared/types.js";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import React from "react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { FolderOpenSpecSection } from "../openspec/FolderOpenSpecSection.js";
 
 afterEach(() => cleanup());
 
@@ -23,14 +28,14 @@ const mockData: OpenSpecData = {
 const defaultProps = {
   data: mockData,
   cwd: "/project/foo",
-  onRefresh: vi.fn(),
 };
 
 describe("FolderOpenSpecSection (navigation entry)", () => {
-  it("renders a single-line entry with the change count", () => {
+  it("renders a SlotPill entry with the change count", () => {
     render(<FolderOpenSpecSection {...defaultProps} />);
-    expect(screen.getByTestId("folder-openspec-open-board")).toBeTruthy();
-    expect(screen.getByText("OpenSpec (2)")).toBeTruthy();
+    const pill = screen.getByTestId("folder-openspec-open-board");
+    expect(pill.textContent).toContain("OpenSpec");
+    expect(screen.getByTestId("folder-openspec-count").textContent).toBe("2");
   });
 
   it("does not render an inline change tree", () => {
@@ -47,31 +52,21 @@ describe("FolderOpenSpecSection (navigation entry)", () => {
     expect(onOpenBoard).toHaveBeenCalledWith("/project/foo");
   });
 
-  it("calls onRefresh when the refresh control is clicked", () => {
-    const onRefresh = vi.fn();
-    render(<FolderOpenSpecSection {...defaultProps} onRefresh={onRefresh} />);
-    fireEvent.click(screen.getByTestId("folder-openspec-refresh"));
-    expect(onRefresh).toHaveBeenCalledTimes(1);
-  });
-
-  it("shows the Specs button and calls onOpenSpecs", () => {
-    const onOpenSpecs = vi.fn();
-    render(<FolderOpenSpecSection {...defaultProps} onOpenSpecs={onOpenSpecs} />);
-    fireEvent.click(screen.getByTestId("folder-specs-btn"));
-    expect(onOpenSpecs).toHaveBeenCalledTimes(1);
-  });
-
-  it("shows the Archive button and calls onOpenArchive", () => {
-    const onOpenArchive = vi.fn();
-    render(<FolderOpenSpecSection {...defaultProps} onOpenArchive={onOpenArchive} />);
-    fireEvent.click(screen.getByTestId("folder-archive-btn"));
-    expect(onOpenArchive).toHaveBeenCalledTimes(1);
-  });
-
-  it("hides Specs/Archive buttons when handlers not provided", () => {
+  it("renders no action control of its own \u2014 refresh, specs and archive are menu items", () => {
     render(<FolderOpenSpecSection {...defaultProps} />);
+    expect(screen.queryByTestId("folder-openspec-refresh")).toBeNull();
     expect(screen.queryByTestId("folder-specs-btn")).toBeNull();
     expect(screen.queryByTestId("folder-archive-btn")).toBeNull();
+  });
+
+  it("the pill grid cell holds exactly one control \u2014 the pill root itself", () => {
+    render(<FolderOpenSpecSection {...defaultProps} />);
+    const section = screen.getByTestId("folder-openspec-section");
+    const pill = screen.getByTestId("folder-openspec-open-board");
+    const interactive = Array.from(
+      section.querySelectorAll("button, a, [role='button'], [tabindex]:not([tabindex='-1'])"),
+    );
+    expect(interactive).toEqual([pill]);
   });
 
   it("does not render when not initialized", () => {

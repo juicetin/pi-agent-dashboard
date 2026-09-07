@@ -18,7 +18,7 @@ import type { DashboardSession, DecoratorDescriptor } from "@blackbelt-technolog
 import { mdiAlertCircle, mdiCheckCircle, mdiCloseCircle, mdiInformation } from "@mdi/js";
 import { Icon } from "@mdi/react";
 import React, { useEffect, useMemo, useState } from "react";
-import { t as i18nT } from "../../lib/i18n";
+import { t as i18nT } from "../../lib/i18n/i18n.js";
 
 const DISPLAY_CAP = 5;
 const DEFAULT_DURATION_MS = 5000;
@@ -141,7 +141,7 @@ export function ToastSlot({ sessions }: { sessions: Map<string, DashboardSession
 
   return (
     <div
-      className="fixed top-4 right-4 z-[100] flex flex-col gap-2 pointer-events-none"
+      className="fixed top-4 right-4 z-toast flex flex-col gap-2 pointer-events-none"
       data-testid="toast-slot"
     >
       {visible.map((t) => (

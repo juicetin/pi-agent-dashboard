@@ -1,0 +1,622 @@
+/**
+ * Provider Authentication section for Settings panel.
+ * OAuth login buttons + API key inputs for pi LLM providers.
+ */
+
+import type { DeviceCodeResponse, ProviderAuthHandlerIdsResponse, ProviderAuthStatus } from "@blackbelt-technology/pi-dashboard-shared/rest-api.js";
+import {
+  mdiAlert,
+  mdiArrowRight,
+  mdiCheck,
+  mdiClockOutline,
+  mdiContentCopy,
+  mdiContentSave,
+  mdiDelete,
+  mdiKeyPlus,
+  mdiLoading,
+  mdiLogin,
+  mdiLogout,
+} from "@mdi/js";
+import { Icon } from "@mdi/react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import {
+  ANTHROPIC_PEER_SOURCE,
+  IMPORT_FAILURE_PREFIX,
+  useAnthropicPeerProbe,
+} from "../../hooks/useAnthropicPeerProbe.js";
+import { useAsyncAction } from "../../hooks/useAsyncAction.js";
+import { usePackageOperations } from "../../hooks/usePackageOperations.js";
+import { PROVIDER_AUTH_EVENT } from "../../hooks/useProvidersReady.js";
+import { getApiBase } from "../../lib/api/api-context.js";
+import { t as i18nT } from "../../lib/i18n/i18n.js";
+import { logRejection } from "../../lib/report-error.js";
+import { InlineMessage } from "../primitives/InlineMessage.js";
+import { Toast, type ToastVariant, useToast } from "../primitives/Toast.js";
+
+// ── Fetch helpers ────────────────────────────────────────────────────────────
+
+/** Consecutive malformed/non-ok poll responses tolerated before an auth-code login aborts. */
+const POLL_MAX_CONSECUTIVE_FAILURES = 3;
+
+/**
+ * Fail closed on BOTH failure classes — a non-ok response and a body that is
+ * not an array — instead of feeding a Fastify error envelope (or any object)
+ * into `statuses.filter(...)`, which white-screened the whole Settings panel
+ * on a corrupt auth.json. See change: fix-corrupt-auth-json-500.
+ */
+async function fetchStatus(): Promise<ProviderAuthStatus[]> {
+  const res = await fetch(`${getApiBase()}/api/provider-auth/status`);
+  if (!res.ok) {
+    throw new Error(i18nT("err.providerAuthStatusHttp", undefined, `Provider status request failed (${res.status}).`));
+  }
+  const data: unknown = await res.json();
+  // Array.isArray accepts [null] — and a null item would still crash the
+  // rows' property access at render. Validate the items too.
+  if (!Array.isArray(data) || !data.every((s) => s !== null && typeof s === "object")) {
+    throw new Error(i18nT("err.providerAuthStatusShape", undefined, "Provider status response was malformed."));
+  }
+  return data;
+}
+
+/** Provider ids the dashboard can actually complete a login flow for. */
+async function fetchHandlerIds(): Promise<Set<string>> {
+  const res = await fetch(`${getApiBase()}/api/provider-auth/handlers`);
+  if (!res.ok) throw new Error(i18nT("err.loadProviderAuthHandlers", undefined, "Failed to load provider auth handlers"));
+  const data: ProviderAuthHandlerIdsResponse = await res.json();
+  return new Set(data.ids ?? []);
+}
+
+/** DELETE a provider credential, surfacing the backend error detail on failure. */
+async function deleteProvider(id: string, fallback: string): Promise<void> {
+  const res = await fetch(`${getApiBase()}/api/provider-auth/${id}`, { method: "DELETE" });
+  if (!res.ok) {
+    const detail = await res
+      .json()
+      .then((d) => (d && typeof d.error === "string" ? d.error : null))
+      .catch(() => null);
+    throw new Error(detail || fallback);
+  }
+}
+
+// ── Time formatting ──────────────────────────────────────────────────────────
+
+function relativeExpiry(expires: number): string {
+  const diff = expires - Date.now();
+  if (diff <= 0) return "expired";
+  const days = Math.floor(diff / 86_400_000);
+  if (days > 0) return `expires in ${days}d`;
+  const hours = Math.floor(diff / 3_600_000);
+  if (hours > 0) return `expires in ${hours}h`;
+  const mins = Math.floor(diff / 60_000);
+  return `expires in ${mins}m`;
+}
+
+// ── Main component ───────────────────────────────────────────────────────────
+
+export function ProviderAuthSection({ onCredentialsChanged }: {
+  /**
+   * Fired after a credential write lands (API-key save/removal, OAuth or
+   * device-code completion) so the owner can refetch the model catalogue.
+   * See change: settings-default-model-without-session.
+   */
+  onCredentialsChanged?: () => void;
+} = {}) {
+  const [statuses, setStatuses] = useState<ProviderAuthStatus[]>([]);
+  // Set when fetchStatus fails (non-ok, non-array, network). The section stays
+  // mounted and interactive — the inline error carries a Retry so credentials
+  // remain repairable from this state. See change: fix-corrupt-auth-json-500.
+  const [statusError, setStatusError] = useState<string | null>(null);
+  // null = not yet known (loading or fetch failed). Never gate OAuth rows
+  // closed while unknown — a secondary capability probe must not become a
+  // hard sign-in outage. See change: adopt-pi-071-072-073-features.
+  const [handlerIds, setHandlerIds] = useState<Set<string> | null>(null);
+  const [loading, setLoading] = useState(true);
+  const { messages, showToast, dismissToast } = useToast();
+  // One probe read for the whole section — per-row hooks would fan out one
+  // /api/health fetch per provider. See change: warn-missing-anthropic-messages-peer.
+  const { peerMissing, peerReason } = useAnthropicPeerProbe();
+
+  const refresh = useCallback(async () => {
+    try {
+      const data = await fetchStatus();
+      setStatuses(data);
+      setStatusError(null);
+    } catch (err: any) {
+      setStatusError(err?.message || i18nT("err.providerAuthStatusUnknown", undefined, "Provider status is unavailable."));
+    }
+    setLoading(false);
+  }, []);
+
+  // Row-level credential change: dispatch the readiness hint, refresh this
+  // section AND notify the owner. Deliberately NOT folded into `refresh`,
+  // which also runs on mount — a mount must not look like a credential write.
+  // The event carries no payload: it is a hint to refetch, never a claim that
+  // the credential count changed. See change: dispatch-provider-auth-event.
+  const handleChanged = useCallback(() => {
+    window.dispatchEvent(new CustomEvent(PROVIDER_AUTH_EVENT));
+    void refresh().catch(logRejection("ProviderAuthSection.refresh"));
+    onCredentialsChanged?.();
+  }, [refresh, onCredentialsChanged]);
+
+  useEffect(() => { void refresh().catch(logRejection("ProviderAuthSection.refresh")); }, [refresh]);
+  useEffect(() => {
+    fetchHandlerIds().then(setHandlerIds).catch(() => setHandlerIds(null));
+  }, []);
+
+  if (loading) {
+    return <div className="text-[var(--text-muted)] text-sm py-2">{i18nT("providers.loadingProviderStatus", undefined, "Loading provider status…")}</div>;
+  }
+
+  const oauthProviders = statuses.filter((s) => s.flowType !== "api_key");
+  const apiKeyProviders = statuses.filter((s) => s.flowType === "api_key");
+
+  return (
+    <div className="space-y-4">
+      <Toast messages={messages} onDismiss={dismissToast} />
+      {statusError && (
+        <InlineMessage
+          severity="error"
+          icon={mdiAlert}
+          testId="provider-auth-status-error"
+          title={statusError}
+          actions={
+            <button
+              type="button"
+              onClick={() => void refresh().catch(logRejection("ProviderAuthSection.refresh"))}
+              className="focus-ring px-2 py-1 text-[11px] rounded border border-current bg-transparent disabled:opacity-60"
+            >
+              {i18nT("common.retry", undefined, "Retry")}
+            </button>
+          }
+        />
+      )}
+      {/* OAuth Providers */}
+      <div className="space-y-2">
+        <h3 className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider">{i18nT("gateway.subscriptionsOauth", undefined, "Subscriptions (OAuth)")}</h3>
+        {oauthProviders.map((p) => (
+          <OAuthProviderRow key={p.id} provider={p} supported={handlerIds === null ? true : handlerIds.has(p.id)} onChanged={handleChanged} showToast={showToast} peerMissing={p.id === "anthropic" && peerMissing} peerReason={peerReason} />
+        ))}
+      </div>
+
+      {/* API Key Providers */}
+      <div className="space-y-2">
+        <h3 className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider mt-4">{i18nT("gateway.apiKeys", undefined, "API Keys")}</h3>
+        {apiKeyProviders.map((p) => (
+          <ApiKeyRow key={p.id} provider={p} onChanged={handleChanged} showToast={showToast} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── OAuth Provider Row ───────────────────────────────────────────────────────
+
+function OAuthProviderRow({ provider, supported, onChanged, showToast, peerMissing = false, peerReason }: { provider: ProviderAuthStatus; supported: boolean; onChanged: () => void; showToast: (text: string, variant?: ToastVariant) => void; peerMissing?: boolean; peerReason?: string }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [deviceModal, setDeviceModal] = useState<DeviceCodeResponse | null>(null);
+  const [enterpriseInput, setEnterpriseInput] = useState(false);
+  const [enterpriseDomain, setEnterpriseDomain] = useState("");
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Cleanup polling and timeouts on unmount
+  useEffect(() => () => {
+    if (pollingRef.current) clearInterval(pollingRef.current);
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+  }, []);
+
+  const startAuthCode = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`${getApiBase()}/api/provider-auth/authorize`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider: provider.id }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+
+      // Server opens system browser and starts temp callback server.
+      // Poll status until the provider shows as authenticated.
+      if (pollingRef.current) clearInterval(pollingRef.current);
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+
+      let consecutivePollFailures = 0;
+      const stopPolling = () => {
+        if (pollingRef.current) clearInterval(pollingRef.current);
+        if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      };
+
+      pollingRef.current = setInterval(async () => {
+        try {
+          const statusRes = await fetch(`${getApiBase()}/api/provider-auth/status`);
+          if (!statusRes.ok) throw new Error(`provider-auth status ${statusRes.status}`);
+          const pollStatuses: unknown = await statusRes.json();
+          if (!Array.isArray(pollStatuses)) throw new Error("provider-auth status body is not an array");
+          consecutivePollFailures = 0;
+          const updated = (pollStatuses as ProviderAuthStatus[]).find((s) => s.id === provider.id);
+          if (updated?.authenticated) {
+            stopPolling();
+            setBusy(false);
+            onChanged();
+          }
+        } catch {
+          // Transient failures keep polling (a mid-login /api/restart must not
+          // kill an in-flight OAuth login), but a PERSISTENT failure must end
+          // the flow instead of silently waiting for the 5-minute timeout.
+          consecutivePollFailures += 1;
+          if (consecutivePollFailures >= POLL_MAX_CONSECUTIVE_FAILURES) {
+            stopPolling();
+            setBusy(false);
+            setError(i18nT("providers.pollLostContact", undefined, "Lost contact with the dashboard while signing in — please try again."));
+          }
+        }
+      }, 2000);
+
+      // Stop polling after 5 minutes (matches callback server timeout)
+      timeoutRef.current = setTimeout(() => {
+        if (pollingRef.current) clearInterval(pollingRef.current);
+        setBusy((prev) => {
+          if (prev) setError("Login timed out. Please try again.");
+          return false;
+        });
+      }, 5 * 60 * 1000);
+    } catch (err: any) {
+      setError(err.message);
+      setBusy(false);
+    }
+  };
+
+  const startDeviceCode = async (domain?: string) => {
+    setBusy(true);
+    setError(null);
+    setEnterpriseInput(false);
+    try {
+      const res = await fetch(`${getApiBase()}/api/provider-auth/device-code`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider: provider.id, enterpriseDomain: domain || undefined }),
+      });
+      const data: DeviceCodeResponse = await res.json();
+      if (!res.ok) throw new Error((data as any).error);
+      setDeviceModal(data);
+
+      // Poll for completion (user opens the URL manually via button)
+      pollingRef.current = setInterval(async () => {
+        try {
+          const statusRes = await fetch(`${getApiBase()}/api/provider-auth/device-status/${data.flowId}`);
+          const statusData = await statusRes.json();
+          if (statusData.status === "complete") {
+            clearInterval(pollingRef.current!);
+            setDeviceModal(null);
+            setBusy(false);
+            onChanged();
+          } else if (statusData.status === "expired" || statusData.status === "error") {
+            clearInterval(pollingRef.current!);
+            setDeviceModal(null);
+            setBusy(false);
+            setError(statusData.error || "Authorization expired");
+          }
+        } catch { /* retry */ }
+      }, 3000);
+    } catch (err: any) {
+      setError(err.message);
+      setBusy(false);
+    }
+  };
+
+  const handleSignIn = () => {
+    if (provider.flowType === "device_code") {
+      if (provider.id === "github-copilot") {
+        setEnterpriseInput(true);
+        return;
+      }
+      void startDeviceCode().catch(logRejection("ProviderAuthSection.startDeviceCode"));
+    } else {
+      void startAuthCode().catch(logRejection("ProviderAuthSection.startAuthCode"));
+    }
+  };
+
+  // Sign-out is a synchronous REST delete — confirm:"http" + success toast.
+  // See change: add-async-action-feedback.
+  const signOut = useAsyncAction(
+    () => deleteProvider(provider.id, "Failed to sign out"),
+    { showToast, successToast: `Signed out of ${provider.name}`, onSuccess: onChanged },
+  );
+
+  return (
+    <div className="flex flex-col gap-1 p-3 rounded bg-[var(--bg-tertiary)] border border-[var(--border-primary)]">
+      <div className="flex items-center gap-3">
+        <div className="flex-1 min-w-0">
+          <div className="text-sm font-medium text-[var(--text-primary)]">{provider.name}</div>
+          {provider.authenticated && provider.expires && (
+            <div className="flex items-center gap-1 text-xs text-[var(--text-muted)]">
+              <Icon path={mdiClockOutline} size={0.45} />
+              {relativeExpiry(provider.expires)}
+            </div>
+          )}
+        </div>
+        {provider.authenticated ? (
+          <div className="flex items-center gap-2">
+            <span className="flex items-center gap-1 text-xs text-green-400">
+              <Icon path={mdiCheck} size={0.5} /> {i18nT("connection.connected", undefined, "Connected")}
+            </span>
+            <button
+              onClick={signOut.bind.onClick}
+              disabled={busy || signOut.pending}
+              className="flex items-center gap-1 px-2 py-1 text-xs rounded bg-[var(--bg-secondary)] hover:bg-red-900/30 text-[var(--text-muted)] hover:text-red-400 border border-[var(--border-secondary)] disabled:opacity-50"
+            >
+              <Icon path={mdiLogout} size={0.5} />
+              {signOut.pending ? "Signing Out…" : "Sign Out"}
+            </button>
+          </div>
+        ) : (
+          // Tooltip lives on the wrapper span: a disabled <button> does not fire
+          // hover events in all browsers, so a `title` on it would never show.
+          <span title={supported ? undefined : `OAuth flow not yet supported in dashboard for ${provider.name}`} className="inline-flex">
+            <button
+              onClick={supported ? handleSignIn : undefined}
+              disabled={busy || !supported}
+              className="flex items-center gap-1 px-3 py-1.5 text-xs rounded bg-blue-600 hover:bg-blue-500 text-white font-medium disabled:opacity-50"
+            >
+              {busy ? <Icon path={mdiLoading} size={0.5} className="animate-spin" /> : <Icon path={mdiLogin} size={0.5} />}
+              {i18nT("common.signIn", undefined, "Sign In")}
+            </button>
+          </span>
+        )}
+      </div>
+
+      {/* GitHub Enterprise domain prompt */}
+      {enterpriseInput && (
+        <div className="flex items-center gap-2 mt-2">
+          <input
+            type="text"
+            value={enterpriseDomain}
+            onChange={(e) => setEnterpriseDomain(e.target.value)}
+            placeholder={i18nT("git.enterpriseDomainBlankForGithubCom", undefined, "Enterprise domain (blank for github.com)")}
+            className="flex-1 px-2 py-1 text-xs rounded bg-[var(--bg-secondary)] border border-[var(--border-secondary)] text-[var(--text-primary)] placeholder-[var(--text-muted)]"
+            onKeyDown={(e) => { if (e.key === "Enter") void startDeviceCode(enterpriseDomain).catch(logRejection("ProviderAuthSection.startDeviceCode")); }}
+            autoFocus
+          />
+          <button
+            onClick={() => startDeviceCode(enterpriseDomain)}
+            className="px-2 py-1 text-xs rounded bg-blue-600 hover:bg-blue-500 text-white"
+          >
+            <Icon path={mdiArrowRight} size={0.45} className="inline mr-0.5" />{i18nT("common.continue", undefined, "Continue")}
+          </button>
+          <button
+            onClick={() => setEnterpriseInput(false)}
+            className="px-2 py-1 text-xs rounded bg-[var(--bg-secondary)] text-[var(--text-muted)]"
+          >
+            {i18nT("common.cancel", undefined, "Cancel")}
+          </button>
+        </div>
+      )}
+
+      {/* Device code modal */}
+      {deviceModal && (
+        <div className="mt-2 p-3 rounded bg-[var(--bg-secondary)] border border-[var(--border-secondary)]">
+          <div className="text-xs text-[var(--text-muted)] mb-2">{i18nT("common.enterThisCodeAt", undefined, "Enter this code at:")}</div>
+          <a href={deviceModal.verificationUri} target="_blank" rel="noopener" className="text-xs text-blue-400 hover:underline break-all">
+            {deviceModal.verificationUri}
+          </a>
+          <div className="flex items-center gap-2 mt-2">
+            <code className="text-lg font-bold text-[var(--text-primary)] tracking-wider">{deviceModal.userCode}</code>
+            <button
+              onClick={() => navigator.clipboard.writeText(deviceModal.userCode)}
+              className="text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+              title={i18nT("common.copyCode", undefined, "Copy code")}
+            >
+              <Icon path={mdiContentCopy} size={0.5} />
+            </button>
+          </div>
+          <button
+            onClick={() => window.open(deviceModal.verificationUri, "_blank")}
+            className="mt-2 px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium"
+          >
+            {i18nT("common.openRegistrationPage", undefined, "Open Registration Page")}
+          </button>
+          <div className="flex items-center gap-1 mt-2 text-xs text-[var(--text-muted)]">
+            <Icon path={mdiLoading} size={0.45} className="animate-spin" />
+            {i18nT("status.waitingForAuthorization", undefined, "Waiting for authorization…")}
+          </div>
+        </div>
+      )}
+
+      {/* Bridge peer hint — only on the authenticated Anthropic OAuth row. */}
+      <AnthropicPeerHint show={peerMissing && provider.authenticated} reason={peerReason} />
+
+      {error && (
+        <div className="flex items-center gap-1 mt-1 text-xs text-red-400">
+          <Icon path={mdiAlert} size={0.45} />
+          {error}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Anthropic bridge-peer hint ───────────────────────────────────────────────
+
+/**
+ * Inline advisory under the Connected marker when the bridge's probe reports
+ * the `@pi/anthropic-messages` peer unresolved. Copy leads with the next step,
+ * not with a failure (the OAuth sign-in itself succeeded).
+ *
+ * See change: warn-missing-anthropic-messages-peer.
+ */
+function AnthropicPeerHint({ show, reason }: { show: boolean; reason?: string }) {
+  const { install, statusFor, messageFor } = usePackageOperations("global", undefined);
+  // Explicit latch: `statusFor(source) === "success"` auto-clears after 3 s and
+  // would silently revert to the warning + Install button (D6b). Released when
+  // the probe reports the peer resolving (i.e. `show` goes false).
+  const [installed, setInstalled] = useState(false);
+  const status = statusFor(ANTHROPIC_PEER_SOURCE);
+  const message = messageFor(ANTHROPIC_PEER_SOURCE);
+
+  useEffect(() => {
+    if (status === "success") setInstalled(true);
+  }, [status]);
+  useEffect(() => {
+    if (!show) setInstalled(false);
+  }, [show]);
+
+  if (!show) return null;
+
+  if (installed) {
+    return (
+      <InlineMessage
+        severity="info"
+        icon={mdiCheck}
+        testId="anthropic-peer-hint"
+        title={i18nT("providers.anthropicPeerInstalled", undefined, "Peer installed — applies on the next pi session start")}
+      />
+    );
+  }
+
+  // An import failure means the package IS installed; installing again is wrong,
+  // so both the control AND the copy switch away from "install this".
+  const importFailed = typeof reason === "string" && reason.startsWith(IMPORT_FAILURE_PREFIX);
+  const pending = status === "queued" || status === "running";
+
+  return (
+    <InlineMessage
+      severity="warning"
+      icon={mdiAlert}
+      testId="anthropic-peer-hint"
+      title={importFailed
+        ? i18nT("providers.anthropicPeerImportFailedTitle", undefined, "The Anthropic peer package is installed but failed to load")
+        : i18nT("providers.anthropicPeerMissingTitle", undefined, "One more step: install the Anthropic peer package")}
+      actions={
+        importFailed ? undefined : (
+          <button
+            type="button"
+            onClick={() => install(ANTHROPIC_PEER_SOURCE)}
+            disabled={pending}
+            className="focus-ring px-2 py-1 text-[11px] rounded border border-current bg-transparent disabled:opacity-60"
+          >
+            {pending
+              ? i18nT("common.installing", undefined, "Installing…")
+              : i18nT("providers.installPeer", undefined, "Install peer")}
+          </button>
+        )
+      }
+    >
+      <div>
+        {importFailed
+          ? i18nT("providers.anthropicPeerImportFailedBody", undefined, "Claude is connected, but the bridge could not import")
+          : i18nT("providers.anthropicPeerMissingBody", undefined, "Claude is connected, but the bridge cannot resolve")}{" "}
+        <code className="font-mono">@blackbelt-technology/pi-anthropic-messages</code>
+        {i18nT(
+          "providers.anthropicPeerMissingBody2",
+          undefined,
+          ", so flows stay in waiting_peers and tool calls fall back.",
+        )}
+      </div>
+      {reason && <div className="mt-0.5 opacity-80">{reason}</div>}
+      {message && <div className="mt-0.5 opacity-80">{message}</div>}
+    </InlineMessage>
+  );
+}
+
+// ── API Key Row ──────────────────────────────────────────────────────────────
+
+function ApiKeyRow({ provider, onChanged, showToast }: { provider: ProviderAuthStatus; onChanged: () => void; showToast: (text: string, variant?: ToastVariant) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [keyValue, setKeyValue] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSave = async () => {
+    if (!keyValue.trim()) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`${getApiBase()}/api/provider-auth/api-key`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider: provider.id, key: keyValue.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setEditing(false);
+      setKeyValue("");
+      onChanged();
+    } catch (err: any) {
+      setError(err.message);
+    }
+    setBusy(false);
+  };
+
+  // Remove key is a synchronous REST delete — confirm:"http" + success toast.
+  // See change: add-async-action-feedback.
+  const remove = useAsyncAction(
+    () => deleteProvider(provider.id, "Failed to remove key"),
+    { showToast, successToast: `Removed ${provider.name} key`, onSuccess: onChanged },
+  );
+
+  return (
+    <div className="flex flex-col gap-1 p-3 rounded bg-[var(--bg-tertiary)] border border-[var(--border-primary)]">
+      <div className="flex items-center gap-3">
+        <div className="flex-1 min-w-0">
+          <div className="text-sm font-medium text-[var(--text-primary)]">{provider.name}</div>
+        </div>
+        {provider.authenticated && !editing ? (
+          <div className="flex items-center gap-2">
+            {provider.maskedKey && (
+              <code className="text-xs text-[var(--text-muted)] font-mono">{provider.maskedKey}</code>
+            )}
+            <span className="flex items-center gap-1 text-xs text-green-400">
+              <Icon path={mdiCheck} size={0.5} /> {i18nT("common.configured", undefined, "Configured")}
+            </span>
+            <button
+              onClick={remove.bind.onClick}
+              disabled={busy || remove.pending}
+              className="flex items-center gap-1 px-2 py-1 text-xs rounded bg-[var(--bg-secondary)] hover:bg-red-900/30 text-[var(--text-muted)] hover:text-red-400 border border-[var(--border-secondary)] disabled:opacity-50"
+            >
+              <Icon path={mdiDelete} size={0.5} />
+              {remove.pending ? "Removing…" : "Remove"}
+            </button>
+          </div>
+        ) : !editing ? (
+          <button
+            onClick={() => setEditing(true)}
+            className="px-3 py-1.5 text-xs rounded bg-[var(--bg-secondary)] hover:bg-[var(--bg-tertiary)] text-[var(--text-secondary)] border border-[var(--border-secondary)]"
+          >
+            <Icon path={mdiKeyPlus} size={0.45} className="inline mr-0.5" />{i18nT("common.addKey", undefined, "Add Key")}
+          </button>
+        ) : null}
+      </div>
+
+      {editing && (
+        <div className="flex items-center gap-2 mt-1">
+          <input
+            type="password"
+            value={keyValue}
+            onChange={(e) => setKeyValue(e.target.value)}
+            placeholder={i18nT("gateway.pasteApiKey", undefined, "Paste API key…")}
+            className="flex-1 px-2 py-1 text-xs rounded bg-[var(--bg-secondary)] border border-[var(--border-secondary)] text-[var(--text-primary)] placeholder-[var(--text-muted)] font-mono"
+            onKeyDown={(e) => { if (e.key === "Enter") void handleSave().catch(logRejection("ProviderAuthSection.handleSave")); }}
+            autoFocus
+          />
+          <button onClick={handleSave} disabled={busy || !keyValue.trim()} className="flex items-center gap-1 px-2 py-1 text-xs rounded bg-blue-600 hover:bg-blue-500 text-white disabled:opacity-50">
+            <Icon path={mdiContentSave} size={0.5} />
+            {i18nT("common.save2", undefined, "Save")}
+          </button>
+          <button onClick={() => { setEditing(false); setKeyValue(""); }} className="px-2 py-1 text-xs rounded bg-[var(--bg-secondary)] text-[var(--text-muted)]">
+            {i18nT("common.cancel", undefined, "Cancel")}
+          </button>
+        </div>
+      )}
+
+      {error && (
+        <div className="flex items-center gap-1 mt-1 text-xs text-red-400">
+          <Icon path={mdiAlert} size={0.45} />
+          {error}
+        </div>
+      )}
+    </div>
+  );
+}

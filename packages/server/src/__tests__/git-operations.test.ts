@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import * as gitOps from "../git-operations.js";
+import * as gitOps from "../git-worktree/git-operations.js";
 import {
   checkoutBranch,
   getDirtyFiles,
@@ -11,9 +11,8 @@ import {
   isGitRepo,
   listBranches,
   resolveConfigRoot,
-  resolveMainPath,
   stashPop,
-} from "../git-operations.js";
+} from "../git-worktree/git-operations.js";
 
 function git(cmd: string, cwd: string) {
   execSync(`git ${cmd}`, { cwd, stdio: "pipe" });
@@ -62,8 +61,25 @@ describe("git-operations", () => {
   describe("resolveConfigRoot", () => {
     afterEach(() => vi.restoreAllMocks());
 
-    it("git repo → returns resolveMainPath(cwd)", () => {
-      expect(resolveConfigRoot(repo)).toBe(resolveMainPath(repo));
+    it("primary git checkout resolves to its own top level", () => {
+      expect(resolveConfigRoot(repo)).toBe(repo);
+    });
+
+    it("linked worktree resolves its own checkout instead of the primary checkout", () => {
+      mkdirSync(join(repo, ".pi"), { recursive: true });
+      writeFileSync(join(repo, ".pi", "settings.json"), JSON.stringify({ worktreeInit: { gate: "main", run: { type: "script", command: "main" } } }));
+      git("add .pi/settings.json", repo);
+      git("commit -m settings", repo);
+
+      const worktree = mkdtempSync(join(tmpdir(), "git-ops-worktree-"));
+      rmSync(worktree, { recursive: true, force: true });
+      git(`worktree add -b feature/config-root ${JSON.stringify(worktree)}`, repo);
+      try {
+        writeFileSync(join(worktree, ".pi", "settings.json"), JSON.stringify({ worktreeInit: { gate: "worktree", run: { type: "script", command: "worktree" } } }));
+        expect(resolveConfigRoot(worktree)).toBe(worktree);
+      } finally {
+        git(`worktree remove --force ${JSON.stringify(worktree)}`, repo);
+      }
     });
 
     it("non-git dir with .pi/settings.json → returns cwd", () => {
@@ -86,7 +102,7 @@ describe("git-operations", () => {
       }
     });
 
-    it("degenerate git (isGitRepo true, resolveMainPath null) → null, no cwd/.pi fallthrough", () => {
+    it("degenerate git (isGitRepo true, no top level) → null, no cwd/.pi fallthrough", () => {
       const plain = mkdtempSync(join(tmpdir(), "cfg-root-"));
       try {
         // .pi/settings.json present so a fallthrough to the non-git branch
@@ -94,7 +110,6 @@ describe("git-operations", () => {
         mkdirSync(join(plain, ".pi"), { recursive: true });
         writeFileSync(join(plain, ".pi", "settings.json"), "{}");
         vi.spyOn(gitOps, "isGitRepo").mockReturnValue(true);
-        vi.spyOn(gitOps, "resolveMainPath").mockReturnValue(null);
         expect(gitOps.resolveConfigRoot(plain)).toBeNull();
       } finally {
         rmSync(plain, { recursive: true, force: true });

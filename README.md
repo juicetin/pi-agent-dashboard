@@ -9,10 +9,12 @@
 [![CI](https://github.com/BlackBeltTechnology/pi-agent-dashboard/actions/workflows/ci.yml/badge.svg)](https://github.com/BlackBeltTechnology/pi-agent-dashboard/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/@blackbelt-technology/pi-agent-dashboard)](https://www.npmjs.com/package/@blackbelt-technology/pi-agent-dashboard)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Discord](https://img.shields.io/badge/Discord-join%20chat-5865F2?logo=discord&logoColor=white)](https://discord.gg/DrNebZ3pF5)
 
 **One browser tab to command an army of [pi](https://github.com/badlogic/pi-mono) agents.** Spawn parallel sessions, watch reasoning live, attach OpenSpec changes, ship work — from your laptop or phone.
 
 🌐 **Website & demo:** [blackbelttechnology.github.io/pi-agent-dashboard](https://blackbelttechnology.github.io/pi-agent-dashboard) — animated tour, screenshots, and install guide.
+💬 **Community:** [Join our Discord](https://discord.gg/DrNebZ3pF5) — questions, help, and release news.
 📝 **Changelog:** [`CHANGELOG.md`](CHANGELOG.md)
 
 > **Note:** This dashboard only works with [pi](https://github.com/badlogic/pi-mono). Oh My Pi is **not** supported.
@@ -65,6 +67,8 @@ Download a pre-built installer from [GitHub Releases](https://github.com/BlackBe
 | **Linux** (x64 / ARM64) | `.deb` or `.AppImage` |
 | **Windows** (x64 / ARM64) | `.zip` |
 
+> **macOS requirement:** macOS 12 (Monterey) or newer — Intel and Apple Silicon both supported. macOS 10.15 (Catalina) and 11 (Big Sur) are not supported; users on those versions keep their currently installed version (Electron 32) and are not offered the newer update.
+
 On first launch a setup wizard walks you through mode selection (standalone vs. power-user), API key / OAuth sign-in, and [recommended extensions](#recommended-extensions). The standalone mode bundles Node.js and auto-installs pi + dashboard + openspec into `~/.pi-dashboard/` — **no terminal, npm, or Node.js required**.
 
 **Picking the right macOS DMG:** run `uname -m` in Terminal — `arm64` means Apple Silicon (M1/M2/M3/M4), `x86_64` means Intel. Or open   Apple menu → About This Mac and read the chip name. Download the matching DMG; if you grab the wrong one macOS will refuse to launch the app with a "cannot be opened" error.
@@ -113,13 +117,13 @@ Windows has a few extra one-time setup steps. Run the following in an **Administ
 # 1. Enable long paths (required — npm node_modules nesting exceeds 260 chars)
 reg add "HKLM\SYSTEM\CurrentControlSet\Control\FileSystem" /v LongPathsEnabled /t REG_DWORD /d 1 /f
 
-# 2. Install Node.js LTS 22 via winget (ships >= 22.18 so no node-guard refusal)
+# 2. Install Node.js LTS 22 via winget (ships >= 22.19 so no node-guard refusal)
 winget install -e --id OpenJS.NodeJS.LTS --accept-source-agreements --accept-package-agreements
 
 # 3. CLOSE this PowerShell, open a NEW one as Administrator (PATH refresh)
 
 # 4. Verify
-node --version    # expect v22.18+ (any 22.x >= 22.18, NOT v22.0–v22.17)
+node --version    # expect v22.19+ (any 22.x >= 22.19, NOT v22.0–v22.18)
 npm --version     # expect 10.x
 
 # 5. Install
@@ -136,11 +140,14 @@ C++ build tools are typically **not** required — `node-pty` ships a Windows x6
 
 ### C — From source (contributors)
 
+Before your first change, read [CONTRIBUTING.md](CONTRIBUTING.md) — features and bugfixes go through a spec-first pipeline (explore → plan → build → ship), not a plain branch-and-PR flow.
+
 ```bash
 git clone https://github.com/BlackBeltTechnology/pi-agent-dashboard.git
 cd pi-agent-dashboard
-npm install
-npm run build                              # one-time client build
+corepack enable                            # activates the pinned pnpm (packageManager field)
+pnpm install
+pnpm run build                             # one-time client build
 pi install /path/to/pi-agent-dashboard     # global
 # or: pi install -l /path/to/pi-agent-dashboard   # project-local only
 ```
@@ -150,12 +157,12 @@ pi install /path/to/pi-agent-dashboard     # global
 By default, `pi-dashboard` on your PATH refers to whatever copy was installed globally (via `npm i -g` or the Electron bundle). To make it point at your working tree instead — so every edit is live and bridge auto-start uses your changes — link the workspace:
 
 ```bash
-npm run link:local      # symlinks `pi-dashboard` on PATH to packages/server/bin/pi-dashboard.mjs
+pnpm run link:local     # symlinks `pi-dashboard` on PATH to packages/server/bin/pi-dashboard.mjs
 pi-dashboard status
-npm run unlink:local    # restore (removes the global symlink)
+pnpm run unlink:local   # restore (removes the global symlink)
 ```
 
-The link survives across shells. Every invocation — including `pi`'s bridge auto-spawn — runs `packages/server/src/cli.ts` via jiti, so you don't need to rebuild the server on edits. The client still requires `npm run build` (or `npm run dev` for HMR).
+The link survives across shells. Every invocation — including `pi`'s bridge auto-spawn — runs `packages/server/src/cli.ts` via jiti, so you don't need to rebuild the server on edits. The client still requires `pnpm run build` (or `pnpm run dev` for HMR).
 
 > **Windows note:** symlink creation needs an admin shell or Windows Developer Mode enabled. Everything else works the same as POSIX.
 
@@ -209,6 +216,7 @@ State persists in a named volume; API keys seed into `auth.json` on first run (o
 - **Browser-based provider auth** — sign in to Anthropic, OpenAI Codex, GitHub Copilot, Gemini CLI, and Antigravity from Settings. Enter API keys for other providers. Credentials saved to `~/.pi/agent/auth.json` and live-synced to running sessions.
 - **Custom LLM providers** — add OpenAI-compatible, Anthropic-compatible, or Google Generative AI endpoints (Settings → Providers → LLM Providers). **Test** button verifies the base URL + API key before saving. Adding / editing / removing takes effect live in every running session — no restart.
 - **Package management** — browse, install, update, remove, and **move** pi packages between global and project scopes from a single rich-row UI used in both Settings and Pi Resources. Install dialog exposes a Local/Global radio when launched from a per-folder context. Search the npm registry for pi-package extensions/skills/themes; install from npm or git URL. Active sessions auto-reload after changes.
+- **MCP endpoint** — `POST /mcp` exposes dashboard sessions to MCP clients (Claude Desktop, Cursor) once the server runs. Every request needs a bearer credential, including localhost. `~/.pi/agent/mcp.json` gets a `pi-dashboard` entry automatically on first server start; external clients authenticate with a paired-device token. Local pi sessions need `pi-mcp-adapter >= 2.20.0`.
 
 **Dev tools**
 - **Integrated terminal** — full browser-based terminal emulator (xterm.js + node-pty) with ANSI colors, scrollback, and keep-alive
@@ -228,7 +236,7 @@ PI Dashboard now includes a lightweight Simplified Chinese interface for the cor
 The language selector lives in **Settings → General → Interface**. English remains the default for existing users, and the selection is saved in the browser. Deployments that want to start in Chinese can build the web client with:
 
 ```bash
-VITE_PI_DASHBOARD_DEFAULT_LANGUAGE=zh-CN npm run build --workspace=@blackbelt-technology/pi-dashboard-web
+VITE_PI_DASHBOARD_DEFAULT_LANGUAGE=zh-CN pnpm --filter @blackbelt-technology/pi-dashboard-web run build
 ```
 
 This keeps plugin-provided dynamic content, package names, model names, and command output unchanged while making the main dashboard usable for Chinese-speaking operators out of the box.
@@ -242,7 +250,8 @@ This keeps plugin-provided dynamic content, package names, model names, and comm
 | Requirement | Why | Install |
 |-------------|-----|---------|
 | **[pi](https://github.com/badlogic/pi-mono)** | The AI coding agent the dashboard monitors | `npm i -g @mariozechner/pi-coding-agent` |
-| **Node.js ≥ 22.18.0** | Server runtime. Older 22.x / 24.x < 24.3.0 are affected by [nodejs/node#58515](https://github.com/nodejs/node/issues/58515) which crashes Fastify at startup. | [nodejs.org](https://nodejs.org/) |
+| **pi-mcp-adapter ≥ 2.20.0** | Lets local pi sessions call the dashboard's `POST /mcp` endpoint | `pi ext update pi-mcp-adapter` |
+| **Node.js ≥ 22.19.0** | Server runtime. Node 22.0.0–22.18.x and 24.1.0–24.2.x refused (affected by [nodejs/node#58515](https://github.com/nodejs/node/issues/58515), crashes Fastify at startup). Cap < 27 for tested range. | [nodejs.org](https://nodejs.org/) |
 | **C++ build tools** | Required by `node-pty` native addon for the integrated terminal | Xcode CLI Tools (macOS) / `build-essential` (Linux) |
 
 Optional:
@@ -412,7 +421,7 @@ The bridge extension **automatically starts the dashboard server** when pi launc
 
 In the Electron app, if the initial launch attempts fail (or the server is stopped externally), the **loading page exposes a Start server button**, an **Open Doctor link**, and a collapsible **Server log** panel showing the last 20 lines of `~/.pi/dashboard/server.log`. The system tray menu also includes a **Start server / Restart server** item that reflects current server state. All entry points share a single idempotent launch routine in the Electron main process.
 
-**Debugging the Electron app via CDP.** The desktop app accepts an opt-in `--debug-cdp[=<port>]` CLI flag (and equivalent `PI_DEBUG_CDP` env var) that exposes Chromium's Chrome DevTools Protocol on a loopback-only port (default `9222`) so `agent-browser`, Playwright, Chrome DevTools, or any CDP client can attach to the *installed shell* — not just a separate browser pointed at `http://localhost:8000`. The flag wins if both flag and env are set. CDP is **off by default**, never binds beyond `127.0.0.1`, and logs a one-line `[debug-cdp]` warning to stderr when active. **Single-instance contract:** CDP must be enabled at first-instance launch; passing the flag to an already-running instance cannot enable CDP retroactively and only logs a warning — fully quit and relaunch. From this repo, `cd packages/electron && npm run dev:cdp` launches the dev Electron with CDP on. The bundled universal `browser` skill (shipped by the bridge extension) contains a worked-example recipe for attaching `agent-browser` to the Pi Dashboard app.
+**Debugging the Electron app via CDP.** The desktop app accepts an opt-in `--debug-cdp[=<port>]` CLI flag (and equivalent `PI_DEBUG_CDP` env var) that exposes Chromium's Chrome DevTools Protocol on a loopback-only port (default `9222`) so `agent-browser`, Playwright, Chrome DevTools, or any CDP client can attach to the *installed shell* — not just a separate browser pointed at `http://localhost:8000`. The flag wins if both flag and env are set. CDP is **off by default**, never binds beyond `127.0.0.1`, and logs a one-line `[debug-cdp]` warning to stderr when active. **Single-instance contract:** CDP must be enabled at first-instance launch; passing the flag to an already-running instance cannot enable CDP retroactively and only logs a warning — fully quit and relaunch. From this repo, `cd packages/electron && pnpm run dev:cdp` launches the dev Electron with CDP on. The bundled universal `browser` skill (shipped by the bridge extension) contains a worked-example recipe for attaching `agent-browser` to the Pi Dashboard app.
 
 **Doctor diagnostics.** Help → Doctor (or the loading-page link) opens a styled `BrowserWindow` (`doctor.html`) that runs the same checks the Electron app already performed — grouped into sections (Runtime, Pi, Server, Bundles, Diagnostics) with status pills, paths, and per-row suggestion callouts; toolbar offers Re-run, Copy as Markdown / Plain, Open server log, Open doctor log, Run setup wizard. The web client exposes the portable subset at **Settings → Diagnostics**, which fetches `/api/doctor` and renders the same sections (Electron-only rows omitted). Both surfaces share `packages/shared/src/doctor-core.ts`, so a check defined once shows up everywhere.
 
@@ -587,7 +596,7 @@ The log is append-mode with timestamped headers per start attempt, so previous c
 
 - **`ERR_UNSUPPORTED_ESM_URL_SCHEME` on Windows** — fully fixed in 0.4.0+. The 0.2.10 release wrapped the `--import` loader position as a `file://` URL, but the entry-script position stayed a raw Windows path — which crashed Node on non-`C:` drives (`A:\`, `B:\`, …) because the drive-letter heuristic has gaps there. 0.4.0 routes all four server-spawn call sites through a single `spawnNodeScript` / `toFileUrl` helper that wraps both positions unconditionally, and a repo-level lint test prevents regression. Upgrade the package.
 - **`Cannot find pi's TypeScript loader`** — pi is not installed globally. Run `npm install -g @mariozechner/pi-coding-agent`.
-- **Fastify crash at startup** — you're on Node 22.0.0–22.17.x or 24.1.0–24.2.x which are affected by [nodejs/node#58515](https://github.com/nodejs/node/issues/58515). Upgrade to 22.18+ or 24.3+.
+- **Fastify crash at startup** — you're on Node 22.0.0–22.18.x or 24.1.0–24.2.x which are affected by [nodejs/node#58515](https://github.com/nodejs/node/issues/58515). Upgrade to 22.19+ or 24.3+.
 
 ### Port already in use
 
@@ -713,24 +722,25 @@ Agent metrics are collected every 15s via heartbeats and include `eventLoopMaxMs
 ### Commands
 
 ```bash
-npm install          # Install dependencies
-npm test             # Run all tests (vitest)
-npm run test:watch   # Watch mode
-npm run build        # Build web client (Vite)
-npm run dev          # Start Vite dev server (HMR)
-npm run lint         # Type-check (tsc --noEmit)
-npm run reload       # Reload all connected pi sessions
-npm run reload:check # Type-check + reload all pi sessions
+corepack enable       # once: activate the pinned pnpm (packageManager field)
+pnpm install          # Install dependencies
+pnpm test             # Run all tests (vitest)
+pnpm run test:watch   # Watch mode
+pnpm run build        # Build web client (Vite)
+pnpm run dev          # Start Vite dev server (HMR)
+pnpm run lint         # Type-check (tsc --noEmit)
+pnpm run reload       # Reload all connected pi sessions
+pnpm run reload:check # Type-check + reload all pi sessions
 ```
 
 ### Typical local dev workflow
 
 ```bash
 # Terminal 1: Dashboard server in dev mode
-npx tsx packages/server/src/cli.ts --dev
+pnpm exec tsx packages/server/src/cli.ts --dev
 
 # Terminal 2: Vite dev server (HMR for the web client)
-npm run dev
+pnpm run dev
 
 # Terminal 3: pi with the bridge extension
 pi -e packages/extension/src/bridge.ts   # or just `pi` if installed
@@ -743,19 +753,19 @@ pi -e packages/extension/src/bridge.ts   # or just `pi` if installed
 
 ```bash
 # After client changes (production mode)
-npm run build
+pnpm run build
 curl -X POST http://localhost:8000/api/restart
 
 # After server changes (runs TypeScript directly, no build needed)
 curl -X POST http://localhost:8000/api/restart
 
 # After bridge extension changes
-npm run reload
+pnpm run reload
 
 # Full rebuild (e.g., after pulling updates)
-npm run build
+pnpm run build
 curl -X POST http://localhost:8000/api/restart
-npm run reload
+pnpm run reload
 ```
 
 ### Extension UI events
@@ -794,18 +804,18 @@ packages/
 ### Native build (current platform)
 
 ```bash
-npm run electron:build                    # Build for current platform & arch
-npm run electron:build -- --arch x64      # Override architecture
-npm run electron:build -- --skip-client   # Skip client rebuild
+pnpm run electron:build                    # Build for current platform & arch
+pnpm run electron:build -- --arch x64      # Override architecture
+pnpm run electron:build -- --skip-client   # Skip client rebuild
 ```
 
 Or step by step:
 
 ```bash
-npm run build                         # Build web client
+pnpm run build                        # Build web client
 cd packages/electron
 bash scripts/download-node.sh         # Download Node.js for bundling
-npm run make                          # Build installer
+pnpm run make                         # Build installer
 ```
 
 Output by platform:
@@ -821,10 +831,10 @@ Output by platform:
 From macOS or Linux, build installers for all platforms:
 
 ```bash
-npm run electron:build -- --all              # macOS (native) + Linux + Windows (Docker)
-npm run electron:build -- --linux            # Linux .deb + .AppImage only
-npm run electron:build -- --windows          # Windows .zip only
-npm run electron:build -- --linux --windows  # Both, skip native
+pnpm run electron:build -- --all              # macOS (native) + Linux + Windows (Docker)
+pnpm run electron:build -- --linux            # Linux .deb + .AppImage only
+pnpm run electron:build -- --windows          # Windows .zip only
+pnpm run electron:build -- --linux --windows  # Both, skip native
 ```
 
 ### Building both macOS DMGs locally (`--mac-both`)
@@ -832,7 +842,7 @@ npm run electron:build -- --linux --windows  # Both, skip native
 On an Apple Silicon mac, produce both the arm64 and Intel x64 DMGs in one invocation:
 
 ```bash
-npm run electron:build -- --mac-both
+pnpm run electron:build -- --mac-both
 ```
 
 Requires Rosetta 2 (`softwareupdate --install-rosetta --agree-to-license`) so node-pty's x64 prebuilt binary can be unpacked during the cross-arch run. The script wipes per-arch caches between the two builds (`resources/.last-arch` sentinel) so back-to-back runs don't accidentally ship arm64 binaries inside an x64 DMG. Intel macs cannot cross-build arm64 locally (Rosetta is one-way) — use CI for arm64 validation.
@@ -844,11 +854,11 @@ Docker builds use a Node 22 Debian container for Windows cross-compilation. Outp
 ```bash
 # Start the dashboard server and Vite dev server first
 pi-dashboard start --dev
-npm run dev
+pnpm run dev
 
 # Then launch Electron pointing at the dev server
 cd packages/electron
-npm run start:dev
+pnpm run start:dev
 ```
 
 ### Regenerating icons
@@ -857,7 +867,7 @@ All platform icon variants are generated from the master icon at `packages/elect
 
 ```bash
 cd packages/electron
-npm run icons    # Generates .icns (macOS), .ico (Windows), and resized PNGs
+pnpm run icons    # Generates .icns (macOS), .ico (Windows), and resized PNGs
 ```
 
 ---
@@ -870,10 +880,10 @@ See [`docs/release-process.md`](docs/release-process.md) for the full cut-a-rele
 
 Every push to `develop` and every pull request against `develop` triggers [`ci.yml`](.github/workflows/ci.yml):
 
-1. `npm ci` — install dependencies
-2. `npm run lint` — type check
-3. `npm test` — run tests
-4. `npm run build` — build web client
+1. `pnpm install --frozen-lockfile` — install dependencies
+2. `pnpm run lint` — type check
+3. `pnpm test` — run tests
+4. `pnpm run build` — build web client
 
 ### Releasing
 

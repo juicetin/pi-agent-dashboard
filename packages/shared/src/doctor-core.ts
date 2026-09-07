@@ -9,15 +9,23 @@
  * report formatter.
  *
  * See change: doctor-rich-output (proposal.md, design.md).
+ * See change: unify-pi-runtime-identity (spawn-runtime visibility + ABI
+ * mismatch rows, tasks 5.4 / 6.1 / 6.2; `decideAutoRebuild`).
  */
 
 import dns from "node:dns";
 import { appendFileSync, existsSync, readFileSync, renameSync, rmSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
+import os from "node:os";
 import path from "node:path";
+import { getDashboardConfigDir } from "./dashboard-paths.js";
+import type { LegacyManagedDir } from "./legacy-managed-dir.js";
+import { isAtOrAboveEnginesCap } from "./node-version.js";
 import { whichSync } from "./platform/binary-lookup.js";
 import { execSync } from "./platform/exec.js";
 import { getGitSourceReadout } from "./platform/git-source.js";
+import { buildNativeModuleManifest, findAbiMismatches, type probeNativeModuleAbi } from "./platform/native-module-abi.js";
+import { type ResolvedRuntime, resolvedFamilyEntries } from "./platform/spawn-runtime.js";
 import { readZrokEnvironment } from "./zrok-env.js";
 
 // Used by the TypeScript-loader check to locate bundled jiti/tsx via
@@ -366,6 +374,31 @@ function rotateDoctorLogIfNeeded(logPath: string): void {
   }
 }
 
+/**
+ * Append a JSON record line to `<managedDir>/doctor.log` (with ring
+ * rotation). Unlike `appendDoctorLog` this is NOT error-shaped — it records
+ * reconciliation decisions (e.g. an authorized unattended rebuild) so the
+ * outcome is auditable after the fact. Logging failure never propagates.
+ * See change: unify-pi-runtime-identity (task 5.4).
+ */
+function appendDoctorLogRecord(
+  managedDir: string,
+  label: string,
+  record: Record<string, unknown>,
+): void {
+  try {
+    const logPath = path.join(managedDir, "doctor.log");
+    rotateDoctorLogIfNeeded(logPath);
+    appendFileSync(
+      logPath,
+      `${JSON.stringify({ ts: new Date().toISOString(), label, ...record })}\n`,
+      { encoding: "utf-8" },
+    );
+  } catch {
+    // logging failure must never propagate
+  }
+}
+
 // ─── Section + suggestion taxonomy ────────────────────────────────────
 
 /**
@@ -376,6 +409,7 @@ export const SECTION_OF: Record<string, DoctorSection> = {
   // runtime
   Electron: "runtime",
   "System Node.js": "runtime",
+  "Spawn runtime (resolved)": "runtime",
   "Bundled Node.js": "runtime",
   "Bundled npm": "runtime",
   "Managed Node runtime": "runtime",
@@ -409,6 +443,7 @@ export const SECTION_OF: Record<string, DoctorSection> = {
   "zrok binary": "tunnel",
   "zrok environment": "tunnel",
   "zrok API reachable": "tunnel",
+  "zrok version compatible": "tunnel",
   "tunnel runtime": "tunnel",
   // diagnostics
   "Legacy install directory": "diagnostics",
@@ -459,6 +494,10 @@ export const SUGGESTIONS: Record<string, SuggestionFn> = {
     status === "ok"
       ? undefined
       : "Managed Node runtime missing under `~/.pi-dashboard/node`. Re-run the setup wizard (Help → Setup).",
+  "Spawn runtime (resolved)": (status) =>
+    status === "ok"
+      ? undefined
+      : "Run `node -v` in your terminal and compare against the resolved runtime, then pin the spawn Node deterministically via `runtime.override` in `~/.pi/dashboard/config.json`.",
   "pi (library)": (status, _d, kind) =>
     status === "ok"
       ? undefined
@@ -538,7 +577,7 @@ export const SUGGESTIONS: Record<string, SuggestionFn> = {
   "zrok binary": (status) =>
     status === "ok"
       ? undefined
-      : `\`zrok\` not found on this machine. Install it: on macOS \`brew install zrok\`; on Linux/Windows see [zrok.io/docs/getting-started](https://docs.zrok.io/docs/getting-started/). Restart the dashboard after install so the binary is picked up.`,
+      : `\`zrok\` (or \`zrok2\`) not found on this machine. Install v2: on macOS \`brew install zrok\`; on Linux/Windows download the \`zrok2\` binary — see [docs.zrok.io](https://docs.zrok.io/docs/getting-started/). Restart the dashboard after install so the binary is picked up.`,
   "zrok environment": (status) =>
     status === "ok"
       ? undefined
@@ -546,7 +585,11 @@ export const SUGGESTIONS: Record<string, SuggestionFn> = {
   "zrok API reachable": (status) =>
     status === "ok"
       ? undefined
-      : "DNS lookup of `api-v1.zrok.io` failed. Check your network connection, DNS resolver, and any VPN or corporate proxy. The tunnel cannot start until this host resolves.",
+      : "DNS lookup of `api-v2.zrok.io` (or the enrolled `api_endpoint`) failed. Check your network connection, DNS resolver, and any VPN or corporate proxy. The tunnel cannot start until this host resolves.",
+  "zrok version compatible": (status) =>
+    status === "ok"
+      ? undefined
+      : "Your zrok client is too old (v1, `0.4.x`) for the hosted `api-v2.zrok.io`, which returns HTTP 500 on enable/share. Upgrade to v2: `brew upgrade zrok` (macOS) or re-download the `zrok2` binary.",
   "tunnel runtime": (status) =>
     status === "ok"
       ? undefined
@@ -590,6 +633,20 @@ export async function defaultDnsLookup(host: string, timeoutMs: number): Promise
         reject(err);
       });
   });
+}
+
+/**
+ * Parse the major version from `zrok version` stdout. Accepts an optional
+ * leading `v` and any surrounding text (e.g. `zrok v2.0.4`, `v0.4.51`,
+ * `2.0.0-rc.1`). Returns the integer major, or `null` when no semver-shaped
+ * token is present (garbage → caller warns "unknown"). See change:
+ * support-zrok-v2.
+ */
+export function parseZrokMajor(out: string): number | null {
+  const m = out.match(/\bv?(\d+)\.(\d+)\.(\d+)(?:[-.][0-9A-Za-z.-]+)?\b/);
+  if (!m) return null;
+  const major = parseInt(m[1], 10);
+  return Number.isFinite(major) ? major : null;
 }
 
 // ─── Attached-server version skew (Electron arm only) ────────────
@@ -674,6 +731,95 @@ export async function checkAttachedServerVersion(
   };
 }
 
+// ─── autoRebuild reconciliation decision (task 5.4) ───────────────────
+
+/** What the Doctor does about detected ABI mismatches. */
+export type AutoRebuildAction = "offer" | "rebuild" | "abstain";
+
+export interface DecideAutoRebuildInput {
+  /** `runtime.autoRebuild` from the raw config JSON; undefined/absent = off. */
+  autoRebuild: boolean | undefined;
+  /** Detected ABI mismatch rows; empty = nothing to reconcile. */
+  mismatches: readonly unknown[];
+  /** True when the visibility check found a probe-discovered Node differing from the resolved runtime. */
+  divergenceDetected: boolean;
+}
+
+/**
+ * PURE decision: reconciliation is offered, never silent.
+ *
+ * - mismatches empty → `"offer"` (nothing to reconcile; the offer is a no-op)
+ * - `autoRebuild` off/absent → `"offer"` — consent by default, the rebuild
+ *   runs only on an explicit user action (Doctor one-click / CLI confirm)
+ * - `autoRebuild` on + no divergence → `"rebuild"` — unattended,
+ *   headless-authorized; the outcome is recorded in the doctor log
+ * - `autoRebuild` on + divergence → `"abstain"` — rebuilding against a
+ *   runtime the user's terminal disagrees with is unsafe, so fall back to
+ *   the interactive offer
+ *
+ * See change: unify-pi-runtime-identity (spec doctor-diagnostic, Requirement:
+ * Extension-tree ABI mismatch detection and offered reconciliation).
+ */
+export function decideAutoRebuild(input: DecideAutoRebuildInput): AutoRebuildAction {
+  if (input.mismatches.length === 0) return "offer";
+  if (!input.autoRebuild) return "offer";
+  return input.divergenceDetected ? "abstain" : "rebuild";
+}
+
+/**
+ * Read `runtime.autoRebuild` (default off) from the raw config JSON at
+ * `~/.pi/dashboard/config.json`. Raw read — not the typed loader — so the
+ * runtime keys, which live outside the typed schema, pass through
+ * untouched. Malformed/absent → false. Injectable via `SharedChecksDeps
+ * .readAutoRebuild` for hermetic tests. See change: unify-pi-runtime-identity.
+ */
+export function readAutoRebuildDefault(configPath?: string): boolean {
+  const file = configPath ?? path.join(getDashboardConfigDir(), "config.json");
+  try {
+    if (!existsSync(file)) return false;
+    const parsed = JSON.parse(readFileSync(file, "utf-8")) as {
+      runtime?: { autoRebuild?: unknown };
+    };
+    return parsed.runtime?.autoRebuild === true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Module name from a `.node` entry path: the segment after the LAST
+ * `node_modules` (scoped packages as `@scope/name`); anything without a
+ * `node_modules` ancestor falls back to the parent directory name.
+ * See change: unify-pi-runtime-identity (task 5.4).
+ */
+function moduleNameFromEntryPath(p: string): string {
+  const parts = p.split(/[\\/]/);
+  const idx = parts.lastIndexOf("node_modules");
+  if (idx >= 0 && idx + 1 < parts.length) {
+    const next = parts[idx + 1]!;
+    if (next.startsWith("@") && idx + 2 < parts.length) {
+      return `${next}/${parts[idx + 2]}`;
+    }
+    if (!next.startsWith("@")) return next;
+  }
+  return path.basename(path.dirname(p));
+}
+
+/**
+ * The scoped reconciliation command for one module, built from the resolved
+ * runtime's node/npm family entries (`resolvedFamilyEntries`) so the rebuild
+ * demonstrably targets the runtime the ladder picked. Falls back to a plain
+ * `npm rebuild <module>` display string when the family is unknown.
+ */
+function buildScopedRebuildCommand(rt: ResolvedRuntime, moduleName: string): string {
+  try {
+    const family = resolvedFamilyEntries(rt);
+    return `"${family.nodeEntry}" "${family.npmEntry}" rebuild ${moduleName}`;
+  } catch {
+    return `npm rebuild ${moduleName}`;
+  }
+}
+
 // ─── runSharedChecks ──────────────────────────────────────────────────
 
 export interface SharedChecksDeps {
@@ -687,6 +833,13 @@ export interface SharedChecksDeps {
    * which binary will be invoked.
    */
   resolveZrokBinary?: () => { found: boolean; path?: string };
+  /**
+   * Test seam for the `zrok version compatible` check. Given the resolved
+   * binary path, returns the raw `zrok version` stdout. Defaults to
+   * `safeExec("<path>" version)`. Only invoked when `resolveZrokBinary`
+   * reports a found binary — the check NEVER spawns on a missing binary.
+   */
+  runZrokVersion?: (binPath: string) => { ok: boolean; stdout: string };
   /**
    * Test seam for the `zrok API reachable` check. Defaults to
    * `dns.promises.lookup` with a 3000 ms hard cap. Should resolve on
@@ -738,13 +891,54 @@ export interface SharedChecksDeps {
   inspectedCredentialFiles?: () => string[];
   /**
    * Test seam for the legacy `~/.pi-dashboard/` advisory. Defaults to
-   * the real shared detector. Tests inject a mock to exercise both
-   * present / absent branches hermetically.
-   * See change: fix-doctor-stale-managed-install-check.
+   * the real shared detector (orphan test per task 6.2). Tests inject a
+   * mock to exercise the present / orphaned / live / absent branches
+   * hermetically. See change: unify-pi-runtime-identity.
    */
-  detectLegacyManagedDir?: () =>
-    | { present: false }
-    | { present: true; path: string; pkgCount: number; sizeMb: number };
+  detectLegacyManagedDir?: () => LegacyManagedDir;
+  /**
+   * The ladder-resolved pi spawn runtime, passed as an INPUT by the host
+   * arm (server: `currentSpawnRuntime()`; Electron: live
+   * `resolveSpawnRuntime()`). doctor-core lives in shared and cannot import
+   * the server's holder, so the caller threads it in. When absent/null
+   * (resolution not run), the spawn-runtime visibility row and the ABI
+   * mismatch rows are suppressed. See change: unify-pi-runtime-identity.
+   */
+  spawnRuntime?: ResolvedRuntime | null;
+  /**
+   * Root of pi's shared extension tree for the ABI scan. Default
+   * `~/.pi/agent/npm/node_modules` (mirrors pi-package-resolver). Absent
+   * tree → no rows. See change: unify-pi-runtime-identity (task 5.4).
+   */
+  extensionTreeRoot?: string;
+  /**
+   * Test seam over `runtime.autoRebuild` (default off). Default reads the
+   * raw config JSON via `readAutoRebuildDefault`.
+   */
+  readAutoRebuild?: () => boolean;
+  /**
+   * Injection seams for the extension-tree ABI scan. Only the Tier-B probe
+   * is seam-worthy: the walk/stat/read paths run against real tmp fixtures
+   * in tests. A throwing probe exercises the scan's fault isolation.
+   */
+  abiScan?: {
+    probe?: typeof probeNativeModuleAbi;
+  };
+  /**
+   * Executor for the `runtime.autoRebuild` unattended reconciliation. When
+   * the consent decision is "rebuild" and an executor is wired, each
+   * mismatched module is rebuilt IN the extension tree with the resolved
+   * runtime's family and the outcome is recorded in doctor.log. Hosts
+   * without an executor (Electron arm) record the decision only — running
+   * package scripts is a server-side capability. A throwing executor is
+   * contained and logged as a failed rebuild. See change:
+   * unify-pi-runtime-identity (spec scenario "autoRebuild authorizes
+   * unattended reconciliation").
+   */
+  rebuildExecutor?: (
+    moduleName: string,
+    treeRoot: string,
+  ) => Promise<{ ok: boolean; detail?: string }> | { ok: boolean; detail?: string };
 }
 
 export async function runSharedChecks(deps: SharedChecksDeps): Promise<DoctorCheck[]> {
@@ -786,6 +980,153 @@ export async function runSharedChecks(deps: SharedChecksDeps): Promise<DoctorChe
       };
     }),
   );
+
+  // ── Resolved spawn runtime visibility (pi-spawn axis) ─────────────
+  // Reports the ladder-resolved runtime beside the probe-discovered
+  // installations above, with the `node -v` compare remedy and the
+  // `runtime.override` escape hatch on divergence. Fault-isolated: a
+  // throw suppresses the row, never the report.
+  // See change: unify-pi-runtime-identity (task 6.1).
+  let runtimeDivergence: { source: string; path: string } | null = null;
+  const spawnRuntime = deps.spawnRuntime ?? null;
+  if (spawnRuntime) {
+    try {
+      const rt = spawnRuntime;
+      // Probe-discovered installs: the PATH hit from system-Node detection
+      // plus any step-2 candidate the ladder recorded as not-selected.
+      const probes: Array<{ source: string; path: string }> = [];
+      const sys = deps.detectSystemNode();
+      if (sys.found && sys.path) probes.push({ source: "PATH", path: sys.path });
+      for (const step of rt.trail) {
+        if (step.rung === "user" && step.outcome !== "selected" && step.candidate) {
+          probes.push({ source: step.via ?? "user", path: step.candidate });
+        }
+      }
+      runtimeDivergence = probes.find((p) => p.path !== rt.nodeBinary) ?? null;
+      const shadowed = rt.trail.find(
+        (s) => s.outcome === "skipped" && s.reason === "shadowed by runtime.override",
+      );
+      const aboveCap = isAtOrAboveEnginesCap(rt.version);
+      const viaSuffix = rt.via ? `/${rt.via}` : "";
+      const detailLines: string[] = [
+        `Resolved via ladder rung: ${rt.rung}${viaSuffix} (source: ${rt.source})`,
+      ];
+      if (shadowed?.candidate) {
+        detailLines.push(
+          `Shadowed selection: ${shadowed.candidate} (tool-overrides node entry is ignored because runtime.override wins)`,
+        );
+      }
+      if (runtimeDivergence) {
+        detailLines.push(
+          `Divergent probe: ${runtimeDivergence.path} (${runtimeDivergence.source})`,
+          "Compare in your terminal: `node -v` — a service context cannot observe the interactive shell",
+          "Deterministic escape hatch: `runtime.override` in `~/.pi/dashboard/config.json`",
+        );
+      }
+      if (aboveCap) {
+        detailLines.push(
+          `Node ${rt.version} is at/above the dashboard-tested engines cap — informational, not a failure`,
+        );
+      }
+      checks.push({
+        name: "Spawn runtime (resolved)",
+        section: "runtime",
+        status: runtimeDivergence ? "warning" : "ok",
+        message:
+          `pi sessions spawn ${rt.nodeBinary} — Node ${rt.version} (ABI ${rt.abi}, via ${rt.rung}${viaSuffix})` +
+          (runtimeDivergence
+            ? `; differs from ${runtimeDivergence.source} Node at ${runtimeDivergence.path}`
+            : "") +
+          (aboveCap ? "; exceeds the dashboard-tested range (informational)" : ""),
+        detail: detailLines.join("\n"),
+        ...(runtimeDivergence
+          ? {
+              suggestion:
+                "Run `node -v` in your terminal and compare against the resolved runtime; pin the spawn Node deterministically via `runtime.override` in `~/.pi/dashboard/config.json`.",
+            }
+          : {}),
+      });
+    } catch {
+      /* visibility row is advisory only — never block the report */
+    }
+  }
+
+  // ── Extension-tree ABI mismatch scan (tasks 5.4 + 6.1 divergence) ──
+  // Walks pi's shared extension tree, classifies each compiled module at
+  // the byte level (N-API never rows — the API guarantees it), probes V8
+  // modules under the RESOLVED runtime, and offers reconciliation per the
+  // autoRebuild consent rules. Tree absent or scan failure → no rows.
+  if (spawnRuntime) {
+    try {
+      const rt = spawnRuntime;
+      const treeRoot =
+        deps.extensionTreeRoot ?? path.join(os.homedir(), ".pi", "agent", "npm", "node_modules");
+      const manifest = buildNativeModuleManifest(treeRoot);
+      const mismatches = findAbiMismatches(manifest.entries, rt.abi, {
+        nodeBinary: rt.nodeBinary,
+        ...(deps.abiScan?.probe ? { probe: deps.abiScan.probe } : {}),
+      });
+      if (mismatches.length > 0) {
+        const action = decideAutoRebuild({
+          autoRebuild: deps.readAutoRebuild ? deps.readAutoRebuild() : readAutoRebuildDefault(),
+          mismatches,
+          divergenceDetected: runtimeDivergence !== null,
+        });
+        if (action === "rebuild") {
+          const modules = [
+            ...new Set(mismatches.map((m) => moduleNameFromEntryPath(m.entry.path))),
+          ];
+          if (deps.rebuildExecutor) {
+            // Consent authorized: run the scoped rebuild per module and log
+            // each outcome (spec: "the scoped rebuild SHALL run unattended
+            // ... and the outcome SHALL be recorded in the doctor log").
+            for (const moduleName of modules) {
+              let outcome: { ok: boolean; detail?: string };
+              try {
+                outcome = await deps.rebuildExecutor(moduleName, treeRoot);
+              } catch (err) {
+                outcome = {
+                  ok: false,
+                  detail: err instanceof Error ? err.message : String(err),
+                };
+              }
+              appendDoctorLogRecord(managedDir, "auto-rebuild", {
+                action,
+                module: moduleName,
+                ok: outcome.ok,
+                ...(outcome.detail ? { detail: outcome.detail } : {}),
+              });
+            }
+          } else {
+            // Decision record only — no executor wired (e.g. Electron arm).
+            appendDoctorLogRecord(managedDir, "auto-rebuild", {
+              action,
+              modules,
+            });
+          }
+        }
+        for (const m of mismatches) {
+          const moduleName = moduleNameFromEntryPath(m.entry.path);
+          const cmd = buildScopedRebuildCommand(rt, moduleName);
+          checks.push({
+            name: `ABI mismatch: ${moduleName}`,
+            section: "pi-tooling",
+            status: "error",
+            message: `${moduleName} was built for Node ABI ${m.builtAbi}, but the resolved spawn runtime (${rt.nodeBinary}, Node ${rt.version}) uses ABI ${rt.abi}`,
+            detail: `${m.entry.path}\nReconciliation: ${action}`,
+            suggestion:
+              action === "rebuild"
+                ? `runtime.autoRebuild authorized an unattended rebuild (recorded in doctor.log): \`${cmd}\``
+                : action === "abstain"
+                  ? `runtime.autoRebuild is set but the resolved runtime diverges from your terminal Node — rebuild interactively instead: \`${cmd}\``
+                  : `Rebuild with the resolved runtime's family: \`${cmd}\``,
+          });
+        }
+      }
+    } catch {
+      /* ABI scan is advisory only — no rows, never a crash */
+    }
+  }
 
   // pi (library) — embedded copy used by the dashboard internally
   checks.push(
@@ -1120,20 +1461,28 @@ export async function runSharedChecks(deps: SharedChecksDeps): Promise<DoctorChe
     }),
   );
 
-  // zrok API reachable — DNS probe of api-v1.zrok.io with 3s cap.
-  // This is the check that catches transient DNS failures during
-  // `zrok reserve` that are otherwise invisible to the user (the only
-  // signal is a spinning Tunnel button and a buried server.log line).
+  // zrok API reachable — DNS probe of the v2 host (api-v2.zrok.io) with 3s cap,
+  // or the enrolled env's api_endpoint host when present (self-hosted / pinned
+  // controllers). This is a coarse DNS gate; it CANNOT detect the HTTP-500
+  // out-of-date failure mode — the version-compat check below is the actual
+  // root-cause detector. See change: support-zrok-v2.
   checks.push(
     await safeCheck("zrok API reachable", "tunnel", async () => {
       const lookup = deps.dnsLookup ?? defaultDnsLookup;
+      let host = "api-v2.zrok.io";
       try {
-        await lookup("api-v1.zrok.io", 3000);
+        const env = readZrokEnvironment();
+        if (env.found && env.env?.apiEndpoint) {
+          host = new URL(env.env.apiEndpoint).hostname || host;
+        }
+      } catch { /* fall back to the hosted v2 host */ }
+      try {
+        await lookup(host, 3000);
         return {
           name: "zrok API reachable",
           section: "tunnel",
           status: "ok",
-          message: "DNS lookup of api-v1.zrok.io succeeded",
+          message: `DNS lookup of ${host} succeeded`,
           code: "doctor.zrok_dns_ok",
         };
       } catch (err: any) {
@@ -1142,13 +1491,72 @@ export async function runSharedChecks(deps: SharedChecksDeps): Promise<DoctorChe
           name: "zrok API reachable",
           section: "tunnel",
           status: "warning",
-          message: "DNS lookup of api-v1.zrok.io failed",
+          message: `DNS lookup of ${host} failed`,
           code: "doctor.zrok_dns_failed",
           detail: reason,
         };
       }
     }),
   );
+
+  // zrok version compatible — the REAL root-cause detector for the field 500s.
+  // A too-old (major < 2) client hits `api-v2.zrok.io` and gets HTTP 500 on
+  // enable/share. Short-circuits to `unavailable` when no binary resolves
+  // (never spawns ENOENT). See change: support-zrok-v2.
+  if (deps.resolveZrokBinary) {
+    const runZrokVersion = deps.runZrokVersion;
+    const detectZrok = deps.resolveZrokBinary;
+    checks.push(
+      await safeCheck("zrok version compatible", "tunnel", () => {
+        const bin = detectZrok();
+        if (!bin.found || !bin.path) {
+          // Unavailable: no binary resolves, so NEVER spawn (ENOENT). Report a
+          // non-failing informational row that defers to the 'zrok binary' row
+          // (which already warns) rather than double-counting the warning.
+          return {
+            name: "zrok version compatible",
+            section: "tunnel",
+            status: "ok",
+            message: "zrok not installed — version not checked",
+            code: "doctor.zrok_version_unavailable",
+            detail: "Install zrok (see the 'zrok binary' row) — version cannot be checked until it resolves",
+          };
+        }
+        const raw = runZrokVersion
+          ? runZrokVersion(bin.path)
+          : safeExec(`"${bin.path}" version`, { timeoutMs: 5000 });
+        const out = raw.ok ? raw.stdout : "";
+        const parsed = parseZrokMajor(out);
+        if (parsed === null) {
+          return {
+            name: "zrok version compatible",
+            section: "tunnel",
+            status: "warning",
+            message: "Could not parse zrok version",
+            code: "doctor.zrok_version_unknown",
+            detail: out.trim() ? `Unparseable output: ${out.trim().slice(0, 120)}` : "No version output",
+          };
+        }
+        if (parsed < 2) {
+          return {
+            name: "zrok version compatible",
+            section: "tunnel",
+            status: "warning",
+            message: `${out.trim()} is too old (v1) — hosted api-v2.zrok.io returns HTTP 500`,
+            code: "doctor.zrok_version_too_old",
+            detail: "Upgrade: `brew upgrade zrok` (macOS) or re-download zrok2 from the v2 release. v1 (0.4.x) cannot talk to the v2 API.",
+          };
+        }
+        return {
+          name: "zrok version compatible",
+          section: "tunnel",
+          status: "ok",
+          message: `zrok major v${parsed} (\u2265 2) is compatible`,
+          code: "doctor.zrok_version_ok",
+        };
+      }),
+    );
+  }
 
   // tunnel runtime — consumes the watchdog status when available
   checks.push(
@@ -1210,26 +1618,36 @@ export async function runSharedChecks(deps: SharedChecksDeps): Promise<DoctorChe
     }),
   );
 
-  // Legacy ~/.pi-dashboard advisory — emit ONLY when the directory
-  // exists. Under R3 (change: eliminate-electron-runtime-install)
-  // nothing reads or writes this directory. This row tells the user
-  // it is safe to delete. Clean installs see nothing.
-  // See change: fix-doctor-stale-managed-install-check.
+  // Legacy ~/.pi-dashboard advisory — emit the safe-to-delete warning ONLY
+  // when the directory exists AND is genuinely orphaned (no managed
+  // runtime, wizard state, non-empty node_modules, or logs — logs are live
+  // content the Doctor itself appends). Live content is named and NEVER
+  // suggested for deletion; a clean install sees no row at all.
+  // See change: unify-pi-runtime-identity (task 6.2).
   try {
     const detect =
       deps.detectLegacyManagedDir ??
       (await import("./legacy-managed-dir.js")).detectLegacyManagedDir;
     const legacy = detect();
-    if (legacy.present) {
+    if (legacy.present && legacy.orphaned) {
       checks.push({
         name: "Legacy install directory",
         section: "diagnostics",
         status: "warning",
         message: `Legacy directory at ${legacy.path} — no longer used. Safe to delete manually.`,
-        detail: `${legacy.pkgCount} packages, ~${legacy.sizeMb} MB.`,
+        detail: `Genuinely orphaned: no managed runtime, wizard state, node_modules, or logs. Total size ~${legacy.sizeMb} MB.`,
         suggestion:
           "Left over from a previous version. Nothing reads or writes it under the immutable-bundle architecture. " +
           `Delete it manually (e.g. \`rm -rf ${legacy.path}\`) to reclaim disk space.`,
+      });
+    } else if (legacy.present) {
+      checks.push({
+        name: "Legacy install directory",
+        section: "diagnostics",
+        status: "ok",
+        message: `Legacy directory at ${legacy.path} is still in use — do not delete it.`,
+        detail: `Live consumers: ${legacy.consumers.join(", ")}. Total size ~${legacy.sizeMb} MB.`,
+        // Deliberately no suggestion: live content is never delete-worthy.
       });
     }
   } catch {

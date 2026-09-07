@@ -7,7 +7,10 @@
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { DashboardConfig } from "@blackbelt-technology/pi-dashboard-shared/config.js";
+import {
+  type DashboardConfig,
+  HEALTH_CHECK_TIMEOUT_MS,
+} from "@blackbelt-technology/pi-dashboard-shared/config.js";
 import { getDashboardServerLogPath } from "@blackbelt-technology/pi-dashboard-shared/dashboard-paths.js";
 import {
   EarlyExitError,
@@ -86,6 +89,13 @@ export function buildSpawnEnv(
     if (v !== undefined) out[k] = v;
   }
   out["DASHBOARD_STARTER"] = "Bridge";
+  // Electron launcher-identity markers are parent-scoped (see
+  // process-manager.buildSpawnEnv) — a bridge-relaunched server is NOT an
+  // Electron child and must not inherit them. See change:
+  // unify-pi-runtime-identity (CodeRabbit review round 2 non-blocking
+  // finding — grandchild marker leak).
+  delete out.PI_DASHBOARD_ELECTRON;
+  delete out.PI_DASHBOARD_RESOURCES_PATH;
   // Only add heap headroom when the user has not already pinned a limit.
   const existing = out["NODE_OPTIONS"] ?? "";
   if (!/--max[-_]old[-_]space[-_]size/.test(existing)) {
@@ -114,10 +124,12 @@ export function buildSpawnArgs(config: DashboardConfig): string[] {
  * Bridge-specific contract: `DASHBOARD_STARTER=Bridge`,
  * `stdio: { logFile: getDashboardServerLogPath() }` (Bridge auto-spawn
  * now owns the shared `~/.pi/dashboard/server.log` so a slow/crashed
- * cold start leaves an inspectable log), and a 10 s cold-start health
- * timeout (slow hosts reach `writePid()` but are not health-OK within
- * 2 s; `EarlyExitError` still surfaces a real crash instantly).
- * See change: fix-bridge-server-start-diagnostics.
+ * cold start leaves an inspectable log), and a cold-start health timeout
+ * taken from `config.readinessTimeoutMs` (default 10 s; raise on hosts whose
+ * cold start — e.g. a large startup session scan — outlives the window.
+ * `EarlyExitError` still surfaces a real crash instantly).
+ * See change: fix-bridge-server-start-diagnostics,
+ * add-configurable-readiness-timeout.
  */
 export async function launchServer(config: DashboardConfig): Promise<LaunchResult> {
   const cliPath = resolveServerCliPath();
@@ -128,7 +140,7 @@ export async function launchServer(config: DashboardConfig): Promise<LaunchResul
       cliPath,
       extraArgs: args,
       stdio: { logFile: getDashboardServerLogPath() },
-      healthTimeoutMs: 10_000,
+      healthTimeoutMs: config.readinessTimeoutMs ?? HEALTH_CHECK_TIMEOUT_MS,
       port: config.port,
       starter: "Bridge",
     });

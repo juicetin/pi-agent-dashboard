@@ -7,7 +7,7 @@
  */
 import { describe, it, expect, afterEach } from "vitest";
 import { render, cleanup } from "@testing-library/react";
-import { BashOutputCard } from "../BashOutputCard.js";
+import { BashOutputCard } from "../chat/BashOutputCard.js";
 
 describe("BashOutputCard footer", () => {
   afterEach(cleanup);
@@ -31,5 +31,32 @@ describe("BashOutputCard footer", () => {
       <BashOutputCard command="ls" output="file.txt" exitCode={0} excludeFromContext />,
     );
     expect(queryByText(/ran locally/)).toBeNull();
+  });
+});
+
+/**
+ * #F4 (repair-tool-error-surfaces) — the non-zero `exit N` badge is a single-line
+ * error surface: it takes the severity accent directly. The success branch is a
+ * separate tier and deliberately out of scope, so it is pinned unchanged here.
+ */
+describe("BashOutputCard exit badge — severity tokens", () => {
+  afterEach(cleanup);
+
+  const badgeFor = (exitCode: number) => {
+    const { getByText } = render(
+      <BashOutputCard command="false" output="" exitCode={exitCode} excludeFromContext={false} />,
+    );
+    return getByText(`exit ${exitCode}`) as HTMLElement;
+  };
+
+  it("#F4 a non-zero exit badge resolves its colour from --severity-error-*", () => {
+    const badge = badgeFor(3);
+    expect(badge.className).toContain("bg-[var(--severity-error-bg)]");
+    expect(badge.className).toContain("text-[var(--severity-error-fg)]");
+    expect(badge.className).not.toMatch(/\bred-\d{2,3}\b/);
+  });
+
+  it("leaves the success branch on its own tier, untouched by this change", () => {
+    expect(badgeFor(0).className).toContain("text-green-400");
   });
 });

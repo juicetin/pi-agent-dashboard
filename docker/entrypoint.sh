@@ -36,6 +36,29 @@ fi
 # 3. Start a detached tmux server so the tmux spawn strategy has a host.
 tmux start-server 2>/dev/null || true
 
+# 3.5 zrok v2 headless enrollment. `zrok2 enable <token>` without --headless
+#     dies on `open /dev/tty: device not configured` in a non-interactive
+#     container. Enroll only when not already enrolled (idempotent across
+#     restarts on the ~/.zrok2 volume). See change: support-zrok-v2.
+if [ -n "${ZROK_TOKEN:-}" ]; then
+  ZROK_ENV="${HOME}/.zrok2/environment.json"
+  # Validate the SAME required fields as readZrokEnvironment() — a malformed or
+  # partial environment.json must not permanently suppress enrollment.
+  if jq -e '
+    (.api_endpoint | type == "string" and length > 0) and
+    (.ziti_identity | type == "string" and length > 0) and
+    (.zrok_token | type == "string" and length > 0)
+  ' "${ZROK_ENV}" >/dev/null 2>&1; then
+    echo "[entrypoint] zrok already enrolled (~/.zrok2/environment.json valid) — skipping enable"
+  else
+    [ ! -f "${ZROK_ENV}" ] || mv "${ZROK_ENV}" "${ZROK_ENV}.invalid"
+    echo "[entrypoint] enrolling zrok v2 (headless)"
+    zrok2 enable "${ZROK_TOKEN}" --headless || echo "[entrypoint] zrok enable failed — tunnel will be unavailable"
+  fi
+else
+  echo "[entrypoint] ZROK_TOKEN unset — skipping zrok enrollment (tunnel disabled unless enrolled)"
+fi
+
 # 4. Build pi-dashboard flags from env.
 ARGS=("${@:-start}")
 [ -n "${DASHBOARD_PORT:-}" ]  && ARGS+=("--port" "${DASHBOARD_PORT}")
@@ -44,5 +67,20 @@ case "${TUNNEL_ENABLED:-}" in
   0|false|no|off) ARGS+=("--no-tunnel") ;;
 esac
 
-echo "[entrypoint] exec pi-dashboard ${ARGS[*]}"
-exec pi-dashboard "${ARGS[@]}"
+# `PI_ENTRYPOINT_NO_SUPERVISE=1` returns here instead of blocking, for a caller
+# that wraps this script and supervises itself (`test-entrypoint.sh`).
+if [ "${PI_ENTRYPOINT_NO_SUPERVISE:-}" = "1" ]; then
+  echo "[entrypoint] exec pi-dashboard ${ARGS[*]}"
+  exec pi-dashboard "${ARGS[@]}"
+fi
+
+# `start` spawns the server DETACHED and returns, so exec'ing it as PID 1 ends
+# the container the moment the daemon is up. Launch, then supervise the pidfile
+# for the daemon's lifetime. See docker/supervise-daemon.sh for why the daemon
+# is not simply run in the foreground instead (`POST /api/restart`).
+echo "[entrypoint] pi-dashboard ${ARGS[*]}"
+pi-dashboard "${ARGS[@]}" || echo "[entrypoint] launcher exited non-zero (readiness timeout?); the daemon is detached — supervising"
+
+# shellcheck source=docker/supervise-daemon.sh
+. /usr/local/bin/supervise-daemon.sh
+supervise_daemon "${HOME:-/home/pi}/.pi/dashboard/server.pid"

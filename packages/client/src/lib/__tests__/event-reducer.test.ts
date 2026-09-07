@@ -1,12 +1,37 @@
 import type { DashboardEvent } from "@blackbelt-technology/pi-dashboard-shared/types.js";
 import { describe, expect, it } from "vitest";
-import { addInteractiveRequest, applyPromptReceived, type ChatMessage, createInitialState, deriveBannerState, dismissInteractiveRequest, extractAgentEndError, findLastUserPrompt, type PendingPrompt, reduceEvent, resolveInteractiveRequest, type SessionState, toDisplayString } from "../event-reducer.js";
+import { addInteractiveRequest, applyPromptReceived, applyPromptTimeout, carryPendingPrompt, type ChatMessage, createInitialState, deriveBannerState, dismissInteractiveRequest, extractAgentEndError, findLastUserPrompt, isCleanAgentEnd, type PendingPrompt, reduceEvent, resolveInteractiveRequest, type SessionState, toDisplayString } from "../chat/event-reducer.js";
 
 function applyEvents(events: DashboardEvent[]): SessionState {
   return events.reduce((s, e) => reduceEvent(s, e), createInitialState());
 }
 
 describe("eventReducer", () => {
+  // D8 / test-plan X6: the retired `ChatMessage.view` field is gone. An OLD
+  // serialized session whose messages still carry `view` must replay inertly —
+  // the reducer never reads it, nothing throws, other fields stay intact, and
+  // no inline card is produced. See change: open-view-command-in-editor-pane.
+  it("X6 ignores a legacy `view` field on a message during replay (no throw, fields intact)", () => {
+    const legacy = createInitialState();
+    // A message persisted while `view` existed, cast past the (now narrower) type.
+    legacy.messages.push({
+      id: "m1",
+      role: "user",
+      content: "hello",
+      timestamp: 1,
+      view: { kind: "file", cwd: "/p", path: "a.ts" },
+    } as unknown as ChatMessage);
+    // A subsequent event re-reduces the state; must not throw on the stray field.
+    const next = reduceEvent(legacy, {
+      eventType: "message_start",
+      timestamp: 2,
+      data: { message: { role: "user", content: [{ type: "text", text: "again" }] } },
+    } as DashboardEvent);
+    expect(next.messages).toHaveLength(2);
+    // Original message's real fields intact; the `view` field is inert.
+    expect(next.messages[0]).toMatchObject({ id: "m1", role: "user", content: "hello" });
+  });
+
   it("should start with empty state", () => {
     const state = createInitialState();
     expect(state.messages).toHaveLength(0);
@@ -317,14 +342,23 @@ describe("eventReducer", () => {
     expect(state.messages[0].toolDetails).toBeUndefined();
   });
 
-  it("should set status to idle on agent_end", () => {
-    const state = applyEvents([
+  it("should set status to ended on agent_end, then idle on agent_settled", () => {
+    // agent_end is now the INTERMEDIATE terminal; agent_settled resolves idle.
+    // See change: adopt-pi-074-080-features (A.1).
+    const ended = applyEvents([
       { eventType: "agent_start", timestamp: Date.now(), data: {} },
       { eventType: "agent_end", timestamp: Date.now(), data: { messages: [] } },
     ]);
+    expect(ended.status).toBe("ended");
+    expect(ended.isStreaming).toBe(false);
 
-    expect(state.status).toBe("idle");
-    expect(state.isStreaming).toBe(false);
+    const settled = applyEvents([
+      { eventType: "agent_start", timestamp: Date.now(), data: {} },
+      { eventType: "agent_end", timestamp: Date.now(), data: { messages: [] } },
+      { eventType: "agent_settled", timestamp: Date.now(), data: {} },
+    ]);
+    expect(settled.status).toBe("idle");
+    expect(settled.isStreaming).toBe(false);
   });
 
   it("should handle a full conversation sequence", () => {
@@ -361,8 +395,9 @@ describe("eventReducer", () => {
         timestamp: now + 5,
         data: { message: { role: "assistant" } },
       },
-      // Agent ends
+      // Agent ends, then settles (bridge guarantees one terminal settle).
       { eventType: "agent_end", timestamp: now + 6, data: { messages: [] } },
+      { eventType: "agent_settled", timestamp: now + 7, data: {} },
     ]);
 
     expect(state.messages).toHaveLength(3); // user + tool (added on start, updated on end) + assistant
@@ -1172,9 +1207,66 @@ describe("applyPromptReceived", () => {
     expect(applyPromptReceived(state, false)).toBe(state);
   });
 
-  it("fresh:true is idempotent on an already-sent prompt", () => {
+  it("#E5 fresh:true is idempotent on an already-sent prompt", () => {
     const state: SessionState = { ...createInitialState(), pendingPrompt: { text: "hi", status: "sent" } };
     expect(applyPromptReceived(state, true)).toBe(state);
+  });
+
+  // A late ack must not resurrect a settled failure.
+  // See change: fix-optimistic-prompt-stuck-sending (test-plan #E4).
+  it("#E4 fresh:true is a no-op on a failed prompt", () => {
+    const state: SessionState = { ...createInitialState(), pendingPrompt: { text: "hi", status: "failed" } };
+    expect(applyPromptReceived(state, true)).toBe(state);
+    expect(state.pendingPrompt!.status).toBe("failed");
+  });
+
+  it("#E4 fresh:false is a no-op on a settled prompt (never drops the bubble)", () => {
+    const failed: SessionState = { ...createInitialState(), pendingPrompt: { text: "hi", status: "failed" } };
+    expect(applyPromptReceived(failed, false)).toBe(failed);
+    const sent: SessionState = { ...createInitialState(), pendingPrompt: { text: "hi", status: "sent" } };
+    expect(applyPromptReceived(sent, false)).toBe(sent);
+  });
+
+  it("#E7 fresh:true preserves text and images while promoting", () => {
+    const images: PendingPrompt["images"] = [{ data: "d", mimeType: "image/png" }];
+    const state: SessionState = { ...createInitialState(), pendingPrompt: { text: "hi", images, status: "sending" } };
+    const next = applyPromptReceived(state, true);
+    expect(next.pendingPrompt).toEqual({ text: "hi", images, status: "sent" });
+  });
+});
+
+// Safety-timeout settlement + reset/replay carry rules.
+// See change: fix-optimistic-prompt-stuck-sending (test-plan #X1/#X2/#F4/#F5).
+describe("applyPromptTimeout / carryPendingPrompt", () => {
+  it("#X1 marks a sending prompt failed, preserving the text, and sets lastError", () => {
+    const state: SessionState = { ...createInitialState(), pendingPrompt: { text: "hi", status: "sending" } };
+    const next = applyPromptTimeout(state, "no response");
+    expect(next.pendingPrompt).toEqual({ text: "hi", status: "failed" });
+    expect(next.lastError?.message).toBe("no response");
+  });
+
+  it("#X2 is a no-op on an already-failed prompt (never wipes it)", () => {
+    const state: SessionState = { ...createInitialState(), pendingPrompt: { text: "hi", status: "failed" } };
+    expect(applyPromptTimeout(state, "no response")).toBe(state);
+  });
+
+  it("#X2 is a no-op on a sent prompt and with no prompt at all", () => {
+    const sent: SessionState = { ...createInitialState(), pendingPrompt: { text: "hi", status: "sent" } };
+    expect(applyPromptTimeout(sent, "x")).toBe(sent);
+    const none = createInitialState();
+    expect(applyPromptTimeout(none, "x")).toBe(none);
+  });
+
+  it("#F4 does not carry a sending prompt across a reset", () => {
+    expect(carryPendingPrompt({ text: "hi", status: "sending" })).toBeUndefined();
+    expect(carryPendingPrompt(undefined)).toBeUndefined();
+  });
+
+  it("#F5 carries settled prompts unchanged", () => {
+    const sent: PendingPrompt = { text: "hi", status: "sent" };
+    const failed: PendingPrompt = { text: "hi", status: "failed" };
+    expect(carryPendingPrompt(sent)).toBe(sent);
+    expect(carryPendingPrompt(failed)).toBe(failed);
   });
 });
 
@@ -1284,14 +1376,17 @@ describe("command_feedback events", () => {
       expect(s2.messages).toHaveLength(1);
     });
 
-    it("should ignore duplicate pending request with same method+title but different requestId", () => {
+    it("should surface two concurrent pending requests sharing a title but with distinct requestIds", () => {
+      // Two parallel tool calls (e.g. update_roles) mint distinct ids with a
+      // constant title; both must surface and be independently answerable. The
+      // former content dedup (method+title) dropped the second.
+      // See change: surface-concurrent-ask-user-prompts.
       const initial = createInitialState();
 
       const s1 = addInteractiveRequest(initial, "req-1", "confirm", { title: "Continue?" });
-      // Different requestId, same method+title (recursive proxy scenario)
       const s2 = addInteractiveRequest(s1, "req-2", "confirm", { title: "Continue?" });
-      expect(s2).toBe(s1);
-      expect(s2.interactiveRequests).toHaveLength(1);
+      expect(s2.interactiveRequests).toHaveLength(2);
+      expect(s2.interactiveRequests.map((r) => r.requestId)).toEqual(["req-1", "req-2"]);
     });
 
     it("should allow same title after previous request is resolved", () => {
@@ -1593,6 +1688,86 @@ describe("command_feedback events", () => {
         toolUses: 2,
         durationMs: 1000,
       });
+    });
+
+    // A running Agent's partial `details` ride the DURABLE message channel and
+    // carry the full snapshot (agentId + entries[]). The inspector map must be
+    // hydrated live from this channel — not only at tool_execution_end — so
+    // expand/popout does not show "Subagent not found" for the whole run when
+    // the ephemeral subagent_* event_forward frames are lost under
+    // back-pressure. See change: fix-subagent-live-detail-durable-hydration.
+    it("hydrates the subagents map live from a running Agent partialResult (agentId + entries)", () => {
+      const state = applyEvents([
+        {
+          eventType: "tool_execution_start",
+          timestamp: 1000,
+          data: { toolCallId: "agent-1", toolName: "Agent", args: { prompt: "Review" } },
+        },
+        {
+          eventType: "tool_execution_update",
+          timestamp: 2000,
+          data: {
+            toolCallId: "agent-1",
+            toolName: "Agent",
+            partialResult: {
+              content: [{ type: "text", text: "Working..." }],
+              details: {
+                agentId: "a4-agent-id",
+                agentSessionId: "v7-runner-id",
+                subagentType: "Explore",
+                displayName: "Explore",
+                description: "Cross-model review",
+                status: "running",
+                entries: [{ kind: "text", text: "first step", ts: 1500 }],
+              },
+            },
+          },
+        },
+      ]);
+
+      const byAgentId = state.subagents.get("a4-agent-id");
+      expect(byAgentId).toBeDefined();
+      expect(byAgentId?.status).toBe("running");
+      expect(byAgentId?.entries).toHaveLength(1);
+      // Dual-indexed: a v7 runner-id deep-link resolves the SAME state.
+      expect(state.subagents.get("v7-runner-id")).toBe(byAgentId);
+    });
+
+    // A late/reordered running partial must not regress a terminal state that a
+    // completion (or ephemeral subagent_completed) already recorded.
+    it("does not regress a completed subagent to running on a late partial", () => {
+      const state = applyEvents([
+        {
+          eventType: "tool_execution_start",
+          timestamp: 1000,
+          data: { toolCallId: "agent-1", toolName: "Agent", args: { prompt: "Review" } },
+        },
+        {
+          eventType: "tool_execution_end",
+          timestamp: 3000,
+          data: {
+            toolCallId: "agent-1",
+            toolName: "Agent",
+            result: "Done",
+            isError: false,
+            details: { agentId: "a4-agent-id", subagentType: "Explore", status: "completed" },
+          },
+        },
+        {
+          eventType: "tool_execution_update",
+          timestamp: 4000,
+          data: {
+            toolCallId: "agent-1",
+            toolName: "Agent",
+            partialResult: {
+              content: [{ type: "text", text: "stale" }],
+              details: { agentId: "a4-agent-id", subagentType: "Explore", status: "running" },
+            },
+          },
+        },
+      ]);
+
+      expect(state.subagents.get("a4-agent-id")?.status).toBe("completed");
     });
 
     it("should complete Agent tool with duration", () => {
@@ -2216,8 +2391,138 @@ describe("command_feedback events", () => {
       ]);
       const toolMsg = state.messages.find((m) => m.toolCallId === "tc1");
       expect(toolMsg?.toolDetails).toBeDefined();
-      expect((toolMsg?.toolDetails as Record<string, unknown>).agentId).toBe("sub_abc");
+      expect((toolMsg?.toolDetails as Record<string, unknown> | undefined)?.agentId).toBe("sub_abc");
       expect(state.subagents.get("sub_abc")?.displayName).toBe("explorer");
+    });
+  });
+
+  // Change: resolve-subagent-inspector-by-session-id — dual-index the reduced
+  // SubagentState under both the v4 agentId and the v7 runner agentSessionId so
+  // the inspector resolves a deep-link by either id.
+  describe("agentSessionId dual-index", () => {
+    it("E1: dual-indexes a started frame under both ids (same ref; id stays canonical)", () => {
+      const state = applyEvents([
+        {
+          eventType: "subagent_started",
+          timestamp: 1000,
+          data: { id: "A", type: "Explore", description: "d", details: { agentSessionId: "S" } },
+        },
+      ]);
+      const byAgentId = state.subagents.get("A");
+      const bySession = state.subagents.get("S");
+      expect(byAgentId).toBeDefined();
+      expect(bySession).toBe(byAgentId); // SAME reference
+      expect(byAgentId!.id).toBe("A"); // canonical v4 id, even via the v7 key
+      expect(byAgentId!.agentSessionId).toBe("S");
+    });
+
+    it("E1b: a later update via one key is visible via the other (paired ref)", () => {
+      const state = applyEvents([
+        {
+          eventType: "subagent_created",
+          timestamp: 1000,
+          data: { id: "A", type: "Explore", description: "d", details: { agentSessionId: "S" } },
+        },
+        {
+          eventType: "subagent_completed",
+          timestamp: 2000,
+          data: { id: "A", result: "ok", details: { agentSessionId: "S" } },
+        },
+      ]);
+      expect(state.subagents.get("A")!.status).toBe("completed");
+      expect(state.subagents.get("S")!.status).toBe("completed");
+      expect(state.subagents.get("S")).toBe(state.subagents.get("A"));
+    });
+
+    it("E2: single-key when the frame carries no agentSessionId (no alias)", () => {
+      const state = applyEvents([
+        {
+          eventType: "subagent_started",
+          timestamp: 1000,
+          data: { id: "A", type: "Explore", description: "d" },
+        },
+      ]);
+      expect(state.subagents.get("A")).toBeDefined();
+      expect(state.subagents.get("A")!.agentSessionId).toBeUndefined();
+      expect(state.subagents.size).toBe(1); // exactly one key for the run
+    });
+
+    it("E3: backfill dual-indexes a completed Agent run under both ids", () => {
+      const state = applyEvents([
+        {
+          eventType: "tool_execution_start",
+          timestamp: 1000,
+          data: { toolCallId: "tc1", toolName: "Agent", args: {} },
+        },
+        {
+          eventType: "tool_execution_end",
+          timestamp: 2000,
+          data: {
+            toolCallId: "tc1",
+            toolName: "Agent",
+            isError: false,
+            result: "done",
+            details: { agentId: "A", agentSessionId: "S" },
+          },
+        },
+      ]);
+      const byAgentId = state.subagents.get("A");
+      const bySession = state.subagents.get("S");
+      expect(byAgentId).toBeDefined();
+      expect(bySession).toBe(byAgentId);
+      expect(byAgentId!.id).toBe("A");
+      expect(byAgentId!.agentSessionId).toBe("S");
+    });
+
+    it("E4: backfill single-key when the end details carry no agentSessionId", () => {
+      const state = applyEvents([
+        {
+          eventType: "tool_execution_start",
+          timestamp: 1000,
+          data: { toolCallId: "tc1", toolName: "Agent", args: {} },
+        },
+        {
+          eventType: "tool_execution_end",
+          timestamp: 2000,
+          data: {
+            toolCallId: "tc1",
+            toolName: "Agent",
+            isError: false,
+            result: "done",
+            details: { agentId: "A" },
+          },
+        },
+      ]);
+      expect(state.subagents.get("A")).toBeDefined();
+      expect(state.subagents.size).toBe(1);
+    });
+
+    it("E6: an unknown id (neither agentId nor agentSessionId) resolves to undefined", () => {
+      const state = applyEvents([
+        {
+          eventType: "subagent_started",
+          timestamp: 1000,
+          data: { id: "A", type: "Explore", description: "d", details: { agentSessionId: "S" } },
+        },
+      ]);
+      expect(state.subagents.get("unknown-id")).toBeUndefined();
+    });
+
+    it("X1: graceful degrade — no agentSessionId anywhere → reducer creates no alias key", () => {
+      const state = applyEvents([
+        {
+          eventType: "subagent_started",
+          timestamp: 1000,
+          data: { id: "A", type: "Explore", description: "d" },
+        },
+        {
+          eventType: "subagent_completed",
+          timestamp: 2000,
+          data: { id: "A", result: "ok" },
+        },
+      ]);
+      expect(state.subagents.get("A")).toBeDefined();
+      expect(state.subagents.size).toBe(1); // no S alias
     });
   });
 });
@@ -2394,6 +2699,155 @@ describe("extractAgentEndError", () => {
       ],
     })).toBeUndefined();
   });
+
+  it("returns a JSON envelope errorMessage verbatim", () => {
+    const raw = '{"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}';
+    expect(extractAgentEndError({
+      messages: [{ role: "assistant", stopReason: "error", errorMessage: raw, content: [] }],
+    })).toBe(raw);
+  });
+});
+
+describe("provider error strings are printed verbatim (no humanizing)", () => {
+  // pi types errorMessage as a bare string and sets it from String(error), so
+  // there is no envelope shape to rely on. The surface prints it and offers
+  // Show more + Copy. See change: raw-error-render-and-retry-authority.
+  it("returns a pure-JSON envelope verbatim, not `type: message`", () => {
+    const raw =
+      '{"type":"error","error":{"details":null,"type":"overloaded_error","message":"Overloaded"},"request_id":"req_x"}';
+    expect(extractAgentEndError({ messages: [{ role: "assistant", stopReason: "error", errorMessage: raw }] })).toBe(raw);
+  });
+
+  it("returns pi's documented status-prefixed payload verbatim", () => {
+    const raw = '529 {"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}';
+    expect(extractAgentEndError({ messages: [{ role: "assistant", stopReason: "error", errorMessage: raw }] })).toBe(raw);
+  });
+
+  it("falls back for a non-string errorMessage instead of leaking an object", () => {
+    // A malformed agent_end can carry `errorMessage: {}`. Letting that reach
+    // lastError.message crashes the render with "Objects are not valid as a
+    // React child". See change: raw-error-render-and-retry-authority.
+    for (const bad of [{}, 42, null, undefined, []]) {
+      expect(
+        extractAgentEndError({ messages: [{ role: "assistant", stopReason: "error", errorMessage: bad }] }),
+      ).toBe("An unknown error occurred");
+    }
+  });
+
+  it("returns a plain non-JSON string verbatim", () => {
+    expect(extractAgentEndError({ messages: [{ role: "assistant", stopReason: "error", errorMessage: "terminated" }] })).toBe("terminated");
+  });
+
+  it("sets retryState.reason to the raw string on auto_retry_waiting", () => {
+    const raw = '529 {"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}';
+    const s = applyEvents([
+      { eventType: "auto_retry_waiting", timestamp: 1, data: { attempt: 2, maxAttempts: 3, delayMs: 2000, errorMessage: raw } },
+    ] as unknown as DashboardEvent[]);
+    expect(s.retryState?.reason).toBe(raw);
+  });
+
+  it("sets retryState.reason to the raw string on auto_retry_start", () => {
+    const raw = "429 rate limited";
+    const s = applyEvents([
+      { eventType: "auto_retry_start", timestamp: 1, data: { attempt: 2, maxAttempts: 3, delayMs: 2000, errorMessage: raw } },
+    ] as unknown as DashboardEvent[]);
+    expect(s.retryState?.reason).toBe(raw);
+  });
+});
+
+describe("agent_end disposition keys off the last ASSISTANT message (regression)", () => {
+  // A turn can end with a trailing non-assistant entry (e.g. a `toolResult`).
+  // Keying off `messages[length-1]` made a SUCCESSFUL retry look non-clean, so
+  // the error card never disappeared. See change: unify-retry-visibility.
+  it("extracts the error when a toolResult trails the failed assistant message", () => {
+    expect(extractAgentEndError({
+      messages: [
+        { role: "assistant", stopReason: "error", errorMessage: "Overloaded" },
+        { role: "toolResult" },
+      ],
+    })).toBe("Overloaded");
+  });
+
+  it("is clean when a toolResult trails a successful assistant stop", () => {
+    expect(isCleanAgentEnd({
+      messages: [{ role: "assistant", stopReason: "stop" }, { role: "toolResult" }],
+    })).toBe(true);
+  });
+
+  it("is NOT clean when the last assistant message is an error", () => {
+    expect(isCleanAgentEnd({
+      messages: [{ role: "assistant", stopReason: "error", errorMessage: "x" }, { role: "toolResult" }],
+    })).toBe(false);
+  });
+
+  it("is NOT clean for an agent_end with no messages (bare abort)", () => {
+    expect(isCleanAgentEnd({})).toBe(false);
+    expect(isCleanAgentEnd({ messages: [] })).toBe(false);
+  });
+
+  it("a successful turn trailed by a toolResult clears lastError end-to-end", () => {
+    const errored = applyEvents([
+      { eventType: "agent_end", timestamp: 1, data: { messages: [{ role: "assistant", stopReason: "error", errorMessage: "Overloaded" }, { role: "toolResult" }] } } as unknown as DashboardEvent,
+    ]);
+    expect(errored.lastError).toBeTruthy();
+    const recovered = reduceEvent(errored, {
+      eventType: "agent_end",
+      timestamp: 2,
+      data: { messages: [{ role: "assistant", stopReason: "stop" }, { role: "toolResult" }] },
+    } as unknown as DashboardEvent);
+    expect(recovered.lastError).toBeUndefined();
+    // No error anchor and no retry sub-status → the surface is not rendered.
+    expect(deriveBannerState(recovered)).toEqual({ variant: "hidden" });
+  });
+
+  it("a payload with NO assistant entry synthesizes nothing and is not clean", () => {
+    // Spec: "No assistant message present" — a trailing toolResult must never
+    // decide the turn's disposition, in either direction. This mirrors the
+    // tracker, which arms nothing for the same input.
+    const erroredTrailer = { messages: [{ role: "toolResult", stopReason: "error", errorMessage: "boom" }] };
+    expect(extractAgentEndError(erroredTrailer)).toBeUndefined();
+    expect(isCleanAgentEnd(erroredTrailer)).toBe(false);
+    const goodTrailer = { messages: [{ role: "toolResult", stopReason: "stop" }, { role: "user" }] };
+    expect(extractAgentEndError(goodTrailer)).toBeUndefined();
+    expect(isCleanAgentEnd(goodTrailer)).toBe(false);
+  });
+
+  it("a live lastError survives an agent_end with no assistant entry", () => {
+    const errored = applyEvents([
+      { eventType: "agent_end", timestamp: 1, data: { messages: [{ role: "assistant", stopReason: "error", errorMessage: "Overloaded" }] } } as unknown as DashboardEvent,
+    ]);
+    expect(errored.lastError).toBeTruthy();
+    const after = reduceEvent(errored, {
+      eventType: "agent_end",
+      timestamp: 2,
+      data: { messages: [{ role: "toolResult", stopReason: "stop" }] },
+    } as unknown as DashboardEvent);
+    expect(after.lastError).toEqual(errored.lastError);
+  });
+
+  it("isCleanAgentEnd and extractAgentEndError agree on every head × trailer cell", () => {
+    const trailers = [[], [{ role: "toolResult" }], [{ role: "toolResult" }, { role: "user" }]];
+    const heads = [
+      { head: { role: "assistant", stopReason: "error", errorMessage: "boom" }, clean: false, err: true },
+      { head: { role: "assistant", stopReason: "stop" }, clean: true, err: false },
+      { head: { role: "assistant", stopReason: "end_turn" }, clean: true, err: false },
+      { head: { role: "assistant", stopReason: "toolUse" }, clean: false, err: false },
+      { head: { role: "assistant", stopReason: "aborted" }, clean: false, err: false },
+      { head: { role: "user" }, clean: false, err: false },
+    ];
+    for (const { head, clean, err } of heads) {
+      for (const trailer of trailers) {
+        const data = { messages: [head, ...trailer] };
+        const label = JSON.stringify(data);
+        // Each cell's disposition is pinned in BOTH directions, so the table is
+        // load-bearing rather than a tautology over a single shared read.
+        expect(isCleanAgentEnd(data), `clean: ${label}`).toBe(clean);
+        expect(extractAgentEndError(data) !== undefined, `err: ${label}`).toBe(err);
+        // A clean turn can never also carry an error.
+        expect(clean && err).toBe(false);
+      }
+    }
+  });
 });
 
 describe("lastError extraction from agent_end", () => {
@@ -2415,7 +2869,9 @@ describe("lastError extraction from agent_end", () => {
       },
     ]);
     expect(state.lastError).toEqual({ message: "Rate limit exceeded", timestamp: 1000 });
-    expect(state.status).toBe("idle");
+    // agent_end sets the intermediate "ended"; lastError extraction is a
+    // preserved agent_end side-effect. See change: adopt-pi-074-080-features.
+    expect(state.status).toBe("ended");
     expect(state.isStreaming).toBe(false);
   });
 
@@ -2530,7 +2986,7 @@ describe("lastError extraction from agent_end", () => {
     expect(state.lastError).toBeUndefined();
   });
 
-  it("does NOT clear lastError on a mid-turn tool_use message_end", () => {
+  it("E4 clears retry and error on any non-error, non-aborted assistant completion", () => {
     let state = applyEvents([
       {
         eventType: "agent_end",
@@ -2538,15 +2994,73 @@ describe("lastError extraction from agent_end", () => {
         data: { messages: [{ role: "assistant", stopReason: "error", errorMessage: "boom", content: [] }] },
       },
     ]);
-    state = reduceEvent(state, { eventType: "agent_start", timestamp: 2000, data: {} });
+    state.retryState = {
+      attempt: 1,
+      maxAttempts: 3,
+      delayMs: 2000,
+      waiting: false,
+      reason: "boom",
+      startedAt: 2000,
+    };
     state = reduceEvent(state, {
       eventType: "message_end",
       timestamp: 2100,
       data: { message: { role: "assistant", stopReason: "tool_use", content: [{ type: "text", text: "calling tool" }] } },
     });
-    // Mid-turn stop must not clear — the turn can still error afterward.
-    expect(state.lastError).toBeDefined();
-    expect(state.lastError!.message).toBe("boom");
+    expect(state.lastError).toBeUndefined();
+    expect(state.retryState).toBeUndefined();
+    expect(deriveBannerState(state)).toEqual({ variant: "hidden" });
+  });
+
+  it.each([
+    ["missing", undefined],
+    ["non-string", 42],
+  ])("preserves retry/error state when message_end has a %s stopReason", (_label, stopReason) => {
+    const state = createInitialState();
+    state.lastError = { message: "503 overloaded", timestamp: 1000 };
+    state.retryState = {
+      attempt: 1,
+      maxAttempts: 3,
+      delayMs: 2000,
+      waiting: false,
+      reason: "503 overloaded",
+      startedAt: 1000,
+    };
+
+    const next = reduceEvent(state, {
+      eventType: "message_end",
+      timestamp: 2000,
+      data: { message: { role: "assistant", stopReason, content: [] } },
+    });
+
+    expect(next.lastError).toEqual(state.lastError);
+    expect(next.retryState).toEqual(state.retryState);
+  });
+
+  it("failed retry-end advances the lifecycle revision while preserving the displayed provider error", () => {
+    const state = createInitialState();
+    state.lastError = { message: "503 overloaded", timestamp: 1000 };
+
+    const next = reduceEvent(state, {
+      eventType: "auto_retry_end",
+      timestamp: 2000,
+      data: { success: false, attempt: 0, finalError: "retry dispatch failed" },
+    });
+
+    expect(next.lastError).toEqual({ message: "503 overloaded", timestamp: 2000 });
+  });
+
+  it("advances retry lifecycle revision when the failed event timestamp is unchanged", () => {
+    const state = createInitialState();
+    state.lastError = { message: "503 overloaded", timestamp: 1000 };
+
+    const next = reduceEvent(state, {
+      eventType: "auto_retry_end",
+      timestamp: 1000,
+      data: { success: false, attempt: 0, finalError: "retry dispatch failed" },
+    });
+
+    expect(next.lastError).toEqual({ message: "503 overloaded", timestamp: 1001 });
   });
 
   it("failed retry updates lastError without a hidden intermediate frame", () => {
@@ -2737,10 +3251,29 @@ describe("auto_retry events (provider-retry-state)", () => {
       attempt: 1,
       maxAttempts: 3,
       delayMs: 2000,
+      waiting: false,
       reason: "rate limit exceeded",
       startedAt: 5000,
     });
     expect(state.lastError).toBeUndefined();
+  });
+
+  it("sets a waiting retryState on auto_retry_waiting (with nextAttemptAt)", () => {
+    let state = createInitialState();
+    state = reduceEvent(state, {
+      eventType: "auto_retry_waiting",
+      timestamp: 5000,
+      data: { attempt: 2, maxAttempts: 3, delayMs: 4000, nextAttemptAt: 1700000004000, errorMessage: "overloaded" },
+    });
+    expect(state.retryState).toEqual({
+      attempt: 2,
+      maxAttempts: 3,
+      delayMs: 4000,
+      nextAttemptAt: 1700000004000,
+      waiting: true,
+      reason: "overloaded",
+      startedAt: 5000,
+    });
   });
 
   it("clears retryState on auto_retry_end with success", () => {
@@ -2759,6 +3292,19 @@ describe("auto_retry events (provider-retry-state)", () => {
     expect(state.lastError).toBeUndefined();
   });
 
+  it("E4 successful retry-end clears a stale error even when retryState is already absent", () => {
+    let state = createInitialState();
+    state.lastError = { message: "stale provider error", timestamp: 100 };
+    state = reduceEvent(state, {
+      eventType: "auto_retry_end",
+      timestamp: 6000,
+      data: { success: true, attempt: 2 },
+    });
+    expect(state.retryState).toBeUndefined();
+    expect(state.lastError).toBeUndefined();
+    expect(deriveBannerState(state)).toEqual({ variant: "hidden" });
+  });
+
   it("clears retryState and surfaces lastError on auto_retry_end with failure", () => {
     let state = createInitialState();
     state = reduceEvent(state, {
@@ -2775,7 +3321,7 @@ describe("auto_retry events (provider-retry-state)", () => {
     expect(state.lastError).toEqual({ message: "Rate limit exceeded", timestamp: 7000 });
   });
 
-  it("does not overwrite existing lastError on auto_retry_end failure", () => {
+  it("preserves the existing error message but advances its lifecycle revision on retry failure", () => {
     let state = createInitialState();
     state.lastError = { message: "earlier error", timestamp: 100 };
     state = reduceEvent(state, {
@@ -2789,26 +3335,28 @@ describe("auto_retry events (provider-retry-state)", () => {
       data: { success: false, finalError: "new error" },
     });
     expect(state.retryState).toBeUndefined();
-    expect(state.lastError).toEqual({ message: "earlier error", timestamp: 100 });
+    expect(state.lastError).toEqual({ message: "earlier error", timestamp: 7000 });
   });
 
-  it("agent_start defensively clears stale retryState", () => {
+  it("E1 agent_start preserves the active retry state and provider error", () => {
     let state = createInitialState();
+    state.lastError = { message: "x", timestamp: 4000 };
     state = reduceEvent(state, {
-      eventType: "auto_retry_start",
+      eventType: "auto_retry_waiting",
       timestamp: 5000,
       data: { attempt: 1, maxAttempts: 3, delayMs: 2000, errorMessage: "x" },
     });
     state = reduceEvent(state, { eventType: "agent_start", timestamp: 6000, data: {} });
-    expect(state.retryState).toBeUndefined();
+    expect(state.retryState?.waiting).toBe(true);
+    expect(state.lastError?.message).toBe("x");
   });
 
-  it("agent_end defensively clears retryState while still extracting lastError", () => {
+  it("agent_end PRESERVES retryState while still extracting lastError (per-attempt, not terminal)", () => {
     let state = createInitialState();
     state = reduceEvent(state, {
-      eventType: "auto_retry_start",
+      eventType: "auto_retry_waiting",
       timestamp: 5000,
-      data: { attempt: 1, maxAttempts: 3, delayMs: 2000, errorMessage: "x" },
+      data: { attempt: 1, maxAttempts: 3, delayMs: 2000, nextAttemptAt: 7000, errorMessage: "x" },
     });
     state = reduceEvent(state, {
       eventType: "agent_end",
@@ -2819,87 +3367,112 @@ describe("auto_retry events (provider-retry-state)", () => {
         ],
       },
     });
-    expect(state.retryState).toBeUndefined();
+    // agent_end is one attempt boundary, not the end of the chain — retryState survives.
+    expect(state.retryState).toBeDefined();
+    expect(state.retryState!.attempt).toBe(1);
     expect(state.lastError).toEqual({ message: "final boom", timestamp: 8000 });
   });
 
-  it("auto_retry_end without prior retryState is a no-op", () => {
+  it("agent_settled clears retryState (sole terminal signal)", () => {
+    let state = createInitialState();
+    state = reduceEvent(state, {
+      eventType: "auto_retry_waiting",
+      timestamp: 5000,
+      data: { attempt: 1, maxAttempts: 3, delayMs: 2000, errorMessage: "x" },
+    });
+    state = reduceEvent(state, { eventType: "agent_settled", timestamp: 9000, data: {} });
+    expect(state.retryState).toBeUndefined();
+  });
+
+  it("E6 a failed retry-end finalError establishes the second provider-error path", () => {
     let state = createInitialState();
     state = reduceEvent(state, {
       eventType: "auto_retry_end",
       timestamp: 6000,
-      data: { success: false, finalError: "stale" },
+      data: { success: false, attempt: 3, finalError: "503 overloaded" },
+    });
+    expect(state.retryState).toBeUndefined();
+    expect(state.lastError).toEqual({ message: "503 overloaded", timestamp: 6000 });
+    expect(deriveBannerState(state)).toEqual({ error: { kind: "error", message: "503 overloaded" } });
+  });
+
+  it("X8 a duplicate late retry-end without finalError is hidden and idempotent", () => {
+    let state = createInitialState();
+    state = reduceEvent(state, {
+      eventType: "auto_retry_end",
+      timestamp: 6000,
+      data: { success: false, attempt: 2 },
     });
     expect(state.retryState).toBeUndefined();
     expect(state.lastError).toBeUndefined();
+    expect(deriveBannerState(state)).toEqual({ variant: "hidden" });
   });
 
-  // Defense-in-depth guard against (yellow + red) banner overlap.
-  // See change: fix-retry-banner-stuck-on-limit-exceeded.
-  describe("auto_retry_start defensive guard against banner overlap", () => {
-    it("drops auto_retry_start when lastError is fresh same-turn (≤1500ms, not streaming)", () => {
-      let state = createInitialState();
-      state.lastError = { message: "...quota exhausted...", timestamp: 1_000_000 };
-      state.isStreaming = false;
-      state = reduceEvent(state, {
-        eventType: "auto_retry_start",
-        timestamp: 1_000_500, // 500ms later
-        data: { attempt: 1, maxAttempts: -1, delayMs: -1, errorMessage: "429" },
-      });
-      expect(state.retryState).toBeUndefined();
-      expect(state.lastError).toEqual({ message: "...quota exhausted...", timestamp: 1_000_000 });
+  it("X3 abort retry-end clears retry and error and installs cancellation suppression", () => {
+    let state = createInitialState();
+    state.lastError = { message: "503", timestamp: 100 };
+    state.retryState = {
+      attempt: 2,
+      maxAttempts: 3,
+      delayMs: 4000,
+      waiting: true,
+      reason: "503",
+      startedAt: 100,
+    };
+    state = reduceEvent(state, {
+      eventType: "auto_retry_end",
+      timestamp: 200,
+      data: { success: false, attempt: -1 },
     });
+    expect(state.retryState).toBeUndefined();
+    expect(state.lastError).toBeUndefined();
+    expect(state.retryCancelled).toBe(true);
+  });
 
-    it("does NOT drop auto_retry_start when lastError is stale carry-over (>1500ms old)", () => {
-      let state = createInitialState();
-      state.lastError = { message: "earlier turn", timestamp: 1_000_000 };
-      state.isStreaming = false;
-      state = reduceEvent(state, {
-        eventType: "auto_retry_start",
-        timestamp: 1_010_000, // 10s later
-        data: { attempt: 1, maxAttempts: -1, delayMs: -1, errorMessage: "rate limit" },
-      });
-      expect(state.retryState).toBeDefined();
-      expect(state.retryState!.reason).toBe("rate limit");
-      expect(state.lastError).toEqual({ message: "earlier turn", timestamp: 1_000_000 });
-    });
+  it("X4 late retry and provider-error events after abort cannot reopen the banner", () => {
+    let state = createInitialState();
+    state.retryCancelled = true;
+    const lateEvents = [
+      { eventType: "auto_retry_waiting", data: { attempt: 2, errorMessage: "late" } },
+      { eventType: "auto_retry_start", data: { attempt: 2, errorMessage: "late" } },
+      { eventType: "agent_end", data: { messages: [{ role: "assistant", stopReason: "error", errorMessage: "late" }] } },
+      { eventType: "auto_retry_end", data: { success: false, finalError: "late" } },
+    ];
+    for (const [index, late] of lateEvents.entries()) {
+      state = reduceEvent(state, { ...late, timestamp: 300 + index } as DashboardEvent);
+    }
+    expect(state.retryState).toBeUndefined();
+    expect(state.lastError).toBeUndefined();
+    expect(deriveBannerState(state)).toEqual({ variant: "hidden" });
+  });
 
-    it("does NOT drop auto_retry_start when streaming (isStreaming=true)", () => {
-      let state = createInitialState();
-      state.lastError = { message: "fresh but mid-stream", timestamp: 1_000_000 };
-      state.isStreaming = true;
-      state = reduceEvent(state, {
-        eventType: "auto_retry_start",
-        timestamp: 1_000_500,
-        data: { attempt: 1, maxAttempts: -1, delayMs: -1, errorMessage: "x" },
-      });
-      expect(state.retryState).toBeDefined();
+  it("X4 a new explicit user run releases cancellation suppression", () => {
+    let state = createInitialState();
+    state.retryCancelled = true;
+    state = reduceEvent(state, {
+      eventType: "message_start",
+      timestamp: 500,
+      data: { message: { role: "user", content: "try again" } },
     });
+    expect(state.retryCancelled).toBeUndefined();
+    state = reduceEvent(state, {
+      eventType: "agent_end",
+      timestamp: 600,
+      data: { messages: [{ role: "assistant", stopReason: "error", errorMessage: "new failure" }] },
+    });
+    expect(state.lastError?.message).toBe("new failure");
+  });
 
-    it("does NOT drop auto_retry_start when lastError is undefined", () => {
-      let state = createInitialState();
-      state.lastError = undefined;
-      state.isStreaming = false;
-      state = reduceEvent(state, {
-        eventType: "auto_retry_start",
-        timestamp: 5000,
-        data: { attempt: 1, maxAttempts: -1, delayMs: -1, errorMessage: "x" },
-      });
-      expect(state.retryState).toBeDefined();
+  it("typed auto_retry_start is accepted even beside a fresh provider error", () => {
+    let state = createInitialState();
+    state.lastError = { message: "fresh", timestamp: 1_000_000 };
+    state = reduceEvent(state, {
+      eventType: "auto_retry_start",
+      timestamp: 1_000_001,
+      data: { attempt: 1, maxAttempts: 3, delayMs: 2000, errorMessage: "fresh" },
     });
-
-    it("does NOT drop auto_retry_start when lastError is exactly at the boundary (1500ms old)", () => {
-      // Boundary case: with `<=` semantics, exactly 1500ms drops; 1501ms keeps.
-      let state = createInitialState();
-      state.lastError = { message: "boundary", timestamp: 1_000_000 };
-      state.isStreaming = false;
-      state = reduceEvent(state, {
-        eventType: "auto_retry_start",
-        timestamp: 1_001_501, // 1501ms later
-        data: { attempt: 1, maxAttempts: -1, delayMs: -1, errorMessage: "x" },
-      });
-      expect(state.retryState).toBeDefined();
-    });
+    expect(state.retryState?.waiting).toBe(false);
+    expect(state.lastError?.message).toBe("fresh");
   });
 });
 
@@ -2914,16 +3487,20 @@ describe("deriveBannerState (unified SessionBanner selector)", () => {
     const s = createInitialState();
     s.retryState = {
       attempt: 3,
-      maxAttempts: -1,
-      delayMs: -1,
+      maxAttempts: 0,
+      delayMs: 60000,
+      nextAttemptAt: 1700000060000,
+      waiting: true,
       reason: "rate limit",
       startedAt: 1700000000000,
     };
     expect(deriveBannerState(s)).toEqual({
       retry: {
         attempt: 3,
-        maxAttempts: -1,
-        delayMs: -1,
+        maxAttempts: 0,
+        delayMs: 60000,
+        nextAttemptAt: 1700000060000,
+        waiting: true,
         startedAt: 1700000000000,
         reason: "rate limit",
       },
@@ -2950,8 +3527,9 @@ describe("deriveBannerState (unified SessionBanner selector)", () => {
     const s = createInitialState();
     s.retryState = {
       attempt: 2,
-      maxAttempts: -1,
-      delayMs: -1,
+      maxAttempts: 3,
+      delayMs: 4000,
+      waiting: false,
       reason: "rate limit",
       startedAt: 0,
     };
@@ -2959,7 +3537,7 @@ describe("deriveBannerState (unified SessionBanner selector)", () => {
     const banner = deriveBannerState(s);
     expect(banner).toEqual({
       error: { kind: "error", message: "429" },
-      retry: { attempt: 2, maxAttempts: -1, delayMs: -1, startedAt: 0, reason: "rate limit" },
+      retry: { attempt: 2, maxAttempts: 3, delayMs: 4000, waiting: false, startedAt: 0, reason: "rate limit" },
     });
   });
 
@@ -2991,9 +3569,9 @@ describe("error-lifecycle: composed surface end-to-end", () => {
     return { error: "error" in b && !!b.error, retry: "retry" in b && !!b.retry };
   }
 
-  it("error → retry-on-top → fail (no flicker) → retry → confirmed-good clear", () => {
+  it("error → waiting → in-flight → fail (retry survives agent_end) → settle clears", () => {
     let s: SessionState = createInitialState();
-    // 1. Turn fails terminally — error anchor appears.
+    // 1. First attempt fails — error anchor appears (agent_end is per-attempt).
     s = reduceEvent(s, {
       eventType: "agent_end",
       timestamp: 1000,
@@ -3001,40 +3579,48 @@ describe("error-lifecycle: composed surface end-to-end", () => {
     });
     expect(bannerHas(s)).toEqual({ error: true, retry: false });
 
-    // 2. Retry/continuation turn starts — error anchor persists (no optimistic
-    //    clear on agent_start), isStreaming flips true.
-    s = reduceEvent(s, { eventType: "agent_start", timestamp: 2000, data: {} });
-    expect(s.lastError!.message).toBe("429 rate limited");
-
-    // 3. Auto-retry begins ON TOP of the persistent error anchor (composed).
-    //    isStreaming is true so the fresh-error guard does not drop it.
+    // 2. Bridge emits the waiting signal — retry sub-line appears ON TOP of the
+    //    persistent error anchor, with a countdown.
     s = reduceEvent(s, {
-      eventType: "auto_retry_start",
-      timestamp: 2100,
-      data: { attempt: 2, maxAttempts: -1, delayMs: -1, errorMessage: "429 rate limited" },
+      eventType: "auto_retry_waiting",
+      timestamp: 1010,
+      data: { attempt: 1, maxAttempts: 3, delayMs: 2000, nextAttemptAt: 3010, errorMessage: "429 rate limited" },
     });
     expect(bannerHas(s)).toEqual({ error: true, retry: true });
-    expect(s.lastError!.message).toBe("429 rate limited");
+    expect(s.retryState!.waiting).toBe(true);
 
-    // 4. The retry fails again — error updates WITHOUT a hidden frame.
+    // 3. The retry attempt starts — the waiting retry state remains until the
+    //    typed auto_retry_start flips it in flight. lastError persists.
+    s = reduceEvent(s, { eventType: "agent_start", timestamp: 3010, data: {} });
+    expect(s.retryState?.waiting).toBe(true);
+    s = reduceEvent(s, {
+      eventType: "auto_retry_start",
+      timestamp: 3011,
+      data: { attempt: 1, maxAttempts: 3, delayMs: 2000, errorMessage: "429 rate limited" },
+    });
+    expect(bannerHas(s)).toEqual({ error: true, retry: true });
+    expect(s.retryState!.waiting).toBe(false);
+
+    // 4. The attempt fails again — agent_end is NOT terminal, so the retry
+    //    sub-line SURVIVES (another attempt is coming). error updates.
     s = reduceEvent(s, {
       eventType: "agent_end",
-      timestamp: 2400,
+      timestamp: 3200,
       data: { messages: [{ role: "assistant", stopReason: "error", errorMessage: "still 429", content: [] }] },
     });
-    expect(bannerHas(s)).toEqual({ error: true, retry: false });
+    expect(bannerHas(s)).toEqual({ error: true, retry: true });
     expect(s.lastError!.message).toBe("still 429");
 
-    // 5. Manual retry: new turn starts (error still visible).
-    s = reduceEvent(s, { eventType: "agent_start", timestamp: 3000, data: {} });
-    expect(s.lastError!.message).toBe("still 429");
-
-    // 6. Confirmed-good response clears the whole surface (real pi-ai 'stop').
+    // 5. The chain terminates (stop / success). agent_settled is the SOLE
+    //    terminal signal — it clears the retry sub-line; the confirmed-good
+    //    message_end clears the error anchor.
+    s = reduceEvent(s, { eventType: "agent_start", timestamp: 4000, data: {} });
     s = reduceEvent(s, {
       eventType: "message_end",
-      timestamp: 3100,
+      timestamp: 4100,
       data: { message: { role: "assistant", stopReason: "stop", content: [{ type: "text", text: "fixed" }] } },
     });
+    s = reduceEvent(s, { eventType: "agent_settled", timestamp: 4200, data: {} });
     expect(bannerHas(s)).toEqual({ error: false, retry: false });
     expect(deriveBannerState(s)).toEqual({ variant: "hidden" });
   });

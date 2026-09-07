@@ -34,10 +34,11 @@
  * and `packages/shared/src/` looking for the literal `.pi-dashboard`,
  * then asserts every match maps to an allowlisted file.
  */
-import { describe, it, expect } from "vitest";
+
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { describe, expect, it } from "vitest";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(HERE, "..", "..", "..", "..");
@@ -59,14 +60,15 @@ const ALLOWLIST: ReadonlySet<string> = new Set([
   // Comment-only ref (Windows-path example).
   "packages/shared/src/platform/node-spawn.ts",
   // pi-core update path (standalone arm only; client UI hidden on Electron).
-  "packages/server/src/pi-core-updater.ts",
-  "packages/server/src/pi-core-checker.ts",
-  "packages/server/src/changelog-fs.ts",
+  "packages/server/src/pi/pi-core-updater.ts",
+  "packages/server/src/pi/pi-core-checker.ts",
+  "packages/server/src/changelog/changelog-fs.ts",
   // Server CLI: advisory log line wired to legacy-managed-dir detector.
   "packages/server/src/cli.ts",
-  // Node-version guard: advisory help-text only (suggests bundled PATH);
-  // no read/write. See change: openspec-worktree-spawn-button.
-  "packages/server/src/node-guard.ts",
+  // Node-version guard: advisory help-text (suggests bundled PATH) plus a
+  // READ-ONLY existence probe of `<managedDir>/node/` deciding whether the
+  // managed hint is emitted. No write. See change: unify-pi-runtime-identity (6.3).
+  "packages/server/src/auth/node-guard.ts",
   // Doctor route: shared-doctor MANAGED_DIR forwarder.
   "packages/server/src/routes/doctor-routes.ts",
   // Electron Doctor: advisory row text + MANAGED_DIR consumer for shared checks.

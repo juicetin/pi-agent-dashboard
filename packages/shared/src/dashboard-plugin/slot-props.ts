@@ -25,6 +25,13 @@ export interface FolderDescriptor {
 }
 
 /**
+ * Where a folder section is being rendered. `sidebar` (default) = the sidebar
+ * folder card (raised pill); `card` = inside a session card (flat pill matching
+ * the SessionSubcard panels). See change: align-session-card-kb-slot-surface.
+ */
+export type SlotPlacement = "sidebar" | "card";
+
+/**
  * Image payload forwarded to `tool-renderer` plugins. Structural mirror of the
  * client's `ChatImage` (kept inline so this types-only package stays free of a
  * client dependency). See change: wire-tool-renderer-slot.
@@ -51,10 +58,12 @@ export interface ToolRendererContext {
 export interface SlotPropsMap {
   "sidebar-folder-section": {
     folder: FolderDescriptor;
+    placement?: SlotPlacement;
     pluginContext: AnyPluginContext;
   };
   "worktree-card-section": {
     folder: FolderDescriptor;
+    placement?: SlotPlacement;
     pluginContext: AnyPluginContext;
   };
   "session-card-badge": {
@@ -75,6 +84,23 @@ export interface SlotPropsMap {
   };
   "workspace-action-bar": {
     session: DashboardSession;
+    pluginContext: AnyPluginContext;
+  };
+  "composer-panel": {
+    /** The current chat composer input value (read-only). */
+    draft: string;
+    /** Optional language hint for the draft (e.g. "en"); undefined = auto. */
+    language?: string;
+    /** Current session id (for reset-on-switch); undefined when none selected. */
+    sessionId?: string;
+    /** Current session status (e.g. gate work while "streaming"). */
+    sessionStatus?: string;
+    /**
+     * Bounded draft-write: replace the composer input with `text`. The only
+     * mutation a composer-panel plugin may perform (e.g. apply a correction);
+     * NOT a general setter. See change: make-grammar-fully-plugin-contained.
+     */
+    onApplyText: (text: string) => void;
     pluginContext: AnyPluginContext;
   };
   "content-view": {
@@ -119,7 +145,8 @@ export interface SlotPropsMap {
     pluginContext: AnyPluginContext;
     // ─── newly optional (mirror built-in ToolRendererProps) ───
     // See change: wire-tool-renderer-slot.
-    status?: "running" | "complete" | "error";
+    // `elided` = result not loadable. See change: fix-lazy-history-backfill-ux (D5).
+    status?: "running" | "complete" | "error" | "elided";
     result?: string;
     toolDetails?: Record<string, unknown>;
     images?: ToolRendererImage[];

@@ -1,6 +1,6 @@
 ---
 name: implement
-description: Disciplined implementation in pi-agent-dashboard. Pairs (a) the 3-component rebuild matrix — extension→reload, server→restart, client→build+restart, openspec-apply→full rebuild — with (b) the project's code discipline rules (TDD, simplicity-first, surgical changes). Use when starting to write code, after editing src/extension|src/server|src/client, when unsure what to rebuild after a change, or before committing. Loads on triggers like "I changed the bridge", "rebuild and restart", "implement X", "after edit", "TDD this", "how do I land this change". Skip for trivial edits.
+description: 'Disciplined implementation in pi-agent-dashboard: the rebuild matrix (extension→reload, server→restart, client→build+restart, openspec-apply→full rebuild) plus the project''s code discipline rules. Use when writing code, after editing extension/server/client, after applying an OpenSpec change, when unsure what to rebuild, or before committing. Triggers: "rebuild and restart", "TDD this".'
 ---
 
 # Implement
@@ -13,41 +13,37 @@ The skill exists because both halves are easy to get wrong:
 
 ## Quick decision tree
 
-```
-        Did you edit code?
-                │
-       ┌────────┴────────┐
-       │                 │
-       ▼                 ▼
-   src/extension/    src/server/ or src/shared/
-       │                 │
-       ▼                 ▼
-   npm run reload    curl -X POST localhost:8000/api/restart
-                     (no build step — jiti runs TS directly)
-
-   src/client/ (dev mode)   →  nothing, Vite HMR
-   src/client/ (prod mode)  →  npm run build && restart
-   Multi-component / openspec  →  npx tsx ./scripts/full-rebuild.ts
+```mermaid
+flowchart TD
+    Q[Did you edit code?] --> EXT["src/extension/"]
+    Q --> SRV["src/server/ or src/shared/"]
+    EXT --> R["npm run reload"]
+    SRV --> RS["curl -X POST localhost:8000/api/restart<br/>(no build step — jiti runs TS directly)"]
+    Q --> CD["src/client/ (dev mode) → nothing, Vite HMR"]
+    Q --> CP["src/client/ (prod mode) → npm run build && restart"]
+    Q --> MC["Multi-component / openspec → npx tsx .pi/skills/implement/scripts/full-rebuild.ts"]
 ```
 
 Quick check current mode:
 ```bash
-npx tsx ./scripts/check-mode.ts           # prints "dev" or "production"
+npx tsx .pi/skills/implement/scripts/check-mode.ts    # prints "dev" or "production"
 ```
 
 Restart server (preserves mode unless overridden):
 ```bash
-npx tsx ./scripts/restart-server.ts             # graceful restart, keeps mode
-npx tsx ./scripts/restart-server.ts --dev       # force dev mode
-npx tsx ./scripts/restart-server.ts --prod      # force production mode
+npx tsx .pi/skills/implement/scripts/restart-server.ts          # graceful restart, keeps mode
+npx tsx .pi/skills/implement/scripts/restart-server.ts --dev    # force dev mode
+npx tsx .pi/skills/implement/scripts/restart-server.ts --prod   # force production mode
 ```
 
 Full rebuild (after `openspec-apply` or multi-component change):
 ```bash
-npx tsx ./scripts/full-rebuild.ts
+npx tsx .pi/skills/implement/scripts/full-rebuild.ts
 ```
 
 > `full-rebuild.ts` **deploys the checked-out dev version to the local running instance** (build + restart + reload). It is NOT a feature-implementation step — worktree / Docker-isolated feature work does not run it. The code-review gate is separate (below).
+>
+> **Do NOT run `full-rebuild.ts` against a systemd-hosted dashboard.** Its step 2 is `POST /api/restart`; under a `systemd --user` unit with the default `KillMode=control-group` and `Restart=on-failure`, the clean exit is not revived by systemd and the cgroup teardown kills sibling pi sessions/keepers (confirmed: change `fix-reliable-live-control-events`). Restart a systemd-hosted instance with `systemctl --user restart pi-agent-dashboard.service` (verify `systemctl --user is-active` + `/api/health`), then `npm run reload` separately. Check `systemctl --user is-active pi-agent-dashboard.service` before choosing the restart path.
 >
 > Scripts are TypeScript (cross-platform). All invocations use `npx tsx` so they work identically on Linux, macOS, and Windows. `tsx` is already a project dep.
 
@@ -62,9 +58,9 @@ Review is split by moment. The inner loop runs on an **unlimited** engine every 
 **Ship gate (opt-in, PR-time) — CodeRabbit.** Reserved for the pull request so its quota is unspent during dev. **Worktree-safe and server-independent** — no build, no restart:
 
 ```bash
-RUN_CR_REVIEW=1 npx tsx ./scripts/review-changes.ts             # opt in (uncommitted)
-npx tsx ./scripts/review-changes.ts --ship -t committed --base main
-npx tsx ./scripts/review-changes.ts                            # default: skips → use review-code
+RUN_CR_REVIEW=1 npx tsx .pi/skills/implement/scripts/review-changes.ts   # opt in (uncommitted)
+npx tsx .pi/skills/implement/scripts/review-changes.ts --ship -t committed --base main
+npx tsx .pi/skills/implement/scripts/review-changes.ts                   # default: skips → use review-code
 ```
 
 **Warn-and-continue, never blocks**: CodeRabbit is cloud rate-limited; on limit / missing CLI / auth failure it prints "deferred to a later cycle" and exits 0. Fix Critical/Warning findings, then commit. See the **`code-review`** skill for the CodeRabbit severity triage + fix loop.

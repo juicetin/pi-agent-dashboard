@@ -4,7 +4,7 @@ import {
   guardPairingUrls,
   isPairingEligible,
   splitEndpoints,
-} from "../gateway-endpoints.js";
+} from "../gateway/gateway-endpoints.js";
 
 const eps: TunnelEndpoint[] = [
   { kind: "public", url: "https://kraken.tailnet-abc.ts.net", tls: true },
@@ -55,5 +55,15 @@ describe("guardPairingUrls", () => {
     expect(() => guardPairingUrls(["https://a.example", "http://100.101.22.7:8000"])).toThrow(
       /non-TLS/i,
     );
+  });
+
+  it("exempts loopback http (a genuine browser secure context, mirroring the server test-origin rule)", () => {
+    expect(guardPairingUrls(["https://a.example", "http://localhost:8000", "http://127.0.0.1"])).toEqual([
+      "https://a.example",
+      "http://localhost:8000",
+      "http://127.0.0.1",
+    ]);
+    // ...but any other http host stays fail-closed.
+    expect(() => guardPairingUrls(["http://localhost.evil.example"])).toThrow(/non-TLS/i);
   });
 });

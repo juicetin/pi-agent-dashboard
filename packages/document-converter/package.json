@@ -1,17 +1,28 @@
 {
   "name": "@blackbelt-technology/pi-dashboard-document-converter",
-  "version": "0.5.4",
+  "version": "0.8.0",
   "description": "TypeScript facade over a Dockerized Python document engine (pi-doc-engine). Bidirectional: ingest any format to provenance-stamped Markdown for kb, produce templated DOCX/PDF with diagrams. Engine quarantined in Docker; TS is the only call surface.",
   "type": "module",
   "license": "MIT",
-  "publishConfig": { "access": "public" },
+  "publishConfig": {
+    "access": "public"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/BlackBeltTechnology/pi-agent-dashboard",
     "directory": "packages/document-converter"
   },
   "pi": {
-    "skills": [".pi/skills/document-converter", ".pi/skills/doc-summarizer"]
+    "skills": [
+      ".pi/skills/document-converter",
+      ".pi/skills/doc-summarizer"
+    ],
+    "tools": [
+      {
+        "id": "pi-doc-engine",
+        "probe": "docker-image"
+      }
+    ]
   },
   "exports": {
     ".": "./src/index.ts",
@@ -25,8 +36,30 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@blackbelt-technology/pi-dashboard-shared": "^0.5.4"
+    "@blackbelt-technology/pi-dashboard-shared": "^0.8.0"
   },
-  "files": ["dist", "src", "engine", ".pi/skills/"],
-  "keywords": ["pi-package", "pi-skill", "document-conversion", "docling", "docx", "pdf", "markdown", "ocr", "kb", "pi"]
+  "files": [
+    "dist",
+    "src",
+    "engine",
+    ".pi/skills/",
+    "!**/AGENTS.md",
+    "!**/*.AGENTS.md",
+    "!engine/tests",
+    "!**/__tests__",
+    "!**/*.test.ts",
+    "!**/*.test.tsx"
+  ],
+  "keywords": [
+    "pi-package",
+    "pi-skill",
+    "document-conversion",
+    "docling",
+    "docx",
+    "pdf",
+    "markdown",
+    "ocr",
+    "kb",
+    "pi"
+  ]
 }

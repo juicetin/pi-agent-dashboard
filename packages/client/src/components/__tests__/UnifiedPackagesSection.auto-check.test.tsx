@@ -11,8 +11,8 @@
  */
 import { describe, it, expect, beforeEach, afterEach, vi, beforeAll } from "vitest";
 import { render, waitFor, cleanup, act } from "@testing-library/react";
-import { ThemeProvider } from "../ThemeProvider.js";
-import { UnifiedPackagesSection } from "../UnifiedPackagesSection.js";
+import { ThemeProvider } from "../settings/ThemeProvider.js";
+import { UnifiedPackagesSection } from "../packages/UnifiedPackagesSection.js";
 
 beforeAll(() => {
   Object.defineProperty(window, "matchMedia", {
@@ -155,8 +155,8 @@ describe("UnifiedPackagesSection auto-check", () => {
       );
       await Promise.resolve();
     });
-    // Settle event-loop and confirm no extra fire.
-    await new Promise((r) => setTimeout(r, 20));
+    // Flush microtasks and confirm no extra fire.
+    await act(async () => {});
     expect(checkUpdatesCalls()).toBe(before);
   });
 
@@ -183,7 +183,7 @@ describe("UnifiedPackagesSection auto-check", () => {
       }
       await Promise.resolve();
     });
-    await new Promise((r) => setTimeout(r, 30));
+    await act(async () => {});
     const after = checkUpdatesCalls();
     expect(after - before).toBeLessThanOrEqual(2);
   });

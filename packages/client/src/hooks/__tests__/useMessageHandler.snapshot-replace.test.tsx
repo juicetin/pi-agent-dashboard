@@ -11,7 +11,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { renderHook } from "@testing-library/react";
 import { useMessageHandler } from "../useMessageHandler.js";
-import type { SessionState } from "../../lib/event-reducer.js";
+import type { SessionState } from "../../lib/chat/event-reducer.js";
 import type { ServerToBrowserMessage } from "@blackbelt-technology/pi-dashboard-shared/browser-protocol.js";
 import type { DashboardSession } from "@blackbelt-technology/pi-dashboard-shared/types.js";
 
@@ -44,10 +44,11 @@ function setup(initialSessions?: DashboardSession[], initialOrders?: Record<stri
   const setSessionOrderMap = vi.fn((updater: any) => {
     orderRef.current = typeof updater === "function" ? updater(orderRef.current) : updater;
   });
+  const setSessionStates = vi.fn();
 
   const setters: any = {
     setSessions,
-    setSessionStates: vi.fn(),
+    setSessionStates,
     setSessionCommands: vi.fn(),
     setSessionFlows: vi.fn(),
     setFileResults: vi.fn(),
@@ -82,7 +83,7 @@ function setup(initialSessions?: DashboardSession[], initialOrders?: Record<stri
   // (renderHook returns the latest callback; setSessions/setSessionOrderMap
   // here just install the seeded refs above so post-dispatch refs reflect
   // the snapshot result.)
-  return { dispatch, sessionsRef, orderRef };
+  return { dispatch, sessionsRef, orderRef, setSessionStates };
 }
 
 const SNAPSHOT = (
@@ -132,6 +133,15 @@ describe("useMessageHandler sessions_snapshot REPLACE semantics", () => {
 
     expect(sessionsRef.current.size).toBe(0);
     expect(orderRef.current.size).toBe(0);
+  });
+
+  it("X7 reconnect snapshot without session_removed preserves retry/error state", () => {
+    const live = makeSession("s1", { status: "active" });
+    const { dispatch, setSessionStates } = setup([live]);
+
+    dispatch(SNAPSHOT([live], { "/tmp/repo": ["s1"] }));
+
+    expect(setSessionStates).not.toHaveBeenCalled();
   });
 });
 

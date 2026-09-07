@@ -10,15 +10,15 @@
  * server-independent (no build, no server restart).
  *
  * Opt in with RUN_CR_REVIEW=1 or --ship:
- *   RUN_CR_REVIEW=1 npx tsx ./scripts/review-changes.ts             # opt in (uncommitted)
- *   npx tsx ./scripts/review-changes.ts --ship -t committed --base main
- *   npx tsx ./scripts/review-changes.ts                            # default: skips → use review-code
+ *   RUN_CR_REVIEW=1 npx tsx .pi/skills/implement/scripts/review-changes.ts   # opt in (uncommitted)
+ *   npx tsx .pi/skills/implement/scripts/review-changes.ts --ship -t committed --base main
+ *   npx tsx .pi/skills/implement/scripts/review-changes.ts                   # default: skips → use review-code
  *
  * Always advisory (warn-and-continue, exits 0). CodeRabbit is cloud rate-limited;
  * on missing CLI, auth failure, or usage limit it defers to a later cycle.
  */
 import { spawnSync } from 'node:child_process';
-import { parseFindings, splitFindings } from './parse-findings';
+import { parseFindings, splitFindings } from './parse-findings.js';
 
 // Opt-in gate: skip unless explicitly requested. Dev inner loop → `review-code`.
 const optedIn = process.env.RUN_CR_REVIEW === '1' || process.argv.includes('--ship');

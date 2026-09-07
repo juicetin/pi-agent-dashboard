@@ -8,10 +8,10 @@ import {
   isGroup,
   rangeToRowIndexSpan,
   virtualRowKey,
-} from "../chat-virtual-rows.js";
-import type { ChatMessage } from "../event-reducer.js";
-import type { BurstItem, ToolBurstGroup } from "../group-tool-bursts.js";
-import type { ToolCallGroup } from "../group-tool-calls.js";
+} from "../chat/chat-virtual-rows.js";
+import type { ChatMessage } from "../chat/event-reducer.js";
+import type { BurstItem, ToolBurstGroup } from "../chat/group-tool-bursts.js";
+import type { ToolCallGroup } from "../chat/group-tool-calls.js";
 
 function msg(partial: Partial<ChatMessage> & { id: string }): ChatMessage {
   return { role: "assistant", content: "", timestamp: 0, ...partial };
@@ -80,10 +80,22 @@ describe("estimateVirtualRowSize (task 2.2)", () => {
       "turnSeparator",
       "rawEvent",
       "inlineTerminal",
+      "custom",
     ];
     for (const role of roles) {
       expect(estimateVirtualRowSize(msg({ id: role, role }))).toBeGreaterThan(0);
     }
+  });
+
+  it("gives the custom row an EXPLICIT base above the default arm, not the fallback (P2)", () => {
+    // The card's body region is height-capped (max-h-[240px]), so the text
+    // reserve is clamped to 240 — a 200-line JSON body must not over-estimate
+    // (first-paint drift; security-pass advisory #3).
+    const custom = msg({ id: "c1", role: "custom" });
+    expect(estimateVirtualRowSize(custom, 0)).toBe(160);
+    expect(estimateVirtualRowSize(custom, 0)).toBeGreaterThan(120);
+    // 200-line body (~16k chars): reserve clamps at 240 → 160 + 240 = 400.
+    expect(estimateVirtualRowSize(custom, 16_000)).toBe(160 + 240);
   });
 
   it("is monotonic in text length (larger payload -> larger estimate), up to the clamp", () => {

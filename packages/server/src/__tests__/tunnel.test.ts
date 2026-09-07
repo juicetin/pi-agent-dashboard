@@ -52,7 +52,7 @@ import {
   removeZrokPid,
   scavengeOrphanZrokProcesses,
   writeZrokPid,
-} from "../tunnel.js";
+} from "../tunnel/tunnel.js";
 
 beforeEach(() => {
   vi.mocked(os.homedir).mockReturnValue("/home/testuser");
@@ -205,7 +205,7 @@ describe("createTunnel mutex", () => {
   it("should return the same promise when called concurrently", async () => {
     // Binary unavailable → both calls resolve null fast, same promise instance.
     _setBinaryAvailable(false);
-    const { createTunnel } = await import("../tunnel.js");
+    const { createTunnel } = await import("../tunnel/tunnel.js");
     const p1 = createTunnel(8000);
     const p2 = createTunnel(8000);
     // With binary unavailable the inner resolves synchronously-ish with null.
@@ -216,7 +216,7 @@ describe("createTunnel mutex", () => {
 });
 
 describe("releaseShare", () => {
-  it("should call `zrok release <token>` and return true on success", () => {
+  it("should call `zrok delete name <name>` and return true on success", () => {
     // Short-circuit detection so `getZrokBinary()` returns the bare-name
     // fallback ("zrok") instead of probing the host's PATH. Without this
     // the test is environment-dependent: on a dev box with zrok installed
@@ -230,11 +230,11 @@ describe("releaseShare", () => {
     const ok = releaseShare("abc123");
     expect(ok).toBe(true);
     expect(childProcess.execFileSync).toHaveBeenCalledTimes(1);
-    // argv form (D3): binary + ["release", token] as an array, never a shell
-    // string. The token sits in its own argv slot, so no interpolation.
+    // v2 (support-zrok-v2): release a reserved NAME via `delete name <name>`.
+    // argv form (D3): the name sits in its own argv slot, never interpolated.
     const [bin, args] = vi.mocked(childProcess.execFileSync).mock.calls[0];
     expect(bin).toMatch(/zrok/);
-    expect(args).toEqual(["release", "abc123"]);
+    expect(args).toEqual(["delete", "name", "abc123"]);
   });
 
   it("should return false when zrok release fails (best-effort, non-throwing)", () => {
@@ -293,6 +293,60 @@ describe("scavengeOrphanZrokProcesses", () => {
 
     expect(killed).toEqual([]);
     expect(killSpy).not.toHaveBeenCalled();
+  });
+});
+
+// See change: cleanup-async-semantics-server-extension (test-plan #X8)
+//
+// `createTunnel` routes `createInner`'s rejection through
+// `void promise.then(clearPending, onErr)`. On rejection the shared
+// `pendingCreate` MUST be cleared so a SUBSEQUENT `createTunnel` starts a
+// fresh attempt instead of handing back the dead (rejected) promise; the
+// rejection is observed by `onErr`, not floated.
+describe("ChildTunnelRuntime.createTunnel — rejection clears pendingCreate", () => {
+  it("X8 a rejected createInner is observed and a later createTunnel starts fresh", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const unhandled: unknown[] = [];
+    const onUnhandled = (r: unknown) => unhandled.push(r);
+    process.on("unhandledRejection", onUnhandled);
+    try {
+      const { ChildTunnelRuntime } = await import("../tunnel/tunnel-core.js");
+      // First `detectBinary()` throws → createInner rejects; second returns
+      // false → a FRESH attempt resolves null. If pendingCreate were not
+      // cleared, the second call would return the same rejected promise.
+      let detectCalls = 0;
+      const spec = {
+        id: "zrok" as const,
+        pidFileName: "test.pid",
+        getBinary: () => "zrok",
+        detectBinary: () => {
+          detectCalls += 1;
+          if (detectCalls === 1) throw new Error("detect boom");
+          return false;
+        },
+        isEnrolled: () => true,
+        buildArgs: () => [],
+        urlRegex: /never-matches/,
+        processMarker: "zrok",
+        endpointMarker: () => "",
+        toEndpoints: () => [],
+      };
+      const rt = new ChildTunnelRuntime(spec as any);
+
+      const p1 = rt.createTunnel(8000);
+      await expect(p1).rejects.toThrow("detect boom"); // rejection observed by the caller
+
+      const p2 = rt.createTunnel(8000);
+      await expect(p2).resolves.toBeNull(); // fresh attempt, not the dead promise
+
+      expect(detectCalls).toBe(2); // proves createInner ran a second time
+      // onErr owns the rejection.
+      expect(warnSpy.mock.calls.some((c) => String(c[0]).includes("tunnel creation failed"))).toBe(true);
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off("unhandledRejection", onUnhandled);
+      warnSpy.mockRestore();
+    }
   });
 });
 

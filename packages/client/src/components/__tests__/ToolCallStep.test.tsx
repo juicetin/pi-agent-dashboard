@@ -4,8 +4,8 @@ import { DemoToolRenderer } from "@blackbelt-technology/demo-plugin";
 import { cleanup, fireEvent, render } from "@testing-library/react";
 import type React from "react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { ThemeProvider } from "../ThemeProvider.js";
-import { ToolCallStep } from "../ToolCallStep.js";
+import { ThemeProvider } from "../settings/ThemeProvider.js";
+import { ToolCallStep } from "../chat/ToolCallStep.js";
 import type { ToolContext } from "../tool-renderers/index.js";
 
 const defaultContext: ToolContext = {};
@@ -20,7 +20,7 @@ vi.mock("../../hooks/useMobile.js", () => ({
 }));
 
 // Mock RichDiff with a stable testid so the lazy-mount tests can query it.
-vi.mock("../RichDiff.js", () => ({
+vi.mock("../diff/RichDiff.js", () => ({
   RichDiff: () => <div data-testid="rich-diff" />,
 }));
 
@@ -621,5 +621,20 @@ describe("ToolCallStep lazy-mount — <RichDiff> only mounts when expanded", () 
   it("omits the 'recovered' badge for a normal completion", () => {
     const { container } = renderStep({ status: "complete" });
     expect(container.querySelector('[data-testid="tool-superseded-badge"]')).toBeNull();
+  });
+
+  // #F4 (repair-tool-error-surfaces) — the errored status icon is a single-line
+  // surface. Only the error branch is governed; the sibling branches are a
+  // different tier and are pinned unchanged.
+  it("#F4 the errored status icon resolves its colour from --severity-error-fg", () => {
+    const { container } = renderStep({ status: "error" });
+    const icon = container.querySelector("span.inline-flex") as HTMLElement;
+    expect(icon.className).toContain("text-[var(--severity-error-fg)]");
+    expect(icon.className).not.toMatch(/\bred-\d{2,3}\b/);
+  });
+
+  it("leaves the non-error status branches untouched by this change", () => {
+    const { container } = renderStep({ status: "complete" });
+    expect((container.querySelector("span.inline-flex") as HTMLElement).className).toContain("text-green-400");
   });
 });

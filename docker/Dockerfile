@@ -13,7 +13,7 @@
 FROM node:24-bookworm-slim AS base
 
 # Pinned tool versions — override at build time with --build-arg.
-ARG ZROK_VERSION=1.0.6
+ARG ZROK_VERSION=2.0.4
 ARG GH_VERSION=2.62.0
 ARG JJ_VERSION=0.24.0
 
@@ -54,8 +54,12 @@ RUN set -eux; \
     # Verify the downloaded tarball against the published checksum (fail build on mismatch).
     # Checksum lines prefix the asset with `./`; match either a space or slash before it.
     ( cd /tmp && grep -E "[ /]${asset}\$" zrok-checksums.sha256 | sha256sum -c - ); \
-    tar -xzf "/tmp/${asset}" -C /usr/local/bin zrok; \
+    # zrok v2 ships the binary as `zrok2`; extract it and symlink `zrok` so both
+    # names resolve (belt-and-suspenders with the dual-binary runtime resolver).
+    tar -xzf "/tmp/${asset}" -C /usr/local/bin zrok2; \
+    ln -sf zrok2 /usr/local/bin/zrok; \
     rm "/tmp/${asset}" /tmp/zrok-checksums.sha256; \
+    zrok2 version; \
     zrok version
 
 # 1.3b GitHub CLI (pinned). Spawned/probed by the dashboard git panel.
@@ -109,7 +113,7 @@ RUN if getent passwd 1000 >/dev/null; then userdel -r "$(getent passwd 1000 | cu
 # 1.4 Global pi coding agent + openspec (spawned/probed by the dashboard).
 # Install must be fatal; the version probes stay non-fatal (grouped so a
 # non-zero `--version` can't mask an `npm install -g` failure).
-RUN npm install -g @earendil-works/pi-coding-agent@0.80.10 openspec \
+RUN npm install -g @earendil-works/pi-coding-agent@0.84.4 openspec \
  && { pi --version || true; } \
  && { openspec --version || true; }
 
@@ -120,17 +124,30 @@ RUN npm install -g @earendil-works/pi-coding-agent@0.80.10 openspec \
 # non-fatal on version probe, fatal on install, same as the pi install above.
 ARG PI_FLOWS_VERSION=0.3.2
 ARG PI_ANTHROPIC_MESSAGES_VERSION=0.3.4
+# pi-dashboard-subagents is the ONLY producer of `tool_execution_update` for a
+# subagent: its `extensions/agent.ts` drives `createProgressEmitter` ->
+# `progress.schedule(details)` into the tool's `onProgress` callback. Without it
+# the collapse scenarios (P2/F4) have no workload and pass vacuously.
+# See change: collapse-superseded-tool-execution-updates.
+ARG PI_DASHBOARD_SUBAGENTS_VERSION=0.2.4
 RUN npm install -g \
       "@blackbelt-technology/pi-flows@${PI_FLOWS_VERSION}" \
       "@blackbelt-technology/pi-anthropic-messages@${PI_ANTHROPIC_MESSAGES_VERSION}" \
+      "@blackbelt-technology/pi-dashboard-subagents@${PI_DASHBOARD_SUBAGENTS_VERSION}" \
  && ls -d /usr/local/lib/node_modules/@blackbelt-technology/pi-flows \
-         /usr/local/lib/node_modules/@blackbelt-technology/pi-anthropic-messages
+         /usr/local/lib/node_modules/@blackbelt-technology/pi-anthropic-messages \
+         /usr/local/lib/node_modules/@blackbelt-technology/pi-dashboard-subagents
+
+# Enable corepack so `pnpm` resolves to the version pinned by the root
+# package.json `packageManager` field (pnpm@11.15.1). The global `npm install
+# -g` tool installs above stay npm (Column C-style user installs).
+RUN corepack enable
 
 WORKDIR /app
 
 # 1.5 Install deps + build the web client. Copy package manifests first for
 # layer caching, then the full source.
-COPY package.json package-lock.json ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 # Root tsconfigs that every package extends (../../tsconfig.base.json).
 COPY tsconfig.base.json tsconfig.json ./
 # Root scripts/ (postinstall: maybe-patch-package + fix-pty-permissions) and
@@ -141,26 +158,48 @@ COPY packages ./packages
 # Faux model fixture (provider + scenario catalog). test-entrypoint.sh stages
 # these as a global auto-discovered pi extension under PI_E2E_SEED so UI-spawned
 # sessions drive a key-free faux model. See change: add-e2e-faux-model-roundtrip.
-COPY qa/fixtures ./qa/fixtures
+# qa/ in full (not just fixtures) because qa/scripts/*.mjs is part of the module
+# graph the dead-code oracle analyses.
+COPY qa ./qa
+# Dead-code oracle inputs. Knip's verdict is only reproducible against the SAME
+# tree: analysing a subset silently changes the counts, so every tree the
+# knip.json entries name must be present or the harness answers a different
+# question than the host does.
+# NOTE: `.pi/skills` ONLY — never `.pi/settings.json`, which pins a host
+# absolute path for its extension packages and would break container sessions.
+# playwright.config.ts roots tests/e2e/global-setup.ts, and Knip's
+# GitHub-Actions plugin reads .github/workflows/*.yml to root the scripts they
+# invoke (e.g. scripts/sync-versions.js). Without either, the container reported
+# 13 unused files / 233 exports against the host's 10 / 227.
+COPY knip.json knip-baseline.json playwright.config.ts ./
+COPY tests ./tests
+COPY public ./public
+COPY .github ./.github
+COPY .pi/skills ./.pi/skills
 COPY --chmod=0755 docker/entrypoint.sh /usr/local/bin/entrypoint.sh
+# Sourced by both entrypoints so the deployment and the test harness supervise
+# the detached daemon identically.
+COPY --chmod=0755 docker/supervise-daemon.sh /usr/local/bin/supervise-daemon.sh
 COPY docker/scripts ./docker/scripts
 
-# Drop the committed lockfile before install: npm bug #4828 makes both
-# `npm install` and `npm ci` skip platform-matching optional deps when resolving
-# against a lockfile generated on another platform (here: the macOS lock omits
-# the install of `@rollup/rollup-linux-x64-gnu`, breaking the linux web-client
-# build with `Cannot find module .../rollup/dist/native.js`). Removing the lock
-# lets npm resolve the correct native binary for the build platform — the fix
-# the error itself prescribes. Scoped to this build image only.
-RUN rm -f package-lock.json \
- && npm install \
- && npm run build \
+# pnpm re-resolves the full platform optional-dep tree from pnpm-lock.yaml
+# (so the npm/cli#4828 lockfile-nuke hack — which dropped
+# @rollup/rollup-linux-x64-gnu on the linux build — is no longer needed).
+RUN pnpm install --frozen-lockfile \
+ && pnpm run build \
  # Link the root package so `pi-dashboard` is on PATH.
  && npm link \
  # 1.5 Drop build toolchain — not needed at runtime (~200 MB saved).
  && apt-get purge -y --auto-remove build-essential python3 \
  && rm -rf /var/lib/apt/lists/* \
  && chown -R pi:pi /app
+
+# The VOLUME paths below are created by the VOLUME instruction itself, as ROOT,
+# regardless of the USER in force — and a fresh named volume inherits that
+# root:root ownership on first use, which a container running as `pi` cannot
+# write. Create them here, owned by pi, so the copy-on-first-use hands the
+# volume to the user that actually runs.
+RUN mkdir -p /home/pi/.pi /home/pi/.zrok2 && chown pi:pi /home/pi/.pi /home/pi/.zrok2
 
 USER pi
 ENV HOME=/home/pi

@@ -20,16 +20,19 @@ vi.mock("node:fs", async () => {
   };
 });
 
-vi.mock("../process-manager.js", () => ({
+vi.mock("../spawn-process/process-manager.js", () => ({
   spawnPiSession: vi.fn(),
 }));
 
-vi.mock("@blackbelt-technology/pi-dashboard-shared/config.js", () => ({
-  loadConfig: vi.fn().mockReturnValue({ spawnStrategy: "headless" }),
+vi.mock("@blackbelt-technology/pi-dashboard-shared/config.js", async (importOriginal) => ({
+  // Spread the real module: stubbing it wholesale erased
+  // `clampSpawnRegisterTimeoutMs`, which the watchdog needs.
+  ...(await importOriginal<typeof import("@blackbelt-technology/pi-dashboard-shared/config.js")>()),
+  loadConfig: vi.fn().mockReturnValue({ spawnStrategy: "headless", spawnRegisterTimeoutMs: 30_000 }),
 }));
 
 import { handleResumeSession } from "../browser-handlers/session-action-handler.js";
-import { spawnPiSession } from "../process-manager.js";
+import { spawnPiSession } from "../spawn-process/process-manager.js";
 
 function makeMockWs(): { ws: WebSocket; messages: any[] } {
   const messages: any[] = [];
@@ -63,6 +66,7 @@ function makeCtx(session: any, sentLog: any[]) {
     getSubscribers: vi.fn().mockReturnValue([]),
     trackUiRequest: vi.fn(),
     replayPendingUiRequests: vi.fn(),
+    replayNotifyLog: vi.fn(),
     markReplaying: vi.fn(),
     clearReplaying: vi.fn(),
   } as any;

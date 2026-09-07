@@ -10,17 +10,17 @@
  */
 
 import { execSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import fs, { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { getDashboardConfigDir } from "@blackbelt-technology/pi-dashboard-shared/dashboard-paths.js";
 import Fastify, { type FastifyInstance } from "fastify";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { resolveMainPath } from "../git-operations.js";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { resolveMainPath } from "../git-worktree/git-operations.js";
+import { hookDefHash, type WorktreeInitHook } from "../git-worktree/worktree-init.js";
+import { createWorktreeInitRegistry } from "../git-worktree/worktree-init-registry.js";
+import { recordTrust } from "../git-worktree/worktree-init-trust.js";
 import { registerGitRoutes } from "../routes/git-routes.js";
-import { hookDefHash, type WorktreeInitHook } from "../worktree-init.js";
-import { createWorktreeInitRegistry } from "../worktree-init-registry.js";
-import { recordTrust } from "../worktree-init-trust.js";
 
 function git(cmd: string, cwd: string) {
   execSync(`git ${cmd}`, { cwd, stdio: ["pipe", "pipe", "pipe"] });
@@ -88,6 +88,13 @@ async function makeApp(guard: (req: any, reply: any) => Promise<void> = async ()
 
 const scriptHook = (gate: string, command: string): WorktreeInitHook => ({ gate, run: { type: "script", command } });
 
+// Per-artifact setup checklist (change: add-folder-action-banner). The route
+// reports a fixed five-entry set, exactly one (`settings`) required.
+const ARTIFACT_IDS = ["settings", "agents", "prompts", "openspec", "kb"] as const;
+function expectedChecklist(present: string[]) {
+  return ARTIFACT_IDS.map((id) => ({ id, present: present.includes(id), required: id === "settings" }));
+}
+
 describe("GET /api/git/worktree/init-status", () => {
   let app: FastifyInstance;
   let repo: string;
@@ -98,14 +105,14 @@ describe("GET /api/git/worktree/init-status", () => {
     repo = makePlainRepo();
     const res = await app.inject({ method: "GET", url: `/api/git/worktree/init-status?cwd=${encodeURIComponent(repo)}` });
     expect(res.statusCode).toBe(200);
-    expect(res.json().data).toEqual({ hasHook: false, configured: false });
+    expect(res.json().data).toEqual({ hasHook: false, configured: false, checklist: expectedChecklist([]) });
   });
 
   it("configured repo, no worktreeInit hook → hasHook:false, configured:true (state ③)", async () => {
     repo = makeConfiguredNoHookRepo();
     const res = await app.inject({ method: "GET", url: `/api/git/worktree/init-status?cwd=${encodeURIComponent(repo)}` });
     expect(res.statusCode).toBe(200);
-    expect(res.json().data).toEqual({ hasHook: false, configured: true });
+    expect(res.json().data).toEqual({ hasHook: false, configured: true, checklist: expectedChecklist(["settings"]) });
   });
 
   it("hasHook:true responses carry NO configured field", async () => {
@@ -145,6 +152,149 @@ describe("GET /api/git/worktree/init-status", () => {
     mkdirSync(join(repo, "node_modules"), { recursive: true });
     const res = await app.inject({ method: "GET", url: `/api/git/worktree/init-status?cwd=${encodeURIComponent(repo)}` });
     expect(res.json().data.needsInit).toBe(false);
+  });
+
+  // ── Per-artifact checklist (change: add-folder-action-banner) ──────────
+
+  // test-plan #E1
+  it("checklist replaces the boolean: openspec present, AGENTS.md absent", async () => {
+    repo = makePlainRepo();
+    mkdirSync(join(repo, "openspec"), { recursive: true });
+    const res = await app.inject({ method: "GET", url: `/api/git/worktree/init-status?cwd=${encodeURIComponent(repo)}` });
+    const list = res.json().data.checklist as Array<{ id: string; present: boolean }>;
+    expect(list.find((a) => a.id === "openspec")?.present).toBe(true);
+    expect(list.find((a) => a.id === "agents")?.present).toBe(false);
+    // NOT collapsed to configured:false — configured stays its own field.
+    expect(res.json().data.checklist).toBeDefined();
+  });
+
+  // test-plan #E2
+  it("exactly one required artifact: settings", async () => {
+    repo = makePlainRepo();
+    const res = await app.inject({ method: "GET", url: `/api/git/worktree/init-status?cwd=${encodeURIComponent(repo)}` });
+    const list = res.json().data.checklist as Array<{ id: string; required: boolean }>;
+    expect(list).toHaveLength(5);
+    expect(list.filter((a) => a.required).map((a) => a.id)).toEqual(["settings"]);
+  });
+
+  // test-plan #E3
+  it("config-root resolution: a worktree resolves its checklist against its own checkout", async () => {
+    repo = makePlainRepo(); // committed README only, no tracked .pi/
+    const wt = realpathSync(mkdtempSync(join(tmpdir(), "git-wt-linked-")));
+    rmSync(wt, { recursive: true, force: true });
+    execSync(`git worktree add ${wt} -b feat-checklist`, { cwd: repo, stdio: ["pipe", "pipe", "pipe"] });
+    // Write .pi/settings.json ONLY in the main checkout, untracked.
+    // The linked worktree must not inherit the main checkout's checklist.
+    mkdirSync(join(repo, ".pi"), { recursive: true });
+    writeFileSync(join(repo, ".pi", "settings.json"), JSON.stringify({ toolset: {} }));
+    try {
+      expect(existsSync(join(wt, ".pi", "settings.json"))).toBe(false);
+      const res = await app.inject({ method: "GET", url: `/api/git/worktree/init-status?cwd=${encodeURIComponent(wt)}` });
+      const list = res.json().data.checklist as Array<{ id: string; present: boolean }>;
+      expect(list.find((a) => a.id === "settings")?.present).toBe(false);
+    } finally {
+      execSync(`git worktree remove --force ${wt}`, { cwd: repo, stdio: ["pipe", "pipe", "pipe"] });
+    }
+  });
+
+  // test-plan #E4
+  it("hook-declaring repo still reports the checklist alongside the hook fields", async () => {
+    const hook = scriptHook("test ! -d node_modules", ":");
+    repo = makeHookRepo(hook);
+    const res = await app.inject({ method: "GET", url: `/api/git/worktree/init-status?cwd=${encodeURIComponent(repo)}` });
+    const data = res.json().data;
+    expect(data.hasHook).toBe(true);
+    expect(data.checklist).toEqual(expectedChecklist(["settings"]));
+  });
+
+  // test-plan #X1
+  it("probe failure fails open: the checklist field is omitted, no artifact reported absent", async () => {
+    repo = makePlainRepo();
+    const orig = fs.existsSync;
+    const spy = vi.spyOn(fs, "existsSync").mockImplementation(((p: fs.PathLike) => {
+      if (String(p).endsWith("AGENTS.md")) throw new Error("boom");
+      return orig.call(fs, p);
+    }) as typeof fs.existsSync);
+    try {
+      const res = await app.inject({ method: "GET", url: `/api/git/worktree/init-status?cwd=${encodeURIComponent(repo)}` });
+      expect(res.statusCode).toBe(200);
+      expect("checklist" in res.json().data).toBe(false);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  // test-plan #X4
+  it("no stale checklist: a scaffold appears on the next probe (uncached)", async () => {
+    repo = makePlainRepo();
+    const before = await app.inject({ method: "GET", url: `/api/git/worktree/init-status?cwd=${encodeURIComponent(repo)}` });
+    expect((before.json().data.checklist as Array<{ id: string; present: boolean }>).find((a) => a.id === "settings")?.present).toBe(false);
+    mkdirSync(join(repo, ".pi"), { recursive: true });
+    writeFileSync(join(repo, ".pi", "settings.json"), JSON.stringify({ toolset: {} }));
+    const after = await app.inject({ method: "GET", url: `/api/git/worktree/init-status?cwd=${encodeURIComponent(repo)}` });
+    expect((after.json().data.checklist as Array<{ id: string; present: boolean }>).find((a) => a.id === "settings")?.present).toBe(true);
+  });
+});
+
+describe("linked worktree config isolation", () => {
+  let app: FastifyInstance;
+  let repo = "";
+  let worktree = "";
+
+  beforeEach(async () => { app = await makeApp(); });
+  afterEach(async () => {
+    if (repo && worktree && existsSync(worktree)) {
+      try { git(`worktree remove --force ${JSON.stringify(worktree)}`, repo); } catch { /* already removed */ }
+    }
+    if (repo) rmSync(repo, { recursive: true, force: true });
+    await app.close();
+  });
+
+  function addLinkedWorktree(): string {
+    const target = mkdtempSync(join(tmpdir(), "git-wt-linked-"));
+    rmSync(target, { recursive: true, force: true });
+    git(`worktree add -b linked-config ${JSON.stringify(target)}`, repo);
+    return target;
+  }
+
+  it("uses the linked hook for trust hashing, gate evaluation, and execution", async () => {
+    const mainHook = scriptHook("false", "touch MAIN_MARKER");
+    const linkedHook = scriptHook("test ! -f LINKED_MARKER", "touch LINKED_MARKER");
+    repo = makeHookRepo(mainHook);
+    worktree = addLinkedWorktree();
+    writeFileSync(join(worktree, ".pi", "settings.json"), JSON.stringify({ worktreeInit: linkedHook }));
+
+    const untrusted = await app.inject({ method: "POST", url: "/api/git/worktree/init", payload: { cwd: worktree } });
+    expect(untrusted.json()).toMatchObject({
+      success: false,
+      code: "init_untrusted",
+      data: { hook: linkedHook, hash: hookDefHash(linkedHook) },
+    });
+    expect(existsSync(join(repo, "MAIN_MARKER"))).toBe(false);
+    expect(existsSync(join(worktree, "LINKED_MARKER"))).toBe(false);
+
+    const confirmed = await app.inject({
+      method: "POST",
+      url: "/api/git/worktree/init",
+      payload: { cwd: worktree, confirmHash: hookDefHash(linkedHook), scope: "session" },
+    });
+    expect(confirmed.json()).toMatchObject({ success: true, data: { ran: true } });
+    expect(existsSync(join(worktree, "LINKED_MARKER"))).toBe(true);
+    expect(existsSync(join(repo, "MAIN_MARKER"))).toBe(false);
+  });
+
+  it("does not inherit uncommitted primary-checkout settings when the linked worktree has none", async () => {
+    repo = makePlainRepo();
+    mkdirSync(join(repo, ".pi"), { recursive: true });
+    writeFileSync(join(repo, ".pi", "settings.json"), JSON.stringify({ worktreeInit: scriptHook("true", "touch MAIN_MARKER") }));
+    worktree = addLinkedWorktree();
+
+    const status = await app.inject({ method: "GET", url: `/api/git/worktree/init-status?cwd=${encodeURIComponent(worktree)}` });
+    expect(status.json().data).toEqual({ hasHook: false, configured: false, checklist: expectedChecklist([]) });
+
+    const run = await app.inject({ method: "POST", url: "/api/git/worktree/init", payload: { cwd: worktree } });
+    expect(run.json().data).toEqual({ ran: false, skippedReason: "no_hook" });
+    expect(existsSync(join(repo, "MAIN_MARKER"))).toBe(false);
   });
 });
 
@@ -330,7 +480,7 @@ describe("non-git dir — GET /api/git/worktree/init-status", () => {
     const body = res.json();
     expect(body.success).toBe(true);
     expect(body.code).toBeUndefined();
-    expect(body.data).toEqual({ hasHook: true, trusted: false });
+    expect(body.data).toEqual({ hasHook: true, trusted: false, checklist: expectedChecklist(["settings"]) });
   });
 
   it("no .pi/settings.json → hasHook:false configured:false success, NOT not_a_repo", async () => {
@@ -340,7 +490,7 @@ describe("non-git dir — GET /api/git/worktree/init-status", () => {
     const body = res.json();
     expect(body.success).toBe(true);
     expect(body.code).toBeUndefined();
-    expect(body.data).toEqual({ hasHook: false, configured: false });
+    expect(body.data).toEqual({ hasHook: false, configured: false, checklist: expectedChecklist([]) });
   });
 
   it("trusted hook → gate evaluated → needsInit + trusted:true", async () => {

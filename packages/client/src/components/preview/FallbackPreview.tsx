@@ -6,7 +6,7 @@
 
 import type { ViewTarget } from "@blackbelt-technology/pi-dashboard-shared/types.js";
 import React from "react";
-import { t as i18nT } from "../../lib/i18n";
+import { t as i18nT } from "../../lib/i18n/i18n.js";
 import { rawUrl } from "./raw-url.js";
 
 interface Props {
@@ -16,12 +16,12 @@ interface Props {
 export function FallbackPreview({ target }: Props) {
   if (target.kind === "file") {
     return (
-      <div className="p-4 text-sm text-[var(--text-secondary)]">
+      <div data-testid="preview-fallback" className="p-4 text-sm text-[var(--text-secondary)]">
         {i18nT("common.weCanTPreviewThisFile", undefined, "We can't preview this file.")}{" "}
         <a
           href={rawUrl(target)}
           download
-          className="text-[var(--accent)] underline"
+          className="text-[var(--accent-text)] underline"
         >
           {i18nT("common.download", undefined, "Download")}
         </a>
@@ -29,12 +29,12 @@ export function FallbackPreview({ target }: Props) {
     );
   }
   return (
-    <div className="p-4 text-sm text-[var(--text-secondary)]">
+    <div data-testid="preview-fallback" className="p-4 text-sm text-[var(--text-secondary)]">
       <a
         href={target.url}
         target="_blank"
         rel="noopener noreferrer"
-        className="text-[var(--accent)] underline"
+        className="text-[var(--accent-text)] underline"
       >
         {i18nT("common.openInNewTab", undefined, "Open in new tab")}
       </a>{" "}

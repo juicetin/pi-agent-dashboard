@@ -4,6 +4,8 @@ import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { chunkMarkdown } from "./chunker.js";
+import { buildMeta, buildProperties, DEFAULT_FACET_KEYS, DEFAULT_SEARCHABLE_KEYS, type FacetKeyConfig } from "./frontmatter.js";
+import { type GitignoreMatcher, loadGitignoreMatcher } from "./gitignore.js";
 import type { DocType, KbStore } from "./types.js";
 
 export interface IndexSource {
@@ -18,12 +20,21 @@ export interface IndexOptions {
   include?: string[]; // glob patterns to include
   exclude?: string[]; // glob patterns to exclude
   extensions?: string[]; // e.g. [".md"]
+  frontmatter?: { searchableKeys: string[]; facetKeys: FacetKeyConfig[] }; // structural indexing routing
+  /** Honour `.gitignore` in the walk (design D3, fix-dox-lint-blind-rows).
+   *  Default true — makes the long-declared `respectGitignore` config real.
+   *  A source dir absent from a fresh clone must not be indexed. */
+  respectGitignore?: boolean;
+  /** Project boundary for the gitignore up-walk (usually the resolved cwd).
+   *  Omit to seed the pattern stack from the `.git` root discovered upward. */
+  cwd?: string;
 }
 export interface IndexStats {
   scanned: number;
   changed: number;
   deleted: number;
   chunks: number;
+  parseFailures?: number; // files whose frontmatter block was present but did not parse
   missing?: boolean; // source dir did not exist → skipped (degrade, not abort)
 }
 
@@ -54,23 +65,27 @@ function matchAny(pats: RegExp[], rel: string): boolean {
   return pats.some((re) => re.test(rel));
 }
 
-function walk(dir: string, base: string, out: string[] = []): string[] {
+function walk(dir: string, base: string, out: string[] = [], ignore?: GitignoreMatcher): string[] {
   for (const e of readdirSync(dir, { withFileTypes: true })) {
     const abs = join(dir, e.name);
     const rel = relative(base, abs);
     if (DEFAULT_EXCLUDE.test(rel)) continue;
-    if (e.isDirectory()) walk(abs, base, out);
-    else if (/\.(md|mdx|markdown)$/i.test(e.name)) out.push(abs);
+    if (e.isDirectory()) {
+      // Conservative dir-pruning (design D3): descend unless the dir matches
+      // AND no deeper .gitignore could negate the match.
+      if (ignore?.isIgnoredDir(rel) && !ignore.hasDeeperGitignore(rel)) continue;
+      walk(abs, base, out, ignore);
+    } else if (/\.(md|mdx|markdown)$/i.test(e.name) && !ignore?.isIgnored(rel)) out.push(abs);
   }
   return out;
 }
 
-function docTypeOf(rel: string, includeSourceMarkdown: boolean): DocType {
+export function docTypeOf(rel: string, includeSourceMarkdown: boolean): DocType {
   const base = rel.split("/").pop() ?? "";
   // `<File>.AGENTS.md` = per-file index sidecar (large-row promotion). Classified
   // `agents` so it is searchable, but its name != "AGENTS.md" so pi's native
   // up-walk never auto-injects it (pull-only via kb search).
-  if (base === "AGENTS.md" || base === "CLAUDE.md" || base.endsWith(".AGENTS.md")) return "agents";
+  if (base === "AGENTS.override.md" || base === "AGENTS.md" || base === "CLAUDE.md" || base.endsWith(".AGENTS.md")) return "agents";
   if (includeSourceMarkdown && /(^|\/)(src|lib|app|packages)\//.test(rel)) return "source-md";
   return "doc";
 }
@@ -87,7 +102,8 @@ export async function indexSource(store: KbStore, src: IndexSource, opts: IndexO
   const inc = opts.include?.map(globToRe);
   const exc = opts.exclude?.map(globToRe);
   const includeSourceMd = opts.includeSourceMarkdown !== false;
-  const files = walk(src.dir, src.dir).filter((abs) => {
+  const gi = opts.respectGitignore === false ? undefined : loadGitignoreMatcher(src.dir, { cwd: opts.cwd, prune: (rel) => DEFAULT_EXCLUDE.test(rel) });
+  const files = walk(src.dir, src.dir, [], gi).filter((abs) => {
     const rel = relative(src.dir, abs);
     if (src.include && !src.include(rel)) return false;
     if (inc && !matchAny(inc, rel)) return false;
@@ -128,7 +144,8 @@ export async function indexSource(store: KbStore, src: IndexSource, opts: IndexO
       }
       // changed → replace
       store.deleteByPath(src.root, rel);
-      const { chunks, wikilinks, mdLinks, frontmatter } = chunkMarkdown({ root: src.root, path: rel, text: buf.toString("utf8"), docType: docTypeOf(rel, includeSourceMd) });
+      const dt = docTypeOf(rel, includeSourceMd);
+      const { chunks, wikilinks, mdLinks, frontmatter, parseFailed } = chunkMarkdown({ root: src.root, path: rel, text: buf.toString("utf8"), docType: dt });
       // file node
       store.addNode({ type: "file", name: rel, path: rel });
       for (const c of chunks) {
@@ -154,6 +171,24 @@ export async function indexSource(store: KbStore, src: IndexSource, opts: IndexO
         store.addNode({ type: "tag", name: `tag:${tag}`, path: null });
         store.addEdge({ src: rel, dst: `tag:${tag}`, rel: "has_tag" });
       }
+      // frontmatter structural indexing: synthetic meta chunk + property rows
+      if (frontmatter) {
+        const fmCfg = opts.frontmatter ?? { searchableKeys: DEFAULT_SEARCHABLE_KEYS, facetKeys: DEFAULT_FACET_KEYS };
+        const { title, body: metaBody } = buildMeta(frontmatter, fmCfg.searchableKeys);
+        const metaText = [title ?? "", metaBody].join("\n").trim();
+        if (metaText) {
+          // Searchable meta needs only insertChunk (required); it must NOT be
+          // gated on the optional insertProperty, or a chunk-capable store would
+          // silently lose title/description search.
+          const heading = title ?? (rel.split("/").pop() ?? rel).replace(/\.(md|mdx|markdown)$/i, "");
+          store.insertChunk({ root: src.root, path: rel, chunkId: `${sha(rel).slice(0, 8)}:meta`, headingPath: heading, heading, level: 0, parentChunkId: null, docType: dt, body: metaBody, bodyHash: sha(metaText) });
+          stats.chunks++;
+        }
+        if (store.insertProperty) for (const row of buildProperties(frontmatter, fmCfg.facetKeys)) store.insertProperty({ root: src.root, path: rel, ...row });
+      }
+      // Mirror docType for EVERY file (facetable regardless of frontmatter presence).
+      store.insertProperty?.({ root: src.root, path: rel, key: "docType", value: dt, valueNum: null, valueDate: null, valueRaw: dt });
+      if (parseFailed) stats.parseFailures = (stats.parseFailures ?? 0) + 1;
       store.setFileState(src.root, rel, { mtimeMs: st.mtimeMs, sha256: hash }); // persist for incremental
       stats.changed++;
       stats.chunks += chunks.length;

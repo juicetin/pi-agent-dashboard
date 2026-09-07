@@ -5,7 +5,7 @@
  * See change: render-office-previews.
  */
 import React from "react";
-import { t as i18nT } from "../../lib/i18n";
+import { t as i18nT } from "../../lib/i18n/i18n.js";
 
 interface Props {
   message: string;
@@ -30,7 +30,7 @@ export function TruncationBanner({ message, downloadHref, charset }: Props) {
           {charset}
         </span>
       ) : null}
-      <a href={downloadHref} download className="text-[var(--accent)] underline">
+      <a href={downloadHref} download className="text-[var(--accent-text)] underline">
         {i18nT("common.download", undefined, "Download")}
       </a>
     </div>

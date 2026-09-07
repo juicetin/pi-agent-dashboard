@@ -11,7 +11,7 @@
 
 ## 3. Activation
 
-- [ ] 3.1 Commit the integration and verify a clean full HEAD SHA before switching source; preserve existing stash and backup refs.
-- [ ] 3.2 Back up current source selection, activate the updated fork through the existing systemd service, and verify version, process path, served asset hashes, and existing session presence.
-- [ ] 3.3 Reload bridges through the supported path and verify a disposable normal-extension Pi response marker within 30 seconds; restore source configuration if it fails.
-- [ ] 3.4 Verify an existing session history in the browser, then push completed commits to the user's fork and report runtime state. Never push upstream or create an upstream PR.
+- [x] 3.1 Commit the integration and verify a clean full HEAD SHA before switching source; preserve existing stash and backup refs.
+- [x] 3.2 Back up current source selection, activate the updated fork through the existing systemd service, and verify version, process path, served asset hashes, and existing session presence.
+- [x] 3.3 Reload bridges through the supported path and verify a disposable normal-extension Pi response marker within 30 seconds; restore source configuration if it fails.
+- [x] 3.4 Verify an existing session history in the browser, then push completed commits to the user's fork and report runtime state. Never push upstream or create an upstream PR.

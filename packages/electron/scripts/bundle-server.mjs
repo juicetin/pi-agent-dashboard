@@ -125,6 +125,7 @@ const BUNDLED_PLUGINS = [
   "flows-anthropic-bridge-plugin",
   "automation-plugin",
   "goal-plugin",
+  "harness-plugin",
   "subagents-plugin",
   "kb-plugin",
   "hermes-memory-plugin",

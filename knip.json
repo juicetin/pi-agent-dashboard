@@ -367,6 +367,14 @@
         "src/**/*.{ts,tsx,mjs}"
       ]
     },
+    "packages/harness-plugin": {
+      "entry": [
+        "src/client/index.tsx"
+      ],
+      "project": [
+        "src/**/*.{ts,tsx}"
+      ]
+    },
     "packages/kb-plugin": {
       "entry": [
         "src/client/index.tsx",

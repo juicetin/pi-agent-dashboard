@@ -41,7 +41,7 @@ const FOLDER_HEAD_ENTRY_DEBOUNCE_MS = 500;
 
 import { createFolderHeadWatcher, type FolderHeadWatcher } from "./git-worktree/folder-head-watcher.js";
 import type { HeadInfo } from "./git-worktree/git-operations.js";
-import { resolveConfigRoot } from "./git-worktree/git-operations.js";
+import { resolveConfigRoot, resolveMainPath } from "./git-worktree/git-operations.js";
 import type { HydrationMetrics } from "./metrics/hydration-metrics.js";
 import { createOpenSpecChangeWatcher, type OpenSpecChangeWatcher } from "./openspec/openspec-change-watcher.js";
 import {
@@ -360,7 +360,8 @@ export function createDirectoryService(
     if (!readinessConfigRoots.has(cwd)) {
       let root: string | null = null;
       try {
-        root = resolveConfigRoot(cwd);
+        // Generated skills live in the main checkout; init settings stay checkout-local.
+        root = resolveMainPath(cwd) ?? resolveConfigRoot(cwd);
       } catch {
         root = null;
       }

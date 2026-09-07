@@ -12,6 +12,7 @@
  * See change: add-openspec-init-affordances.
  */
 
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -351,6 +352,33 @@ describe("DirectoryService — readiness fold wiring (add-openspec-init-affordan
     mkProject(worktree); // polled cwd: openspec project, no own skills
     fs.mkdirSync(path.join(mainRoot, ".pi", "skills", "openspec-explore"), { recursive: true });
     fakeConfigRoot = (cwd) => (cwd === worktree ? mainRoot : cwd);
+
+    service = createDirectoryService(
+      makePrefs({ recordedSignature: "sig" }),
+      makeSessionMgr(),
+      {},
+      { currentGlobalSignature: vi.fn(async () => "sig") },
+    );
+    const out = await service.refreshOpenSpec(worktree);
+    expect(out.hasOpenSpecSkills).toBe(true);
+    expect(out.readiness).toEqual({ state: "READY" });
+  });
+
+  it("inherits ignored main-checkout skills in a real linked worktree without borrowing init settings", async () => {
+    const actual = await vi.importActual<typeof import("../git-worktree/git-operations.js")>(
+      "../git-worktree/git-operations.js",
+    );
+    fakeConfigRoot = actual.resolveConfigRoot;
+    const mainRoot = path.join(tmpRoot, "main");
+    const worktree = path.join(tmpRoot, "wt");
+    fs.mkdirSync(mainRoot);
+    const git = (...args: string[]) => execFileSync("git", args, { cwd: mainRoot, stdio: "pipe" });
+    git("init");
+    git("-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "--allow-empty", "-m", "init");
+    git("worktree", "add", "-b", "linked", worktree);
+    mkProject(worktree);
+    fs.mkdirSync(path.join(mainRoot, ".pi", "skills", "openspec-explore"), { recursive: true });
+    expect(actual.resolveConfigRoot(worktree)).toBe(worktree);
 
     service = createDirectoryService(
       makePrefs({ recordedSignature: "sig" }),
